@@ -1,8 +1,10 @@
 {
   "dependencies": {
-    "vite": "^7.3.1",
+    "autoprefixer": "^10.4.27",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "tailwindcss": "^4.2.1",
+    "vite": "^7.3.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react-swc": "^4.2.3",
