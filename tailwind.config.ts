@@ -10,11 +10,11 @@ export default {
       padding: "1rem",
       screens: {
         "2xl": "1400px",
-      },
-    },
-    extend: {
-      fontFamily: {
-        sans: ['Heebo', 'sans-serif'],
+      extend: {
+        fontFamily: {
+          sans: ['Heebo', 'sans-serif'],
+        },
+        colors: {
       },
       colors: {
         border: "hsl(var(--border))",
@@ -75,6 +75,17 @@ export default {
         },
         status: {
           valid: "hsl(var(--status-valid))",
+        },
+        borderColor: {
+          border: "hsl(var(--border))",
+          sidebar: "hsl(var(--sidebar-border))",
+        },
+        backgroundColor: {
+          background: "hsl(var(--background))",
+          card: "hsl(var(--card))",
+          popover: "hsl(var(--popover))",
+          sidebar: "hsl(var(--sidebar-background))",
+        },
           warning: "hsl(var(--status-warning))",
           expired: "hsl(var(--status-expired))",
         },
