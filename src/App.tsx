@@ -101,9 +101,9 @@ const App = () => (
           <AppRoutes />
           
           {/* האינדיקטור לגרסת הטסט - מוצג רק בדומיין טסט או localhost */}
-          {(window.location.hostname === 'fleet-manager-2026.vercel.app' || window.location.hostname === 'localhost') && (
-            <div className="fixed bottom-0 left-0 right-0 bg-red-600 text-white text-center py-1 text-xs font-bold z-[9999] shadow-[0_-2px_10px_rgba(0,0,0,0.3)] uppercase tracking-widest">
-              --- גרסת בדיקות - נא לא להסתמך על הנתונים ---
+          {(window.location.hostname === 'fleet-manager-2026.vercel.app' || window.location.hostname === 'localhost' || window.location.pathname.includes('test-branch')) && (
+            <div className="fixed bottom-0 left-0 right-0 bg-red-600 text-white text-center py-1 text-xs font-bold z-[99999] shadow-[0_-2px_10px_rgba(0,0,0,0.3)] uppercase tracking-widest">
+              --- גרסת TEST-BRANCH - נא לא להסתמך על הנתונים ---
             </div>
           )}
         </AuthProvider>
