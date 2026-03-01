@@ -1,46 +1,47 @@
 @import "tailwindcss";
 
 @theme {
-  --color-cyber-blue: #00f2fe;
-  --color-cyber-purple: #7000ff;
-  --color-bg-space: #0a0f1e;
-  --color-surface: #161d2f;
+  --color-fleet-blue: #2563eb;
+  --color-fleet-dark: #1e293b;
 }
 
 @layer base {
   body {
-    background: radial-gradient(circle at 50% 0%, #1e293b 0%, #0a0f1e 100%);
-    color: #ffffff;
+    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+    color: #0f172a; /* טקסט כהה מאוד לקריאות מקסימלית */
     font-family: 'Heebo', sans-serif;
     min-height: 100vh;
   }
 }
 
 @layer components {
-  /* כרטיסיות תלת-ממדיות עם עומק ותאורת צד */
+  /* כרטיסיות תלת-ממדיות עם אפקט זכוכית בהירה */
   .stats-card {
-    background: linear-gradient(135deg, #181f2a 70%, #232a3a 100%);
-    border: 1.5px solid #232a3a;
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.45), 0 1.5px 6px 0 rgba(37, 99, 235, 0.18);
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    box-shadow: 20px 20px 60px #d1d5db, 
+                -20px -20px 60px #ffffff;
     border-radius: 24px;
-    color: #fff;
-    font-weight: 700;
-    font-size: 1.25rem;
-    letter-spacing: 0.02em;
-    text-shadow: 0 1px 8px rgba(0,0,0,0.25);
-    transition: transform 0.2s, box-shadow 0.2s;
-    backdrop-filter: blur(12px);
+    transition: all 0.3s ease;
   }
 
   .stats-card:hover {
-    transform: perspective(1000px) rotateX(4deg) translateY(-12px);
-    border-color: var(--color-cyber-blue);
-    box-shadow: 0 0 30px rgba(0, 242, 254, 0.25);
+    transform: translateY(-5px) scale(1.01);
+    box-shadow: 10px 10px 30px #cbd5e1;
   }
 
-  /* כותרות זוהרות */
-  h1, h2 {
-    color: #ffffff;
-    text-shadow: 0 0 10px rgba(0, 242, 254, 0.3);
+  /* כותרות וטקסט - חובה כהה */
+  h1, h2, h3, p, span {
+    color: #0f172a !important; 
+    font-weight: 600;
+  }
+
+  /* הפס הירוק בתחתית */
+  .production-bar {
+    background: #22c55e;
+    color: white !important;
+    font-weight: 800;
+    text-transform: uppercase;
   }
 }
