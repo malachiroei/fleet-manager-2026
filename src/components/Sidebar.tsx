@@ -78,7 +78,7 @@ export function Sidebar() {
   ];
 
   return (
-    <div className="flex h-full w-64 flex-col bg-slate-900 text-slate-100">
+    <div className="flex h-full w-64 flex-col bg-gradient-to-br from-slate-900 to-slate-800 text-slate-100 shadow-2xl rounded-xl border border-blue-900/30 backdrop-blur-lg">
       {/* Logo/Header */}
       <div className="flex h-16 items-center border-b border-slate-800 px-6">
         <div className="flex items-center gap-3">
@@ -100,7 +100,7 @@ export function Sidebar() {
             <Button
               variant={location.pathname === '/' ? 'default' : 'ghost'}
               className={cn(
-                'w-full justify-start gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                'w-full justify-start gap-3 rounded-xl px-4 py-2 text-sm font-medium transition-all shadow-md bg-gradient-to-r from-blue-700 to-blue-500 hover:scale-105 hover:shadow-xl',
                 location.pathname === '/'
                   ? 'bg-blue-600 text-white'
                   : 'text-slate-300 hover:bg-slate-800 hover:text-white'
