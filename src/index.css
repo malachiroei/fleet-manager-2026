@@ -1,43 +1,42 @@
 @import "tailwindcss";
 
 @theme {
-  --color-cyber-blue: #00d2ff;
-  --color-deep-space: #050a15;
-  --color-card-bg: #101827;
+  --color-cyber-blue: #00f2fe;
+  --color-cyber-purple: #7000ff;
+  --color-bg-space: #0a0f1e;
+  --color-surface: #161d2f;
 }
 
 @layer base {
   body {
-    background: radial-gradient(circle at center, #111827 0%, #050a15 100%);
-    color: #e2e8f0;
+    background: radial-gradient(circle at 50% 0%, #1e293b 0%, #0a0f1e 100%);
+    color: #ffffff;
     font-family: 'Heebo', sans-serif;
     min-height: 100vh;
   }
 }
 
 @layer components {
-  /* כרטיסיות תלת-ממדיות עם תאורה פנימית */
+  /* כרטיסיות תלת-ממדיות עם עומק ותאורת צד */
   .stats-card {
-    background: var(--color-card-bg);
-    border: 1px solid rgba(0, 210, 255, 0.1);
-    box-shadow: 10px 10px 20px #03060a, 
-                -5px -5px 15px rgba(255, 255, 255, 0.02);
+    background: linear-gradient(145deg, #1e293b, #111827);
+    border: 1px solid rgba(0, 242, 254, 0.2);
+    box-shadow: 12px 12px 24px #080b16, 
+                -4px -4px 12px rgba(255, 255, 255, 0.02);
     border-radius: 20px;
     transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    backdrop-filter: blur(10px);
   }
 
   .stats-card:hover {
-    transform: perspective(1000px) rotateX(5deg) translateY(-10px);
-    border-color: var(--cyber-blue);
-    box-shadow: 0 0 30px rgba(0, 210, 255, 0.15);
+    transform: perspective(1000px) rotateX(4deg) translateY(-12px);
+    border-color: var(--color-cyber-blue);
+    box-shadow: 0 0 30px rgba(0, 242, 254, 0.25);
   }
 
-  /* כפתורים עם אפקט זוהר */
-  .btn-action {
-    background: linear-gradient(145deg, #1e293b, #0f172a);
-    border: 1px solid rgba(0, 210, 255, 0.3);
-    color: var(--cyber-blue);
-    text-shadow: 0 0 8px rgba(0, 210, 255, 0.5);
-    box-shadow: 5px 5px 10px #03060a;
+  /* כותרות זוהרות */
+  h1, h2 {
+    color: #ffffff;
+    text-shadow: 0 0 10px rgba(0, 242, 254, 0.3);
   }
 }
