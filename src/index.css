@@ -1,46 +1,43 @@
 @import "tailwindcss";
 
 @theme {
-  --color-brand-primary: #00f2fe;
-  --color-brand-secondary: #4facfe;
-  --color-bg-dark: #0f172a;
-  --color-glass-white: rgba(255, 255, 255, 0.05);
+  --color-cyber-blue: #00d2ff;
+  --color-deep-space: #050a15;
+  --color-card-bg: #101827;
 }
 
 @layer base {
   body {
-    background: radial-gradient(circle at top left, #1e293b, #0f172a);
-    color: white;
+    background: radial-gradient(circle at center, #111827 0%, #050a15 100%);
+    color: #e2e8f0;
     font-family: 'Heebo', sans-serif;
     min-height: 100vh;
   }
 }
 
 @layer components {
-  /* כרטיסיות בתלת-ממד עם אפקט זכוכית */
+  /* כרטיסיות תלת-ממדיות עם תאורה פנימית */
   .stats-card {
-    background: var(--color-glass-white);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-    transition: all 0.3s ease;
-    border-radius: 24px;
+    background: var(--color-card-bg);
+    border: 1px solid rgba(0, 210, 255, 0.1);
+    box-shadow: 10px 10px 20px #03060a, 
+                -5px -5px 15px rgba(255, 255, 255, 0.02);
+    border-radius: 20px;
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   }
 
   .stats-card:hover {
-    transform: translateY(-5px) scale(1.02);
-    border-color: var(--color-brand-primary);
-    box-shadow: 0 0 20px rgba(0, 242, 254, 0.2);
+    transform: perspective(1000px) rotateX(5deg) translateY(-10px);
+    border-color: var(--cyber-blue);
+    box-shadow: 0 0 30px rgba(0, 210, 255, 0.15);
   }
 
-  /* כפתורי ניאון עתידניים */
-  .btn-future {
-    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-    box-shadow: 0 4px 15px rgba(79, 172, 254, 0.4);
-    border: none;
-    color: white;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 1px;
+  /* כפתורים עם אפקט זוהר */
+  .btn-action {
+    background: linear-gradient(145deg, #1e293b, #0f172a);
+    border: 1px solid rgba(0, 210, 255, 0.3);
+    color: var(--cyber-blue);
+    text-shadow: 0 0 8px rgba(0, 210, 255, 0.5);
+    box-shadow: 5px 5px 10px #03060a;
   }
 }
