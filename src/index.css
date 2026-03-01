@@ -1,35 +1,16 @@
-@import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap');
+@import "tailwindcss";
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-@layer base {
-  :root {
-    --background: 220 20% 97%;
-    --foreground: 220 25% 10%;
-    --border: 220 15% 88%;
-    /* שאר המשתנים נשארים אותו דבר... */
-  }
-
-  * {
-    border-color: hsl(var(--border));
-  }
-
-  body {
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
-    font-family: 'Heebo', sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
+@theme {
+  --color-background: hsl(220 20% 97%);
+  --color-foreground: hsl(220 25% 10%);
+  --color-border: hsl(220 15% 88%);
+  /* שאר הגדרות הצבעים שלך */
 }
 
-@layer utilities {
-  .dashboard-card {
-    border-radius: 0.75rem;
-    background-color: white;
-    padding: 1.5rem;
-    border: 1px solid hsl(var(--border));
+@layer base {
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: 'Heebo', sans-serif;
   }
 }
