@@ -43,6 +43,12 @@ export default {
         border: "hsl(var(--border))",
         sidebar: "hsl(var(--sidebar-border))",
       },
+      backgroundColor: {
+        background: "hsl(var(--background))",
+        card: "hsl(var(--card))",
+        popover: "hsl(var(--popover))",
+        sidebar: "hsl(var(--sidebar-background))",
+      },
         accent: {
           DEFAULT: "hsl(var(--accent))",
           foreground: "hsl(var(--accent-foreground))",
