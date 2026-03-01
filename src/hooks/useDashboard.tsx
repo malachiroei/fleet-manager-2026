@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import type { DashboardStats, ComplianceStatus } from '@/types/fleet';
-import { useVehicles } from './useVehicles'; // ייבוא ה-Hook של הרכבים מ-Supabase
-import { useDrivers } from './useDrivers';   // ייבוא ה-Hook של הנהגים מ-Supabase
+import { useVehicles } from './useVehicles';
+import { useDrivers } from './useDrivers';
 
 interface ComplianceItem {
   id: string;
@@ -17,7 +17,6 @@ function calculateStatus(expiryDate: string): ComplianceStatus {
   const today = new Date();
   const expiry = new Date(expiryDate);
   const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-
   if (diffDays < 0) return 'expired';
   if (diffDays <= 30) return 'warning';
   return 'valid';
@@ -55,6 +54,49 @@ export function useDashboardStats() {
         warningCount,
         expiredCount
       };
+    }
+  });
+}
+
+// הפונקציה שהייתה חסרה וגרמה לשגיאה ב-Vercel
+export function useComplianceAlerts() {
+  const { data: vehicles = [] } = useVehicles();
+  const { data: drivers = [] } = useDrivers();
+
+  return useQuery({
+    queryKey: ['compliance-alerts', vehicles.length, drivers.length],
+    queryFn: async (): Promise<ComplianceItem[]> => {
+      const alerts: ComplianceItem[] = [];
+
+      vehicles.forEach(v => {
+        const testStatus = calculateStatus(v.test_expiry);
+        if (testStatus !== 'valid') {
+          alerts.push({
+            id: `${v.id}-test`,
+            type: 'vehicle',
+            name: `${v.manufacturer} ${v.model} (${v.plate_number})`,
+            alertType: 'טסט',
+            expiryDate: v.test_expiry,
+            status: testStatus
+          });
+        }
+      });
+
+      drivers.forEach(d => {
+        const licenseStatus = calculateStatus(d.license_expiry);
+        if (licenseStatus !== 'valid') {
+          alerts.push({
+            id: `${d.id}-license`,
+            type: 'driver',
+            name: d.full_name,
+            alertType: 'רישיון נהיגה',
+            expiryDate: d.license_expiry,
+            status: licenseStatus
+          });
+        }
+      });
+
+      return alerts.sort((a, b) => (a.status === 'expired' ? -1 : 1));
     }
   });
 }
