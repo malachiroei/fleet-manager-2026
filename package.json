@@ -1,4 +1,14 @@
 {
+  "name": "fleet-manager-2026",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
   "dependencies": {
     "@tailwindcss/postcss": "^4.2.1",
     "autoprefixer": "^10.4.27",
