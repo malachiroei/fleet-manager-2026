@@ -1,0 +1,68 @@
+{
+  "common": {
+    "language": "Language",
+    "hebrew": "עברית",
+    "english": "English",
+    "settings": "Settings",
+    "logout": "Logout",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "add": "Add",
+    "edit": "Edit",
+    "view": "View",
+    "search": "Search",
+    "noResults": "No results found",
+    "deleteConfirm": "Are you sure?",
+    "deleteWarning": "This action will permanently delete this item and all related data."
+  },
+  "navigation": {
+    "fleetManager": "Fleet Manager",
+    "proDashboard": "Pro Dashboard",
+    "home": "Home",
+    "vehicles": "Vehicles",
+    "fleetManagement": "Fleet Management",
+    "vehicleDelivery": "Vehicle Delivery",
+    "exceptionAlerts": "Exception Alerts",
+    "operational": "Operational",
+    "drivers": "Drivers",
+    "mileageUpdate": "Mileage Update",
+    "events": "Events",
+    "accidents": "Accidents",
+    "parkingReports": "Parking Reports",
+    "procedure6Complaints": "Procedure 6 Complaints",
+    "finance": "Finance",
+    "accounting": "Accounting",
+    "fuel": "Fuel"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "subtitle": "Welcome to your fleet management dashboard",
+    "quickActions": "Quick Actions",
+    "fleetManagement": "Fleet Management",
+    "drivers": "Drivers",
+    "manageYourFleet": "Manage your vehicle fleet",
+    "manageDriverRoster": "Manage your driver roster"
+  },
+  "vehicles": {
+    "title": "Fleet Management",
+    "subtitle": "Manage your vehicle fleet",
+    "addVehicle": "Add Vehicle",
+    "addNewVehicle": "Add New Vehicle",
+    "noVehicles": "No vehicles found",
+    "searchPlaceholder": "Search by plate, manufacturer...",
+    "deleteTitle": "Delete Vehicle?",
+    "deleteDescription": "This action will permanently delete this vehicle and all related data.",
+    "deleteButton": "Delete Vehicle"
+  },
+  "drivers": {
+    "title": "Drivers",
+    "subtitle": "Manage your driver roster",
+    "addDriver": "Add Driver",
+    "addNewDriver": "Add New Driver",
+    "noDrivers": "No drivers found",
+    "searchPlaceholder": "Search by name, ID...",
+    "deleteTitle": "Delete Driver?",
+    "deleteDescription": "This action will permanently delete this driver and all related data.",
+    "deleteButton": "Delete Driver"
+  }
+}
