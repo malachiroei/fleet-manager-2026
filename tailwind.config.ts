@@ -38,6 +38,11 @@ export default {
           DEFAULT: "hsl(var(--muted))",
           foreground: "hsl(var(--muted-foreground))",
         },
+      },
+      borderColor: {
+        border: "hsl(var(--border))",
+        sidebar: "hsl(var(--sidebar-border))",
+      },
         accent: {
           DEFAULT: "hsl(var(--accent))",
           foreground: "hsl(var(--accent-foreground))",
