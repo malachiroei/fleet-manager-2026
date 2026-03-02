@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { AppLayout } from "@/components/AppLayout";
+import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import AuthPage from "./pages/AuthPage";
 import Dashboard from "./pages/Dashboard";
 import VehicleListPage from "./pages/VehicleListPage";
@@ -98,7 +99,9 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
-          <AppRoutes />
+          <AppErrorBoundary>
+            <AppRoutes />
+          </AppErrorBoundary>
           
           {/* האינדיקטור לגרסת הטסט - מוצג רק בדומיין טסט או localhost */}
           {(window.location.hostname === 'manager-2026-test.vercel.app' || window.location.hostname === 'localhost') && (

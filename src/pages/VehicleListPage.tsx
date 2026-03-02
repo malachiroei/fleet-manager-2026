@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   Select,
   SelectContent,
@@ -36,6 +37,17 @@ import {
   Eye
 } from 'lucide-react';
 import type { Vehicle, ComplianceStatus, DriverSummary } from '@/types/fleet';
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    return typeof message === 'string' && message.length > 0
+      ? message
+      : 'אירעה שגיאה לא צפויה בעת שליפת הרכבים.';
+  }
+  return 'אירעה שגיאה לא צפויה בעת שליפת הרכבים.';
+}
 
 function StatusBadge({ status }: { status: ComplianceStatus }) {
   const config = {
@@ -90,6 +102,10 @@ function VehicleCard({ vehicle, onDelete, canEdit, drivers, onAssignDriver, isAs
         </div>
         
         <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
+          <div className="col-span-2 flex items-center gap-2">
+            <span className="text-muted-foreground">נהג משויך:</span>
+            <span>{assignedDriver?.full_name ?? 'לא משויך'}</span>
+          </div>
           <div>
             <span className="text-muted-foreground">שנה:</span> {vehicle.year}
           </div>
@@ -105,10 +121,6 @@ function VehicleCard({ vehicle, onDelete, canEdit, drivers, onAssignDriver, isAs
         </div>
 
         <div className="mt-4 space-y-2 text-sm">
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground">נהג משויך:</span>
-            <span>{assignedDriver?.full_name ?? 'לא משויך'}</span>
-          </div>
           {canEdit && (
             <div>
               <Select
@@ -158,7 +170,7 @@ function VehicleCard({ vehicle, onDelete, canEdit, drivers, onAssignDriver, isAs
 }
 
 export default function VehicleListPage() {
-  const { data: vehicles, isLoading } = useVehicles();
+  const { data: vehicles, isLoading, isError, error, refetch } = useVehicles();
   const { data: drivers } = useDrivers();
   const deleteVehicle = useDeleteVehicle();
   const assignDriver = useAssignDriverToVehicle();
@@ -166,6 +178,7 @@ export default function VehicleListPage() {
   const { t } = useTranslation();
   const [search, setSearch] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const errorMessage = getErrorMessage(error);
 
   const filteredVehicles = vehicles?.filter(v => 
     v.plate_number.includes(search) ||
@@ -214,6 +227,16 @@ export default function VehicleListPage() {
           <div className="space-y-4">
             {[1, 2, 3].map(i => <Skeleton key={i} className="h-48" />)}
           </div>
+        ) : isError ? (
+          <Alert variant="destructive">
+            <AlertTitle>שגיאה בטעינת הרכבים</AlertTitle>
+            <AlertDescription className="space-y-3">
+              <p>{errorMessage}</p>
+              <Button variant="outline" size="sm" onClick={() => refetch()}>
+                נסה שוב
+              </Button>
+            </AlertDescription>
+          </Alert>
         ) : filteredVehicles?.length === 0 ? (
           <Card>
             <CardContent className="py-8 text-center">

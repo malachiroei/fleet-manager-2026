@@ -97,6 +97,10 @@ function DriverCard({ driver, onDelete, canEdit, vehicles, onAssignVehicle, isAs
             <div>
               <h3 className="font-semibold">{driver.full_name}</h3>
               <p className="text-sm text-muted-foreground">ת.ז. {driver.id_number}</p>
+              <p className="text-sm mt-1">
+                <span className="text-muted-foreground">רכב משויך:</span>{' '}
+                <span>{assignedVehicle ? `${assignedVehicle.manufacturer} ${assignedVehicle.model} (${assignedVehicle.plate_number})` : 'לא משויך'}</span>
+              </p>
             </div>
           </div>
           <StatusBadge status={licenseStatus} />
@@ -119,10 +123,6 @@ function DriverCard({ driver, onDelete, canEdit, vehicles, onAssignVehicle, isAs
               <span dir="ltr" className="text-xs">{driver.email}</span>
             </div>
           )}
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground">רכב משויך:</span>
-            <span>{assignedVehicle ? `${assignedVehicle.manufacturer} ${assignedVehicle.model} (${assignedVehicle.plate_number})` : 'לא משויך'}</span>
-          </div>
           {canEdit && (
             <div>
               <Select
