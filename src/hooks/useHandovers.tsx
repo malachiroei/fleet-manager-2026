@@ -8,6 +8,32 @@ const APP_BASE_URL = 'https://fleet-manager-2026.vercel.app';
 const HANDOVER_PHOTOS_BUCKET = 'handover-photos';
 const HANDOVER_ARCHIVE_BUCKET = 'vehicle-documents';
 
+function getSupabaseErrorMessage(error: unknown) {
+  if (!error || typeof error !== 'object') {
+    return 'Unknown error';
+  }
+
+  const maybeError = error as {
+    message?: string;
+    details?: string;
+    hint?: string;
+    code?: string;
+    statusCode?: string | number;
+    error?: string;
+  };
+
+  return [
+    maybeError.message,
+    maybeError.details,
+    maybeError.hint,
+    maybeError.code ? `code=${maybeError.code}` : undefined,
+    maybeError.statusCode ? `status=${maybeError.statusCode}` : undefined,
+    maybeError.error,
+  ]
+    .filter(Boolean)
+    .join(' | ');
+}
+
 export interface HandoverHistoryItem {
   id: string;
   vehicle_id: string;
@@ -217,7 +243,16 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
       upsert: true,
     });
 
-  if (uploadError) throw uploadError;
+  if (uploadError) {
+    console.error('[archiveHandoverSubmission] Storage upload failed', {
+      stage: 'storage.upload',
+      bucket: HANDOVER_ARCHIVE_BUCKET,
+      fileName,
+      error: uploadError,
+      message: getSupabaseErrorMessage(uploadError),
+    });
+    throw new Error(`Storage upload failed (${HANDOVER_ARCHIVE_BUCKET}): ${getSupabaseErrorMessage(uploadError)}`);
+  }
 
   const { data: publicData } = supabase.storage
     .from(HANDOVER_ARCHIVE_BUCKET)
@@ -226,7 +261,12 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
   const reportUrl = publicData.publicUrl;
 
   if (!reportUrl) {
-    throw new Error('Failed to create handover form URL');
+    console.error('[archiveHandoverSubmission] Public URL generation failed', {
+      stage: 'storage.getPublicUrl',
+      bucket: HANDOVER_ARCHIVE_BUCKET,
+      fileName,
+    });
+    throw new Error('Failed to create handover form URL from storage');
   }
 
   const { error: vehicleDocError } = await supabase
@@ -244,7 +284,16 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
       },
     });
 
-  if (vehicleDocError) throw vehicleDocError;
+  if (vehicleDocError) {
+    console.error('[archiveHandoverSubmission] vehicle_documents insert failed', {
+      stage: 'db.insert.vehicle_documents',
+      handoverId: input.handoverId,
+      vehicleId: input.vehicleId,
+      error: vehicleDocError,
+      message: getSupabaseErrorMessage(vehicleDocError),
+    });
+    throw new Error(`vehicle_documents insert failed: ${getSupabaseErrorMessage(vehicleDocError)}`);
+  }
 
   const { error: handoverUpdateError } = await supabase
     .from('vehicle_handovers')
@@ -254,7 +303,15 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
     } as any)
     .eq('id', input.handoverId);
 
-  if (handoverUpdateError) throw handoverUpdateError;
+  if (handoverUpdateError) {
+    console.error('[archiveHandoverSubmission] vehicle_handovers update failed', {
+      stage: 'db.update.vehicle_handovers',
+      handoverId: input.handoverId,
+      error: handoverUpdateError,
+      message: getSupabaseErrorMessage(handoverUpdateError),
+    });
+    throw new Error(`vehicle_handovers update failed: ${getSupabaseErrorMessage(handoverUpdateError)}`);
+  }
 
   if (input.includeDriverArchive && input.driverId) {
     const { error: driverDocError } = await supabase
@@ -265,7 +322,16 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
         file_url: reportUrl,
       });
 
-    if (driverDocError) throw driverDocError;
+    if (driverDocError) {
+      console.error('[archiveHandoverSubmission] driver_documents insert failed', {
+        stage: 'db.insert.driver_documents',
+        handoverId: input.handoverId,
+        driverId: input.driverId,
+        error: driverDocError,
+        message: getSupabaseErrorMessage(driverDocError),
+      });
+      throw new Error(`driver_documents insert failed: ${getSupabaseErrorMessage(driverDocError)}`);
+    }
   }
 
   const { data: persistedHandover, error: persistedHandoverError } = await supabase
@@ -274,7 +340,15 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
     .eq('id', input.handoverId)
     .single();
 
-  if (persistedHandoverError) throw persistedHandoverError;
+  if (persistedHandoverError) {
+    console.error('[archiveHandoverSubmission] vehicle_handovers readback failed', {
+      stage: 'db.select.vehicle_handovers',
+      handoverId: input.handoverId,
+      error: persistedHandoverError,
+      message: getSupabaseErrorMessage(persistedHandoverError),
+    });
+    throw new Error(`vehicle_handovers readback failed: ${getSupabaseErrorMessage(persistedHandoverError)}`);
+  }
 
   const persistedPdfUrl = (persistedHandover as { pdf_url?: string | null } | null)?.pdf_url;
   if (!persistedPdfUrl) {

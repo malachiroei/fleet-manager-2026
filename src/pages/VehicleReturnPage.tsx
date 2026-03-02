@@ -159,7 +159,14 @@ export default function VehicleReturnPage() {
         });
       } catch (archiveError) {
         console.error('Archive form copy error:', archiveError);
-        toast.warning('ההחזרה נשמרה, אך שמירת העתק הטופס נכשלה');
+        const message = archiveError instanceof Error ? archiveError.message : 'שגיאה לא ידועה';
+        toast.error(`שמירת PDF נכשלה: ${message}`);
+        return;
+      }
+
+      if (!reportUrl) {
+        toast.error('שמירת PDF נכשלה: לא התקבל קישור קובץ');
+        return;
       }
 
       try {
@@ -172,7 +179,7 @@ export default function VehicleReturnPage() {
           odometerReading: parseInt(odometer),
           fuelLevel,
           notes: notes || null,
-          reportUrl: reportUrl || 'לא נוצר קישור לטופס',
+          reportUrl,
         });
       } catch (emailError) {
         console.error('Email notification error:', emailError);
