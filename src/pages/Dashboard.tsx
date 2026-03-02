@@ -19,7 +19,7 @@ import {
   Truck,
   Gauge,
   ExternalLink,
-  Upload
+  Settings
 } from 'lucide-react';
 
 function DashboardCard({ 
@@ -121,6 +121,11 @@ export default function Dashboard() {
 
   const quickLinks = [
     {
+      title: 'הגדרות מערכת',
+      href: '/admin/settings',
+      icon: Settings,
+    },
+    {
       title: t('navigation.reportGeneration', { defaultValue: 'הפקת דוחות' }),
       href: '/reports',
       icon: BarChart3,
@@ -139,11 +144,6 @@ export default function Dashboard() {
       title: t('navigation.vehicleDelivery'),
       href: '/handover/delivery',
       icon: Truck,
-    },
-    {
-      title: 'טעינת רכבים/נהגים ועדכון משרד התחבורה',
-      href: '/admin/settings',
-      icon: Upload,
     },
   ];
 

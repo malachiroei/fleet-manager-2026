@@ -38,7 +38,7 @@ interface NavGroup {
 
 export function MobileNav() {
   const location = useLocation();
-  const { signOut, isManager } = useAuth();
+  const { signOut } = useAuth();
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
 
@@ -166,17 +166,15 @@ export function MobileNav() {
           </nav>
 
           <div className="mt-6 border-t border-slate-800 pt-4 space-y-2">
-            {isManager && (
-              <Link to="/admin/settings" onClick={() => setOpen(false)} className="block">
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start gap-3 text-slate-300 hover:bg-slate-800 hover:text-white"
-                >
-                  <Settings className="h-5 w-5" />
-                  {t('common.settings')}
-                </Button>
-              </Link>
-            )}
+            <Link to="/admin/settings" onClick={() => setOpen(false)} className="block">
+              <Button
+                variant="ghost"
+                className="w-full justify-start gap-3 text-slate-300 hover:bg-slate-800 hover:text-white"
+              >
+                <Settings className="h-5 w-5" />
+                {t('common.settings')}
+              </Button>
+            </Link>
             <Button
               variant="ghost"
               className="w-full justify-start gap-3 text-slate-300 hover:bg-slate-800 hover:text-white"

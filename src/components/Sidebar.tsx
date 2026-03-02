@@ -36,7 +36,7 @@ interface NavGroup {
 
 export function Sidebar() {
   const location = useLocation();
-  const { signOut, isManager } = useAuth();
+  const { signOut } = useAuth();
   const { t } = useTranslation();
 
   const navigationGroups: NavGroup[] = [
@@ -161,17 +161,15 @@ export function Sidebar() {
 
       {/* Footer Actions */}
       <div className="border-t border-slate-800 p-3 space-y-2">
-        {isManager && (
-          <Link to="/admin/settings" className="block">
-            <Button
-              variant="ghost"
-              className="w-full justify-start gap-3 text-slate-300 hover:bg-slate-800 hover:text-white"
-            >
-              <Settings className="h-5 w-5" />
-              {t('common.settings')}
-            </Button>
-          </Link>
-        )}
+        <Link to="/admin/settings" className="block">
+          <Button
+            variant="ghost"
+            className="w-full justify-start gap-3 text-slate-300 hover:bg-slate-800 hover:text-white"
+          >
+            <Settings className="h-5 w-5" />
+            {t('common.settings')}
+          </Button>
+        </Link>
         <Button
           variant="ghost"
           className="w-full justify-start gap-3 text-slate-300 hover:bg-slate-800 hover:text-white"

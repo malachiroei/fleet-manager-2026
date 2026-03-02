@@ -73,6 +73,47 @@ export default function AdminSettingsPage() {
         setIsSendingTestEmail(false);
       }
     };
+
+    const runPrintTest = () => {
+      const printWindow = window.open('', '_blank', 'width=900,height=700');
+
+      if (!printWindow) {
+        toast.error('חלון ההדפסה נחסם על ידי הדפדפן. יש לאפשר חלונות קופצים ולנסות שוב');
+        return;
+      }
+
+      const generatedAt = new Date().toLocaleString('he-IL');
+
+      printWindow.document.write(`
+        <!doctype html>
+        <html lang="he" dir="rtl">
+          <head>
+            <meta charset="utf-8" />
+            <title>בדיקת הדפסה - Fleet Manager 2026</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 32px; color: #111827; }
+              h1 { margin: 0 0 12px; font-size: 24px; }
+              p { margin: 4px 0; font-size: 16px; }
+              .box { margin-top: 16px; border: 1px solid #d1d5db; border-radius: 10px; padding: 16px; }
+            </style>
+          </head>
+          <body>
+            <h1>בדיקת הדפסה</h1>
+            <p>המערכת פתחה בהצלחה חלון הדפסה.</p>
+            <p>תאריך יצירה: ${generatedAt}</p>
+            <div class="box">
+              <p>אם המסמך הודפס או הופיע בתצוגה מקדימה, בדיקת ההדפסה עברה בהצלחה.</p>
+            </div>
+          </body>
+        </html>
+      `);
+
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => {
+        printWindow.print();
+      }, 150);
+    };
  
    return (
      <div className="min-h-screen bg-background">
@@ -118,8 +159,9 @@ export default function AdminSettingsPage() {
               <div className="flex flex-wrap gap-2">
                 <Button onClick={saveNotificationEmail}>שמור מייל התראות</Button>
                 <Button variant="outline" onClick={sendTestEmail} disabled={isSendingTestEmail}>
-                  {isSendingTestEmail ? 'שולח...' : 'שלח מייל בדיקה'}
+                  {isSendingTestEmail ? 'שולח...' : 'בדיקת שליחה'}
                 </Button>
+                <Button variant="outline" onClick={runPrintTest}>בדיקת הדפסה</Button>
               </div>
             </CardContent>
           </Card>
