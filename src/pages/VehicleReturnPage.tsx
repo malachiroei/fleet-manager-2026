@@ -137,7 +137,7 @@ export default function VehicleReturnPage() {
 
       let reportUrl = '';
       try {
-        reportUrl = await archiveHandoverSubmission({
+        const archived = await archiveHandoverSubmission({
           handoverId: handover.id,
           handoverType: 'return',
           vehicleId: selectedVehicle,
@@ -157,20 +157,33 @@ export default function VehicleReturnPage() {
           createdBy: user?.id ?? null,
           includeDriverArchive: true,
         });
+
+        const data = archived.handover;
+        console.log('Persisted PDF URL:', data.pdf_url);
+        reportUrl = archived.handover.pdf_url;
       } catch (archiveError) {
         console.error('Archive form copy error:', archiveError);
-        toast.warning('ההחזרה נשמרה, אך שמירת העתק הטופס נכשלה');
+        const message = archiveError instanceof Error ? archiveError.message : 'שגיאה לא ידועה';
+        toast.error(`שמירת PDF נכשלה: ${message}`);
+        return;
+      }
+
+      if (!reportUrl) {
+        toast.error('שמירת PDF נכשלה: לא התקבל קישור קובץ');
+        return;
       }
 
       try {
         await sendHandoverNotificationEmail({
+          handoverId: handover.id,
+          vehicleId: selectedVehicle,
           handoverType: 'return',
           vehicleLabel: `${selectedVehicleData?.manufacturer ?? ''} ${selectedVehicleData?.model ?? ''} (${selectedVehicleData?.plate_number ?? ''})`.trim(),
           driverLabel: selectedDriverData?.full_name ?? 'לא ידוע',
           odometerReading: parseInt(odometer),
           fuelLevel,
           notes: notes || null,
-          reportUrl: reportUrl || 'לא נוצר קישור לטופס',
+          reportUrl,
         });
       } catch (emailError) {
         console.error('Email notification error:', emailError);

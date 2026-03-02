@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useVehicles, useDeleteVehicle, useAssignDriverToVehicle } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
+import { useHandoverHistory, buildHandoverRecordUrl, type HandoverHistoryItem } from '@/hooks/useHandovers';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -60,13 +61,14 @@ function StatusBadge({ status }: { status: ComplianceStatus }) {
   return <Badge className={className}>{label}</Badge>;
 }
 
-function VehicleCard({ vehicle, onDelete, canEdit, drivers, onAssignDriver, isAssigning }: { 
+function VehicleCard({ vehicle, onDelete, canEdit, drivers, onAssignDriver, isAssigning, handoverHistory }: { 
   vehicle: Vehicle; 
   onDelete: () => void;
   canEdit: boolean;
   drivers: DriverSummary[];
   onAssignDriver: (vehicleId: string, driverId: string | null) => void;
   isAssigning: boolean;
+  handoverHistory: HandoverHistoryItem[];
 }) {
   const calculateStatus = (expiryDate: string): ComplianceStatus => {
     const today = new Date();
@@ -84,6 +86,7 @@ function VehicleCard({ vehicle, onDelete, canEdit, drivers, onAssignDriver, isAs
     ? 'expired' 
     : (testStatus === 'warning' || insuranceStatus === 'warning' ? 'warning' : 'valid');
   const assignedDriver = drivers.find((driver) => driver.id === vehicle.assigned_driver_id) ?? null;
+  const recentHandovers = handoverHistory.slice(0, 3);
 
   return (
     <Card className="card-hover">
@@ -144,6 +147,39 @@ function VehicleCard({ vehicle, onDelete, canEdit, drivers, onAssignDriver, isAs
           )}
         </div>
 
+        <div className="mt-4 border-t border-border pt-3 space-y-2">
+          <p className="text-sm font-semibold">היסטוריית מסירות</p>
+          {recentHandovers.length === 0 ? (
+            <p className="text-xs text-muted-foreground">אין נתוני מסירה/החזרה</p>
+          ) : (
+            <div className="space-y-2">
+              {recentHandovers.map((handover) => {
+                const formUrl = handover.form_url || buildHandoverRecordUrl(handover.vehicle_id, handover.id);
+                return (
+                  <div key={handover.id} className="rounded-md border border-border p-2.5">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="text-muted-foreground">{new Date(handover.handover_date).toLocaleDateString('he-IL')} {new Date(handover.handover_date).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</span>
+                      <span>{handover.driver_label}</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Button asChild size="sm" variant="outline" className="h-7 px-2 text-xs">
+                        <a href={formUrl} target="_blank" rel="noopener noreferrer">View Form</a>
+                      </Button>
+                      {handover.photo_urls.length > 0 && (
+                        <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs">
+                          <a href={handover.photo_urls[0]} target="_blank" rel="noopener noreferrer">
+                            תמונות ({handover.photo_urls.length})
+                          </a>
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         <div className="mt-4 flex gap-2">
           <Link to={`/vehicles/${vehicle.id}`} className="flex-1">
             <Button variant="outline" size="sm" className="w-full gap-1">
@@ -172,6 +208,7 @@ function VehicleCard({ vehicle, onDelete, canEdit, drivers, onAssignDriver, isAs
 export default function VehicleListPage() {
   const { data: vehicles, isLoading, isError, error, refetch } = useVehicles();
   const { data: drivers } = useDrivers();
+  const { data: handoverHistory } = useHandoverHistory();
   const deleteVehicle = useDeleteVehicle();
   const assignDriver = useAssignDriverToVehicle();
   const { isManager, user } = useAuth();
@@ -261,6 +298,7 @@ export default function VehicleListPage() {
                 drivers={drivers ?? []}
                 onAssignDriver={handleAssignDriver}
                 isAssigning={assignDriver.isPending}
+                handoverHistory={(handoverHistory ?? []).filter((handover) => handover.vehicle_id === vehicle.id)}
               />
             ))}
           </div>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useVehicle, useUpdateVehicle } from '@/hooks/useVehicles';
 import { useDriver } from '@/hooks/useDrivers';
@@ -68,6 +68,16 @@ export default function VehicleDetailPage() {
     vehicle?.model_code || null,
     vehicle?.year || null
   );
+
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (!hash || !handovers || handovers.length === 0) return;
+
+    const target = document.querySelector(hash);
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [handovers]);
 
   if (isLoading) {
     return (
@@ -519,7 +529,7 @@ export default function VehicleDetailPage() {
             {handovers && handovers.length > 0 ? (
               <div className="space-y-3">
                 {handovers.map((h: any) => (
-                  <div key={h.id} className="p-3 bg-muted/50 rounded-lg space-y-2">
+                  <div id={`handover-${h.id}`} key={h.id} className="p-3 bg-muted/50 rounded-lg space-y-2">
                     <div className="flex items-center justify-between">
                       <Badge variant={h.handover_type === 'delivery' ? 'default' : 'secondary'}>
                         {h.handover_type === 'delivery' ? 'מסירה' : 'החזרה'}

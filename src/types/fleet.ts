@@ -193,6 +193,7 @@ export interface VehicleHandover {
   photo_right_url: string | null;
   photo_left_url: string | null;
   signature_url: string | null;
+  pdf_url?: string | null;
   notes: string | null;
   created_by: string | null;
   created_at: string;

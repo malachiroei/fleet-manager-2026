@@ -1,8 +1,229 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { VehicleHandover } from '@/types/fleet';
+import hebrewFontUrl from '@/assets/fonts/NotoSansHebrew.ttf?url';
 
 export type AssignmentMode = 'permanent' | 'replacement';
+
+const APP_BASE_URL = 'https://fleet-manager-2026.vercel.app';
+const HANDOVER_PHOTOS_BUCKET = 'handover-photos';
+const HANDOVER_ARCHIVE_BUCKET = 'vehicle-documents';
+
+function getSupabaseErrorMessage(error: unknown) {
+  if (!error || typeof error !== 'object') {
+    return 'Unknown error';
+  }
+
+  const maybeError = error as {
+    message?: string;
+    details?: string;
+    hint?: string;
+    code?: string;
+    statusCode?: string | number;
+    error?: string;
+  };
+
+  return [
+    maybeError.message,
+    maybeError.details,
+    maybeError.hint,
+    maybeError.code ? `code=${maybeError.code}` : undefined,
+    maybeError.statusCode ? `status=${maybeError.statusCode}` : undefined,
+    maybeError.error,
+  ]
+    .filter(Boolean)
+    .join(' | ');
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function imageUrlToDataUrl(url: string): Promise<{ dataUrl: string; format: 'PNG' | 'JPEG' } | null> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+
+    const blob = await response.blob();
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+
+    const contentType = blob.type.toLowerCase();
+    const format: 'PNG' | 'JPEG' = contentType.includes('png') ? 'PNG' : 'JPEG';
+    return { dataUrl, format };
+  } catch {
+    return null;
+  }
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    const chunk = bytes.subarray(index, index + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+
+  return btoa(binary);
+}
+
+let cachedHebrewFontBase64: string | null = null;
+
+async function createPdfBlob(lines: string[], photos: Array<{ key: string; url: string | null }>, signatureUrl: string | null) {
+  const [{ jsPDF }, fontResponse] = await Promise.all([
+    import('jspdf'),
+    fetch(hebrewFontUrl),
+  ]);
+
+  if (!fontResponse.ok) {
+    throw new Error(`Failed loading Hebrew font (${fontResponse.status})`);
+  }
+
+  if (!cachedHebrewFontBase64) {
+    cachedHebrewFontBase64 = arrayBufferToBase64(await fontResponse.arrayBuffer());
+  }
+
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'pt',
+    format: 'a4',
+    compress: true,
+  });
+
+  doc.addFileToVFS('NotoSansHebrew.ttf', cachedHebrewFontBase64);
+  doc.addFont('NotoSansHebrew.ttf', 'NotoSansHebrew', 'normal');
+  doc.setFont('NotoSansHebrew', 'normal');
+  doc.setR2L(true);
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const rightX = pageWidth - 40;
+
+  doc.setFontSize(16);
+  doc.text('טופס מסירה / החזרת רכב', pageWidth / 2, 56, { align: 'center' });
+
+  doc.setFontSize(11);
+  let currentY = 86;
+  for (const line of lines) {
+    doc.text(line, rightX, currentY, { align: 'right' });
+    currentY += 18;
+  }
+
+  const photoEntries = photos.filter((photo) => !!photo.url) as Array<{ key: string; url: string }>;
+  const photoImages = await Promise.all(
+    photoEntries.map(async (photo) => ({ key: photo.key, image: await imageUrlToDataUrl(photo.url) }))
+  );
+
+  const validPhotoImages = photoImages.filter((photo) => !!photo.image) as Array<{ key: string; image: { dataUrl: string; format: 'PNG' | 'JPEG' } }>;
+  const photoLabels: Record<string, string> = {
+    front: 'קדימה',
+    back: 'אחורה',
+    right: 'ימין',
+    left: 'שמאל',
+  };
+
+  if (validPhotoImages.length > 0) {
+    doc.setFontSize(12);
+    doc.text('תמונות רכב', rightX, currentY + 4, { align: 'right' });
+
+    const gridTop = currentY + 16;
+    const marginX = 40;
+    const gap = 12;
+    const cards = validPhotoImages.slice(0, 4);
+
+    if (cards.length === 1) {
+      const boxWidth = pageWidth - marginX * 2;
+      const boxHeight = 180;
+      const x = marginX;
+      const y = gridTop;
+      const photo = cards[0];
+
+      doc.addImage(photo.image.dataUrl, photo.image.format, x, y, boxWidth, boxHeight, undefined, 'MEDIUM');
+      doc.setFontSize(10);
+      doc.text(photoLabels[photo.key] || photo.key, x + boxWidth - 4, y + boxHeight + 12, { align: 'right' });
+      currentY = y + boxHeight + 18;
+    } else if (cards.length === 2) {
+      const boxWidth = (pageWidth - marginX * 2 - gap) / 2;
+      const boxHeight = 165;
+
+      cards.forEach((photo, index) => {
+        const x = marginX + index * (boxWidth + gap);
+        const y = gridTop;
+        doc.addImage(photo.image.dataUrl, photo.image.format, x, y, boxWidth, boxHeight, undefined, 'MEDIUM');
+        doc.setFontSize(10);
+        doc.text(photoLabels[photo.key] || photo.key, x + boxWidth - 4, y + boxHeight + 12, { align: 'right' });
+      });
+
+      currentY = gridTop + boxHeight + 18;
+    } else {
+      const boxWidth = (pageWidth - marginX * 2 - gap) / 2;
+      const boxHeight = 126;
+
+      cards.forEach((photo, index) => {
+        const row = Math.floor(index / 2);
+        const col = index % 2;
+        const x = marginX + col * (boxWidth + gap);
+        const y = gridTop + row * (boxHeight + 24);
+
+        doc.addImage(photo.image.dataUrl, photo.image.format, x, y, boxWidth, boxHeight, undefined, 'MEDIUM');
+        doc.setFontSize(10);
+        doc.text(photoLabels[photo.key] || photo.key, x + boxWidth - 4, y + boxHeight + 12, { align: 'right' });
+      });
+
+      currentY = gridTop + (cards.length > 2 ? (boxHeight + 24) * 2 : (boxHeight + 24)) + 4;
+    }
+  }
+
+  if (signatureUrl) {
+    const signatureImage = await imageUrlToDataUrl(signatureUrl);
+    if (signatureImage) {
+      const signatureBlockHeight = 96;
+      const signatureY = Math.min(currentY + 4, pageHeight - signatureBlockHeight - 36);
+      doc.setFontSize(12);
+      doc.text('חתימה', rightX, signatureY + 10, { align: 'right' });
+
+      const sigWidth = 220;
+      const sigHeight = 64;
+      const sigX = pageWidth - 40 - sigWidth;
+      const sigY = signatureY + 18;
+      doc.rect(sigX, sigY, sigWidth, sigHeight);
+      doc.addImage(signatureImage.dataUrl, signatureImage.format, sigX + 2, sigY + 2, sigWidth - 4, sigHeight - 4, undefined, 'FAST');
+    }
+  }
+
+  return doc.output('blob');
+}
+
+interface ArchivedHandoverResult {
+  reportUrl: string;
+  handover: {
+    id: string;
+    pdf_url: string;
+    signature_url: string | null;
+  };
+}
+
+export interface HandoverHistoryItem {
+  id: string;
+  vehicle_id: string;
+  driver_id: string | null;
+  handover_type: 'delivery' | 'return';
+  handover_date: string;
+  driver_label: string;
+  vehicle_label: string;
+  form_url: string | null;
+  photo_urls: string[];
+}
+
+export function buildHandoverRecordUrl(vehicleId: string, handoverId: string) {
+  return `${APP_BASE_URL}/vehicles/${vehicleId}#handover-${handoverId}`;
+}
 
 export function useHandovers(vehicleId?: string) {
   return useQuery({
@@ -61,8 +282,84 @@ export function useCreateHandover() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['handovers'] });
+      queryClient.invalidateQueries({ queryKey: ['handover-history'] });
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
     }
+  });
+}
+
+export function useHandoverHistory() {
+  return useQuery({
+    queryKey: ['handover-history'],
+    queryFn: async () => {
+      const { data: handoversData, error: handoversError } = await supabase
+        .from('vehicle_handovers')
+        .select('id, vehicle_id, driver_id, handover_type, handover_date, pdf_url, photo_front_url, photo_back_url, photo_right_url, photo_left_url, driver:drivers(full_name), vehicle:vehicles(manufacturer, model, plate_number)')
+        .order('handover_date', { ascending: false })
+        .limit(300);
+
+      if (handoversError) {
+        console.warn('Handover history query failed:', handoversError.message);
+        return [] as HandoverHistoryItem[];
+      }
+
+      const handovers = (handoversData ?? []) as any[];
+      const handoverIds = handovers.map((handover) => handover.id);
+
+      let docsByHandover = new Map<string, any>();
+
+      if (handoverIds.length > 0) {
+        const { data: docsData, error: docsError } = await supabase
+          .from('vehicle_documents' as any)
+          .select('handover_id, file_url, metadata, created_at')
+          .in('handover_id', handoverIds)
+          .order('created_at', { ascending: false });
+
+        if (docsError) {
+          console.warn('Vehicle documents query failed:', docsError.message);
+        } else {
+          docsByHandover = new Map(
+            ((docsData as any[]) ?? [])
+              .filter((doc) => !!doc.handover_id)
+              .map((doc) => [doc.handover_id as string, doc])
+          );
+        }
+      }
+
+      return handovers.map((handover): HandoverHistoryItem => {
+        const doc = docsByHandover.get(handover.id) ?? null;
+        const metadataPhotoUrls = [
+          doc?.metadata?.photoUrls?.front,
+          doc?.metadata?.photoUrls?.back,
+          doc?.metadata?.photoUrls?.right,
+          doc?.metadata?.photoUrls?.left,
+        ].filter(Boolean) as string[];
+
+        const rowPhotoUrls = [
+          handover.photo_front_url,
+          handover.photo_back_url,
+          handover.photo_right_url,
+          handover.photo_left_url,
+        ].filter(Boolean) as string[];
+
+        const driverLabel = handover.driver?.full_name ?? 'ללא נהג';
+        const vehicleLabel = handover.vehicle
+          ? `${handover.vehicle.manufacturer} ${handover.vehicle.model} (${handover.vehicle.plate_number})`
+          : 'ללא רכב';
+
+        return {
+          id: handover.id,
+          vehicle_id: handover.vehicle_id,
+          driver_id: handover.driver_id,
+          handover_type: handover.handover_type,
+          handover_date: handover.handover_date,
+          driver_label: driverLabel,
+          vehicle_label: vehicleLabel,
+          form_url: doc?.file_url ?? handover.pdf_url ?? null,
+          photo_urls: Array.from(new Set([...metadataPhotoUrls, ...rowPhotoUrls])),
+        };
+      });
+    },
   });
 }
 
@@ -88,46 +385,58 @@ interface ArchiveHandoverInput {
   includeDriverArchive: boolean;
 }
 
-export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Promise<string> {
+export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Promise<ArchivedHandoverResult> {
   const timestamp = new Date().toISOString();
-  const formCopy = {
-    handoverId: input.handoverId,
-    handoverType: input.handoverType,
-    assignmentMode: input.assignmentMode ?? 'permanent',
-    timestamp,
-    vehicle: {
-      id: input.vehicleId,
-      label: input.vehicleLabel,
-    },
-    driver: {
-      id: input.driverId,
-      label: input.driverLabel,
-    },
-    odometerReading: input.odometerReading,
-    fuelLevel: input.fuelLevel,
-    notes: input.notes,
-    photos: input.photoUrls,
-    signatureUrl: input.signatureUrl,
-    createdBy: input.createdBy,
-  };
-
-  const formBlob = new Blob([JSON.stringify(formCopy, null, 2)], { type: 'application/json' });
-  const fileName = `handover-forms/${input.vehicleId}/${Date.now()}_${input.handoverType}.json`;
+  const formBlob = await createPdfBlob([
+    `מספר טופס: ${input.handoverId}`,
+    `סוג טופס: ${input.handoverType === 'delivery' ? 'מסירה' : 'החזרה'}`,
+    `סוג מסירה: ${input.assignmentMode === 'replacement' ? 'חליפי' : 'קבוע'}`,
+    `רכב: ${input.vehicleLabel}`,
+    `נהג: ${input.driverLabel}`,
+    `קילומטראז': ${input.odometerReading.toLocaleString('he-IL')}`,
+    `דלק: ${input.fuelLevel}/8`,
+    `הערות: ${input.notes || 'ללא'}`,
+    `זמן ביצוע: ${new Date(timestamp).toLocaleString('he-IL')}`,
+  ], [
+    { key: 'front', url: input.photoUrls.front },
+    { key: 'back', url: input.photoUrls.back },
+    { key: 'right', url: input.photoUrls.right },
+    { key: 'left', url: input.photoUrls.left },
+  ], input.signatureUrl);
+  const fileName = `handover-forms/${input.vehicleId}/${Date.now()}_${input.handoverType}.pdf`;
 
   const { error: uploadError } = await supabase.storage
-    .from('fleet-documents')
+    .from(HANDOVER_ARCHIVE_BUCKET)
     .upload(fileName, formBlob, {
-      contentType: 'application/json',
+      contentType: 'application/pdf',
       upsert: true,
     });
 
-  if (uploadError) throw uploadError;
+  if (uploadError) {
+    console.error('[archiveHandoverSubmission] Storage upload failed', {
+      stage: 'storage.upload',
+      bucket: HANDOVER_ARCHIVE_BUCKET,
+      fileName,
+      error: uploadError,
+      message: getSupabaseErrorMessage(uploadError),
+    });
+    throw new Error(`Storage upload failed (${HANDOVER_ARCHIVE_BUCKET}): ${getSupabaseErrorMessage(uploadError)}`);
+  }
 
   const { data: publicData } = supabase.storage
-    .from('fleet-documents')
+    .from(HANDOVER_ARCHIVE_BUCKET)
     .getPublicUrl(fileName);
 
   const reportUrl = publicData.publicUrl;
+
+  if (!reportUrl) {
+    console.error('[archiveHandoverSubmission] Public URL generation failed', {
+      stage: 'storage.getPublicUrl',
+      bucket: HANDOVER_ARCHIVE_BUCKET,
+      fileName,
+    });
+    throw new Error('Failed to create handover form URL from storage');
+  }
 
   const { error: vehicleDocError } = await supabase
     .from('vehicle_documents' as any)
@@ -144,7 +453,36 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
       },
     });
 
-  if (vehicleDocError) throw vehicleDocError;
+  if (vehicleDocError) {
+    console.error('[archiveHandoverSubmission] vehicle_documents insert failed', {
+      stage: 'db.insert.vehicle_documents',
+      handoverId: input.handoverId,
+      vehicleId: input.vehicleId,
+      error: vehicleDocError,
+      message: getSupabaseErrorMessage(vehicleDocError),
+    });
+    throw new Error(`vehicle_documents insert failed: ${getSupabaseErrorMessage(vehicleDocError)}`);
+  }
+
+  const { data: updatedHandover, error: handoverUpdateError } = await supabase
+    .from('vehicle_handovers')
+    .update({
+      pdf_url: reportUrl,
+      signature_url: input.signatureUrl,
+    } as any)
+    .eq('id', input.handoverId)
+    .select('id, pdf_url, signature_url')
+    .single();
+
+  if (handoverUpdateError) {
+    console.error('[archiveHandoverSubmission] vehicle_handovers update failed', {
+      stage: 'db.update.vehicle_handovers',
+      handoverId: input.handoverId,
+      error: handoverUpdateError,
+      message: getSupabaseErrorMessage(handoverUpdateError),
+    });
+    throw new Error(`vehicle_handovers update failed: ${getSupabaseErrorMessage(handoverUpdateError)}`);
+  }
 
   if (input.includeDriverArchive && input.driverId) {
     const { error: driverDocError } = await supabase
@@ -155,13 +493,75 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
         file_url: reportUrl,
       });
 
-    if (driverDocError) throw driverDocError;
+    if (driverDocError) {
+      console.error('[archiveHandoverSubmission] driver_documents insert failed', {
+        stage: 'db.insert.driver_documents',
+        handoverId: input.handoverId,
+        driverId: input.driverId,
+        error: driverDocError,
+        message: getSupabaseErrorMessage(driverDocError),
+      });
+      throw new Error(`driver_documents insert failed: ${getSupabaseErrorMessage(driverDocError)}`);
+    }
   }
 
-  return reportUrl;
+  let persistedHandover: { id: string; pdf_url: string | null; signature_url: string | null } | null =
+    (updatedHandover as { id: string; pdf_url: string | null; signature_url: string | null } | null) ?? null;
+  let lastReadError: unknown = null;
+
+  for (let attempt = 1; attempt <= 5 && !persistedHandover?.pdf_url; attempt += 1) {
+    const { data, error } = await supabase
+      .from('vehicle_handovers')
+      .select('id, pdf_url, signature_url')
+      .eq('id', input.handoverId)
+      .single();
+
+    if (error) {
+      lastReadError = error;
+      console.warn('[archiveHandoverSubmission] vehicle_handovers readback retry', {
+        stage: 'db.select.vehicle_handovers',
+        handoverId: input.handoverId,
+        attempt,
+        message: getSupabaseErrorMessage(error),
+      });
+    } else {
+      persistedHandover = data as { id: string; pdf_url: string | null; signature_url: string | null };
+      if (persistedHandover?.pdf_url) {
+        break;
+      }
+      console.warn('[archiveHandoverSubmission] pdf_url still empty after update', {
+        handoverId: input.handoverId,
+        attempt,
+      });
+    }
+
+    await delay(250 * attempt);
+  }
+
+  if (!persistedHandover?.pdf_url) {
+    if (lastReadError) {
+      console.error('[archiveHandoverSubmission] vehicle_handovers readback failed after retries', {
+        stage: 'db.select.vehicle_handovers',
+        handoverId: input.handoverId,
+        message: getSupabaseErrorMessage(lastReadError),
+      });
+    }
+    throw new Error('PDF copy failed: pdf_url was not persisted on handover record');
+  }
+
+  return {
+    reportUrl: persistedHandover.pdf_url,
+    handover: {
+      id: persistedHandover.id,
+      pdf_url: persistedHandover.pdf_url,
+      signature_url: persistedHandover.signature_url,
+    },
+  };
 }
 
 interface SendHandoverEmailInput {
+  handoverId: string;
+  vehicleId: string;
   handoverType: 'delivery' | 'return';
   assignmentMode?: AssignmentMode;
   vehicleLabel: string;
@@ -181,6 +581,7 @@ export async function sendHandoverNotificationEmail(input: SendHandoverEmailInpu
       subject: `${input.handoverType === 'delivery' ? 'מסירת רכב' : 'החזרת רכב'} - ${input.vehicleLabel}`,
       payload: {
         ...input,
+        recordUrl: buildHandoverRecordUrl(input.vehicleId, input.handoverId),
         sentAt: new Date().toISOString(),
       },
     },
@@ -220,7 +621,7 @@ export async function uploadHandoverPhoto(
   const fileName = `${vehicleId}/${Date.now()}_${photoType}.jpg`;
   
   const { error } = await supabase.storage
-    .from('fleet-documents')
+    .from(HANDOVER_PHOTOS_BUCKET)
     .upload(fileName, compressedFile, {
       contentType: 'image/jpeg',
       upsert: true
@@ -229,7 +630,7 @@ export async function uploadHandoverPhoto(
   if (error) throw error;
   
   const { data } = supabase.storage
-    .from('fleet-documents')
+    .from(HANDOVER_PHOTOS_BUCKET)
     .getPublicUrl(fileName);
   
   return data.publicUrl;
@@ -293,7 +694,7 @@ export async function uploadSignature(
   const fileName = `${vehicleId}/${Date.now()}_signature_${handoverType}.png`;
   
   const { error } = await supabase.storage
-    .from('fleet-documents')
+    .from(HANDOVER_PHOTOS_BUCKET)
     .upload(fileName, blob, {
       contentType: 'image/png',
       upsert: true
@@ -302,7 +703,7 @@ export async function uploadSignature(
   if (error) throw error;
   
   const { data } = supabase.storage
-    .from('fleet-documents')
+    .from(HANDOVER_PHOTOS_BUCKET)
     .getPublicUrl(fileName);
   
   return data.publicUrl;
