@@ -254,9 +254,7 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
     } as any)
     .eq('id', input.handoverId);
 
-  if (handoverUpdateError) {
-    console.warn('Failed to update handover pdf/signature URLs:', handoverUpdateError.message);
-  }
+  if (handoverUpdateError) throw handoverUpdateError;
 
   if (input.includeDriverArchive && input.driverId) {
     const { error: driverDocError } = await supabase
@@ -270,7 +268,20 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
     if (driverDocError) throw driverDocError;
   }
 
-  return reportUrl;
+  const { data: persistedHandover, error: persistedHandoverError } = await supabase
+    .from('vehicle_handovers')
+    .select('pdf_url')
+    .eq('id', input.handoverId)
+    .single();
+
+  if (persistedHandoverError) throw persistedHandoverError;
+
+  const persistedPdfUrl = (persistedHandover as { pdf_url?: string | null } | null)?.pdf_url;
+  if (!persistedPdfUrl) {
+    throw new Error('PDF copy failed: pdf_url was not persisted on handover record');
+  }
+
+  return persistedPdfUrl;
 }
 
 interface SendHandoverEmailInput {
