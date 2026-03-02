@@ -4,6 +4,7 @@
  import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
+import { FunctionsHttpError } from '@supabase/supabase-js';
 import PricingDataUploader from '@/components/PricingDataUploader';
 import FleetDataImporter from '@/components/FleetDataImporter';
 import { ArrowRight, Settings, Shield } from 'lucide-react';
@@ -67,7 +68,24 @@ export default function AdminSettingsPage() {
 
         toast.success('מייל בדיקה נשלח בהצלחה');
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'שגיאה לא ידועה';
+        let message = 'שגיאה לא ידועה';
+
+        if (error instanceof FunctionsHttpError) {
+          try {
+            const response = error.context;
+            const data = await response.json() as { error?: string };
+            message = data?.error || `HTTP ${response.status}`;
+          } catch {
+            message = error.message;
+          }
+        } else if (error instanceof Error) {
+          message = error.message;
+        }
+
+        if (message.includes('Missing RESEND_API_KEY')) {
+          message = 'חסר RESEND_API_KEY בפרויקט Supabase של הטסט';
+        }
+
         toast.error(`שליחת מייל בדיקה נכשלה: ${message}`);
       } finally {
         setIsSendingTestEmail(false);
