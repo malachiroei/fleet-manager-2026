@@ -132,3 +132,103 @@ export function useUpdateOdometer() {
     },
   });
 }
+
+export function useAssignDriverToVehicle() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      vehicleId,
+      driverId,
+      assignedBy,
+    }: {
+      vehicleId: string;
+      driverId: string | null;
+      assignedBy?: string | null;
+    }) => {
+      const { data: vehicle, error: vehicleError } = await supabase
+        .from('vehicles')
+        .select('id, assigned_driver_id')
+        .eq('id', vehicleId)
+        .maybeSingle();
+
+      if (vehicleError) throw vehicleError;
+      if (!vehicle) throw new Error('הרכב לא נמצא');
+
+      if (driverId) {
+        const { data: driverVehicles, error: driverVehiclesError } = await supabase
+          .from('vehicles')
+          .select('id')
+          .eq('assigned_driver_id', driverId)
+          .neq('id', vehicleId);
+
+        if (driverVehiclesError) throw driverVehiclesError;
+
+        const previousVehicleIds = (driverVehicles ?? []).map((row) => row.id);
+
+        if (previousVehicleIds.length > 0) {
+          const { error: clearDriverVehiclesError } = await supabase
+            .from('vehicles')
+            .update({ assigned_driver_id: null })
+            .eq('assigned_driver_id', driverId)
+            .neq('id', vehicleId);
+
+          if (clearDriverVehiclesError) throw clearDriverVehiclesError;
+
+          const { error: closePreviousDriverAssignmentsError } = await supabase
+            .from('driver_vehicle_assignments')
+            .update({ unassigned_at: new Date().toISOString() })
+            .eq('driver_id', driverId)
+            .is('unassigned_at', null)
+            .in('vehicle_id', previousVehicleIds);
+
+          if (closePreviousDriverAssignmentsError) throw closePreviousDriverAssignmentsError;
+        }
+      }
+
+      const { error: closeCurrentVehicleAssignmentError } = await supabase
+        .from('driver_vehicle_assignments')
+        .update({ unassigned_at: new Date().toISOString() })
+        .eq('vehicle_id', vehicleId)
+        .is('unassigned_at', null);
+
+      if (closeCurrentVehicleAssignmentError) throw closeCurrentVehicleAssignmentError;
+
+      const { error: updateVehicleError } = await supabase
+        .from('vehicles')
+        .update({ assigned_driver_id: driverId })
+        .eq('id', vehicleId);
+
+      if (updateVehicleError) throw updateVehicleError;
+
+      if (driverId) {
+        const { error: insertAssignmentError } = await supabase
+          .from('driver_vehicle_assignments')
+          .insert({
+            vehicle_id: vehicleId,
+            driver_id: driverId,
+            assigned_by: assignedBy ?? null,
+          });
+
+        if (insertAssignmentError) throw insertAssignmentError;
+      }
+
+      return { vehicleId, driverId };
+    },
+    onSuccess: ({ driverId }) => {
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+      queryClient.invalidateQueries({ queryKey: ['drivers'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      toast({
+        title: driverId ? 'שיוך הנהג נשמר בהצלחה' : 'שיוך הנהג הוסר בהצלחה',
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: 'שגיאה בעדכון שיוך נהג לרכב',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+}

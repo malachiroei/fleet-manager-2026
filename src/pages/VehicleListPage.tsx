@@ -1,13 +1,21 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useVehicles, useDeleteVehicle } from '@/hooks/useVehicles';
+import { useVehicles, useDeleteVehicle, useAssignDriverToVehicle } from '@/hooks/useVehicles';
+import { useDrivers } from '@/hooks/useDrivers';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,7 +35,7 @@ import {
   Edit,
   Eye
 } from 'lucide-react';
-import type { Vehicle, ComplianceStatus } from '@/types/fleet';
+import type { Vehicle, ComplianceStatus, DriverSummary } from '@/types/fleet';
 
 function StatusBadge({ status }: { status: ComplianceStatus }) {
   const config = {
@@ -44,6 +52,9 @@ function VehicleCard({ vehicle, onDelete, canEdit }: {
   vehicle: Vehicle; 
   onDelete: () => void;
   canEdit: boolean;
+  drivers: DriverSummary[];
+  onAssignDriver: (vehicleId: string, driverId: string | null) => void;
+  isAssigning: boolean;
 }) {
   const calculateStatus = (expiryDate: string): ComplianceStatus => {
     const today = new Date();
@@ -60,6 +71,7 @@ function VehicleCard({ vehicle, onDelete, canEdit }: {
   const worstStatus = testStatus === 'expired' || insuranceStatus === 'expired' 
     ? 'expired' 
     : (testStatus === 'warning' || insuranceStatus === 'warning' ? 'warning' : 'valid');
+  const assignedDriver = drivers.find((driver) => driver.id === vehicle.assigned_driver_id) ?? null;
 
   return (
     <Card className="card-hover">
@@ -92,6 +104,34 @@ function VehicleCard({ vehicle, onDelete, canEdit }: {
           </div>
         </div>
 
+        <div className="mt-4 space-y-2 text-sm">
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground">נהג משויך:</span>
+            <span>{assignedDriver?.full_name ?? 'לא משויך'}</span>
+          </div>
+          {canEdit && (
+            <div>
+              <Select
+                value={vehicle.assigned_driver_id ?? '__none__'}
+                onValueChange={(value) => onAssignDriver(vehicle.id, value === '__none__' ? null : value)}
+                disabled={isAssigning}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="בחר נהג" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">ללא נהג משויך</SelectItem>
+                  {drivers.map((driver) => (
+                    <SelectItem key={driver.id} value={driver.id}>
+                      {driver.full_name} ({driver.id_number})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
+
         <div className="mt-4 flex gap-2">
           <Link to={`/vehicles/${vehicle.id}`} className="flex-1">
             <Button variant="outline" size="sm" className="w-full gap-1">
@@ -119,8 +159,10 @@ function VehicleCard({ vehicle, onDelete, canEdit }: {
 
 export default function VehicleListPage() {
   const { data: vehicles, isLoading } = useVehicles();
+  const { data: drivers } = useDrivers();
   const deleteVehicle = useDeleteVehicle();
-  const { isManager } = useAuth();
+  const assignDriver = useAssignDriverToVehicle();
+  const { isManager, user } = useAuth();
   const { t } = useTranslation();
   const [search, setSearch] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -130,6 +172,14 @@ export default function VehicleListPage() {
     v.manufacturer.includes(search) ||
     v.model.includes(search)
   );
+
+  const handleAssignDriver = (vehicleId: string, driverId: string | null) => {
+    assignDriver.mutate({
+      vehicleId,
+      driverId,
+      assignedBy: user?.id ?? null,
+    });
+  };
 
   return (
     <div className="container py-6 space-y-6">
@@ -185,6 +235,9 @@ export default function VehicleListPage() {
                 vehicle={vehicle} 
                 onDelete={() => setDeleteId(vehicle.id)}
                 canEdit={isManager}
+                drivers={drivers ?? []}
+                onAssignDriver={handleAssignDriver}
+                isAssigning={assignDriver.isPending}
               />
             ))}
           </div>
