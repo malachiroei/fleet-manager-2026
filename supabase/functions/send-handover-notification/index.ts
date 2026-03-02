@@ -35,6 +35,10 @@ function toBase64(bytes: Uint8Array) {
   return btoa(binary);
 }
 
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -70,7 +74,7 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
     let persistedPdfUrl = payload.reportUrl;
-    if (payload.handoverId) {
+    if (payload.handoverId && isUuid(payload.handoverId)) {
       const { data: handoverRow, error: handoverError } = await supabase
         .from('vehicle_handovers')
         .select('pdf_url')
