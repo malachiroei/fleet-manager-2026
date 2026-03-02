@@ -109,26 +109,32 @@ export default function VehicleReturnPage() {
         created_by: user?.id || null,
       });
 
-      const reportUrl = await archiveHandoverSubmission({
-        handoverId: handover.id,
-        handoverType: 'return',
-        vehicleId: selectedVehicle,
-        vehicleLabel: `${selectedVehicleData?.manufacturer ?? ''} ${selectedVehicleData?.model ?? ''} (${selectedVehicleData?.plate_number ?? ''})`.trim(),
-        driverId: selectedDriver,
-        driverLabel: selectedDriverData?.full_name ?? 'לא ידוע',
-        odometerReading: parseInt(odometer),
-        fuelLevel,
-        notes: notes || null,
-        photoUrls: {
-          front: frontUrl,
-          back: backUrl,
-          right: rightUrl,
-          left: leftUrl,
-        },
-        signatureUrl,
-        createdBy: user?.id ?? null,
-        includeDriverArchive: true,
-      });
+      let reportUrl = '';
+      try {
+        reportUrl = await archiveHandoverSubmission({
+          handoverId: handover.id,
+          handoverType: 'return',
+          vehicleId: selectedVehicle,
+          vehicleLabel: `${selectedVehicleData?.manufacturer ?? ''} ${selectedVehicleData?.model ?? ''} (${selectedVehicleData?.plate_number ?? ''})`.trim(),
+          driverId: selectedDriver,
+          driverLabel: selectedDriverData?.full_name ?? 'לא ידוע',
+          odometerReading: parseInt(odometer),
+          fuelLevel,
+          notes: notes || null,
+          photoUrls: {
+            front: frontUrl,
+            back: backUrl,
+            right: rightUrl,
+            left: leftUrl,
+          },
+          signatureUrl,
+          createdBy: user?.id ?? null,
+          includeDriverArchive: true,
+        });
+      } catch (archiveError) {
+        console.error('Archive form copy error:', archiveError);
+        toast.warning('ההחזרה נשמרה, אך שמירת העתק הטופס נכשלה');
+      }
 
       try {
         await sendHandoverNotificationEmail({
@@ -138,7 +144,7 @@ export default function VehicleReturnPage() {
           odometerReading: parseInt(odometer),
           fuelLevel,
           notes: notes || null,
-          reportUrl,
+          reportUrl: reportUrl || 'לא נוצר קישור לטופס',
         });
       } catch (emailError) {
         console.error('Email notification error:', emailError);
@@ -326,7 +332,7 @@ export default function VehicleReturnPage() {
           </Card>
 
           {/* Submit */}
-          <div className="fixed bottom-0 left-0 right-0 p-4 bg-background border-t border-border">
+          <div className="fixed bottom-12 left-0 right-0 p-4 bg-background border-t border-border">
             <div className="container">
               <Button 
                 type="submit" 

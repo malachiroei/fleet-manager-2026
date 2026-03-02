@@ -31,12 +31,33 @@ export function useCreateHandover() {
     mutationFn: async (handover: Omit<VehicleHandover, 'id' | 'created_at' | 'vehicle' | 'driver'>) => {
       const { data, error } = await supabase
         .from('vehicle_handovers')
-        .insert(handover)
+        .insert(handover as any)
         .select()
         .single();
-      
-      if (error) throw error;
-      return data;
+
+      if (!error) {
+        return data;
+      }
+
+      const errorMessage = `${error.message ?? ''} ${error.details ?? ''}`.toLowerCase();
+      const shouldRetryWithoutAssignmentMode =
+        errorMessage.includes('assignment_mode') ||
+        errorMessage.includes('column') ||
+        errorMessage.includes('schema cache');
+
+      if (!shouldRetryWithoutAssignmentMode) {
+        throw error;
+      }
+
+      const { assignment_mode, ...fallbackPayload } = handover as any;
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('vehicle_handovers')
+        .insert(fallbackPayload)
+        .select()
+        .single();
+
+      if (fallbackError) throw fallbackError;
+      return fallbackData;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['handovers'] });

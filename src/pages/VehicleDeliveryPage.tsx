@@ -103,27 +103,33 @@ export default function VehicleDeliveryPage() {
         created_by: user?.id || null,
       });
 
-      const reportUrl = await archiveHandoverSubmission({
-        handoverId: handover.id,
-        handoverType: 'delivery',
-        assignmentMode,
-        vehicleId: selectedVehicle,
-        vehicleLabel: `${selectedVehicleData?.manufacturer ?? ''} ${selectedVehicleData?.model ?? ''} (${selectedVehicleData?.plate_number ?? ''})`.trim(),
-        driverId: selectedDriver,
-        driverLabel: selectedDriverData?.full_name ?? 'לא ידוע',
-        odometerReading: parseInt(odometer),
-        fuelLevel,
-        notes: notes || null,
-        photoUrls: {
-          front: frontUrl,
-          back: backUrl,
-          right: rightUrl,
-          left: leftUrl,
-        },
-        signatureUrl,
-        createdBy: user?.id ?? null,
-        includeDriverArchive: assignmentMode === 'permanent',
-      });
+      let reportUrl = '';
+      try {
+        reportUrl = await archiveHandoverSubmission({
+          handoverId: handover.id,
+          handoverType: 'delivery',
+          assignmentMode,
+          vehicleId: selectedVehicle,
+          vehicleLabel: `${selectedVehicleData?.manufacturer ?? ''} ${selectedVehicleData?.model ?? ''} (${selectedVehicleData?.plate_number ?? ''})`.trim(),
+          driverId: selectedDriver,
+          driverLabel: selectedDriverData?.full_name ?? 'לא ידוע',
+          odometerReading: parseInt(odometer),
+          fuelLevel,
+          notes: notes || null,
+          photoUrls: {
+            front: frontUrl,
+            back: backUrl,
+            right: rightUrl,
+            left: leftUrl,
+          },
+          signatureUrl,
+          createdBy: user?.id ?? null,
+          includeDriverArchive: assignmentMode === 'permanent',
+        });
+      } catch (archiveError) {
+        console.error('Archive form copy error:', archiveError);
+        toast.warning('המסירה נשמרה, אך שמירת העתק הטופס נכשלה');
+      }
 
       try {
         await sendHandoverNotificationEmail({
@@ -134,7 +140,7 @@ export default function VehicleDeliveryPage() {
           odometerReading: parseInt(odometer),
           fuelLevel,
           notes: notes || null,
-          reportUrl,
+          reportUrl: reportUrl || 'לא נוצר קישור לטופס',
         });
       } catch (emailError) {
         console.error('Email notification error:', emailError);
@@ -301,7 +307,7 @@ export default function VehicleDeliveryPage() {
           </Card>
 
           {/* Submit */}
-          <div className="fixed bottom-0 left-0 right-0 p-4 bg-background border-t border-border">
+          <div className="fixed bottom-12 left-0 right-0 p-4 bg-background border-t border-border">
             <div className="container">
               <Button 
                 type="submit" 
