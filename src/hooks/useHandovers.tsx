@@ -34,6 +34,19 @@ function getSupabaseErrorMessage(error: unknown) {
     .join(' | ');
 }
 
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+interface ArchivedHandoverResult {
+  reportUrl: string;
+  handover: {
+    id: string;
+    pdf_url: string;
+    signature_url: string | null;
+  };
+}
+
 export interface HandoverHistoryItem {
   id: string;
   vehicle_id: string;
@@ -210,7 +223,7 @@ interface ArchiveHandoverInput {
   includeDriverArchive: boolean;
 }
 
-export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Promise<string> {
+export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Promise<ArchivedHandoverResult> {
   const timestamp = new Date().toISOString();
   const formCopy = {
     handoverId: input.handoverId,
@@ -334,28 +347,57 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
     }
   }
 
-  const { data: persistedHandover, error: persistedHandoverError } = await supabase
-    .from('vehicle_handovers')
-    .select('pdf_url')
-    .eq('id', input.handoverId)
-    .single();
+  let persistedHandover: { id: string; pdf_url: string | null; signature_url: string | null } | null = null;
+  let lastReadError: unknown = null;
 
-  if (persistedHandoverError) {
-    console.error('[archiveHandoverSubmission] vehicle_handovers readback failed', {
-      stage: 'db.select.vehicle_handovers',
-      handoverId: input.handoverId,
-      error: persistedHandoverError,
-      message: getSupabaseErrorMessage(persistedHandoverError),
-    });
-    throw new Error(`vehicle_handovers readback failed: ${getSupabaseErrorMessage(persistedHandoverError)}`);
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    const { data, error } = await supabase
+      .from('vehicle_handovers')
+      .select('id, pdf_url, signature_url')
+      .eq('id', input.handoverId)
+      .single();
+
+    if (error) {
+      lastReadError = error;
+      console.warn('[archiveHandoverSubmission] vehicle_handovers readback retry', {
+        stage: 'db.select.vehicle_handovers',
+        handoverId: input.handoverId,
+        attempt,
+        message: getSupabaseErrorMessage(error),
+      });
+    } else {
+      persistedHandover = data as { id: string; pdf_url: string | null; signature_url: string | null };
+      if (persistedHandover?.pdf_url) {
+        break;
+      }
+      console.warn('[archiveHandoverSubmission] pdf_url still empty after update', {
+        handoverId: input.handoverId,
+        attempt,
+      });
+    }
+
+    await delay(250 * attempt);
   }
 
-  const persistedPdfUrl = (persistedHandover as { pdf_url?: string | null } | null)?.pdf_url;
-  if (!persistedPdfUrl) {
+  if (!persistedHandover?.pdf_url) {
+    if (lastReadError) {
+      console.error('[archiveHandoverSubmission] vehicle_handovers readback failed after retries', {
+        stage: 'db.select.vehicle_handovers',
+        handoverId: input.handoverId,
+        message: getSupabaseErrorMessage(lastReadError),
+      });
+    }
     throw new Error('PDF copy failed: pdf_url was not persisted on handover record');
   }
 
-  return persistedPdfUrl;
+  return {
+    reportUrl: persistedHandover.pdf_url,
+    handover: {
+      id: persistedHandover.id,
+      pdf_url: persistedHandover.pdf_url,
+      signature_url: persistedHandover.signature_url,
+    },
+  };
 }
 
 interface SendHandoverEmailInput {

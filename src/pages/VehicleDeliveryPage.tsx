@@ -131,7 +131,7 @@ export default function VehicleDeliveryPage() {
 
       let reportUrl = '';
       try {
-        reportUrl = await archiveHandoverSubmission({
+        const archived = await archiveHandoverSubmission({
           handoverId: handover.id,
           handoverType: 'delivery',
           assignmentMode,
@@ -152,6 +152,8 @@ export default function VehicleDeliveryPage() {
           createdBy: user?.id ?? null,
           includeDriverArchive: assignmentMode === 'permanent',
         });
+
+        reportUrl = archived.handover.pdf_url;
       } catch (archiveError) {
         console.error('Archive form copy error:', archiveError);
         const message = archiveError instanceof Error ? archiveError.message : 'שגיאה לא ידועה';
