@@ -39,6 +39,27 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function imageUrlToDataUrl(url: string): Promise<{ dataUrl: string; format: 'PNG' | 'JPEG' } | null> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+
+    const blob = await response.blob();
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+
+    const contentType = blob.type.toLowerCase();
+    const format: 'PNG' | 'JPEG' = contentType.includes('png') ? 'PNG' : 'JPEG';
+    return { dataUrl, format };
+  } catch {
+    return null;
+  }
+}
+
 function arrayBufferToBase64(buffer: ArrayBuffer) {
   let binary = '';
   const bytes = new Uint8Array(buffer);
@@ -54,7 +75,7 @@ function arrayBufferToBase64(buffer: ArrayBuffer) {
 
 let cachedHebrewFontBase64: string | null = null;
 
-async function createPdfBlob(lines: string[]) {
+async function createPdfBlob(lines: string[], photos: Array<{ key: string; url: string | null }>, signatureUrl: string | null) {
   const [{ jsPDF }, fontResponse] = await Promise.all([
     import('jspdf'),
     fetch(hebrewFontUrl),
@@ -81,16 +102,99 @@ async function createPdfBlob(lines: string[]) {
   doc.setR2L(true);
 
   const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
   const rightX = pageWidth - 40;
 
   doc.setFontSize(16);
-  doc.text('טופס מסירה / החזרת רכב', rightX, 56, { align: 'right' });
+  doc.text('טופס מסירה / החזרת רכב', pageWidth / 2, 56, { align: 'center' });
 
   doc.setFontSize(11);
-  let currentY = 92;
+  let currentY = 86;
   for (const line of lines) {
     doc.text(line, rightX, currentY, { align: 'right' });
     currentY += 18;
+  }
+
+  const photoEntries = photos.filter((photo) => !!photo.url) as Array<{ key: string; url: string }>;
+  const photoImages = await Promise.all(
+    photoEntries.map(async (photo) => ({ key: photo.key, image: await imageUrlToDataUrl(photo.url) }))
+  );
+
+  const validPhotoImages = photoImages.filter((photo) => !!photo.image) as Array<{ key: string; image: { dataUrl: string; format: 'PNG' | 'JPEG' } }>;
+  const photoLabels: Record<string, string> = {
+    front: 'קדימה',
+    back: 'אחורה',
+    right: 'ימין',
+    left: 'שמאל',
+  };
+
+  if (validPhotoImages.length > 0) {
+    doc.setFontSize(12);
+    doc.text('תמונות רכב', rightX, currentY + 4, { align: 'right' });
+
+    const gridTop = currentY + 16;
+    const marginX = 40;
+    const gap = 12;
+    const cards = validPhotoImages.slice(0, 4);
+
+    if (cards.length === 1) {
+      const boxWidth = pageWidth - marginX * 2;
+      const boxHeight = 180;
+      const x = marginX;
+      const y = gridTop;
+      const photo = cards[0];
+
+      doc.addImage(photo.image.dataUrl, photo.image.format, x, y, boxWidth, boxHeight, undefined, 'MEDIUM');
+      doc.setFontSize(10);
+      doc.text(photoLabels[photo.key] || photo.key, x + boxWidth - 4, y + boxHeight + 12, { align: 'right' });
+      currentY = y + boxHeight + 18;
+    } else if (cards.length === 2) {
+      const boxWidth = (pageWidth - marginX * 2 - gap) / 2;
+      const boxHeight = 165;
+
+      cards.forEach((photo, index) => {
+        const x = marginX + index * (boxWidth + gap);
+        const y = gridTop;
+        doc.addImage(photo.image.dataUrl, photo.image.format, x, y, boxWidth, boxHeight, undefined, 'MEDIUM');
+        doc.setFontSize(10);
+        doc.text(photoLabels[photo.key] || photo.key, x + boxWidth - 4, y + boxHeight + 12, { align: 'right' });
+      });
+
+      currentY = gridTop + boxHeight + 18;
+    } else {
+      const boxWidth = (pageWidth - marginX * 2 - gap) / 2;
+      const boxHeight = 126;
+
+      cards.forEach((photo, index) => {
+        const row = Math.floor(index / 2);
+        const col = index % 2;
+        const x = marginX + col * (boxWidth + gap);
+        const y = gridTop + row * (boxHeight + 24);
+
+        doc.addImage(photo.image.dataUrl, photo.image.format, x, y, boxWidth, boxHeight, undefined, 'MEDIUM');
+        doc.setFontSize(10);
+        doc.text(photoLabels[photo.key] || photo.key, x + boxWidth - 4, y + boxHeight + 12, { align: 'right' });
+      });
+
+      currentY = gridTop + (cards.length > 2 ? (boxHeight + 24) * 2 : (boxHeight + 24)) + 4;
+    }
+  }
+
+  if (signatureUrl) {
+    const signatureImage = await imageUrlToDataUrl(signatureUrl);
+    if (signatureImage) {
+      const signatureBlockHeight = 96;
+      const signatureY = Math.min(currentY + 4, pageHeight - signatureBlockHeight - 36);
+      doc.setFontSize(12);
+      doc.text('חתימה', rightX, signatureY + 10, { align: 'right' });
+
+      const sigWidth = 220;
+      const sigHeight = 64;
+      const sigX = pageWidth - 40 - sigWidth;
+      const sigY = signatureY + 18;
+      doc.rect(sigX, sigY, sigWidth, sigHeight);
+      doc.addImage(signatureImage.dataUrl, signatureImage.format, sigX + 2, sigY + 2, sigWidth - 4, sigHeight - 4, undefined, 'FAST');
+    }
   }
 
   return doc.output('blob');
@@ -293,7 +397,12 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
     `דלק: ${input.fuelLevel}/8`,
     `הערות: ${input.notes || 'ללא'}`,
     `זמן ביצוע: ${new Date(timestamp).toLocaleString('he-IL')}`,
-  ]);
+  ], [
+    { key: 'front', url: input.photoUrls.front },
+    { key: 'back', url: input.photoUrls.back },
+    { key: 'right', url: input.photoUrls.right },
+    { key: 'left', url: input.photoUrls.left },
+  ], input.signatureUrl);
   const fileName = `handover-forms/${input.vehicleId}/${Date.now()}_${input.handoverType}.pdf`;
 
   const { error: uploadError } = await supabase.storage
