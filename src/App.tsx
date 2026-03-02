@@ -3,6 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import type { ReactNode } from "react";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { AppLayout } from "@/components/AppLayout";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
@@ -29,7 +30,7 @@ import ReportsPage from "./pages/ReportsPage";
 
 const queryClient = new QueryClient();
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
+function ProtectedRoute({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
 
   if (loading) {
@@ -47,7 +48,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <AppLayout>{children}</AppLayout>;
 }
 
-function AuthRoute({ children }: { children: React.ReactNode }) {
+function AuthRoute({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
 
   if (loading) {
@@ -107,6 +108,13 @@ const App = () => (
           {(window.location.hostname === 'manager-2026-test.vercel.app' || window.location.hostname === 'localhost') && (
             <div className="fixed bottom-0 left-0 right-0 bg-red-600 text-white text-center py-2 text-sm font-bold z-[99999] shadow-[0_-2px_10px_rgba(0,0,0,0.3)] tracking-widest">
               גרסה זו היא גרסת טסט (TEST-BRANCH) - נא לא להסתמך על הנתונים
+            </div>
+          )}
+
+          {/* אינדיקטור לגרסת מקור (Production) - דק בתחתית המסך */}
+          {window.location.hostname !== 'manager-2026-test.vercel.app' && window.location.hostname !== 'localhost' && (
+            <div className="fixed bottom-0 left-0 right-0 bg-green-600 text-white text-center py-0.5 text-xs font-semibold z-[99999]">
+              גרסת מקור
             </div>
           )}
         </AuthProvider>
