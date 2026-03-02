@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { VehicleHandover } from '@/types/fleet';
+import hebrewFontUrl from '@/assets/fonts/NotoSansHebrew.ttf?url';
 
 export type AssignmentMode = 'permanent' | 'replacement';
 
@@ -38,40 +39,61 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function escapePdfText(value: string) {
-  return value.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+function arrayBufferToBase64(buffer: ArrayBuffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    const chunk = bytes.subarray(index, index + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+
+  return btoa(binary);
 }
 
-function createPdfBlob(lines: string[]) {
-  const textCommands = lines
-    .map((line, index) => `${index === 0 ? '50 790 Td' : '0 -16 Td'} (${escapePdfText(line)}) Tj`)
-    .join('\n');
+let cachedHebrewFontBase64: string | null = null;
 
-  const contentStream = `BT\n/F1 11 Tf\n${textCommands}\nET`;
-  const objects: string[] = [];
-  objects.push('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
-  objects.push('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n');
-  objects.push('3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>\nendobj\n');
-  objects.push(`4 0 obj\n<< /Length ${contentStream.length} >>\nstream\n${contentStream}\nendstream\nendobj\n`);
-  objects.push('5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n');
+async function createPdfBlob(lines: string[]) {
+  const [{ jsPDF }, fontResponse] = await Promise.all([
+    import('jspdf'),
+    fetch(hebrewFontUrl),
+  ]);
 
-  let pdf = '%PDF-1.4\n';
-  const offsets: number[] = [0];
-
-  for (const object of objects) {
-    offsets.push(pdf.length);
-    pdf += object;
+  if (!fontResponse.ok) {
+    throw new Error(`Failed loading Hebrew font (${fontResponse.status})`);
   }
 
-  const xrefOffset = pdf.length;
-  pdf += `xref\n0 ${objects.length + 1}\n`;
-  pdf += '0000000000 65535 f \n';
-  for (let index = 1; index <= objects.length; index += 1) {
-    pdf += `${offsets[index].toString().padStart(10, '0')} 00000 n \n`;
+  if (!cachedHebrewFontBase64) {
+    cachedHebrewFontBase64 = arrayBufferToBase64(await fontResponse.arrayBuffer());
   }
 
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
-  return new Blob([pdf], { type: 'application/pdf' });
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'pt',
+    format: 'a4',
+    compress: true,
+  });
+
+  doc.addFileToVFS('NotoSansHebrew.ttf', cachedHebrewFontBase64);
+  doc.addFont('NotoSansHebrew.ttf', 'NotoSansHebrew', 'normal');
+  doc.setFont('NotoSansHebrew', 'normal');
+  doc.setR2L(true);
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const rightX = pageWidth - 40;
+
+  doc.setFontSize(16);
+  doc.text('טופס מסירה / החזרת רכב', rightX, 56, { align: 'right' });
+
+  doc.setFontSize(11);
+  let currentY = 92;
+  for (const line of lines) {
+    doc.text(line, rightX, currentY, { align: 'right' });
+    currentY += 18;
+  }
+
+  return doc.output('blob');
 }
 
 interface ArchivedHandoverResult {
@@ -261,17 +283,16 @@ interface ArchiveHandoverInput {
 
 export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Promise<ArchivedHandoverResult> {
   const timestamp = new Date().toISOString();
-  const formBlob = createPdfBlob([
-    'Fleet Manager 2026 - Handover Form',
-    `Handover ID: ${input.handoverId}`,
-    `Type: ${input.handoverType}`,
-    `Mode: ${input.assignmentMode ?? 'permanent'}`,
-    `Vehicle: ${input.vehicleLabel}`,
-    `Driver: ${input.driverLabel}`,
-    `Odometer: ${input.odometerReading}`,
-    `Fuel Level: ${input.fuelLevel}/8`,
-    `Notes: ${input.notes ?? 'None'}`,
-    `Created At: ${timestamp}`,
+  const formBlob = await createPdfBlob([
+    `מספר טופס: ${input.handoverId}`,
+    `סוג טופס: ${input.handoverType === 'delivery' ? 'מסירה' : 'החזרה'}`,
+    `סוג מסירה: ${input.assignmentMode === 'replacement' ? 'חליפי' : 'קבוע'}`,
+    `רכב: ${input.vehicleLabel}`,
+    `נהג: ${input.driverLabel}`,
+    `קילומטראז': ${input.odometerReading.toLocaleString('he-IL')}`,
+    `דלק: ${input.fuelLevel}/8`,
+    `הערות: ${input.notes || 'ללא'}`,
+    `זמן ביצוע: ${new Date(timestamp).toLocaleString('he-IL')}`,
   ]);
   const fileName = `handover-forms/${input.vehicleId}/${Date.now()}_${input.handoverType}.pdf`;
 
