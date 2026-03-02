@@ -2,6 +2,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { VehicleHandover } from '@/types/fleet';
 
+export type AssignmentMode = 'permanent' | 'replacement';
+
 export function useHandovers(vehicleId?: string) {
   return useQuery({
     queryKey: ['handovers', vehicleId],
@@ -41,6 +43,129 @@ export function useCreateHandover() {
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
     }
   });
+}
+
+interface ArchiveHandoverInput {
+  handoverId: string;
+  handoverType: 'delivery' | 'return';
+  assignmentMode?: AssignmentMode;
+  vehicleId: string;
+  vehicleLabel: string;
+  driverId: string | null;
+  driverLabel: string;
+  odometerReading: number;
+  fuelLevel: number;
+  notes: string | null;
+  photoUrls: {
+    front: string | null;
+    back: string | null;
+    right: string | null;
+    left: string | null;
+  };
+  signatureUrl: string | null;
+  createdBy: string | null;
+  includeDriverArchive: boolean;
+}
+
+export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Promise<string> {
+  const timestamp = new Date().toISOString();
+  const formCopy = {
+    handoverId: input.handoverId,
+    handoverType: input.handoverType,
+    assignmentMode: input.assignmentMode ?? 'permanent',
+    timestamp,
+    vehicle: {
+      id: input.vehicleId,
+      label: input.vehicleLabel,
+    },
+    driver: {
+      id: input.driverId,
+      label: input.driverLabel,
+    },
+    odometerReading: input.odometerReading,
+    fuelLevel: input.fuelLevel,
+    notes: input.notes,
+    photos: input.photoUrls,
+    signatureUrl: input.signatureUrl,
+    createdBy: input.createdBy,
+  };
+
+  const formBlob = new Blob([JSON.stringify(formCopy, null, 2)], { type: 'application/json' });
+  const fileName = `handover-forms/${input.vehicleId}/${Date.now()}_${input.handoverType}.json`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('fleet-documents')
+    .upload(fileName, formBlob, {
+      contentType: 'application/json',
+      upsert: true,
+    });
+
+  if (uploadError) throw uploadError;
+
+  const { data: publicData } = supabase.storage
+    .from('fleet-documents')
+    .getPublicUrl(fileName);
+
+  const reportUrl = publicData.publicUrl;
+
+  const { error: vehicleDocError } = await supabase
+    .from('vehicle_documents' as any)
+    .insert({
+      vehicle_id: input.vehicleId,
+      title: `טופס ${input.handoverType === 'delivery' ? 'מסירה' : 'החזרה'} - ${new Date().toLocaleDateString('he-IL')}`,
+      file_url: reportUrl,
+      handover_id: input.handoverId,
+      document_type: input.handoverType,
+      metadata: {
+        assignmentMode: input.assignmentMode ?? 'permanent',
+        photoUrls: input.photoUrls,
+        signatureUrl: input.signatureUrl,
+      },
+    });
+
+  if (vehicleDocError) throw vehicleDocError;
+
+  if (input.includeDriverArchive && input.driverId) {
+    const { error: driverDocError } = await supabase
+      .from('driver_documents')
+      .insert({
+        driver_id: input.driverId,
+        title: `טופס ${input.handoverType === 'delivery' ? 'מסירה' : 'החזרה'} - ${new Date().toLocaleDateString('he-IL')}`,
+        file_url: reportUrl,
+      });
+
+    if (driverDocError) throw driverDocError;
+  }
+
+  return reportUrl;
+}
+
+interface SendHandoverEmailInput {
+  handoverType: 'delivery' | 'return';
+  assignmentMode?: AssignmentMode;
+  vehicleLabel: string;
+  driverLabel: string;
+  odometerReading: number;
+  fuelLevel: number;
+  notes: string | null;
+  reportUrl: string;
+}
+
+export async function sendHandoverNotificationEmail(input: SendHandoverEmailInput) {
+  const toEmail = localStorage.getItem('handover_notification_email') || 'malachiroei@gmail.com';
+
+  const { error } = await supabase.functions.invoke('send-handover-notification', {
+    body: {
+      to: toEmail,
+      subject: `${input.handoverType === 'delivery' ? 'מסירת רכב' : 'החזרת רכב'} - ${input.vehicleLabel}`,
+      payload: {
+        ...input,
+        sentAt: new Date().toISOString(),
+      },
+    },
+  });
+
+  if (error) throw error;
 }
 
 export function useLatestHandover(vehicleId: string) {
@@ -83,7 +208,7 @@ export async function uploadHandoverPhoto(
   if (error) throw error;
   
   const { data } = supabase.storage
-    .from('handover-photos')
+    .from('fleet-documents')
     .getPublicUrl(fileName);
   
   return data.publicUrl;
@@ -156,7 +281,7 @@ export async function uploadSignature(
   if (error) throw error;
   
   const { data } = supabase.storage
-    .from('handover-photos')
+    .from('fleet-documents')
     .getPublicUrl(fileName);
   
   return data.publicUrl;

@@ -1,18 +1,34 @@
+ import { useState } from 'react';
  import { Link } from 'react-router-dom';
  import { Button } from '@/components/ui/button';
  import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import PricingDataUploader from '@/components/PricingDataUploader';
 import FleetDataImporter from '@/components/FleetDataImporter';
 import { ArrowRight, Settings, Shield } from 'lucide-react';
+import { toast } from 'sonner';
  
 export default function AdminSettingsPage() {
     const lastPricingUpload = localStorage.getItem('last_pricing_upload');
     const lastVehicleUpload = localStorage.getItem('last_vehicle_upload');
     const lastDriverUpload = localStorage.getItem('last_driver_upload');
+    const [notificationEmail, setNotificationEmail] = useState(
+      localStorage.getItem('handover_notification_email') || 'malachiroei@gmail.com'
+    );
 
     const formatDate = (iso: string | null) => {
       if (!iso) return 'לא בוצעה';
       return new Date(iso).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    };
+
+    const saveNotificationEmail = () => {
+      if (!notificationEmail.trim() || !notificationEmail.includes('@')) {
+        toast.error('נא להזין כתובת מייל תקינה');
+        return;
+      }
+
+      localStorage.setItem('handover_notification_email', notificationEmail.trim());
+      toast.success('מייל ההתראות נשמר בהצלחה');
     };
  
    return (
@@ -39,6 +55,26 @@ export default function AdminSettingsPage() {
 
           {/* Fleet Data Importer */}
           <FleetDataImporter />
+
+          {/* Notification Settings */}
+          <Card>
+            <CardHeader>
+              <CardTitle>הגדרת מייל לעדכוני מסירה/החזרה</CardTitle>
+              <CardDescription>
+                לכל שליחת טופס מסירה או החזרה יישלח עדכון למייל זה
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Input
+                type="email"
+                value={notificationEmail}
+                onChange={(e) => setNotificationEmail(e.target.value)}
+                placeholder="example@mail.com"
+                dir="ltr"
+              />
+              <Button onClick={saveNotificationEmail}>שמור מייל התראות</Button>
+            </CardContent>
+          </Card>
 
           {/* System Info */}
           <Card>

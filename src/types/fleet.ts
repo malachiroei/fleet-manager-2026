@@ -1,6 +1,7 @@
 export type ComplianceStatus = 'valid' | 'warning' | 'expired';
 export type AppRole = 'admin' | 'fleet_manager' | 'viewer' | 'driver';
 export type HandoverType = 'delivery' | 'return';
+export type AssignmentMode = 'permanent' | 'replacement';
 
 export interface Profile {
   id: string;
@@ -183,6 +184,7 @@ export interface VehicleHandover {
   vehicle_id: string;
   driver_id: string | null;
   handover_type: HandoverType;
+  assignment_mode?: AssignmentMode;
   handover_date: string;
   odometer_reading: number;
   fuel_level: number;

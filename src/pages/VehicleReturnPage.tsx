@@ -1,8 +1,15 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useVehicles } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
-import { useCreateHandover, useLatestHandover, uploadHandoverPhoto, uploadSignature } from '@/hooks/useHandovers';
+import {
+  useCreateHandover,
+  useLatestHandover,
+  uploadHandoverPhoto,
+  uploadSignature,
+  archiveHandoverSubmission,
+  sendHandoverNotificationEmail,
+} from '@/hooks/useHandovers';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,6 +48,7 @@ export default function VehicleReturnPage() {
 
   const { data: lastHandover } = useLatestHandover(selectedVehicle);
   const selectedVehicleData = vehicles?.find(v => v.id === selectedVehicle);
+  const selectedDriverData = drivers?.find(d => d.id === selectedDriver);
   const allPhotosUploaded = photoFront && photoBack && photoRight && photoLeft;
 
   // Calculate differences from delivery
@@ -85,7 +93,7 @@ export default function VehicleReturnPage() {
         : null;
 
       // Create handover record
-      await createHandover.mutateAsync({
+      const handover = await createHandover.mutateAsync({
         vehicle_id: selectedVehicle,
         driver_id: selectedDriver,
         handover_type: 'return',
@@ -100,6 +108,42 @@ export default function VehicleReturnPage() {
         notes: notes || null,
         created_by: user?.id || null,
       });
+
+      const reportUrl = await archiveHandoverSubmission({
+        handoverId: handover.id,
+        handoverType: 'return',
+        vehicleId: selectedVehicle,
+        vehicleLabel: `${selectedVehicleData?.manufacturer ?? ''} ${selectedVehicleData?.model ?? ''} (${selectedVehicleData?.plate_number ?? ''})`.trim(),
+        driverId: selectedDriver,
+        driverLabel: selectedDriverData?.full_name ?? 'לא ידוע',
+        odometerReading: parseInt(odometer),
+        fuelLevel,
+        notes: notes || null,
+        photoUrls: {
+          front: frontUrl,
+          back: backUrl,
+          right: rightUrl,
+          left: leftUrl,
+        },
+        signatureUrl,
+        createdBy: user?.id ?? null,
+        includeDriverArchive: true,
+      });
+
+      try {
+        await sendHandoverNotificationEmail({
+          handoverType: 'return',
+          vehicleLabel: `${selectedVehicleData?.manufacturer ?? ''} ${selectedVehicleData?.model ?? ''} (${selectedVehicleData?.plate_number ?? ''})`.trim(),
+          driverLabel: selectedDriverData?.full_name ?? 'לא ידוע',
+          odometerReading: parseInt(odometer),
+          fuelLevel,
+          notes: notes || null,
+          reportUrl,
+        });
+      } catch (emailError) {
+        console.error('Email notification error:', emailError);
+        toast.warning('הטופס נשמר, אך שליחת המייל נכשלה');
+      }
 
       toast.success('החזרת רכב נרשמה בהצלחה');
       navigate('/');
@@ -143,9 +187,9 @@ export default function VehicleReturnPage() {
                   <SelectTrigger>
                     <SelectValue placeholder="בחר רכב מהרשימה" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="z-[100000] max-h-72 bg-card border border-border shadow-xl">
                     {vehicles?.map(v => (
-                      <SelectItem key={v.id} value={v.id}>
+                      <SelectItem key={v.id} value={v.id} className="py-2 leading-snug">
                         {v.manufacturer} {v.model} ({v.plate_number})
                       </SelectItem>
                     ))}
@@ -159,9 +203,9 @@ export default function VehicleReturnPage() {
                   <SelectTrigger>
                     <SelectValue placeholder="בחר נהג מהרשימה" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="z-[100000] max-h-72 bg-card border border-border shadow-xl">
                     {drivers?.map(d => (
-                      <SelectItem key={d.id} value={d.id}>
+                      <SelectItem key={d.id} value={d.id} className="py-2 leading-snug">
                         {d.full_name}
                       </SelectItem>
                     ))}

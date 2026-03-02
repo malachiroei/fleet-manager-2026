@@ -2,7 +2,14 @@ import { useState, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useVehicles } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
-import { useCreateHandover, uploadHandoverPhoto, uploadSignature } from '@/hooks/useHandovers';
+import {
+  useCreateHandover,
+  uploadHandoverPhoto,
+  uploadSignature,
+  archiveHandoverSubmission,
+  sendHandoverNotificationEmail,
+  type AssignmentMode,
+} from '@/hooks/useHandovers';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,6 +34,7 @@ export default function VehicleDeliveryPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState('');
   const [selectedDriver, setSelectedDriver] = useState('');
+  const [assignmentMode, setAssignmentMode] = useState<AssignmentMode>('permanent');
   const [odometer, setOdometer] = useState('');
   const [fuelLevel, setFuelLevel] = useState(4);
   const [notes, setNotes] = useState('');
@@ -39,6 +47,7 @@ export default function VehicleDeliveryPage() {
   const [photoLeft, setPhotoLeft] = useState<File | null>(null);
 
   const selectedVehicleData = vehicles?.find(v => v.id === selectedVehicle);
+  const selectedDriverData = drivers?.find(d => d.id === selectedDriver);
   const allPhotosUploaded = photoFront && photoBack && photoRight && photoLeft;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -77,10 +86,11 @@ export default function VehicleDeliveryPage() {
         : null;
 
       // Create handover record
-      await createHandover.mutateAsync({
+      const handover = await createHandover.mutateAsync({
         vehicle_id: selectedVehicle,
         driver_id: selectedDriver,
         handover_type: 'delivery',
+        assignment_mode: assignmentMode as any,
         handover_date: new Date().toISOString(),
         odometer_reading: parseInt(odometer),
         fuel_level: fuelLevel,
@@ -92,6 +102,44 @@ export default function VehicleDeliveryPage() {
         notes: notes || null,
         created_by: user?.id || null,
       });
+
+      const reportUrl = await archiveHandoverSubmission({
+        handoverId: handover.id,
+        handoverType: 'delivery',
+        assignmentMode,
+        vehicleId: selectedVehicle,
+        vehicleLabel: `${selectedVehicleData?.manufacturer ?? ''} ${selectedVehicleData?.model ?? ''} (${selectedVehicleData?.plate_number ?? ''})`.trim(),
+        driverId: selectedDriver,
+        driverLabel: selectedDriverData?.full_name ?? 'לא ידוע',
+        odometerReading: parseInt(odometer),
+        fuelLevel,
+        notes: notes || null,
+        photoUrls: {
+          front: frontUrl,
+          back: backUrl,
+          right: rightUrl,
+          left: leftUrl,
+        },
+        signatureUrl,
+        createdBy: user?.id ?? null,
+        includeDriverArchive: assignmentMode === 'permanent',
+      });
+
+      try {
+        await sendHandoverNotificationEmail({
+          handoverType: 'delivery',
+          assignmentMode,
+          vehicleLabel: `${selectedVehicleData?.manufacturer ?? ''} ${selectedVehicleData?.model ?? ''} (${selectedVehicleData?.plate_number ?? ''})`.trim(),
+          driverLabel: selectedDriverData?.full_name ?? 'לא ידוע',
+          odometerReading: parseInt(odometer),
+          fuelLevel,
+          notes: notes || null,
+          reportUrl,
+        });
+      } catch (emailError) {
+        console.error('Email notification error:', emailError);
+        toast.warning('הטופס נשמר, אך שליחת המייל נכשלה');
+      }
 
       toast.success('מסירת רכב נרשמה בהצלחה');
       navigate('/');
@@ -135,12 +183,25 @@ export default function VehicleDeliveryPage() {
                   <SelectTrigger>
                     <SelectValue placeholder="בחר רכב מהרשימה" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="z-[100000] max-h-72 bg-card border border-border shadow-xl">
                     {vehicles?.map(v => (
-                      <SelectItem key={v.id} value={v.id}>
+                      <SelectItem key={v.id} value={v.id} className="py-2 leading-snug">
                         {v.manufacturer} {v.model} ({v.plate_number})
                       </SelectItem>
                     ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label>סוג מסירה *</Label>
+                <Select value={assignmentMode} onValueChange={(value) => setAssignmentMode(value as AssignmentMode)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="בחר סוג מסירה" />
+                  </SelectTrigger>
+                  <SelectContent className="z-[100000] bg-card border border-border shadow-xl">
+                    <SelectItem value="permanent">מסירה קבועה (משייכת נהג לרכב)</SelectItem>
+                    <SelectItem value="replacement">מסירת רכב חליפי (ללא שיוך קבוע)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -151,9 +212,9 @@ export default function VehicleDeliveryPage() {
                   <SelectTrigger>
                     <SelectValue placeholder="בחר נהג מהרשימה" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="z-[100000] max-h-72 bg-card border border-border shadow-xl">
                     {drivers?.map(d => (
-                      <SelectItem key={d.id} value={d.id}>
+                      <SelectItem key={d.id} value={d.id} className="py-2 leading-snug">
                         {d.full_name}
                       </SelectItem>
                     ))}
