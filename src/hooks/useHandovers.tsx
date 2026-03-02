@@ -5,6 +5,8 @@ import type { VehicleHandover } from '@/types/fleet';
 export type AssignmentMode = 'permanent' | 'replacement';
 
 const APP_BASE_URL = 'https://fleet-manager-2026.vercel.app';
+const HANDOVER_PHOTOS_BUCKET = 'handover-photos';
+const HANDOVER_ARCHIVE_BUCKET = 'vehicle-documents';
 
 export interface HandoverHistoryItem {
   id: string;
@@ -79,6 +81,7 @@ export function useCreateHandover() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['handovers'] });
+      queryClient.invalidateQueries({ queryKey: ['handover-history'] });
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
     }
   });
@@ -90,11 +93,14 @@ export function useHandoverHistory() {
     queryFn: async () => {
       const { data: handoversData, error: handoversError } = await supabase
         .from('vehicle_handovers')
-        .select('id, vehicle_id, driver_id, handover_type, handover_date, photo_front_url, photo_back_url, photo_right_url, photo_left_url, driver:drivers(full_name), vehicle:vehicles(manufacturer, model, plate_number)')
+        .select('id, vehicle_id, driver_id, handover_type, handover_date, pdf_url, photo_front_url, photo_back_url, photo_right_url, photo_left_url, driver:drivers(full_name), vehicle:vehicles(manufacturer, model, plate_number)')
         .order('handover_date', { ascending: false })
         .limit(300);
 
-      if (handoversError) throw handoversError;
+      if (handoversError) {
+        console.warn('Handover history query failed:', handoversError.message);
+        return [] as HandoverHistoryItem[];
+      }
 
       const handovers = (handoversData ?? []) as any[];
       const handoverIds = handovers.map((handover) => handover.id);
@@ -108,13 +114,15 @@ export function useHandoverHistory() {
           .in('handover_id', handoverIds)
           .order('created_at', { ascending: false });
 
-        if (docsError) throw docsError;
-
-        docsByHandover = new Map(
-          ((docsData as any[]) ?? [])
-            .filter((doc) => !!doc.handover_id)
-            .map((doc) => [doc.handover_id as string, doc])
-        );
+        if (docsError) {
+          console.warn('Vehicle documents query failed:', docsError.message);
+        } else {
+          docsByHandover = new Map(
+            ((docsData as any[]) ?? [])
+              .filter((doc) => !!doc.handover_id)
+              .map((doc) => [doc.handover_id as string, doc])
+          );
+        }
       }
 
       return handovers.map((handover): HandoverHistoryItem => {
@@ -146,7 +154,7 @@ export function useHandoverHistory() {
           handover_date: handover.handover_date,
           driver_label: driverLabel,
           vehicle_label: vehicleLabel,
-          form_url: doc?.file_url ?? null,
+          form_url: doc?.file_url ?? handover.pdf_url ?? null,
           photo_urls: Array.from(new Set([...metadataPhotoUrls, ...rowPhotoUrls])),
         };
       });
@@ -203,7 +211,7 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
   const fileName = `handover-forms/${input.vehicleId}/${Date.now()}_${input.handoverType}.json`;
 
   const { error: uploadError } = await supabase.storage
-    .from('fleet-documents')
+    .from(HANDOVER_ARCHIVE_BUCKET)
     .upload(fileName, formBlob, {
       contentType: 'application/json',
       upsert: true,
@@ -212,10 +220,14 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
   if (uploadError) throw uploadError;
 
   const { data: publicData } = supabase.storage
-    .from('fleet-documents')
+    .from(HANDOVER_ARCHIVE_BUCKET)
     .getPublicUrl(fileName);
 
   const reportUrl = publicData.publicUrl;
+
+  if (!reportUrl) {
+    throw new Error('Failed to create handover form URL');
+  }
 
   const { error: vehicleDocError } = await supabase
     .from('vehicle_documents' as any)
@@ -233,6 +245,18 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
     });
 
   if (vehicleDocError) throw vehicleDocError;
+
+  const { error: handoverUpdateError } = await supabase
+    .from('vehicle_handovers')
+    .update({
+      pdf_url: reportUrl,
+      signature_url: input.signatureUrl,
+    } as any)
+    .eq('id', input.handoverId);
+
+  if (handoverUpdateError) {
+    console.warn('Failed to update handover pdf/signature URLs:', handoverUpdateError.message);
+  }
 
   if (input.includeDriverArchive && input.driverId) {
     const { error: driverDocError } = await supabase
@@ -311,7 +335,7 @@ export async function uploadHandoverPhoto(
   const fileName = `${vehicleId}/${Date.now()}_${photoType}.jpg`;
   
   const { error } = await supabase.storage
-    .from('fleet-documents')
+    .from(HANDOVER_PHOTOS_BUCKET)
     .upload(fileName, compressedFile, {
       contentType: 'image/jpeg',
       upsert: true
@@ -320,7 +344,7 @@ export async function uploadHandoverPhoto(
   if (error) throw error;
   
   const { data } = supabase.storage
-    .from('fleet-documents')
+    .from(HANDOVER_PHOTOS_BUCKET)
     .getPublicUrl(fileName);
   
   return data.publicUrl;
@@ -384,7 +408,7 @@ export async function uploadSignature(
   const fileName = `${vehicleId}/${Date.now()}_signature_${handoverType}.png`;
   
   const { error } = await supabase.storage
-    .from('fleet-documents')
+    .from(HANDOVER_PHOTOS_BUCKET)
     .upload(fileName, blob, {
       contentType: 'image/png',
       upsert: true
@@ -393,7 +417,7 @@ export async function uploadSignature(
   if (error) throw error;
   
   const { data } = supabase.storage
-    .from('fleet-documents')
+    .from(HANDOVER_PHOTOS_BUCKET)
     .getPublicUrl(fileName);
   
   return data.publicUrl;

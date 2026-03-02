@@ -63,7 +63,7 @@ function StatusBadge({ status }: { status: ComplianceStatus }) {
   return <Badge className={className}>{label}</Badge>;
 }
 
-function DriverCard({ driver, onDelete, canEdit, vehicles, onAssignVehicle, isAssigning }: {
+function DriverCard({ driver, onDelete, canEdit, vehicles, onAssignVehicle, isAssigning, handoverHistory }: {
   driver: DriverSummary;
   onDelete: () => void;
   canEdit: boolean;
