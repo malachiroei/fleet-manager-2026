@@ -158,7 +158,7 @@ function VehicleCard({ vehicle, onDelete, canEdit, drivers, onAssignDriver, isAs
                 return (
                   <div key={handover.id} className="rounded-md border border-border p-2.5">
                     <div className="flex items-center justify-between gap-2 text-xs">
-                      <span className="text-muted-foreground">{new Date(handover.handover_date).toLocaleDateString('he-IL')}</span>
+                      <span className="text-muted-foreground">{new Date(handover.handover_date).toLocaleDateString('he-IL')} {new Date(handover.handover_date).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</span>
                       <span>{handover.driver_label}</span>
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2">

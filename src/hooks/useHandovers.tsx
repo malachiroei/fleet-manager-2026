@@ -38,6 +38,42 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function escapePdfText(value: string) {
+  return value.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+}
+
+function createPdfBlob(lines: string[]) {
+  const textCommands = lines
+    .map((line, index) => `${index === 0 ? '50 790 Td' : '0 -16 Td'} (${escapePdfText(line)}) Tj`)
+    .join('\n');
+
+  const contentStream = `BT\n/F1 11 Tf\n${textCommands}\nET`;
+  const objects: string[] = [];
+  objects.push('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+  objects.push('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n');
+  objects.push('3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>\nendobj\n');
+  objects.push(`4 0 obj\n<< /Length ${contentStream.length} >>\nstream\n${contentStream}\nendstream\nendobj\n`);
+  objects.push('5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n');
+
+  let pdf = '%PDF-1.4\n';
+  const offsets: number[] = [0];
+
+  for (const object of objects) {
+    offsets.push(pdf.length);
+    pdf += object;
+  }
+
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n`;
+  pdf += '0000000000 65535 f \n';
+  for (let index = 1; index <= objects.length; index += 1) {
+    pdf += `${offsets[index].toString().padStart(10, '0')} 00000 n \n`;
+  }
+
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  return new Blob([pdf], { type: 'application/pdf' });
+}
+
 interface ArchivedHandoverResult {
   reportUrl: string;
   handover: {
@@ -225,34 +261,24 @@ interface ArchiveHandoverInput {
 
 export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Promise<ArchivedHandoverResult> {
   const timestamp = new Date().toISOString();
-  const formCopy = {
-    handoverId: input.handoverId,
-    handoverType: input.handoverType,
-    assignmentMode: input.assignmentMode ?? 'permanent',
-    timestamp,
-    vehicle: {
-      id: input.vehicleId,
-      label: input.vehicleLabel,
-    },
-    driver: {
-      id: input.driverId,
-      label: input.driverLabel,
-    },
-    odometerReading: input.odometerReading,
-    fuelLevel: input.fuelLevel,
-    notes: input.notes,
-    photos: input.photoUrls,
-    signatureUrl: input.signatureUrl,
-    createdBy: input.createdBy,
-  };
-
-  const formBlob = new Blob([JSON.stringify(formCopy, null, 2)], { type: 'application/json' });
-  const fileName = `handover-forms/${input.vehicleId}/${Date.now()}_${input.handoverType}.json`;
+  const formBlob = createPdfBlob([
+    'Fleet Manager 2026 - Handover Form',
+    `Handover ID: ${input.handoverId}`,
+    `Type: ${input.handoverType}`,
+    `Mode: ${input.assignmentMode ?? 'permanent'}`,
+    `Vehicle: ${input.vehicleLabel}`,
+    `Driver: ${input.driverLabel}`,
+    `Odometer: ${input.odometerReading}`,
+    `Fuel Level: ${input.fuelLevel}/8`,
+    `Notes: ${input.notes ?? 'None'}`,
+    `Created At: ${timestamp}`,
+  ]);
+  const fileName = `handover-forms/${input.vehicleId}/${Date.now()}_${input.handoverType}.pdf`;
 
   const { error: uploadError } = await supabase.storage
     .from(HANDOVER_ARCHIVE_BUCKET)
     .upload(fileName, formBlob, {
-      contentType: 'application/json',
+      contentType: 'application/pdf',
       upsert: true,
     });
 

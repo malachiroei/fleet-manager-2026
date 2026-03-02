@@ -39,6 +39,10 @@ function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -107,10 +111,23 @@ serve(async (req) => {
       );
     }
 
+    await delay(2000);
+
     const pdfResponse = await fetch(persistedPdfUrl);
     if (!pdfResponse.ok) {
       return new Response(
         JSON.stringify({ error: `PDF copy failed: unable to fetch file from storage (${pdfResponse.status})` }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    const contentType = pdfResponse.headers.get('content-type') || '';
+    if (!contentType.toLowerCase().includes('application/pdf')) {
+      return new Response(
+        JSON.stringify({ error: `PDF copy failed: unexpected content-type (${contentType || 'unknown'})` }),
         {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
