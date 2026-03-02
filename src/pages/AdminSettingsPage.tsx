@@ -3,6 +3,7 @@
  import { Button } from '@/components/ui/button';
  import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { supabase } from '@/integrations/supabase/client';
 import PricingDataUploader from '@/components/PricingDataUploader';
 import FleetDataImporter from '@/components/FleetDataImporter';
 import { ArrowRight, Settings, Shield } from 'lucide-react';
@@ -15,6 +16,7 @@ export default function AdminSettingsPage() {
     const [notificationEmail, setNotificationEmail] = useState(
       localStorage.getItem('handover_notification_email') || 'malachiroei@gmail.com'
     );
+    const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
 
     const formatDate = (iso: string | null) => {
       if (!iso) return 'לא בוצעה';
@@ -29,6 +31,47 @@ export default function AdminSettingsPage() {
 
       localStorage.setItem('handover_notification_email', notificationEmail.trim());
       toast.success('מייל ההתראות נשמר בהצלחה');
+    };
+
+    const sendTestEmail = async () => {
+      if (!notificationEmail.trim() || !notificationEmail.includes('@')) {
+        toast.error('נא להזין כתובת מייל תקינה לפני בדיקה');
+        return;
+      }
+
+      setIsSendingTestEmail(true);
+      try {
+        localStorage.setItem('handover_notification_email', notificationEmail.trim());
+
+        const { error } = await supabase.functions.invoke('send-handover-notification', {
+          body: {
+            to: notificationEmail.trim(),
+            subject: 'בדיקת מייל - Fleet Manager 2026',
+            payload: {
+              handoverType: 'delivery',
+              assignmentMode: 'permanent',
+              vehicleLabel: 'בדיקת מערכת',
+              driverLabel: 'בדיקת מערכת',
+              odometerReading: 12345,
+              fuelLevel: 4,
+              notes: 'מייל בדיקה ממסך הגדרות',
+              reportUrl: window.location.origin,
+              sentAt: new Date().toISOString(),
+            },
+          },
+        });
+
+        if (error) {
+          throw error;
+        }
+
+        toast.success('מייל בדיקה נשלח בהצלחה');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'שגיאה לא ידועה';
+        toast.error(`שליחת מייל בדיקה נכשלה: ${message}`);
+      } finally {
+        setIsSendingTestEmail(false);
+      }
     };
  
    return (
@@ -72,7 +115,12 @@ export default function AdminSettingsPage() {
                 placeholder="example@mail.com"
                 dir="ltr"
               />
-              <Button onClick={saveNotificationEmail}>שמור מייל התראות</Button>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={saveNotificationEmail}>שמור מייל התראות</Button>
+                <Button variant="outline" onClick={sendTestEmail} disabled={isSendingTestEmail}>
+                  {isSendingTestEmail ? 'שולח...' : 'שלח מייל בדיקה'}
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
