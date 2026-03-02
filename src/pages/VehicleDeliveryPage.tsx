@@ -23,6 +23,17 @@ import PhotoUpload from '@/components/PhotoUpload';
 import { ArrowRight, Loader2, Truck, Camera } from 'lucide-react';
 import { toast } from 'sonner';
 
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message.length > 0) {
+      return message;
+    }
+  }
+  return 'שגיאה לא ידועה';
+}
+
 export default function VehicleDeliveryPage() {
   const navigate = useNavigate();
   const { data: vehicles } = useVehicles();
@@ -72,18 +83,33 @@ export default function VehicleDeliveryPage() {
 
     try {
       // Upload photos
-      const [frontUrl, backUrl, rightUrl, leftUrl] = await Promise.all([
+      const photoResults = await Promise.allSettled([
         uploadHandoverPhoto(photoFront, selectedVehicle, 'front'),
         uploadHandoverPhoto(photoBack, selectedVehicle, 'back'),
         uploadHandoverPhoto(photoRight, selectedVehicle, 'right'),
         uploadHandoverPhoto(photoLeft, selectedVehicle, 'left'),
       ]);
 
+      const frontUrl = photoResults[0].status === 'fulfilled' ? photoResults[0].value : null;
+      const backUrl = photoResults[1].status === 'fulfilled' ? photoResults[1].value : null;
+      const rightUrl = photoResults[2].status === 'fulfilled' ? photoResults[2].value : null;
+      const leftUrl = photoResults[3].status === 'fulfilled' ? photoResults[3].value : null;
+
+      if (photoResults.some((result) => result.status === 'rejected')) {
+        toast.warning('המסירה תירשם, אך חלק מהתמונות לא נשמרו בשרת');
+      }
+
       // Upload signature
       const signatureDataUrl = signatureRef.current?.getDataUrl();
-      const signatureUrl = signatureDataUrl 
-        ? await uploadSignature(signatureDataUrl, selectedVehicle, 'delivery')
-        : null;
+      let signatureUrl: string | null = null;
+      if (signatureDataUrl) {
+        try {
+          signatureUrl = await uploadSignature(signatureDataUrl, selectedVehicle, 'delivery');
+        } catch (signatureError) {
+          console.error('Signature upload error:', signatureError);
+          toast.warning('המסירה תירשם, אך החתימה לא נשמרה בשרת');
+        }
+      }
 
       // Create handover record
       const handover = await createHandover.mutateAsync({
@@ -151,7 +177,7 @@ export default function VehicleDeliveryPage() {
       navigate('/');
     } catch (error) {
       console.error('Error creating handover:', error);
-      toast.error('שגיאה ברישום מסירת הרכב');
+      toast.error(`שגיאה ברישום מסירת הרכב: ${getErrorMessage(error)}`);
     } finally {
       setIsSubmitting(false);
     }
