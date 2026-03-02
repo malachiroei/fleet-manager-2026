@@ -73,8 +73,8 @@ export default function AdminSettingsPage() {
         if (error instanceof FunctionsHttpError) {
           try {
             const response = error.context;
-            const data = await response.json() as { error?: string };
-            message = data?.error || `HTTP ${response.status}`;
+            const data = await response.json() as { error?: string; message?: string; details?: string };
+            message = data?.error || data?.message || data?.details || `HTTP ${response.status}`;
           } catch {
             message = error.message;
           }
