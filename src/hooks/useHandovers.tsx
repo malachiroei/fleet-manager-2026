@@ -308,13 +308,15 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
     throw new Error(`vehicle_documents insert failed: ${getSupabaseErrorMessage(vehicleDocError)}`);
   }
 
-  const { error: handoverUpdateError } = await supabase
+  const { data: updatedHandover, error: handoverUpdateError } = await supabase
     .from('vehicle_handovers')
     .update({
       pdf_url: reportUrl,
       signature_url: input.signatureUrl,
     } as any)
-    .eq('id', input.handoverId);
+    .eq('id', input.handoverId)
+    .select('id, pdf_url, signature_url')
+    .single();
 
   if (handoverUpdateError) {
     console.error('[archiveHandoverSubmission] vehicle_handovers update failed', {
@@ -347,10 +349,11 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
     }
   }
 
-  let persistedHandover: { id: string; pdf_url: string | null; signature_url: string | null } | null = null;
+  let persistedHandover: { id: string; pdf_url: string | null; signature_url: string | null } | null =
+    (updatedHandover as { id: string; pdf_url: string | null; signature_url: string | null } | null) ?? null;
   let lastReadError: unknown = null;
 
-  for (let attempt = 1; attempt <= 5; attempt += 1) {
+  for (let attempt = 1; attempt <= 5 && !persistedHandover?.pdf_url; attempt += 1) {
     const { data, error } = await supabase
       .from('vehicle_handovers')
       .select('id, pdf_url, signature_url')

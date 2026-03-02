@@ -153,6 +153,8 @@ export default function VehicleDeliveryPage() {
           includeDriverArchive: assignmentMode === 'permanent',
         });
 
+        const data = archived.handover;
+        console.log('Persisted PDF URL:', data.pdf_url);
         reportUrl = archived.handover.pdf_url;
       } catch (archiveError) {
         console.error('Archive form copy error:', archiveError);
