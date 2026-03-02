@@ -49,6 +49,8 @@ export default function AdminSettingsPage() {
             to: notificationEmail.trim(),
             subject: 'בדיקת מייל - Fleet Manager 2026',
             payload: {
+              handoverId: 'test-handover',
+              vehicleId: 'test-vehicle',
               handoverType: 'delivery',
               assignmentMode: 'permanent',
               vehicleLabel: 'בדיקת מערכת',

@@ -4,6 +4,24 @@ import type { VehicleHandover } from '@/types/fleet';
 
 export type AssignmentMode = 'permanent' | 'replacement';
 
+const APP_BASE_URL = 'https://fleet-manager-2026.vercel.app';
+
+export interface HandoverHistoryItem {
+  id: string;
+  vehicle_id: string;
+  driver_id: string | null;
+  handover_type: 'delivery' | 'return';
+  handover_date: string;
+  driver_label: string;
+  vehicle_label: string;
+  form_url: string | null;
+  photo_urls: string[];
+}
+
+export function buildHandoverRecordUrl(vehicleId: string, handoverId: string) {
+  return `${APP_BASE_URL}/vehicles/${vehicleId}#handover-${handoverId}`;
+}
+
 export function useHandovers(vehicleId?: string) {
   return useQuery({
     queryKey: ['handovers', vehicleId],
@@ -63,6 +81,76 @@ export function useCreateHandover() {
       queryClient.invalidateQueries({ queryKey: ['handovers'] });
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
     }
+  });
+}
+
+export function useHandoverHistory() {
+  return useQuery({
+    queryKey: ['handover-history'],
+    queryFn: async () => {
+      const { data: handoversData, error: handoversError } = await supabase
+        .from('vehicle_handovers')
+        .select('id, vehicle_id, driver_id, handover_type, handover_date, photo_front_url, photo_back_url, photo_right_url, photo_left_url, driver:drivers(full_name), vehicle:vehicles(manufacturer, model, plate_number)')
+        .order('handover_date', { ascending: false })
+        .limit(300);
+
+      if (handoversError) throw handoversError;
+
+      const handovers = (handoversData ?? []) as any[];
+      const handoverIds = handovers.map((handover) => handover.id);
+
+      let docsByHandover = new Map<string, any>();
+
+      if (handoverIds.length > 0) {
+        const { data: docsData, error: docsError } = await supabase
+          .from('vehicle_documents' as any)
+          .select('handover_id, file_url, metadata, created_at')
+          .in('handover_id', handoverIds)
+          .order('created_at', { ascending: false });
+
+        if (docsError) throw docsError;
+
+        docsByHandover = new Map(
+          ((docsData as any[]) ?? [])
+            .filter((doc) => !!doc.handover_id)
+            .map((doc) => [doc.handover_id as string, doc])
+        );
+      }
+
+      return handovers.map((handover): HandoverHistoryItem => {
+        const doc = docsByHandover.get(handover.id) ?? null;
+        const metadataPhotoUrls = [
+          doc?.metadata?.photoUrls?.front,
+          doc?.metadata?.photoUrls?.back,
+          doc?.metadata?.photoUrls?.right,
+          doc?.metadata?.photoUrls?.left,
+        ].filter(Boolean) as string[];
+
+        const rowPhotoUrls = [
+          handover.photo_front_url,
+          handover.photo_back_url,
+          handover.photo_right_url,
+          handover.photo_left_url,
+        ].filter(Boolean) as string[];
+
+        const driverLabel = handover.driver?.full_name ?? 'ללא נהג';
+        const vehicleLabel = handover.vehicle
+          ? `${handover.vehicle.manufacturer} ${handover.vehicle.model} (${handover.vehicle.plate_number})`
+          : 'ללא רכב';
+
+        return {
+          id: handover.id,
+          vehicle_id: handover.vehicle_id,
+          driver_id: handover.driver_id,
+          handover_type: handover.handover_type,
+          handover_date: handover.handover_date,
+          driver_label: driverLabel,
+          vehicle_label: vehicleLabel,
+          form_url: doc?.file_url ?? null,
+          photo_urls: Array.from(new Set([...metadataPhotoUrls, ...rowPhotoUrls])),
+        };
+      });
+    },
   });
 }
 
@@ -162,6 +250,8 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
 }
 
 interface SendHandoverEmailInput {
+  handoverId: string;
+  vehicleId: string;
   handoverType: 'delivery' | 'return';
   assignmentMode?: AssignmentMode;
   vehicleLabel: string;
@@ -181,6 +271,7 @@ export async function sendHandoverNotificationEmail(input: SendHandoverEmailInpu
       subject: `${input.handoverType === 'delivery' ? 'מסירת רכב' : 'החזרת רכב'} - ${input.vehicleLabel}`,
       payload: {
         ...input,
+        recordUrl: buildHandoverRecordUrl(input.vehicleId, input.handoverId),
         sentAt: new Date().toISOString(),
       },
     },

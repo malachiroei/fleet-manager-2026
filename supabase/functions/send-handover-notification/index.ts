@@ -9,6 +9,8 @@ interface NotificationRequest {
   to: string;
   subject: string;
   payload: {
+    handoverId?: string;
+    vehicleId?: string;
     handoverType: 'delivery' | 'return';
     assignmentMode?: 'permanent' | 'replacement';
     vehicleLabel: string;
@@ -16,6 +18,7 @@ interface NotificationRequest {
     odometerReading: number;
     fuelLevel: number;
     notes: string | null;
+    recordUrl?: string;
     reportUrl: string;
     sentAt: string;
   };
@@ -41,6 +44,10 @@ serve(async (req) => {
     }
 
     const { to, subject, payload } = (await req.json()) as NotificationRequest;
+    const appBaseUrl = 'https://fleet-manager-2026.vercel.app';
+    const recordUrl = payload.recordUrl || (payload.vehicleId && payload.handoverId
+      ? `${appBaseUrl}/vehicles/${payload.vehicleId}#handover-${payload.handoverId}`
+      : payload.reportUrl);
 
     const html = `
       <div style="font-family: Arial, sans-serif; direction: rtl; text-align: right;">
@@ -51,7 +58,8 @@ serve(async (req) => {
         <p><strong>קילומטראז':</strong> ${payload.odometerReading.toLocaleString('en-US')}</p>
         <p><strong>רמת דלק:</strong> ${payload.fuelLevel}/8</p>
         <p><strong>הערות:</strong> ${payload.notes || 'ללא'}</p>
-        <p><strong>קישור לטופס:</strong> <a href="${payload.reportUrl}" target="_blank">פתיחת הטופס</a></p>
+        <p><strong>קישור לרישום המסירה:</strong> <a href="${recordUrl}" target="_blank">צפייה ברישום</a></p>
+        <p><strong>טופס חתום/ארכיון:</strong> <a href="${payload.reportUrl}" target="_blank">View Form</a></p>
         <p><small>זמן שליחה: ${payload.sentAt}</small></p>
       </div>
     `;

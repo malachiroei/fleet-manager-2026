@@ -164,6 +164,8 @@ export default function VehicleReturnPage() {
 
       try {
         await sendHandoverNotificationEmail({
+          handoverId: handover.id,
+          vehicleId: selectedVehicle,
           handoverType: 'return',
           vehicleLabel: `${selectedVehicleData?.manufacturer ?? ''} ${selectedVehicleData?.model ?? ''} (${selectedVehicleData?.plate_number ?? ''})`.trim(),
           driverLabel: selectedDriverData?.full_name ?? 'לא ידוע',

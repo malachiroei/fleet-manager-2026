@@ -159,6 +159,8 @@ export default function VehicleDeliveryPage() {
 
       try {
         await sendHandoverNotificationEmail({
+          handoverId: handover.id,
+          vehicleId: selectedVehicle,
           handoverType: 'delivery',
           assignmentMode,
           vehicleLabel: `${selectedVehicleData?.manufacturer ?? ''} ${selectedVehicleData?.model ?? ''} (${selectedVehicleData?.plate_number ?? ''})`.trim(),
