@@ -104,56 +104,64 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
           <StatusBadge status={worstStatus} />
         </div>
 
-        {/* ── Row 2: HUGE plate number + model line ── */}
-        <div>
-          <p className="text-[2.15rem] font-extrabold leading-none tracking-[0.18em] text-white" dir="ltr">{vehicle.plate_number}</p>
-          <p className="mt-1 text-sm font-medium text-blue-300/70">{vehicle.manufacturer} {vehicle.model} &middot; {vehicle.year}</p>
+        {/* ── Row 2: Plate number header + model line ── */}
+        <div className="rounded-xl border border-blue-500/25 bg-blue-950/20 px-4 py-3">
+          <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-400/60">מספר רישוי</p>
+          <p className="text-[2.4rem] font-extrabold leading-none tracking-[0.2em] text-white" dir="ltr">{vehicle.plate_number}</p>
+          <p className="mt-1.5 text-xs font-medium text-blue-300/60">{vehicle.manufacturer} {vehicle.model} &middot; {vehicle.year}</p>
         </div>
 
-        {/* ── Row 3: Stats 2×2 icon grid ── */}
-        <div className="grid grid-cols-2 gap-2">
-          <div className="flex items-center gap-2.5 rounded-xl border border-blue-500/20 bg-blue-950/30 px-3 py-2.5">
-            <Gauge className="h-4 w-4 shrink-0 text-cyan-400" />
-            <div className="min-w-0">
-              <p className="text-[10px] font-medium uppercase tracking-wider text-blue-400/60">מד אוץ</p>
-              <p className="truncate text-sm font-bold text-white">{vehicle.current_odometer.toLocaleString()} ק&quot;מ</p>
+        {/* ── Row 3: Clean vertical stats list ── */}
+        <div className="divide-y divide-blue-500/15 rounded-xl border border-blue-500/20 bg-blue-950/20 overflow-hidden">
+          {/* Odometer */}
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <div className="flex items-center gap-2.5">
+              <Gauge className="h-4 w-4 shrink-0 text-cyan-400" />
+              <span className="text-sm text-blue-300/70">מד אוץ</span>
+            </div>
+            <span className="text-sm font-bold text-white" dir="ltr">{vehicle.current_odometer.toLocaleString()} ק&quot;מ</span>
+          </div>
+          {/* Next maintenance */}
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <div className="flex items-center gap-2.5">
+              <CalendarClock className="h-4 w-4 shrink-0 text-cyan-400" />
+              <span className="text-sm text-blue-300/70">טיפול הבא</span>
+            </div>
+            <span className="text-sm font-bold text-white">{vehicle.next_maintenance_km ? `${vehicle.next_maintenance_km.toLocaleString()} ק"מ` : '—'}</span>
+          </div>
+          {/* Test */}
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <div className="flex items-center gap-2.5">
+              <Shield className="h-4 w-4 shrink-0 text-cyan-400" />
+              <span className="text-sm text-blue-300/70">תוקף טסט</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-bold text-white">{new Date(vehicle.test_expiry).toLocaleDateString('he-IL')}</span>
+              {testStatus === 'valid'
+                ? <CircleCheck className="h-3.5 w-3.5 text-emerald-400" />
+                : <CircleAlert className="h-3.5 w-3.5 text-amber-400" />}
             </div>
           </div>
-          <div className="flex items-center gap-2.5 rounded-xl border border-blue-500/20 bg-blue-950/30 px-3 py-2.5">
-            <CalendarClock className="h-4 w-4 shrink-0 text-cyan-400" />
-            <div className="min-w-0">
-              <p className="text-[10px] font-medium uppercase tracking-wider text-blue-400/60">טיפול הבא</p>
-              <p className="truncate text-sm font-bold text-white">{vehicle.next_maintenance_km ? `${vehicle.next_maintenance_km.toLocaleString()} ק"מ` : '—'}</p>
+          {/* Insurance */}
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <div className="flex items-center gap-2.5">
+              <Shield className="h-4 w-4 shrink-0 text-cyan-400" />
+              <span className="text-sm text-blue-300/70">תוקף ביטוח</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-bold text-white">{new Date(vehicle.insurance_expiry).toLocaleDateString('he-IL')}</span>
+              {insuranceStatus === 'valid'
+                ? <CircleCheck className="h-3.5 w-3.5 text-emerald-400" />
+                : <CircleAlert className="h-3.5 w-3.5 text-amber-400" />}
             </div>
           </div>
-          <div className="flex items-center gap-2.5 rounded-xl border border-blue-500/20 bg-blue-950/30 px-3 py-2.5">
-            <Shield className="h-4 w-4 shrink-0 text-cyan-400" />
-            <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-medium uppercase tracking-wider text-blue-400/60">טסט</p>
-              <p className="truncate text-sm font-bold text-white">{new Date(vehicle.test_expiry).toLocaleDateString('he-IL')}</p>
+          {/* Driver */}
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <div className="flex items-center gap-2.5">
+              <UserRound className="h-4 w-4 shrink-0 text-cyan-400" />
+              <span className="text-sm text-blue-300/70">נהג משויך</span>
             </div>
-            {testStatus === 'valid'
-              ? <CircleCheck className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
-              : <CircleAlert className="h-3.5 w-3.5 shrink-0 text-amber-400" />}
-          </div>
-          <div className="flex items-center gap-2.5 rounded-xl border border-blue-500/20 bg-blue-950/30 px-3 py-2.5">
-            <Shield className="h-4 w-4 shrink-0 text-cyan-400" />
-            <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-medium uppercase tracking-wider text-blue-400/60">ביטוח</p>
-              <p className="truncate text-sm font-bold text-white">{new Date(vehicle.insurance_expiry).toLocaleDateString('he-IL')}</p>
-            </div>
-            {insuranceStatus === 'valid'
-              ? <CircleCheck className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
-              : <CircleAlert className="h-3.5 w-3.5 shrink-0 text-amber-400" />}
-          </div>
-        </div>
-
-        {/* ── Row 4: Assigned driver ── */}
-        <div className="flex items-center gap-2.5 rounded-xl border border-blue-500/20 bg-blue-950/30 px-3 py-2.5">
-          <UserRound className="h-4 w-4 shrink-0 text-cyan-400" />
-          <div className="min-w-0">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-blue-400/60">נהג</p>
-            <p className="truncate text-sm font-bold text-white">{assignedDriver?.full_name ?? 'אין נהג משויך'}</p>
+            <span className="text-sm font-bold text-white">{assignedDriver?.full_name ?? '—'}</span>
           </div>
         </div>
 
