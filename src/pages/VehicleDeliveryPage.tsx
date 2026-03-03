@@ -79,13 +79,11 @@ export default function VehicleDeliveryPage() {
       return;
     }
 
-    if (assignmentMode === 'permanent') {
-      const existingActiveAssignments = await fetchActiveDriverAssignments(selectedDriver, selectedVehicle);
-      if (existingActiveAssignments.length > 0) {
-        const approved = window.confirm('שים לב, לנהג זה כבר משויך רכב. האם ברצונך להחליף את הרכב הקיים?');
-        if (!approved) {
-          return;
-        }
+    const existingActiveAssignments = await fetchActiveDriverAssignments(selectedDriver, selectedVehicle);
+    if (existingActiveAssignments.length > 0) {
+      const approved = window.confirm('שים לב, לנהג זה כבר משויך רכב. האם ברצונך להחליף את הרכב הקיים?');
+      if (!approved) {
+        return;
       }
     }
 
