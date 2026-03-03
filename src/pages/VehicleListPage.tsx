@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   useVehicles,
-  useDeleteVehicle,
   useAssignDriverToVehicle,
   useActiveDriverVehicleAssignments,
   type ActiveDriverVehicleAssignment,
@@ -23,24 +22,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { 
   Plus, 
   Search, 
   Car,
-  Eye,
   ClipboardList,
   FileText,
-  Zap
+  Zap,
+  Gauge,
+  Shield,
+  CalendarClock,
+  UserRound,
+  CircleCheck,
+  CircleAlert
 } from 'lucide-react';
 import type { Vehicle, ComplianceStatus, DriverSummary } from '@/types/fleet';
 
@@ -57,13 +51,13 @@ function getErrorMessage(error: unknown) {
 
 function StatusBadge({ status }: { status: ComplianceStatus }) {
   const config = {
-    valid: { label: 'תקין', className: 'status-valid' },
-    warning: { label: 'אזהרה', className: 'status-warning' },
-    expired: { label: 'פג תוקף', className: 'status-expired' }
+    valid: { label: 'תקין', className: 'border-emerald-400/40 bg-emerald-500/15 text-emerald-200' },
+    warning: { label: 'אזהרה', className: 'border-amber-400/40 bg-amber-500/15 text-amber-200' },
+    expired: { label: 'פג תוקף', className: 'border-rose-400/40 bg-rose-500/15 text-rose-200' }
   };
 
   const { label, className } = config[status];
-  return <Badge className={className}>{label}</Badge>;
+  return <Badge className={`border ${className}`}>{label}</Badge>;
 }
 
 function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, activeAssignment }: {
@@ -94,22 +88,51 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
     : null;
   const vehicleType = vehicle.vehicle_type_name || 'רכב';
 
+  const testStatusLabel = testStatus === 'valid' ? 'תקין' : testStatus === 'warning' ? 'אזהרה' : 'פג תוקף';
+  const insuranceStatusLabel = insuranceStatus === 'valid' ? 'תקין' : insuranceStatus === 'warning' ? 'אזהרה' : 'פג תוקף';
+
   return (
-    <Card className="card-hover">
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="space-y-2">
-            <h3 className="font-semibold text-slate-900">{vehicleType} - {vehicle.plate_number}</h3>
-            <p className="text-sm text-slate-900">
-              נהג משויך: {assignedDriver?.full_name ?? 'אין נהג משויך'}
-            </p>
-            <div className="text-sm text-slate-900 grid grid-cols-3 gap-2">
-              <p>דגם: {vehicle.model}</p>
-              <p>שנה: {vehicle.year}</p>
-              <p>ק"מ: {vehicle.current_odometer.toLocaleString()}</p>
+    <Card className="relative overflow-hidden border border-cyan-400/30 bg-slate-950/80 backdrop-blur-md shadow-[0_0_30px_rgba(34,211,238,0.16)]">
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-blue-500/10" />
+      <CardContent className="relative p-4 md:p-5">
+        <div className="space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <h3 className="text-lg font-semibold tracking-tight text-slate-50">{vehicle.manufacturer} {vehicle.model} {vehicle.year}</h3>
+              <div className="inline-flex items-center gap-2 rounded-md border border-cyan-400/40 bg-slate-900/70 px-2 py-1 text-sm text-cyan-100">
+                <span className="font-semibold">מספר רישוי:</span>
+                <span dir="ltr">{vehicle.plate_number}</span>
+              </div>
+              <p className="text-xs text-cyan-100/90">סוג: {vehicleType}</p>
+            </div>
+            <StatusBadge status={worstStatus} />
+          </div>
+
+          <div className="grid grid-cols-1 gap-2 rounded-lg border border-cyan-500/30 bg-slate-900/70 p-3 text-slate-100 sm:grid-cols-2">
+            <div className="flex items-center gap-2 rounded-md bg-slate-950/40 px-2 py-1.5">
+              <Gauge className="h-4 w-4 shrink-0 text-cyan-300" />
+              <span className="text-sm text-slate-100">מד אוץ: {vehicle.current_odometer.toLocaleString()} ק"מ</span>
+            </div>
+            <div className="flex items-center gap-2 rounded-md bg-slate-950/40 px-2 py-1.5">
+              <CalendarClock className="h-4 w-4 shrink-0 text-cyan-300" />
+              <span className="text-sm text-slate-100">טיפול הבא: {vehicle.next_maintenance_km ? `${vehicle.next_maintenance_km.toLocaleString()} ק"מ` : 'לא הוגדר'}</span>
+            </div>
+            <div className="flex items-center gap-2 rounded-md bg-slate-950/40 px-2 py-1.5">
+              <Shield className="h-4 w-4 shrink-0 text-cyan-300" />
+              <span className="text-sm text-slate-100">טסט: {new Date(vehicle.test_expiry).toLocaleDateString('he-IL')} · {testStatusLabel}</span>
+              {testStatus === 'valid' ? <CircleCheck className="h-4 w-4 text-emerald-400" /> : <CircleAlert className="h-4 w-4 text-amber-400" />}
+            </div>
+            <div className="flex items-center gap-2 rounded-md bg-slate-950/40 px-2 py-1.5">
+              <Shield className="h-4 w-4 shrink-0 text-cyan-300" />
+              <span className="text-sm text-slate-100">ביטוח: {new Date(vehicle.insurance_expiry).toLocaleDateString('he-IL')} · {insuranceStatusLabel}</span>
+              {insuranceStatus === 'valid' ? <CircleCheck className="h-4 w-4 text-emerald-400" /> : <CircleAlert className="h-4 w-4 text-amber-400" />}
             </div>
           </div>
-          <StatusBadge status={worstStatus} />
+
+          <div className="flex items-center gap-2 rounded-lg border border-cyan-500/30 bg-slate-900/70 p-3 text-slate-100">
+            <UserRound className="h-4 w-4 shrink-0 text-cyan-300" />
+            <p className="text-sm text-slate-100">נהג משויך: {assignedDriver?.full_name ?? 'אין נהג משויך'}</p>
+          </div>
         </div>
 
         <div className="mt-4 space-y-2 text-sm">
@@ -136,27 +159,21 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
           )}
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-2">
+        <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
           <Link to={`/vehicles/${vehicle.id}#handover-history`}>
-            <Button variant="outline" size="sm" className="w-full gap-1 text-slate-900">
+            <Button variant="outline" size="sm" className="w-full gap-1 border-cyan-400/30 bg-slate-900/55 text-cyan-100 shadow-[0_0_12px_rgba(34,211,238,0.12)] hover:bg-cyan-500/15 hover:text-cyan-50">
               <ClipboardList className="h-4 w-4" />
               היסטוריית מסירות
             </Button>
           </Link>
           <Link to={`/vehicles/${vehicle.id}#tax-data`}>
-            <Button variant="outline" size="sm" className="w-full gap-1 text-slate-900">
+            <Button variant="outline" size="sm" className="w-full gap-1 border-cyan-400/30 bg-slate-900/55 text-cyan-100 shadow-[0_0_12px_rgba(34,211,238,0.12)] hover:bg-cyan-500/15 hover:text-cyan-50">
               <Zap className="h-4 w-4" />
               נתוני מס
             </Button>
           </Link>
-          <Link to={`/vehicles/${vehicle.id}#overview`}>
-            <Button variant="outline" size="sm" className="w-full gap-1 text-slate-900">
-              <Eye className="h-4 w-4" />
-              צפייה
-            </Button>
-          </Link>
           <Link to={`/vehicles/${vehicle.id}#vehicle-documents`}>
-            <Button variant="outline" size="sm" className="w-full gap-1 text-slate-900">
+            <Button variant="outline" size="sm" className="w-full gap-1 border-cyan-400/30 bg-slate-900/55 text-cyan-100 shadow-[0_0_12px_rgba(34,211,238,0.12)] hover:bg-cyan-500/15 hover:text-cyan-50">
               <FileText className="h-4 w-4" />
               מסמכים
             </Button>
@@ -171,12 +188,10 @@ export default function VehicleListPage() {
   const { data: vehicles, isLoading, isError, error, refetch } = useVehicles();
   const { data: drivers } = useDrivers();
   const { data: activeAssignments } = useActiveDriverVehicleAssignments();
-  const deleteVehicle = useDeleteVehicle();
   const assignDriver = useAssignDriverToVehicle();
   const { isManager, user } = useAuth();
   const { t } = useTranslation();
   const [search, setSearch] = useState('');
-  const [deleteId, setDeleteId] = useState<string | null>(null);
   const errorMessage = getErrorMessage(error);
 
   const filteredVehicles = vehicles?.filter(v => 
@@ -265,32 +280,6 @@ export default function VehicleListPage() {
           </div>
         )}
       </div>
-
-      {/* Delete Dialog */}
-      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('vehicles.deleteTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('vehicles.deleteDescription')}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="gap-2">
-            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (deleteId) {
-                  deleteVehicle.mutate(deleteId);
-                  setDeleteId(null);
-                }
-              }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {t('common.delete')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
