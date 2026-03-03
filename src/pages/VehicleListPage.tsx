@@ -90,13 +90,18 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
   const vehicleType = vehicle.vehicle_type_name || 'רכב';
 
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-[#0a192f] via-[#020617] to-[#0a192f] shadow-[0_0_25px_rgba(6,182,212,0.18)] backdrop-blur-xl transition-all duration-300 hover:border-cyan-400/70 hover:scale-[1.01] hover:shadow-[0_0_50px_rgba(6,182,212,0.35),0_0_0_1px_rgba(34,211,238,0.4)]">
-      {/* Top glow line */}
-      <div className="pointer-events-none absolute left-0 right-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-cyan-400 to-transparent opacity-90" />
+    <div className="group relative overflow-hidden rounded-2xl border border-cyan-500/30 border-t-white/20 bg-gradient-to-b from-[#0f172a] to-[#020617] shadow-[0_0_25px_rgba(6,182,212,0.18)] backdrop-blur-xl transition-all duration-300 hover:border-cyan-400/70 hover:scale-[1.01] hover:shadow-[0_0_50px_rgba(6,182,212,0.35),0_0_0_1px_rgba(34,211,238,0.4)]">
+      {/* Top light strip — thin white shimmer imitating a panel edge */}
+      <div className="pointer-events-none absolute left-0 right-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/30 to-transparent" />
+      {/* Top cyan glow line below the white strip */}
+      <div className="pointer-events-none absolute left-0 right-0 top-[1px] h-[2px] bg-gradient-to-r from-transparent via-cyan-400/70 to-transparent" />
       {/* Ambient gradient */}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-cyan-500/6 via-transparent to-blue-800/8" />
       {/* Side glow accent */}
       <div className="pointer-events-none absolute -left-12 top-1/4 h-40 w-40 rounded-full bg-cyan-500/5 blur-3xl" />
+
+      {/* Inner shadow overlay — makes content feel recessed into the panel */}
+      <div className="pointer-events-none absolute inset-0 rounded-2xl shadow-[inset_0_4px_24px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.04)]" />
 
       <div className="relative space-y-3 p-4 md:p-5">
 
@@ -106,17 +111,23 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
           <StatusBadge status={worstStatus} />
         </div>
 
-        {/* ── Row 2: Model/year title + glowing license plate ── */}
+        {/* ── Row 2: Model/year title + digital license plate ── */}
         <div className="flex flex-col items-center gap-2 py-1">
-          <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-white/55">
-            {vehicle.manufacturer} {vehicle.model} &nbsp;&middot;&nbsp; {vehicle.year}
+          {/* Manufacturer · Model · Year — luxury sub-title */}
+          <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/50">
+            {vehicle.manufacturer}&nbsp;{vehicle.model}&ensp;&middot;&ensp;{vehicle.year}
           </p>
-          {/* License-plate pill */}
-          <div className="inline-flex items-center justify-center rounded-lg border-2 border-cyan-400/55 bg-cyan-950/60 px-6 py-2 shadow-[0_0_22px_rgba(34,211,238,0.45),inset_0_0_14px_rgba(34,211,238,0.07)]">
-            <span
-              className="font-mono text-3xl font-extrabold tracking-[0.28em] text-cyan-400 drop-shadow-[0_0_10px_rgba(34,211,238,0.8)]"
-              dir="ltr"
-            >
+
+          {/* Digital license-plate block */}
+          <div
+            className="relative overflow-hidden rounded-xl border border-cyan-400/60 bg-[#050d1a] px-7 py-2.5 shadow-[0_0_15px_rgba(34,211,238,0.5),inset_0_0_18px_rgba(34,211,238,0.06)]"
+            dir="ltr"
+          >
+            {/* Blue strip at the top — like a real IL plate */}
+            <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-cyan-600/60 via-cyan-400/90 to-cyan-600/60" />
+            {/* Subtle scanline texture */}
+            <div className="pointer-events-none absolute inset-0 bg-[repeating-linear-gradient(0deg,transparent,transparent_3px,rgba(34,211,238,0.02)_3px,rgba(34,211,238,0.02)_4px)]" />
+            <span className="relative font-mono text-[2rem] font-extrabold leading-none tracking-[0.3em] text-cyan-400 drop-shadow-[0_0_12px_rgba(34,211,238,0.9)]">
               {vehicle.plate_number}
             </span>
           </div>
@@ -190,37 +201,44 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
           </Select>
         )}
 
-        {/* ── Row 6: 4 glass action buttons — single row ── */}
-        <div className="grid grid-cols-4 gap-1.5">
+      </div>{/* ── end main content ── */}
+
+      {/* ── Bottom action panel ── */}
+      <div className="relative border-t border-white/8 bg-white/5 backdrop-blur-sm">
+        {/* thin top separator shimmer */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/15 to-transparent" />
+
+        <div className="grid grid-cols-4">
+          {/* btn base: shared classes extracted for readability */}
           <Link to={`/vehicles/${vehicle.id}#handover-history`} className="contents">
-            <Button variant="ghost" size="sm" className="flex h-auto w-full flex-col gap-1 rounded-xl border border-white/10 bg-white/5 py-3 text-[10px] font-semibold text-cyan-300 backdrop-blur-sm transition-all duration-200 hover:border-cyan-400/55 hover:bg-cyan-500/15 hover:text-white hover:shadow-[0_0_16px_rgba(34,211,238,0.3)] active:scale-95">
-              <ClipboardList className="h-4 w-4 text-cyan-400 drop-shadow-[0_0_6px_rgba(34,211,238,0.9)]" />
+            <button className="group/btn flex flex-col items-center gap-1.5 border-l border-white/8 px-1 py-3.5 text-[10px] font-semibold text-white/70 transition-all duration-200 first:border-l-0 hover:bg-[rgba(34,211,238,0.12)] hover:text-white hover:shadow-[inset_0_0_20px_rgba(34,211,238,0.18),0_0_22px_rgba(34,211,238,0.35)] active:scale-95">
+              <ClipboardList className="h-4 w-4 text-[#38bdf8] drop-shadow-[0_0_7px_rgba(56,189,248,1)] transition-all duration-200 group-hover/btn:text-cyan-300 group-hover/btn:drop-shadow-[0_0_12px_rgba(34,211,238,1)]" />
               היסטוריה
-            </Button>
+            </button>
           </Link>
           <Link to={`/vehicles/${vehicle.id}#tax-data`} className="contents">
-            <Button variant="ghost" size="sm" className="flex h-auto w-full flex-col gap-1 rounded-xl border border-white/10 bg-white/5 py-3 text-[10px] font-semibold text-cyan-300 backdrop-blur-sm transition-all duration-200 hover:border-cyan-400/55 hover:bg-cyan-500/15 hover:text-white hover:shadow-[0_0_16px_rgba(34,211,238,0.3)] active:scale-95">
-              <Zap className="h-4 w-4 text-cyan-400 drop-shadow-[0_0_6px_rgba(34,211,238,0.9)]" />
+            <button className="group/btn flex flex-col items-center gap-1.5 border-l border-white/8 px-1 py-3.5 text-[10px] font-semibold text-white/70 transition-all duration-200 hover:bg-[rgba(34,211,238,0.12)] hover:text-white hover:shadow-[inset_0_0_20px_rgba(34,211,238,0.18),0_0_22px_rgba(34,211,238,0.35)] active:scale-95">
+              <Zap className="h-4 w-4 text-[#38bdf8] drop-shadow-[0_0_7px_rgba(56,189,248,1)] transition-all duration-200 group-hover/btn:text-cyan-300 group-hover/btn:drop-shadow-[0_0_12px_rgba(34,211,238,1)]" />
               נתוני מס
-            </Button>
+            </button>
           </Link>
           <Link to={`/vehicles/${vehicle.id}#overview`} className="contents">
-            <Button variant="ghost" size="sm" className="flex h-auto w-full flex-col gap-1 rounded-xl border border-white/10 bg-white/5 py-3 text-[10px] font-semibold text-cyan-300 backdrop-blur-sm transition-all duration-200 hover:border-cyan-400/55 hover:bg-cyan-500/15 hover:text-white hover:shadow-[0_0_16px_rgba(34,211,238,0.3)] active:scale-95">
-              <Eye className="h-4 w-4 text-cyan-400 drop-shadow-[0_0_6px_rgba(34,211,238,0.9)]" />
+            <button className="group/btn flex flex-col items-center gap-1.5 border-l border-white/8 px-1 py-3.5 text-[10px] font-semibold text-white/70 transition-all duration-200 hover:bg-[rgba(34,211,238,0.12)] hover:text-white hover:shadow-[inset_0_0_20px_rgba(34,211,238,0.18),0_0_22px_rgba(34,211,238,0.35)] active:scale-95">
+              <Eye className="h-4 w-4 text-[#38bdf8] drop-shadow-[0_0_7px_rgba(56,189,248,1)] transition-all duration-200 group-hover/btn:text-cyan-300 group-hover/btn:drop-shadow-[0_0_12px_rgba(34,211,238,1)]" />
               צפייה
-            </Button>
+            </button>
           </Link>
           <Link to={`/vehicles/${vehicle.id}#vehicle-documents`} className="contents">
-            <Button variant="ghost" size="sm" className="flex h-auto w-full flex-col gap-1 rounded-xl border border-white/10 bg-white/5 py-3 text-[10px] font-semibold text-cyan-300 backdrop-blur-sm transition-all duration-200 hover:border-cyan-400/55 hover:bg-cyan-500/15 hover:text-white hover:shadow-[0_0_16px_rgba(34,211,238,0.3)] active:scale-95">
-              <FileText className="h-4 w-4 text-cyan-400 drop-shadow-[0_0_6px_rgba(34,211,238,0.9)]" />
+            <button className="group/btn flex flex-col items-center gap-1.5 border-l border-white/8 px-1 py-3.5 text-[10px] font-semibold text-white/70 transition-all duration-200 hover:bg-[rgba(34,211,238,0.12)] hover:text-white hover:shadow-[inset_0_0_20px_rgba(34,211,238,0.18),0_0_22px_rgba(34,211,238,0.35)] active:scale-95">
+              <FileText className="h-4 w-4 text-[#38bdf8] drop-shadow-[0_0_7px_rgba(56,189,248,1)] transition-all duration-200 group-hover/btn:text-cyan-300 group-hover/btn:drop-shadow-[0_0_12px_rgba(34,211,238,1)]" />
               מסמכים
-            </Button>
+            </button>
           </Link>
         </div>
 
+        {/* Bottom glow line */}
+        <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-cyan-400/65 to-transparent" />
       </div>
-      {/* Bottom glow line */}
-      <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-cyan-400/65 to-transparent" />
     </div>
   );
 }
