@@ -52,13 +52,13 @@ function getErrorMessage(error: unknown) {
 
 function StatusBadge({ status }: { status: ComplianceStatus }) {
   const config = {
-    valid: { label: 'תקין', className: 'border-emerald-400/40 bg-emerald-500/15 text-emerald-200' },
-    warning: { label: 'אזהרה', className: 'border-amber-400/40 bg-amber-500/15 text-amber-200' },
-    expired: { label: 'פג תוקף', className: 'border-rose-400/40 bg-rose-500/15 text-rose-200' }
+    valid:   { label: 'תקין',     className: 'border-emerald-400/60 bg-emerald-500/20 text-emerald-200 shadow-[0_0_8px_rgba(52,211,153,0.3)]' },
+    warning: { label: 'אזהרה',   className: 'border-amber-400/60  bg-amber-500/20  text-amber-200  shadow-[0_0_8px_rgba(251,191,36,0.3)]' },
+    expired: { label: 'פג תוקף', className: 'border-rose-400/60   bg-rose-500/20   text-rose-200   shadow-[0_0_8px_rgba(251,113,133,0.3)]' },
   };
 
   const { label, className } = config[status];
-  return <Badge className={`border ${className}`}>{label}</Badge>;
+  return <Badge className={`border text-xs font-semibold ${className}`}>{label}</Badge>;
 }
 
 function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, activeAssignment }: {
@@ -90,76 +90,76 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
   const vehicleType = vehicle.vehicle_type_name || 'רכב';
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-blue-500/40 bg-[#020617] shadow-[0_0_0_1px_rgba(59,130,246,0.18),0_8px_40px_rgba(30,64,175,0.28)] backdrop-blur-sm">
+    <div className="relative overflow-hidden rounded-2xl border border-cyan-400/50 bg-[#020617] shadow-[0_0_0_1px_rgba(34,211,238,0.25),0_0_32px_rgba(6,182,212,0.18),0_8px_48px_rgba(15,23,42,0.8)] backdrop-blur-md">
       {/* Top glow line */}
-      <div className="pointer-events-none absolute left-0 right-0 top-0 h-px bg-gradient-to-r from-transparent via-blue-400/60 to-transparent" />
+      <div className="pointer-events-none absolute left-0 right-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-cyan-400/80 to-transparent" />
       {/* Ambient gradient */}
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-blue-600/6 via-transparent to-cyan-500/4" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-cyan-500/8 via-transparent to-blue-700/6" />
 
       <div className="relative space-y-4 p-4 md:p-5">
 
         {/* ── Row 1: vehicle type chip + status badge ── */}
         <div className="flex items-center justify-between">
-          <span className="rounded-full border border-blue-500/30 bg-blue-950/50 px-3 py-0.5 text-[11px] font-semibold uppercase tracking-widest text-blue-300">{vehicleType}</span>
+          <span className="rounded-full border border-cyan-400/40 bg-cyan-950/50 px-3 py-0.5 text-[11px] font-bold uppercase tracking-widest text-cyan-300 shadow-[0_0_8px_rgba(34,211,238,0.2)]">{vehicleType}</span>
           <StatusBadge status={worstStatus} />
         </div>
 
         {/* ── Row 2: Plate number header + model line ── */}
-        <div className="rounded-xl border border-blue-500/25 bg-blue-950/20 px-4 py-3">
-          <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-400/60">מספר רישוי</p>
-          <p className="text-[2.4rem] font-extrabold leading-none tracking-[0.2em] text-white" dir="ltr">{vehicle.plate_number}</p>
-          <p className="mt-1.5 text-xs font-medium text-blue-300/60">{vehicle.manufacturer} {vehicle.model} &middot; {vehicle.year}</p>
+        <div className="rounded-xl border border-cyan-400/35 bg-slate-900/60 px-4 py-3 shadow-[inset_0_1px_0_rgba(34,211,238,0.12)]">
+          <p className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.22em] text-cyan-400/70">מספר רישוי</p>
+          <p className="text-[2.4rem] font-extrabold leading-none tracking-[0.2em] text-white drop-shadow-[0_0_12px_rgba(34,211,238,0.4)]" dir="ltr">{vehicle.plate_number}</p>
+          <p className="mt-1.5 text-xs font-semibold text-cyan-200/60">{vehicle.manufacturer} {vehicle.model} &middot; {vehicle.year}</p>
         </div>
 
         {/* ── Row 3: Clean vertical stats list ── */}
-        <div className="divide-y divide-blue-500/15 rounded-xl border border-blue-500/20 bg-blue-950/20 overflow-hidden">
+        <div className="divide-y divide-cyan-500/15 rounded-xl border border-cyan-400/25 bg-slate-900/50 overflow-hidden shadow-[inset_0_1px_0_rgba(34,211,238,0.08)]">
           {/* Odometer */}
-          <div className="flex items-center justify-between px-4 py-2.5">
-            <div className="flex items-center gap-2.5">
-              <Gauge className="h-4 w-4 shrink-0 text-cyan-400" />
-              <span className="text-sm text-blue-300/70">מד אוץ</span>
+          <div className="flex items-center justify-between px-4 py-3 transition-colors hover:bg-cyan-500/5">
+            <div className="flex items-center gap-3">
+              <Gauge className="h-4 w-4 shrink-0 text-cyan-400 drop-shadow-[0_0_4px_rgba(34,211,238,0.7)]" />
+              <span className="text-sm font-medium text-cyan-200/80">מד אוץ</span>
             </div>
-            <span className="text-sm font-bold text-white" dir="ltr">{vehicle.current_odometer.toLocaleString()} ק&quot;מ</span>
+            <span className="text-sm font-bold text-white tabular-nums" dir="ltr">{vehicle.current_odometer.toLocaleString()} ק&quot;מ</span>
           </div>
           {/* Next maintenance */}
-          <div className="flex items-center justify-between px-4 py-2.5">
-            <div className="flex items-center gap-2.5">
-              <CalendarClock className="h-4 w-4 shrink-0 text-cyan-400" />
-              <span className="text-sm text-blue-300/70">טיפול הבא</span>
+          <div className="flex items-center justify-between px-4 py-3 transition-colors hover:bg-cyan-500/5">
+            <div className="flex items-center gap-3">
+              <CalendarClock className="h-4 w-4 shrink-0 text-cyan-400 drop-shadow-[0_0_4px_rgba(34,211,238,0.7)]" />
+              <span className="text-sm font-medium text-cyan-200/80">טיפול הבא</span>
             </div>
-            <span className="text-sm font-bold text-white">{vehicle.next_maintenance_km ? `${vehicle.next_maintenance_km.toLocaleString()} ק"מ` : '—'}</span>
+            <span className="text-sm font-bold text-white tabular-nums">{vehicle.next_maintenance_km ? `${vehicle.next_maintenance_km.toLocaleString()} ק"מ` : '—'}</span>
           </div>
           {/* Test */}
-          <div className="flex items-center justify-between px-4 py-2.5">
-            <div className="flex items-center gap-2.5">
-              <Shield className="h-4 w-4 shrink-0 text-cyan-400" />
-              <span className="text-sm text-blue-300/70">תוקף טסט</span>
+          <div className="flex items-center justify-between px-4 py-3 transition-colors hover:bg-cyan-500/5">
+            <div className="flex items-center gap-3">
+              <Shield className="h-4 w-4 shrink-0 text-cyan-400 drop-shadow-[0_0_4px_rgba(34,211,238,0.7)]" />
+              <span className="text-sm font-medium text-cyan-200/80">תוקף טסט</span>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-sm font-bold text-white">{new Date(vehicle.test_expiry).toLocaleDateString('he-IL')}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold text-white tabular-nums">{new Date(vehicle.test_expiry).toLocaleDateString('he-IL')}</span>
               {testStatus === 'valid'
-                ? <CircleCheck className="h-3.5 w-3.5 text-emerald-400" />
-                : <CircleAlert className="h-3.5 w-3.5 text-amber-400" />}
+                ? <CircleCheck className="h-4 w-4 text-emerald-400 drop-shadow-[0_0_4px_rgba(52,211,153,0.7)]" />
+                : <CircleAlert className="h-4 w-4 text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.7)]" />}
             </div>
           </div>
           {/* Insurance */}
-          <div className="flex items-center justify-between px-4 py-2.5">
-            <div className="flex items-center gap-2.5">
-              <Shield className="h-4 w-4 shrink-0 text-cyan-400" />
-              <span className="text-sm text-blue-300/70">תוקף ביטוח</span>
+          <div className="flex items-center justify-between px-4 py-3 transition-colors hover:bg-cyan-500/5">
+            <div className="flex items-center gap-3">
+              <Shield className="h-4 w-4 shrink-0 text-cyan-400 drop-shadow-[0_0_4px_rgba(34,211,238,0.7)]" />
+              <span className="text-sm font-medium text-cyan-200/80">תוקף ביטוח</span>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-sm font-bold text-white">{new Date(vehicle.insurance_expiry).toLocaleDateString('he-IL')}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold text-white tabular-nums">{new Date(vehicle.insurance_expiry).toLocaleDateString('he-IL')}</span>
               {insuranceStatus === 'valid'
-                ? <CircleCheck className="h-3.5 w-3.5 text-emerald-400" />
-                : <CircleAlert className="h-3.5 w-3.5 text-amber-400" />}
+                ? <CircleCheck className="h-4 w-4 text-emerald-400 drop-shadow-[0_0_4px_rgba(52,211,153,0.7)]" />
+                : <CircleAlert className="h-4 w-4 text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.7)]" />}
             </div>
           </div>
           {/* Driver */}
-          <div className="flex items-center justify-between px-4 py-2.5">
-            <div className="flex items-center gap-2.5">
-              <UserRound className="h-4 w-4 shrink-0 text-cyan-400" />
-              <span className="text-sm text-blue-300/70">נהג משויך</span>
+          <div className="flex items-center justify-between px-4 py-3 transition-colors hover:bg-cyan-500/5">
+            <div className="flex items-center gap-3">
+              <UserRound className="h-4 w-4 shrink-0 text-cyan-400 drop-shadow-[0_0_4px_rgba(34,211,238,0.7)]" />
+              <span className="text-sm font-medium text-cyan-200/80">נהג משויך</span>
             </div>
             <span className="text-sm font-bold text-white">{assignedDriver?.full_name ?? '—'}</span>
           </div>
@@ -172,7 +172,7 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
             onValueChange={(value) => onAssignDriver(vehicle.id, value === '__none__' ? null : value)}
             disabled={isAssigning}
           >
-            <SelectTrigger className="border-blue-500/30 bg-blue-950/40 text-blue-100 focus:ring-blue-500/40">
+            <SelectTrigger className="border-cyan-400/35 bg-slate-900/60 text-cyan-100 focus:ring-cyan-400/40">
               <SelectValue placeholder="שייך נהג" />
             </SelectTrigger>
             <SelectContent>
@@ -189,25 +189,25 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
         {/* ── Row 6: 4 action buttons ── */}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <Link to={`/vehicles/${vehicle.id}#handover-history`}>
-            <Button variant="outline" size="sm" className="w-full gap-1.5 border-blue-500/30 bg-blue-950/40 text-blue-200 transition-all hover:border-blue-400/60 hover:bg-blue-500/20 hover:text-white hover:shadow-[0_0_14px_rgba(59,130,246,0.35)]">
+            <Button variant="outline" size="sm" className="w-full gap-1.5 border-cyan-400/35 bg-slate-900/60 text-cyan-200 transition-all hover:border-cyan-400/70 hover:bg-cyan-500/15 hover:text-white hover:shadow-[0_0_16px_rgba(34,211,238,0.4)]">
               <ClipboardList className="h-4 w-4" />
               היסטוריה
             </Button>
           </Link>
           <Link to={`/vehicles/${vehicle.id}#tax-data`}>
-            <Button variant="outline" size="sm" className="w-full gap-1.5 border-blue-500/30 bg-blue-950/40 text-blue-200 transition-all hover:border-blue-400/60 hover:bg-blue-500/20 hover:text-white hover:shadow-[0_0_14px_rgba(59,130,246,0.35)]">
+            <Button variant="outline" size="sm" className="w-full gap-1.5 border-cyan-400/35 bg-slate-900/60 text-cyan-200 transition-all hover:border-cyan-400/70 hover:bg-cyan-500/15 hover:text-white hover:shadow-[0_0_16px_rgba(34,211,238,0.4)]">
               <Zap className="h-4 w-4" />
               נתוני מס
             </Button>
           </Link>
           <Link to={`/vehicles/${vehicle.id}#overview`}>
-            <Button variant="outline" size="sm" className="w-full gap-1.5 border-blue-500/30 bg-blue-950/40 text-blue-200 transition-all hover:border-blue-400/60 hover:bg-blue-500/20 hover:text-white hover:shadow-[0_0_14px_rgba(59,130,246,0.35)]">
+            <Button variant="outline" size="sm" className="w-full gap-1.5 border-cyan-400/35 bg-slate-900/60 text-cyan-200 transition-all hover:border-cyan-400/70 hover:bg-cyan-500/15 hover:text-white hover:shadow-[0_0_16px_rgba(34,211,238,0.4)]">
               <Eye className="h-4 w-4" />
               צפייה
             </Button>
           </Link>
           <Link to={`/vehicles/${vehicle.id}#vehicle-documents`}>
-            <Button variant="outline" size="sm" className="w-full gap-1.5 border-blue-500/30 bg-blue-950/40 text-blue-200 transition-all hover:border-blue-400/60 hover:bg-blue-500/20 hover:text-white hover:shadow-[0_0_14px_rgba(59,130,246,0.35)]">
+            <Button variant="outline" size="sm" className="w-full gap-1.5 border-cyan-400/35 bg-slate-900/60 text-cyan-200 transition-all hover:border-cyan-400/70 hover:bg-cyan-500/15 hover:text-white hover:shadow-[0_0_16px_rgba(34,211,238,0.4)]">
               <FileText className="h-4 w-4" />
               מסמכים
             </Button>
@@ -216,7 +216,7 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
 
       </div>
       {/* Bottom glow line */}
-      <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-blue-500/30 to-transparent" />
+      <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-[1.5px] bg-gradient-to-r from-transparent via-cyan-400/50 to-transparent" />
     </div>
   );
 }
