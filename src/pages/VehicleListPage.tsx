@@ -9,7 +9,6 @@ import {
   type ActiveDriverVehicleAssignment,
 } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
-import { useHandoverHistory, buildHandoverRecordUrl, type HandoverHistoryItem } from '@/hooks/useHandovers';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -35,13 +34,13 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { 
-  ArrowRight, 
   Plus, 
   Search, 
   Car,
-  Trash2,
-  Edit,
-  Eye
+  Eye,
+  ClipboardList,
+  FileText,
+  Zap
 } from 'lucide-react';
 import type { Vehicle, ComplianceStatus, DriverSummary } from '@/types/fleet';
 
@@ -67,14 +66,12 @@ function StatusBadge({ status }: { status: ComplianceStatus }) {
   return <Badge className={className}>{label}</Badge>;
 }
 
-function VehicleCard({ vehicle, onDelete, canEdit, drivers, onAssignDriver, isAssigning, handoverHistory, activeAssignment }: {
+function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, activeAssignment }: {
   vehicle: Vehicle; 
-  onDelete: () => void;
   canEdit: boolean;
   drivers: DriverSummary[];
   onAssignDriver: (vehicleId: string, driverId: string | null) => void;
   isAssigning: boolean;
-  handoverHistory: HandoverHistoryItem[];
   activeAssignment: ActiveDriverVehicleAssignment | null;
 }) {
   const calculateStatus = (expiryDate: string): ComplianceStatus => {
@@ -95,41 +92,24 @@ function VehicleCard({ vehicle, onDelete, canEdit, drivers, onAssignDriver, isAs
   const assignedDriver = activeAssignment?.driver_id
     ? drivers.find((driver) => driver.id === activeAssignment.driver_id) ?? null
     : null;
-  const recentHandovers = handoverHistory.slice(0, 3);
+  const vehicleType = vehicle.vehicle_type_name || 'רכב';
 
   return (
     <Card className="card-hover">
       <CardContent className="p-4">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
-              <Car className="h-6 w-6 text-primary" />
-            </div>
-            <div>
-              <h3 className="font-semibold">{vehicle.manufacturer} {vehicle.model}</h3>
-              <p className="text-sm text-muted-foreground">{vehicle.plate_number}</p>
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-2">
+            <h3 className="font-semibold text-slate-900">{vehicleType} - {vehicle.plate_number}</h3>
+            <p className="text-sm text-slate-900">
+              נהג משויך: {assignedDriver?.full_name ?? 'אין נהג משויך'}
+            </p>
+            <div className="text-sm text-slate-900 grid grid-cols-3 gap-2">
+              <p>דגם: {vehicle.model}</p>
+              <p>שנה: {vehicle.year}</p>
+              <p>ק"מ: {vehicle.current_odometer.toLocaleString()}</p>
             </div>
           </div>
           <StatusBadge status={worstStatus} />
-        </div>
-        
-        <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-          <div className="col-span-2 flex items-center gap-2">
-            <span className="text-muted-foreground">נהג משויך:</span>
-            <span>{assignedDriver?.full_name ?? 'לא משויך'}</span>
-          </div>
-          <div>
-            <span className="text-muted-foreground">שנה:</span> {vehicle.year}
-          </div>
-          <div>
-            <span className="text-muted-foreground">ק"מ:</span> {vehicle.current_odometer.toLocaleString()}
-          </div>
-          <div>
-            <span className="text-muted-foreground">טסט:</span> {new Date(vehicle.test_expiry).toLocaleDateString('he-IL')}
-          </div>
-          <div>
-            <span className="text-muted-foreground">ביטוח:</span> {new Date(vehicle.insurance_expiry).toLocaleDateString('he-IL')}
-          </div>
         </div>
 
         <div className="mt-4 space-y-2 text-sm">
@@ -156,58 +136,31 @@ function VehicleCard({ vehicle, onDelete, canEdit, drivers, onAssignDriver, isAs
           )}
         </div>
 
-        <div className="mt-4 border-t border-border pt-3 space-y-2">
-          <p className="text-sm font-semibold">היסטוריית מסירות</p>
-          {recentHandovers.length === 0 ? (
-            <p className="text-xs text-muted-foreground">אין נתוני מסירה/החזרה</p>
-          ) : (
-            <div className="space-y-2">
-              {recentHandovers.map((handover) => {
-                const formUrl = handover.form_url || buildHandoverRecordUrl(handover.vehicle_id, handover.id);
-                return (
-                  <div key={handover.id} className="rounded-md border border-border p-2.5">
-                    <div className="flex items-center justify-between gap-2 text-xs">
-                      <span className="text-muted-foreground">{new Date(handover.handover_date).toLocaleDateString('he-IL')} {new Date(handover.handover_date).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</span>
-                      <span>{handover.driver_label}</span>
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <Button asChild size="sm" variant="outline" className="h-7 px-2 text-xs">
-                        <a href={formUrl} target="_blank" rel="noopener noreferrer">View Form</a>
-                      </Button>
-                      {handover.photo_urls.length > 0 && (
-                        <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs">
-                          <a href={handover.photo_urls[0]} target="_blank" rel="noopener noreferrer">
-                            תמונות ({handover.photo_urls.length})
-                          </a>
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="mt-4 flex gap-2">
-          <Link to={`/vehicles/${vehicle.id}`} className="flex-1">
-            <Button variant="outline" size="sm" className="w-full gap-1">
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <Link to={`/vehicles/${vehicle.id}#handover-history`}>
+            <Button variant="outline" size="sm" className="w-full gap-1 text-slate-900">
+              <ClipboardList className="h-4 w-4" />
+              היסטוריית מסירות
+            </Button>
+          </Link>
+          <Link to={`/vehicles/${vehicle.id}#tax-data`}>
+            <Button variant="outline" size="sm" className="w-full gap-1 text-slate-900">
+              <Zap className="h-4 w-4" />
+              נתוני מס
+            </Button>
+          </Link>
+          <Link to={`/vehicles/${vehicle.id}#overview`}>
+            <Button variant="outline" size="sm" className="w-full gap-1 text-slate-900">
               <Eye className="h-4 w-4" />
               צפייה
             </Button>
           </Link>
-          {canEdit && (
-            <>
-              <Link to={`/vehicles/${vehicle.id}/edit`}>
-                <Button variant="outline" size="sm">
-                  <Edit className="h-4 w-4" />
-                </Button>
-              </Link>
-              <Button variant="outline" size="sm" onClick={onDelete}>
-                <Trash2 className="h-4 w-4 text-destructive" />
-              </Button>
-            </>
-          )}
+          <Link to={`/vehicles/${vehicle.id}#vehicle-documents`}>
+            <Button variant="outline" size="sm" className="w-full gap-1 text-slate-900">
+              <FileText className="h-4 w-4" />
+              מסמכים
+            </Button>
+          </Link>
         </div>
       </CardContent>
     </Card>
@@ -218,7 +171,6 @@ export default function VehicleListPage() {
   const { data: vehicles, isLoading, isError, error, refetch } = useVehicles();
   const { data: drivers } = useDrivers();
   const { data: activeAssignments } = useActiveDriverVehicleAssignments();
-  const { data: handoverHistory } = useHandoverHistory();
   const deleteVehicle = useDeleteVehicle();
   const assignDriver = useAssignDriverToVehicle();
   const { isManager, user } = useAuth();
@@ -303,12 +255,10 @@ export default function VehicleListPage() {
               <VehicleCard 
                 key={vehicle.id} 
                 vehicle={vehicle} 
-                onDelete={() => setDeleteId(vehicle.id)}
                 canEdit={isManager}
                 drivers={drivers ?? []}
                 onAssignDriver={handleAssignDriver}
                 isAssigning={assignDriver.isPending}
-                handoverHistory={(handoverHistory ?? []).filter((handover) => handover.vehicle_id === vehicle.id)}
                 activeAssignment={(activeAssignments ?? []).find((assignment) => assignment.vehicle_id === vehicle.id) ?? null}
               />
             ))}

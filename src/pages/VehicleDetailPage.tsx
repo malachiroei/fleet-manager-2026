@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useLocation } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useVehicle, useUpdateVehicle, useActiveDriverVehicleAssignments } from '@/hooks/useVehicles';
 import { useDriver } from '@/hooks/useDrivers';
 import { useHandovers } from '@/hooks/useHandovers';
 import { usePricingLookup, useSyncVehicleFromPricing } from '@/hooks/usePricingData';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -57,6 +60,7 @@ function calculateStatus(expiryDate: string): { status: ComplianceStatus; daysLe
 
 export default function VehicleDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
   const { data: vehicle, isLoading } = useVehicle(id || '');
   const { data: activeAssignments } = useActiveDriverVehicleAssignments();
   const currentAssignedDriverId = (activeAssignments ?? []).find((assignment) => assignment.vehicle_id === vehicle?.id)?.driver_id ?? '';
@@ -65,6 +69,27 @@ export default function VehicleDetailPage() {
   const updateVehicle = useUpdateVehicle();
   const syncFromPricing = useSyncVehicleFromPricing();
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isUploadingDocument, setIsUploadingDocument] = useState(false);
+  const section = location.hash.replace('#', '');
+  const isOverviewSection = section === 'overview';
+  const isTaxSection = section === 'tax-data';
+  const isHandoverSection = section === 'handover-history';
+  const isDocumentsSection = section === 'vehicle-documents';
+
+  const { data: vehicleDocuments = [], refetch: refetchVehicleDocuments } = useQuery({
+    queryKey: ['vehicle-documents', vehicle?.id],
+    enabled: !!vehicle?.id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('vehicle_documents' as any)
+        .select('id, title, file_url, created_at')
+        .eq('vehicle_id', vehicle!.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      return (data ?? []) as Array<{ id: string; title: string; file_url: string; created_at: string }>;
+    },
+  });
   const { data: pricingLookup } = usePricingLookup(
     vehicle?.manufacturer_code || null,
     vehicle?.model_code || null,
@@ -139,6 +164,39 @@ export default function VehicleDetailPage() {
   const taxValuePrice = vehicle.tax_value_price ?? pricingLookup?.usage_value ?? null;
   const taxValueYear = vehicle.tax_year ?? pricingLookup?.usage_year ?? null;
   const adjustedPrice = vehicle.adjusted_price ?? pricingLookup?.adjusted_price ?? null;
+
+  const handleDocumentUpload = async (file: File | null) => {
+    if (!file || !vehicle) return;
+
+    setIsUploadingDocument(true);
+    try {
+      const fileName = `vehicle-files/${vehicle.id}/${Date.now()}_${file.name}`;
+      const { error: uploadError } = await supabase.storage
+        .from('vehicle-documents')
+        .upload(fileName, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage
+        .from('vehicle-documents')
+        .getPublicUrl(fileName);
+
+      const { error: insertError } = await supabase
+        .from('vehicle_documents' as any)
+        .insert({
+          vehicle_id: vehicle.id,
+          title: file.name,
+          file_url: data.publicUrl,
+          document_type: 'manual',
+        });
+
+      if (insertError) throw insertError;
+
+      await refetchVehicleDocuments();
+    } finally {
+      setIsUploadingDocument(false);
+    }
+  };
 
   const handleSyncFromPricing = async () => {
     if (!vehicle.manufacturer_code || !vehicle.model_code || !vehicle.year) {
@@ -248,14 +306,15 @@ export default function VehicleDetailPage() {
         </Card>
 
         {/* Pricing / Tax Data - All 19 columns */}
-        <Card>
+        {isTaxSection && (
+        <Card id="tax-data">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
                   <Zap className="h-5 w-5 text-primary" />
                 </div>
-                <CardTitle>נתוני מחירון</CardTitle>
+                <CardTitle>נתוני מס</CardTitle>
               </div>
               {vehicle.manufacturer_code && vehicle.model_code && (
                 <Button
@@ -269,7 +328,7 @@ export default function VehicleDetailPage() {
                   ) : (
                     <RefreshCw className="h-4 w-4 ml-1" />
                   )}
-                  סנכרון מהמחירון
+                  סנכרון נתונים
                 </Button>
               )}
             </div>
@@ -374,8 +433,10 @@ export default function VehicleDetailPage() {
             </div>
           </CardContent>
         </Card>
+        )}
 
         {/* Odometer */}
+        {(isOverviewSection || !section) && (
         <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
@@ -397,8 +458,10 @@ export default function VehicleDetailPage() {
             )}
           </CardContent>
         </Card>
+        )}
 
         {/* Compliance */}
+        {(isOverviewSection || !section) && (
         <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
@@ -429,9 +492,10 @@ export default function VehicleDetailPage() {
             </div>
           </CardContent>
         </Card>
+        )}
 
         {/* Maintenance */}
-        {(vehicle.next_maintenance_date || vehicle.next_maintenance_km) && (
+        {(isOverviewSection || !section) && (vehicle.next_maintenance_date || vehicle.next_maintenance_km) && (
           <Card>
             <CardHeader>
               <div className="flex items-center gap-3">
@@ -461,6 +525,7 @@ export default function VehicleDetailPage() {
         )}
 
         {/* Assigned Driver */}
+        {(isOverviewSection || !section) && (
         <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
@@ -488,9 +553,10 @@ export default function VehicleDetailPage() {
             )}
           </CardContent>
         </Card>
+        )}
 
         {/* Ownership Info */}
-        {(vehicle.ownership_type || vehicle.leasing_company_name) && (
+        {(isOverviewSection || !section) && (vehicle.ownership_type || vehicle.leasing_company_name) && (
           <Card>
             <CardHeader>
               <div className="flex items-center gap-3">
@@ -518,7 +584,8 @@ export default function VehicleDetailPage() {
         )}
 
         {/* Handover History */}
-        <Card>
+        {isHandoverSection && (
+        <Card id="handover-history">
           <CardHeader>
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
@@ -582,6 +649,49 @@ export default function VehicleDetailPage() {
             )}
           </CardContent>
         </Card>
+        )}
+
+        {/* Vehicle Documents */}
+        {isDocumentsSection && (
+          <Card id="vehicle-documents">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                  <FileText className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <CardTitle>מסמכים</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center gap-3">
+                <Input
+                  type="file"
+                  onChange={(event) => handleDocumentUpload(event.target.files?.[0] ?? null)}
+                  disabled={isUploadingDocument}
+                />
+                {isUploadingDocument && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+              </div>
+              {vehicleDocuments.length === 0 ? (
+                <p className="text-sm text-muted-foreground">אין מסמכים לרכב זה</p>
+              ) : (
+                <div className="space-y-2">
+                  {vehicleDocuments.map((doc) => (
+                    <a
+                      key={doc.id}
+                      href={doc.file_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-between rounded-md border border-border p-2 text-slate-900 hover:bg-muted"
+                    >
+                      <span>{doc.title}</span>
+                      <span className="text-xs text-muted-foreground">{new Date(doc.created_at).toLocaleDateString('he-IL')}</span>
+                    </a>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </main>
     </div>
   );
