@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useVehicle, useUpdateVehicle } from '@/hooks/useVehicles';
+import { useVehicle, useUpdateVehicle, useActiveDriverVehicleAssignments } from '@/hooks/useVehicles';
 import { useDriver } from '@/hooks/useDrivers';
 import { useHandovers } from '@/hooks/useHandovers';
 import { usePricingLookup, useSyncVehicleFromPricing } from '@/hooks/usePricingData';
@@ -58,7 +58,9 @@ function calculateStatus(expiryDate: string): { status: ComplianceStatus; daysLe
 export default function VehicleDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data: vehicle, isLoading } = useVehicle(id || '');
-  const { data: assignedDriver } = useDriver(vehicle?.assigned_driver_id || '');
+  const { data: activeAssignments } = useActiveDriverVehicleAssignments();
+  const currentAssignedDriverId = (activeAssignments ?? []).find((assignment) => assignment.vehicle_id === vehicle?.id)?.driver_id ?? '';
+  const { data: assignedDriver } = useDriver(currentAssignedDriverId || '');
   const { data: handovers } = useHandovers(id);
   const updateVehicle = useUpdateVehicle();
   const syncFromPricing = useSyncVehicleFromPricing();

@@ -1,7 +1,13 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useVehicles, useDeleteVehicle, useAssignDriverToVehicle } from '@/hooks/useVehicles';
+import {
+  useVehicles,
+  useDeleteVehicle,
+  useAssignDriverToVehicle,
+  useActiveDriverVehicleAssignments,
+  type ActiveDriverVehicleAssignment,
+} from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
 import { useHandoverHistory, buildHandoverRecordUrl, type HandoverHistoryItem } from '@/hooks/useHandovers';
 import { useAuth } from '@/hooks/useAuth';
@@ -61,7 +67,7 @@ function StatusBadge({ status }: { status: ComplianceStatus }) {
   return <Badge className={className}>{label}</Badge>;
 }
 
-function VehicleCard({ vehicle, onDelete, canEdit, drivers, onAssignDriver, isAssigning, handoverHistory }: { 
+function VehicleCard({ vehicle, onDelete, canEdit, drivers, onAssignDriver, isAssigning, handoverHistory, activeAssignment }: {
   vehicle: Vehicle; 
   onDelete: () => void;
   canEdit: boolean;
@@ -69,6 +75,7 @@ function VehicleCard({ vehicle, onDelete, canEdit, drivers, onAssignDriver, isAs
   onAssignDriver: (vehicleId: string, driverId: string | null) => void;
   isAssigning: boolean;
   handoverHistory: HandoverHistoryItem[];
+  activeAssignment: ActiveDriverVehicleAssignment | null;
 }) {
   const calculateStatus = (expiryDate: string): ComplianceStatus => {
     const today = new Date();
@@ -85,7 +92,9 @@ function VehicleCard({ vehicle, onDelete, canEdit, drivers, onAssignDriver, isAs
   const worstStatus = testStatus === 'expired' || insuranceStatus === 'expired' 
     ? 'expired' 
     : (testStatus === 'warning' || insuranceStatus === 'warning' ? 'warning' : 'valid');
-  const assignedDriver = drivers.find((driver) => driver.id === vehicle.assigned_driver_id) ?? null;
+  const assignedDriver = activeAssignment?.driver_id
+    ? drivers.find((driver) => driver.id === activeAssignment.driver_id) ?? null
+    : null;
   const recentHandovers = handoverHistory.slice(0, 3);
 
   return (
@@ -127,7 +136,7 @@ function VehicleCard({ vehicle, onDelete, canEdit, drivers, onAssignDriver, isAs
           {canEdit && (
             <div>
               <Select
-                value={vehicle.assigned_driver_id ?? '__none__'}
+                value={assignedDriver?.id ?? '__none__'}
                 onValueChange={(value) => onAssignDriver(vehicle.id, value === '__none__' ? null : value)}
                 disabled={isAssigning}
               >
@@ -208,6 +217,7 @@ function VehicleCard({ vehicle, onDelete, canEdit, drivers, onAssignDriver, isAs
 export default function VehicleListPage() {
   const { data: vehicles, isLoading, isError, error, refetch } = useVehicles();
   const { data: drivers } = useDrivers();
+  const { data: activeAssignments } = useActiveDriverVehicleAssignments();
   const { data: handoverHistory } = useHandoverHistory();
   const deleteVehicle = useDeleteVehicle();
   const assignDriver = useAssignDriverToVehicle();
@@ -299,6 +309,7 @@ export default function VehicleListPage() {
                 onAssignDriver={handleAssignDriver}
                 isAssigning={assignDriver.isPending}
                 handoverHistory={(handoverHistory ?? []).filter((handover) => handover.vehicle_id === vehicle.id)}
+                activeAssignment={(activeAssignments ?? []).find((assignment) => assignment.vehicle_id === vehicle.id) ?? null}
               />
             ))}
           </div>

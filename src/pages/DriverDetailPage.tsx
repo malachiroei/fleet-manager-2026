@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useDriver } from '@/hooks/useDrivers';
-import { useVehicles } from '@/hooks/useVehicles';
+import { useActiveDriverVehicleAssignments } from '@/hooks/useVehicles';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -67,10 +67,13 @@ function DocumentThumbnail({ title, src, onClick }: { title: string; src: string
 export default function DriverDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data: driver, isLoading } = useDriver(id || '');
-  const { data: vehicles } = useVehicles();
+  const { data: activeAssignments } = useActiveDriverVehicleAssignments();
   const [selectedImage, setSelectedImage] = useState<{ src: string; title: string } | null>(null);
 
-  const assignedVehicle = vehicles?.find(v => v.assigned_driver_id === id);
+  const assignedVehicles = (activeAssignments ?? [])
+    .filter((assignment) => assignment.driver_id === id)
+    .map((assignment) => assignment.vehicle)
+    .filter((vehicle): vehicle is NonNullable<(typeof activeAssignments)[number]['vehicle']> => !!vehicle);
 
   if (isLoading) {
     return (
@@ -297,27 +300,35 @@ export default function DriverDetailPage() {
           </Card>
         )}
 
-        {/* Assigned Vehicle */}
+        {/* Assigned Vehicles */}
         <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-500/10">
                 <Car className="h-5 w-5 text-green-600" />
               </div>
-              <CardTitle>רכב מוקצה</CardTitle>
+              <CardTitle>רכבים מוקצים</CardTitle>
             </div>
           </CardHeader>
           <CardContent>
-            {assignedVehicle ? (
-              <Link to={`/vehicles/${assignedVehicle.id}`} className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg hover:bg-muted transition-colors">
-                <Car className="h-5 w-5 text-primary" />
-                <div>
-                  <p className="font-medium">{assignedVehicle.manufacturer} {assignedVehicle.model}</p>
-                  <p className="text-sm text-muted-foreground">{assignedVehicle.plate_number}</p>
-                </div>
-              </Link>
+            {assignedVehicles.length > 0 ? (
+              <div className="space-y-2">
+                {assignedVehicles.map((vehicle) => (
+                  <Link
+                    key={vehicle.id}
+                    to={`/vehicles/${vehicle.id}`}
+                    className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg hover:bg-muted transition-colors"
+                  >
+                    <Car className="h-5 w-5 text-primary" />
+                    <div>
+                      <p className="font-medium">{vehicle.manufacturer} {vehicle.model}</p>
+                      <p className="text-sm text-muted-foreground">{vehicle.plate_number}</p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
             ) : (
-              <p className="text-muted-foreground">אין רכב מוקצה</p>
+              <p className="text-muted-foreground">אין רכבים מוקצים</p>
             )}
           </CardContent>
         </Card>

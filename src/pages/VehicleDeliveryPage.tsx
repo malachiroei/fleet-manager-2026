@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useVehicles } from '@/hooks/useVehicles';
+import { useVehicles, fetchActiveDriverAssignments } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
 import {
   useCreateHandover,
@@ -77,6 +77,16 @@ export default function VehicleDeliveryPage() {
     if (signatureRef.current?.isEmpty()) {
       toast.error('נא לחתום על הטופס');
       return;
+    }
+
+    if (assignmentMode === 'permanent') {
+      const existingActiveAssignments = await fetchActiveDriverAssignments(selectedDriver, selectedVehicle);
+      if (existingActiveAssignments.length > 0) {
+        const approved = window.confirm('שים לב, לנהג זה כבר משויך רכב. האם ברצונך להחליף את הרכב הקיים?');
+        if (!approved) {
+          return;
+        }
+      }
     }
 
     setIsSubmitting(true);

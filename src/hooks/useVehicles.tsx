@@ -3,6 +3,50 @@ import { supabase } from '@/integrations/supabase/client';
 import type { Vehicle } from '@/types/fleet';
 import { toast } from '@/hooks/use-toast';
 
+export interface ActiveDriverVehicleAssignment {
+  id: string;
+  driver_id: string;
+  vehicle_id: string;
+  assigned_at: string;
+  assigned_by: string | null;
+  vehicle: Pick<Vehicle, 'id' | 'manufacturer' | 'model' | 'plate_number'> | null;
+}
+
+export async function fetchActiveDriverAssignments(driverId: string, excludeVehicleId?: string) {
+  let query = supabase
+    .from('driver_vehicle_assignments')
+    .select('id, driver_id, vehicle_id, assigned_at, assigned_by, vehicle:vehicles(id, manufacturer, model, plate_number)')
+    .eq('driver_id', driverId)
+    .is('unassigned_at', null)
+    .order('assigned_at', { ascending: false });
+
+  if (excludeVehicleId) {
+    query = query.neq('vehicle_id', excludeVehicleId);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  return (data ?? []) as unknown as ActiveDriverVehicleAssignment[];
+}
+
+export function useActiveDriverVehicleAssignments() {
+  return useQuery({
+    queryKey: ['active-driver-vehicle-assignments'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('driver_vehicle_assignments')
+        .select('id, driver_id, vehicle_id, assigned_at, assigned_by, vehicle:vehicles(id, manufacturer, model, plate_number)')
+        .is('unassigned_at', null)
+        .not('driver_id', 'is', null)
+        .order('assigned_at', { ascending: false });
+
+      if (error) throw error;
+      return (data ?? []) as unknown as ActiveDriverVehicleAssignment[];
+    },
+  });
+}
+
 export function useVehicles() {
   return useQuery({
     queryKey: ['vehicles'],
@@ -219,6 +263,7 @@ export function useAssignDriverToVehicle() {
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['drivers'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['active-driver-vehicle-assignments'] });
       toast({
         title: driverId ? 'שיוך הנהג נשמר בהצלחה' : 'שיוך הנהג הוסר בהצלחה',
       });

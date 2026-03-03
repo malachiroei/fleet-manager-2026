@@ -2,7 +2,12 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useDrivers, useDeleteDriver } from '@/hooks/useDrivers';
-import { useVehicles, useAssignDriverToVehicle } from '@/hooks/useVehicles';
+import {
+  useVehicles,
+  useAssignDriverToVehicle,
+  useActiveDriverVehicleAssignments,
+  type ActiveDriverVehicleAssignment,
+} from '@/hooks/useVehicles';
 import { useHandoverHistory, buildHandoverRecordUrl, type HandoverHistoryItem } from '@/hooks/useHandovers';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
@@ -63,7 +68,17 @@ function StatusBadge({ status }: { status: ComplianceStatus }) {
   return <Badge className={className}>{label}</Badge>;
 }
 
-function DriverCard({ driver, onDelete, canEdit, vehicles, onAssignVehicle, isAssigning, handoverHistory }: {
+function DriverCard({
+  driver,
+  onDelete,
+  canEdit,
+  vehicles,
+  onAssignVehicle,
+  isAssigning,
+  handoverHistory,
+  driverActiveAssignments,
+  allActiveAssignments,
+}: {
   driver: DriverSummary;
   onDelete: () => void;
   canEdit: boolean;
@@ -71,6 +86,8 @@ function DriverCard({ driver, onDelete, canEdit, vehicles, onAssignVehicle, isAs
   onAssignVehicle: (driverId: string, vehicleId: string | null) => void;
   isAssigning: boolean;
   handoverHistory: HandoverHistoryItem[];
+  driverActiveAssignments: ActiveDriverVehicleAssignment[];
+  allActiveAssignments: ActiveDriverVehicleAssignment[];
 }) {
   const calculateStatus = (expiryDate: string): ComplianceStatus => {
     const today = new Date();
@@ -83,10 +100,16 @@ function DriverCard({ driver, onDelete, canEdit, vehicles, onAssignVehicle, isAs
   };
 
   const licenseStatus = calculateStatus(driver.license_expiry);
-  const assignedVehicle = vehicles.find((vehicle) => vehicle.assigned_driver_id === driver.id) ?? null;
+  const assignedVehicles = driverActiveAssignments
+    .map((assignment) => assignment.vehicle)
+    .filter((vehicle): vehicle is NonNullable<ActiveDriverVehicleAssignment['vehicle']> => !!vehicle);
+  const assignedVehicleIds = new Set(allActiveAssignments.map((assignment) => assignment.vehicle_id));
   const assignableVehicles = vehicles.filter(
-    (vehicle) => vehicle.assigned_driver_id === null || vehicle.assigned_driver_id === driver.id
+    (vehicle) => !assignedVehicleIds.has(vehicle.id) || assignedVehicles.some((assignedVehicle) => assignedVehicle.id === vehicle.id)
   );
+  const selectedVehicleValue = assignedVehicles.length > 1
+    ? '__multiple__'
+    : (assignedVehicles[0]?.id ?? '__none__');
   const recentHandovers = handoverHistory.slice(0, 3);
 
   return (
@@ -100,10 +123,18 @@ function DriverCard({ driver, onDelete, canEdit, vehicles, onAssignVehicle, isAs
             <div>
               <h3 className="font-semibold">{driver.full_name}</h3>
               <p className="text-sm text-muted-foreground">ת.ז. {driver.id_number}</p>
-              <p className="text-sm mt-1">
-                <span className="text-muted-foreground">רכב משויך:</span>{' '}
-                <span>{assignedVehicle ? `${assignedVehicle.manufacturer} ${assignedVehicle.model} (${assignedVehicle.plate_number})` : 'לא משויך'}</span>
-              </p>
+              <div className="text-sm mt-1">
+                <span className="text-muted-foreground">רכבים משויכים:</span>
+                {assignedVehicles.length === 0 ? (
+                  <span className="mr-1">לא משויך</span>
+                ) : (
+                  <ul className="mt-1 space-y-0.5">
+                    {assignedVehicles.map((vehicle) => (
+                      <li key={vehicle.id}>{vehicle.manufacturer} {vehicle.model} ({vehicle.plate_number})</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
           </div>
           <StatusBadge status={licenseStatus} />
@@ -129,14 +160,20 @@ function DriverCard({ driver, onDelete, canEdit, vehicles, onAssignVehicle, isAs
           {canEdit && (
             <div>
               <Select
-                value={assignedVehicle?.id ?? '__none__'}
-                onValueChange={(value) => onAssignVehicle(driver.id, value === '__none__' ? null : value)}
+                value={selectedVehicleValue}
+                onValueChange={(value) => {
+                  if (value === '__multiple__') return;
+                  onAssignVehicle(driver.id, value === '__none__' ? null : value);
+                }}
                 disabled={isAssigning}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="בחר רכב" />
                 </SelectTrigger>
                 <SelectContent>
+                  {selectedVehicleValue === '__multiple__' && (
+                    <SelectItem value="__multiple__" disabled>משויכים מספר רכבים</SelectItem>
+                  )}
                   <SelectItem value="__none__">ללא רכב משויך</SelectItem>
                   {assignableVehicles.map((vehicle) => (
                     <SelectItem key={vehicle.id} value={vehicle.id}>
@@ -210,6 +247,7 @@ function DriverCard({ driver, onDelete, canEdit, vehicles, onAssignVehicle, isAs
 export default function DriverListPage() {
   const { data: drivers, isLoading, isError, error, refetch } = useDrivers();
   const { data: vehicles } = useVehicles();
+  const { data: activeAssignments } = useActiveDriverVehicleAssignments();
   const { data: handoverHistory } = useHandoverHistory();
   const deleteDriver = useDeleteDriver();
   const assignDriver = useAssignDriverToVehicle();
@@ -236,11 +274,11 @@ export default function DriverListPage() {
       return;
     }
 
-    const currentVehicle = (vehicles ?? []).find((vehicle) => vehicle.assigned_driver_id === driverId);
-    if (!currentVehicle) return;
+    const currentAssignment = (activeAssignments ?? []).find((assignment) => assignment.driver_id === driverId);
+    if (!currentAssignment) return;
 
     assignDriver.mutate({
-      vehicleId: currentVehicle.id,
+      vehicleId: currentAssignment.vehicle_id,
       driverId: null,
       assignedBy: user?.id ?? null,
     });
@@ -314,6 +352,8 @@ export default function DriverListPage() {
                 onAssignVehicle={handleAssignVehicle}
                 isAssigning={assignDriver.isPending}
                 handoverHistory={(handoverHistory ?? []).filter((handover) => handover.driver_id === driver.id)}
+                driverActiveAssignments={(activeAssignments ?? []).filter((assignment) => assignment.driver_id === driver.id)}
+                allActiveAssignments={activeAssignments ?? []}
               />
             ))}
           </div>

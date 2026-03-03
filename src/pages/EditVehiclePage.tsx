@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useVehicle, useUpdateVehicle } from '@/hooks/useVehicles';
+import { useVehicle, useUpdateVehicle, useAssignDriverToVehicle, useActiveDriverVehicleAssignments } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
 import { useAuth } from '@/hooks/useAuth';
 import { usePricingLookup } from '@/hooks/usePricingData';
-import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,7 +19,9 @@ export default function EditVehiclePage() {
   const navigate = useNavigate();
   const { data: vehicle, isLoading } = useVehicle(id || '');
   const { data: drivers } = useDrivers();
+  const { data: activeAssignments } = useActiveDriverVehicleAssignments();
   const updateVehicle = useUpdateVehicle();
+  const assignDriverToVehicle = useAssignDriverToVehicle();
   const { user } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isActive, setIsActive] = useState<boolean | null>(null);
@@ -56,7 +57,8 @@ export default function EditVehiclePage() {
 
   // Initialize state from vehicle data
   const activeValue = isActive ?? vehicle?.is_active ?? true;
-  const driverValue = assignedDriverId ?? vehicle?.assigned_driver_id ?? '';
+  const currentActiveDriverId = (activeAssignments ?? []).find((assignment) => assignment.vehicle_id === vehicle?.id)?.driver_id ?? '';
+  const driverValue = assignedDriverId ?? currentActiveDriverId;
 
   if (isLoading) {
     return (
@@ -91,30 +93,7 @@ export default function EditVehiclePage() {
     try {
       const formData = new FormData(e.currentTarget);
       const newDriverId = driverValue || null;
-      const oldDriverId = vehicle.assigned_driver_id;
-
-      // Log assignment change if driver changed
-      if (newDriverId !== oldDriverId) {
-        // Close previous assignment
-        if (oldDriverId) {
-          await supabase
-            .from('driver_vehicle_assignments')
-            .update({ unassigned_at: new Date().toISOString() })
-            .eq('vehicle_id', vehicle.id)
-            .eq('driver_id', oldDriverId)
-            .is('unassigned_at', null);
-        }
-        // Create new assignment record
-        if (newDriverId) {
-          await supabase
-            .from('driver_vehicle_assignments')
-            .insert({
-              vehicle_id: vehicle.id,
-              driver_id: newDriverId,
-              assigned_by: user?.id || null,
-            });
-        }
-      }
+      const oldDriverId = currentActiveDriverId || null;
 
       await updateVehicle.mutateAsync({
         id: vehicle.id,
@@ -126,7 +105,6 @@ export default function EditVehiclePage() {
         color: formData.get('color') as string || null,
         ignition_code: formData.get('ignition_code') as string || null,
         is_active: activeValue,
-        assigned_driver_id: newDriverId,
         test_expiry: formData.get('test_expiry') as string,
         insurance_expiry: formData.get('insurance_expiry') as string,
         next_maintenance_km: formData.get('next_maintenance_km') ? parseInt(formData.get('next_maintenance_km') as string) : null,
@@ -151,6 +129,14 @@ export default function EditVehiclePage() {
           ? parseFloat(formData.get('average_fuel_consumption') as string)
           : null
       });
+
+      if (newDriverId !== oldDriverId) {
+        await assignDriverToVehicle.mutateAsync({
+          vehicleId: vehicle.id,
+          driverId: newDriverId,
+          assignedBy: user?.id ?? null,
+        });
+      }
 
       toast.success('הרכב עודכן בהצלחה');
       navigate(`/vehicles/${vehicle.id}`);
