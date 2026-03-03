@@ -90,7 +90,7 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
   const vehicleType = vehicle.vehicle_type_name || 'רכב';
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-cyan-400/50 bg-[#020617] shadow-[0_0_0_1px_rgba(34,211,238,0.25),0_0_32px_rgba(6,182,212,0.18),0_8px_48px_rgba(15,23,42,0.8)] backdrop-blur-md">
+    <div className="group relative overflow-hidden rounded-2xl border border-cyan-400/50 bg-[#020617] shadow-[0_0_0_1px_rgba(34,211,238,0.25),0_0_32px_rgba(6,182,212,0.18),0_8px_48px_rgba(15,23,42,0.8)] backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:border-cyan-400/80 hover:shadow-[0_0_0_1px_rgba(34,211,238,0.5),0_0_48px_rgba(6,182,212,0.35),0_16px_64px_rgba(15,23,42,0.9)]">
       {/* Top glow line */}
       <div className="pointer-events-none absolute left-0 right-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-cyan-400/80 to-transparent" />
       {/* Ambient gradient */}
@@ -186,28 +186,28 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
           </Select>
         )}
 
-        {/* ── Row 6: 4 action buttons ── */}
+        {/* ── Row 6: 4 glass action buttons ── */}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <Link to={`/vehicles/${vehicle.id}#handover-history`}>
-            <Button variant="outline" size="sm" className="w-full gap-1.5 border-cyan-400/35 bg-slate-900/60 text-cyan-200 transition-all hover:border-cyan-400/70 hover:bg-cyan-500/15 hover:text-white hover:shadow-[0_0_16px_rgba(34,211,238,0.4)]">
+            <Button variant="ghost" size="sm" className="w-full gap-1.5 rounded-xl border border-white/10 bg-white/5 text-cyan-200 backdrop-blur-sm transition-all duration-200 hover:border-cyan-400/50 hover:bg-cyan-500/15 hover:text-white hover:shadow-[0_0_18px_rgba(34,211,238,0.35)] active:scale-95">
               <ClipboardList className="h-4 w-4" />
               היסטוריה
             </Button>
           </Link>
           <Link to={`/vehicles/${vehicle.id}#tax-data`}>
-            <Button variant="outline" size="sm" className="w-full gap-1.5 border-cyan-400/35 bg-slate-900/60 text-cyan-200 transition-all hover:border-cyan-400/70 hover:bg-cyan-500/15 hover:text-white hover:shadow-[0_0_16px_rgba(34,211,238,0.4)]">
+            <Button variant="ghost" size="sm" className="w-full gap-1.5 rounded-xl border border-white/10 bg-white/5 text-cyan-200 backdrop-blur-sm transition-all duration-200 hover:border-cyan-400/50 hover:bg-cyan-500/15 hover:text-white hover:shadow-[0_0_18px_rgba(34,211,238,0.35)] active:scale-95">
               <Zap className="h-4 w-4" />
               נתוני מס
             </Button>
           </Link>
           <Link to={`/vehicles/${vehicle.id}#overview`}>
-            <Button variant="outline" size="sm" className="w-full gap-1.5 border-cyan-400/35 bg-slate-900/60 text-cyan-200 transition-all hover:border-cyan-400/70 hover:bg-cyan-500/15 hover:text-white hover:shadow-[0_0_16px_rgba(34,211,238,0.4)]">
+            <Button variant="ghost" size="sm" className="w-full gap-1.5 rounded-xl border border-white/10 bg-white/5 text-cyan-200 backdrop-blur-sm transition-all duration-200 hover:border-cyan-400/50 hover:bg-cyan-500/15 hover:text-white hover:shadow-[0_0_18px_rgba(34,211,238,0.35)] active:scale-95">
               <Eye className="h-4 w-4" />
               צפייה
             </Button>
           </Link>
           <Link to={`/vehicles/${vehicle.id}#vehicle-documents`}>
-            <Button variant="outline" size="sm" className="w-full gap-1.5 border-cyan-400/35 bg-slate-900/60 text-cyan-200 transition-all hover:border-cyan-400/70 hover:bg-cyan-500/15 hover:text-white hover:shadow-[0_0_16px_rgba(34,211,238,0.4)]">
+            <Button variant="ghost" size="sm" className="w-full gap-1.5 rounded-xl border border-white/10 bg-white/5 text-cyan-200 backdrop-blur-sm transition-all duration-200 hover:border-cyan-400/50 hover:bg-cyan-500/15 hover:text-white hover:shadow-[0_0_18px_rgba(34,211,238,0.35)] active:scale-95">
               <FileText className="h-4 w-4" />
               מסמכים
             </Button>
