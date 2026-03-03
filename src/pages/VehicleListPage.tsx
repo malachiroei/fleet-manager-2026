@@ -10,7 +10,7 @@ import {
 import { useDrivers } from '@/hooks/useDrivers';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -34,7 +34,8 @@ import {
   CalendarClock,
   UserRound,
   CircleCheck,
-  CircleAlert
+  CircleAlert,
+  Eye
 } from 'lucide-react';
 import type { Vehicle, ComplianceStatus, DriverSummary } from '@/types/fleet';
 
@@ -88,99 +89,127 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
     : null;
   const vehicleType = vehicle.vehicle_type_name || 'רכב';
 
-  const testStatusLabel = testStatus === 'valid' ? 'תקין' : testStatus === 'warning' ? 'אזהרה' : 'פג תוקף';
-  const insuranceStatusLabel = insuranceStatus === 'valid' ? 'תקין' : insuranceStatus === 'warning' ? 'אזהרה' : 'פג תוקף';
-
   return (
-    <Card className="relative overflow-hidden border border-cyan-400/30 bg-slate-950/80 backdrop-blur-md shadow-[0_0_30px_rgba(34,211,238,0.16)]">
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-blue-500/10" />
-      <CardContent className="relative p-4 md:p-5">
-        <div className="space-y-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="space-y-1">
-              <h3 className="text-lg font-semibold tracking-tight text-slate-50">{vehicle.manufacturer} {vehicle.model} {vehicle.year}</h3>
-              <div className="inline-flex items-center gap-2 rounded-md border border-cyan-400/40 bg-slate-900/70 px-2 py-1 text-sm text-cyan-100">
-                <span className="font-semibold">מספר רישוי:</span>
-                <span dir="ltr">{vehicle.plate_number}</span>
-              </div>
-              <p className="text-xs text-cyan-100/90">סוג: {vehicleType}</p>
-            </div>
-            <StatusBadge status={worstStatus} />
-          </div>
+    <div className="relative overflow-hidden rounded-2xl border border-blue-500/40 bg-[#020617] shadow-[0_0_0_1px_rgba(59,130,246,0.18),0_8px_40px_rgba(30,64,175,0.28)] backdrop-blur-sm">
+      {/* Top glow line */}
+      <div className="pointer-events-none absolute left-0 right-0 top-0 h-px bg-gradient-to-r from-transparent via-blue-400/60 to-transparent" />
+      {/* Ambient gradient */}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-blue-600/6 via-transparent to-cyan-500/4" />
 
-          <div className="grid grid-cols-1 gap-2 rounded-lg border border-cyan-500/30 bg-slate-900/70 p-3 text-slate-100 sm:grid-cols-2">
-            <div className="flex items-center gap-2 rounded-md bg-slate-950/40 px-2 py-1.5">
-              <Gauge className="h-4 w-4 shrink-0 text-cyan-300" />
-              <span className="text-sm text-slate-100">מד אוץ: {vehicle.current_odometer.toLocaleString()} ק"מ</span>
-            </div>
-            <div className="flex items-center gap-2 rounded-md bg-slate-950/40 px-2 py-1.5">
-              <CalendarClock className="h-4 w-4 shrink-0 text-cyan-300" />
-              <span className="text-sm text-slate-100">טיפול הבא: {vehicle.next_maintenance_km ? `${vehicle.next_maintenance_km.toLocaleString()} ק"מ` : 'לא הוגדר'}</span>
-            </div>
-            <div className="flex items-center gap-2 rounded-md bg-slate-950/40 px-2 py-1.5">
-              <Shield className="h-4 w-4 shrink-0 text-cyan-300" />
-              <span className="text-sm text-slate-100">טסט: {new Date(vehicle.test_expiry).toLocaleDateString('he-IL')} · {testStatusLabel}</span>
-              {testStatus === 'valid' ? <CircleCheck className="h-4 w-4 text-emerald-400" /> : <CircleAlert className="h-4 w-4 text-amber-400" />}
-            </div>
-            <div className="flex items-center gap-2 rounded-md bg-slate-950/40 px-2 py-1.5">
-              <Shield className="h-4 w-4 shrink-0 text-cyan-300" />
-              <span className="text-sm text-slate-100">ביטוח: {new Date(vehicle.insurance_expiry).toLocaleDateString('he-IL')} · {insuranceStatusLabel}</span>
-              {insuranceStatus === 'valid' ? <CircleCheck className="h-4 w-4 text-emerald-400" /> : <CircleAlert className="h-4 w-4 text-amber-400" />}
+      <div className="relative space-y-4 p-4 md:p-5">
+
+        {/* ── Row 1: vehicle type chip + status badge ── */}
+        <div className="flex items-center justify-between">
+          <span className="rounded-full border border-blue-500/30 bg-blue-950/50 px-3 py-0.5 text-[11px] font-semibold uppercase tracking-widest text-blue-300">{vehicleType}</span>
+          <StatusBadge status={worstStatus} />
+        </div>
+
+        {/* ── Row 2: HUGE plate number + model line ── */}
+        <div>
+          <p className="text-[2.15rem] font-extrabold leading-none tracking-[0.18em] text-white" dir="ltr">{vehicle.plate_number}</p>
+          <p className="mt-1 text-sm font-medium text-blue-300/70">{vehicle.manufacturer} {vehicle.model} &middot; {vehicle.year}</p>
+        </div>
+
+        {/* ── Row 3: Stats 2×2 icon grid ── */}
+        <div className="grid grid-cols-2 gap-2">
+          <div className="flex items-center gap-2.5 rounded-xl border border-blue-500/20 bg-blue-950/30 px-3 py-2.5">
+            <Gauge className="h-4 w-4 shrink-0 text-cyan-400" />
+            <div className="min-w-0">
+              <p className="text-[10px] font-medium uppercase tracking-wider text-blue-400/60">מד אוץ</p>
+              <p className="truncate text-sm font-bold text-white">{vehicle.current_odometer.toLocaleString()} ק&quot;מ</p>
             </div>
           </div>
-
-          <div className="flex items-center gap-2 rounded-lg border border-cyan-500/30 bg-slate-900/70 p-3 text-slate-100">
-            <UserRound className="h-4 w-4 shrink-0 text-cyan-300" />
-            <p className="text-sm text-slate-100">נהג משויך: {assignedDriver?.full_name ?? 'אין נהג משויך'}</p>
+          <div className="flex items-center gap-2.5 rounded-xl border border-blue-500/20 bg-blue-950/30 px-3 py-2.5">
+            <CalendarClock className="h-4 w-4 shrink-0 text-cyan-400" />
+            <div className="min-w-0">
+              <p className="text-[10px] font-medium uppercase tracking-wider text-blue-400/60">טיפול הבא</p>
+              <p className="truncate text-sm font-bold text-white">{vehicle.next_maintenance_km ? `${vehicle.next_maintenance_km.toLocaleString()} ק"מ` : '—'}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5 rounded-xl border border-blue-500/20 bg-blue-950/30 px-3 py-2.5">
+            <Shield className="h-4 w-4 shrink-0 text-cyan-400" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-medium uppercase tracking-wider text-blue-400/60">טסט</p>
+              <p className="truncate text-sm font-bold text-white">{new Date(vehicle.test_expiry).toLocaleDateString('he-IL')}</p>
+            </div>
+            {testStatus === 'valid'
+              ? <CircleCheck className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+              : <CircleAlert className="h-3.5 w-3.5 shrink-0 text-amber-400" />}
+          </div>
+          <div className="flex items-center gap-2.5 rounded-xl border border-blue-500/20 bg-blue-950/30 px-3 py-2.5">
+            <Shield className="h-4 w-4 shrink-0 text-cyan-400" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-medium uppercase tracking-wider text-blue-400/60">ביטוח</p>
+              <p className="truncate text-sm font-bold text-white">{new Date(vehicle.insurance_expiry).toLocaleDateString('he-IL')}</p>
+            </div>
+            {insuranceStatus === 'valid'
+              ? <CircleCheck className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+              : <CircleAlert className="h-3.5 w-3.5 shrink-0 text-amber-400" />}
           </div>
         </div>
 
-        <div className="mt-4 space-y-2 text-sm">
-          {canEdit && (
-            <div>
-              <Select
-                value={assignedDriver?.id ?? '__none__'}
-                onValueChange={(value) => onAssignDriver(vehicle.id, value === '__none__' ? null : value)}
-                disabled={isAssigning}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="בחר נהג" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">ללא נהג משויך</SelectItem>
-                  {drivers.map((driver) => (
-                    <SelectItem key={driver.id} value={driver.id}>
-                      {driver.full_name} ({driver.id_number})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+        {/* ── Row 4: Assigned driver ── */}
+        <div className="flex items-center gap-2.5 rounded-xl border border-blue-500/20 bg-blue-950/30 px-3 py-2.5">
+          <UserRound className="h-4 w-4 shrink-0 text-cyan-400" />
+          <div className="min-w-0">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-blue-400/60">נהג</p>
+            <p className="truncate text-sm font-bold text-white">{assignedDriver?.full_name ?? 'אין נהג משויך'}</p>
+          </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+        {/* ── Row 5: Assign driver select (managers only) ── */}
+        {canEdit && (
+          <Select
+            value={assignedDriver?.id ?? '__none__'}
+            onValueChange={(value) => onAssignDriver(vehicle.id, value === '__none__' ? null : value)}
+            disabled={isAssigning}
+          >
+            <SelectTrigger className="border-blue-500/30 bg-blue-950/40 text-blue-100 focus:ring-blue-500/40">
+              <SelectValue placeholder="שייך נהג" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">ללא נהג משויך</SelectItem>
+              {drivers.map((driver) => (
+                <SelectItem key={driver.id} value={driver.id}>
+                  {driver.full_name} ({driver.id_number})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {/* ── Row 6: 4 action buttons ── */}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <Link to={`/vehicles/${vehicle.id}#handover-history`}>
-            <Button variant="outline" size="sm" className="w-full gap-1 border-cyan-400/30 bg-slate-900/55 text-cyan-100 shadow-[0_0_12px_rgba(34,211,238,0.12)] hover:bg-cyan-500/15 hover:text-cyan-50">
+            <Button variant="outline" size="sm" className="w-full gap-1.5 border-blue-500/30 bg-blue-950/40 text-blue-200 transition-all hover:border-blue-400/60 hover:bg-blue-500/20 hover:text-white hover:shadow-[0_0_14px_rgba(59,130,246,0.35)]">
               <ClipboardList className="h-4 w-4" />
-              היסטוריית מסירות
+              היסטוריה
             </Button>
           </Link>
           <Link to={`/vehicles/${vehicle.id}#tax-data`}>
-            <Button variant="outline" size="sm" className="w-full gap-1 border-cyan-400/30 bg-slate-900/55 text-cyan-100 shadow-[0_0_12px_rgba(34,211,238,0.12)] hover:bg-cyan-500/15 hover:text-cyan-50">
+            <Button variant="outline" size="sm" className="w-full gap-1.5 border-blue-500/30 bg-blue-950/40 text-blue-200 transition-all hover:border-blue-400/60 hover:bg-blue-500/20 hover:text-white hover:shadow-[0_0_14px_rgba(59,130,246,0.35)]">
               <Zap className="h-4 w-4" />
               נתוני מס
             </Button>
           </Link>
+          <Link to={`/vehicles/${vehicle.id}#overview`}>
+            <Button variant="outline" size="sm" className="w-full gap-1.5 border-blue-500/30 bg-blue-950/40 text-blue-200 transition-all hover:border-blue-400/60 hover:bg-blue-500/20 hover:text-white hover:shadow-[0_0_14px_rgba(59,130,246,0.35)]">
+              <Eye className="h-4 w-4" />
+              צפייה
+            </Button>
+          </Link>
           <Link to={`/vehicles/${vehicle.id}#vehicle-documents`}>
-            <Button variant="outline" size="sm" className="w-full gap-1 border-cyan-400/30 bg-slate-900/55 text-cyan-100 shadow-[0_0_12px_rgba(34,211,238,0.12)] hover:bg-cyan-500/15 hover:text-cyan-50">
+            <Button variant="outline" size="sm" className="w-full gap-1.5 border-blue-500/30 bg-blue-950/40 text-blue-200 transition-all hover:border-blue-400/60 hover:bg-blue-500/20 hover:text-white hover:shadow-[0_0_14px_rgba(59,130,246,0.35)]">
               <FileText className="h-4 w-4" />
               מסמכים
             </Button>
           </Link>
         </div>
-      </CardContent>
-    </Card>
+
+      </div>
+      {/* Bottom glow line */}
+      <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-blue-500/30 to-transparent" />
+    </div>
   );
 }
 
@@ -209,15 +238,15 @@ export default function VehicleListPage() {
   };
 
   return (
-    <div className="container py-6 space-y-6">
+    <div className="min-h-screen bg-[#020617] px-4 py-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">{t('vehicles.title')}</h1>
-          <p className="text-slate-500 mt-1">{t('vehicles.subtitle')}</p>
+          <h1 className="text-3xl font-bold text-white">{t('vehicles.title')}</h1>
+          <p className="text-blue-300/60 mt-1">{t('vehicles.subtitle')}</p>
         </div>
         <Link to="/vehicles/add">
-          <Button>
+          <Button className="bg-blue-600 text-white hover:bg-blue-500 shadow-[0_0_18px_rgba(59,130,246,0.45)]">
             <Plus className="h-4 w-4 mr-2" />
             {t('vehicles.addVehicle')}
           </Button>
@@ -226,12 +255,12 @@ export default function VehicleListPage() {
 
       {/* Search */}
       <div className="relative max-w-md">
-        <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-blue-400/60" />
         <Input
           placeholder={t('vehicles.searchPlaceholder')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="pr-10"
+          className="border-blue-500/30 bg-blue-950/40 pr-10 text-blue-100 placeholder:text-blue-400/40 focus-visible:ring-blue-500/40"
         />
       </div>
 
@@ -252,22 +281,20 @@ export default function VehicleListPage() {
             </AlertDescription>
           </Alert>
         ) : filteredVehicles?.length === 0 ? (
-          <Card>
-            <CardContent className="py-8 text-center">
-              <Car className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">{t('vehicles.noVehicles')}</p>
-              <Link to="/vehicles/add">
-                <Button className="mt-4">
-                  <Plus className="h-4 w-4 mr-2" />
-                  {t('vehicles.addNewVehicle')}
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
+          <div className="rounded-2xl border border-blue-500/20 bg-blue-950/20 py-12 text-center">
+            <Car className="h-12 w-12 mx-auto text-blue-400/40 mb-4" />
+            <p className="text-blue-300/60">{t('vehicles.noVehicles')}</p>
+            <Link to="/vehicles/add">
+              <Button className="mt-4 bg-blue-600 text-white hover:bg-blue-500">
+                <Plus className="h-4 w-4 mr-2" />
+                {t('vehicles.addNewVehicle')}
+              </Button>
+            </Link>
+          </div>
         ) : (
           <div className="space-y-4">
             {filteredVehicles?.map(vehicle => (
-              <VehicleCard 
+              <VehicleCard
                 key={vehicle.id} 
                 vehicle={vehicle} 
                 canEdit={isManager}
