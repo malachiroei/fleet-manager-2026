@@ -111,9 +111,15 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
 
       <div className="relative space-y-3 p-8">
 
-        {/* ── Row 1: vehicle type chip + status badge ── */}
+        {/* ── Row 1: manufacturer + model title + status badge ── */}
         <div className="flex items-center justify-between">
-          <span className="rounded-full border border-cyan-400/40 bg-cyan-950/50 px-3 py-0.5 text-[11px] font-bold uppercase tracking-widest text-cyan-300 shadow-[0_0_8px_rgba(34,211,238,0.2)]">{vehicleType}</span>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-cyan-300/70">{vehicleType}</p>
+            <p className="neon-title text-xl leading-tight">
+              {vehicle.manufacturer} {vehicle.model}
+              <span className="ml-2 text-sm font-normal text-white/50">{vehicle.year}</span>
+            </p>
+          </div>
           <StatusBadge status={worstStatus} />
         </div>
 
@@ -145,15 +151,13 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
           {/* Odometer */}
           <div className="glass p-8 flex flex-col items-center gap-1 transition-colors hover:bg-cyan-500/5">
             <Gauge className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.9)]" />
-            <span className="text-xs font-medium uppercase tracking-wide text-cyan-300">מרחק נסיעה</span>
-            <span className="text-xs uppercase tracking-wide text-cyan-300/60">מד אוץ</span>
+            <span className="text-[10px] font-semibold uppercase tracking-tighter text-cyan-300">קילומטראז</span>
             <span className="white-data text-xl tabular-nums" dir="ltr">{vehicle.current_odometer.toLocaleString()}</span>
           </div>
           {/* Next maintenance */}
           <div className="glass p-8 flex flex-col items-center gap-1 transition-colors hover:bg-cyan-500/5">
             <CalendarClock className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_7px_rgba(34,211,238,0.8)]" />
-            <span className="text-xs font-medium uppercase tracking-wide text-cyan-300">מצב תחזוקה</span>
-            <span className="text-xs uppercase tracking-wide text-cyan-300/60">טיפול הבא</span>
+            <span className="text-[10px] font-semibold uppercase tracking-tighter text-cyan-300">טיפול הבא</span>
             <span className="white-data text-xl tabular-nums">{vehicle.next_maintenance_km ? vehicle.next_maintenance_km.toLocaleString() : '—'}</span>
           </div>
           {/* Test expiry */}
@@ -164,8 +168,7 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
                 ? <CircleCheck className="h-4 w-4 text-emerald-400 drop-shadow-[0_0_4px_rgba(52,211,153,0.8)]" />
                 : <CircleAlert className="h-4 w-4 text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.8)]" />}
             </div>
-            <span className="text-xs font-medium uppercase tracking-wide text-cyan-300">בדיקת רכב</span>
-            <span className="text-xs uppercase tracking-wide text-cyan-300/60">תוקף טסט</span>
+            <span className="text-[10px] font-semibold uppercase tracking-tighter text-cyan-300">תוקף טסט</span>
             <span className="white-data text-xl tabular-nums">{new Date(vehicle.test_expiry).toLocaleDateString('he-IL')}</span>
           </div>
           {/* Insurance expiry */}
@@ -176,19 +179,18 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
                 ? <CircleCheck className="h-4 w-4 text-emerald-400 drop-shadow-[0_0_4px_rgba(52,211,153,0.8)]" />
                 : <CircleAlert className="h-4 w-4 text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.8)]" />}
             </div>
-            <span className="text-xs font-medium uppercase tracking-wide text-cyan-300">כיסוי ביטוחי</span>
-            <span className="text-xs uppercase tracking-wide text-cyan-300/60">תוקף ביטוח</span>
+            <span className="text-[10px] font-semibold uppercase tracking-tighter text-cyan-300">תוקף ביטוח</span>
             <span className="white-data text-xl tabular-nums">{new Date(vehicle.insurance_expiry).toLocaleDateString('he-IL')}</span>
           </div>
         </div>
 
-        {/* ── Row 4: Assigned driver inner card ── */}
-        <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 backdrop-blur-sm">
-          <div className="flex items-center gap-2">
-            <UserRound className="h-4 w-4 text-white drop-shadow-[0_0_6px_rgba(255,255,255,0.75)]" />
-            <span className="text-sm font-semibold text-white">נהג משויך</span>
+        {/* ── Row 4: Assigned driver ── */}
+        <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur-sm">
+          <UserRound className="h-5 w-5 shrink-0 text-cyan-400 drop-shadow-[0_0_6px_rgba(34,211,238,0.8)]" />
+          <div className="flex flex-col">
+            <span className="text-[10px] uppercase tracking-tighter text-cyan-300">נהג משויך</span>
+            <span className="neon-text text-base font-bold">{assignedDriver?.full_name ?? '—'}</span>
           </div>
-          <span className="text-sm font-bold text-cyan-200 drop-shadow-[0_0_4px_rgba(34,211,238,0.5)]">{assignedDriver?.full_name ?? '—'}</span>
         </div>
 
         {/* ── Row 5: Assign driver select (managers only) ── */}
