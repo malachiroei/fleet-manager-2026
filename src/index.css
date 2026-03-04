@@ -117,4 +117,53 @@
     border-right: 1px solid rgba(255, 255, 255, 0.1);
     padding: 12px;
   }
+
+  /* ── Audi premium card with z-layers, edge glow & scanlines ── */
+  .audi-premium-card {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(165deg, #0f172a 0%, #020617 100%);
+    box-shadow: inset 0 0 20px rgba(34, 211, 238, 0.1), 0 10px 30px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    animation: screenFlicker 0.4s ease-out;
+  }
+
+  /* Digital scanlines overlay */
+  .audi-premium-card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%),
+      linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.02));
+    background-size: 100% 3px, 3px 100%;
+    pointer-events: none;
+    opacity: 0.1;
+    z-index: 0;
+  }
+
+  /* Dynamic edge-lighting glow — intensifies on hover */
+  .audi-premium-card .dynamic-glow {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.15);
+    transition: box-shadow 0.3s ease;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .audi-premium-card:hover .dynamic-glow {
+    box-shadow:
+      inset 0 0 0 1px rgba(34, 211, 238, 0.5),
+      inset 0 0 30px rgba(34, 211, 238, 0.08);
+  }
+}
+
+/* ── Screen-flicker entrance animation ── */
+@keyframes screenFlicker {
+  0%   { opacity: 0.2; transform: scale(0.98); }
+  20%  { opacity: 0.8; }
+  40%  { opacity: 0.4; }
+  100% { opacity: 1;   transform: scale(1); }
 }

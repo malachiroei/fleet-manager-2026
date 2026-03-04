@@ -90,17 +90,23 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
   const vehicleType = vehicle.vehicle_type_name || 'רכב';
 
   return (
-    <div className="audi-glass-card audi-card group relative overflow-hidden rounded-2xl border-t-white/20 shadow-[0_0_25px_rgba(6,182,212,0.18)] transition-all duration-300 hover:scale-[1.01] hover:shadow-[0_0_50px_rgba(6,182,212,0.35),0_0_0_1px_rgba(34,211,238,0.4)]">
-      {/* Top light strip — thin white shimmer imitating a panel edge */}
+    <div className="audi-premium-card group rounded-2xl transition-all duration-300 hover:scale-[1.01]">
+      {/* Dynamic edge-lighting layer (intensifies on hover via CSS) */}
+      <div className="dynamic-glow rounded-2xl" />
+
+      {/* Top-right corner cyan edge light */}
+      <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-cyan-500/20 blur-xl" />
+
+      {/* Top light strip */}
       <div className="pointer-events-none absolute left-0 right-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/30 to-transparent" />
-      {/* Top cyan glow line below the white strip */}
+      {/* Top cyan glow line */}
       <div className="pointer-events-none absolute left-0 right-0 top-[1px] h-[2px] bg-gradient-to-r from-transparent via-cyan-400/70 to-transparent" />
       {/* Ambient gradient */}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-cyan-500/6 via-transparent to-blue-800/8" />
       {/* Side glow accent */}
       <div className="pointer-events-none absolute -left-12 top-1/4 h-40 w-40 rounded-full bg-cyan-500/5 blur-3xl" />
 
-      {/* Inner shadow overlay — makes content feel recessed into the panel */}
+      {/* Inner shadow overlay */}
       <div className="pointer-events-none absolute inset-0 rounded-2xl shadow-[inset_0_4px_24px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.04)]" />
 
       <div className="relative space-y-3 p-4 md:p-5">
@@ -118,11 +124,12 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
             {vehicle.manufacturer}&nbsp;{vehicle.model}&ensp;&middot;&ensp;{vehicle.year}
           </p>
 
-          {/* Digital license-plate block */}
-          <div className="relative" dir="ltr">
-            {/* Pulsing outer glow ring — subtle, on glow layer only */}
+          {/* Digital license-plate block — z-10 so it floats above card layers */}
+          <div className="relative z-10" dir="ltr">
+            {/* Pulsing outer glow ring */}
             <div className="pointer-events-none absolute -inset-1 animate-pulse rounded-xl opacity-40 blur-md bg-cyan-400/30" />
-            <div className="neon-plate relative">
+            {/* Plate itself with floating dark outer shadow */}
+            <div className="neon-plate relative shadow-[0_8px_24px_rgba(0,0,0,0.7)]">
               {/* Subtle scanline texture */}
               <div className="pointer-events-none absolute inset-0 bg-[repeating-linear-gradient(0deg,transparent,transparent_3px,rgba(34,211,238,0.02)_3px,rgba(34,211,238,0.02)_4px)]" />
               <span className="neon-plate-text relative font-mono text-5xl font-extrabold leading-none tracking-[0.3em] text-white">
