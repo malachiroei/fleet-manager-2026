@@ -100,12 +100,6 @@
   }
 
   /* ── Audi-style VehicleCard classes ── */
-  .audi-card {
-    background: linear-gradient(145deg, #0f172a 0%, #020617 100%);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(34, 211, 238, 0.2);
-    box-shadow: 0 0 20px rgba(0, 0, 0, 0.5), inset 0 0 10px rgba(34, 211, 238, 0.05);
-  }
 
   .neon-plate-text {
     color: #22d3ee;
