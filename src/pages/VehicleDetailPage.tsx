@@ -26,7 +26,9 @@ import {
   Camera,
   RefreshCw,
   Loader2,
-  Zap
+  Zap,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import type { ComplianceStatus } from '@/types/fleet';
 
@@ -56,6 +58,75 @@ function calculateStatus(expiryDate: string): { status: ComplianceStatus; daysLe
   const daysLeft = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
   const status: ComplianceStatus = daysLeft < 0 ? 'expired' : daysLeft <= 30 ? 'warning' : 'valid';
   return { status, daysLeft };
+}
+
+function HandoverHistoryList({ handovers }: { handovers: any[] }) {
+  const [openId, setOpenId] = useState<string | null>(null);
+  return (
+    <div className="space-y-2">
+      {handovers.map((h: any) => {
+        const isOpen = openId === h.id;
+        const date = new Date(h.handover_date);
+        const dateStr = date.toLocaleDateString('he-IL');
+        const timeStr = date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+        return (
+          <div id={`handover-${h.id}`} key={h.id} className="rounded-lg border border-border overflow-hidden">
+            {/* Compact row */}
+            <button
+              onClick={() => setOpenId(isOpen ? null : h.id)}
+              className="w-full flex items-center justify-between px-4 py-2.5 bg-muted/30 hover:bg-muted/60 transition-colors text-sm"
+            >
+              <div className="flex items-center gap-3">
+                <Badge variant={h.handover_type === 'delivery' ? 'default' : 'secondary'} className="text-xs">
+                  {h.handover_type === 'delivery' ? 'מסירה' : 'החזרה'}
+                </Badge>
+                <span className="font-medium">{dateStr}</span>
+                <span className="text-muted-foreground">{timeStr}</span>
+              </div>
+              {isOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+            </button>
+            {/* Expanded details */}
+            {isOpen && (
+              <div className="px-4 py-3 space-y-3 border-t border-border bg-background">
+                {h.driver && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <User className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span>{h.driver.full_name}</span>
+                  </div>
+                )}
+                <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <Gauge className="h-3.5 w-3.5" />
+                    {h.odometer_reading.toLocaleString()} ק&quot;מ
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Fuel className="h-3.5 w-3.5" />
+                    {h.fuel_level}/8
+                  </span>
+                </div>
+                {(h.photo_front_url || h.photo_back_url || h.photo_right_url || h.photo_left_url) && (
+                  <div className="grid grid-cols-4 gap-2">
+                    {[h.photo_front_url, h.photo_back_url, h.photo_right_url, h.photo_left_url].filter(Boolean).map((url: string, i: number) => (
+                      <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                        <img src={url} alt={`תמונה ${i + 1}`} className="rounded border border-border aspect-square object-cover w-full" />
+                      </a>
+                    ))}
+                  </div>
+                )}
+                {h.signature_url && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">חתימה:</p>
+                    <img src={h.signature_url} alt="חתימה" className="h-10 bg-white rounded border border-border px-2" />
+                  </div>
+                )}
+                {h.notes && <p className="text-sm text-muted-foreground">{h.notes}</p>}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 export default function VehicleDetailPage() {
@@ -262,7 +333,7 @@ export default function VehicleDetailPage() {
 
       <main className="container py-6 space-y-4">
         {/* Basic Info */}
-        <Card>
+        {!isHandoverSection && <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
@@ -303,7 +374,7 @@ export default function VehicleDetailPage() {
               )}
             </div>
           </CardContent>
-        </Card>
+        </Card>}
 
         {/* Pricing / Tax Data - All 19 columns */}
         {isTaxSection && (
@@ -596,54 +667,7 @@ export default function VehicleDetailPage() {
           </CardHeader>
           <CardContent>
             {handovers && handovers.length > 0 ? (
-              <div className="space-y-3">
-                {handovers.map((h: any) => (
-                  <div id={`handover-${h.id}`} key={h.id} className="p-3 bg-muted/50 rounded-lg space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Badge variant={h.handover_type === 'delivery' ? 'default' : 'secondary'}>
-                        {h.handover_type === 'delivery' ? 'מסירה' : 'החזרה'}
-                      </Badge>
-                      <span className="text-sm text-muted-foreground">
-                        {new Date(h.handover_date).toLocaleDateString('he-IL')}
-                      </span>
-                    </div>
-                    {h.driver && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <User className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span>{h.driver.full_name}</span>
-                      </div>
-                    )}
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Gauge className="h-3.5 w-3.5" />
-                        {h.odometer_reading.toLocaleString()} ק"מ
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Fuel className="h-3.5 w-3.5" />
-                        {h.fuel_level}/8
-                      </span>
-                    </div>
-                    {(h.photo_front_url || h.photo_back_url || h.photo_right_url || h.photo_left_url) && (
-                      <div className="grid grid-cols-4 gap-2 mt-2">
-                        {[h.photo_front_url, h.photo_back_url, h.photo_right_url, h.photo_left_url].filter(Boolean).map((url: string, i: number) => (
-                          <a key={i} href={url} target="_blank" rel="noopener noreferrer">
-                            <img src={url} alt={`תמונה ${i + 1}`} className="rounded border border-border aspect-square object-cover w-full" />
-                          </a>
-                        ))}
-                      </div>
-                    )}
-                    {h.signature_url && (
-                      <div className="mt-1">
-                        <p className="text-xs text-muted-foreground mb-1">חתימה:</p>
-                        <img src={h.signature_url} alt="חתימה" className="h-10 bg-white rounded border border-border px-2" />
-                      </div>
-                    )}
-                    {h.notes && (
-                      <p className="text-sm text-muted-foreground">{h.notes}</p>
-                    )}
-                  </div>
-                ))}
-              </div>
+              <HandoverHistoryList handovers={handovers} />
             ) : (
               <p className="text-muted-foreground">אין היסטוריית מסירות</p>
             )}
