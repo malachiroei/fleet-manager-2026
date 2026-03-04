@@ -87,15 +87,15 @@ export function MobileNav() {
           <Menu className="h-6 w-6" />
         </Button>
       </SheetTrigger>
-      <SheetContent side="left" className="w-64 bg-slate-900 text-slate-100 border-slate-800">
+      <SheetContent side="left" className="w-64 bg-[#020617] text-white border-white/10">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-3 text-left">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600">
-              <Car className="h-5 w-5 text-white" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-cyan-400/40 bg-cyan-500/15 shadow-[0_0_14px_rgba(0,255,255,0.2)]">
+              <Car className="h-5 w-5 text-cyan-300" />
             </div>
             <div>
               <h1 className="font-bold text-base leading-tight text-white">{t('navigation.fleetManager')}</h1>
-              <p className="text-xs text-slate-400">{t('navigation.proDashboard')}</p>
+              <p className="text-xs text-cyan-400/60">{t('navigation.proDashboard')}</p>
             </div>
           </SheetTitle>
         </SheetHeader>
@@ -109,8 +109,8 @@ export function MobileNav() {
                 className={cn(
                   'w-full justify-start gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                   location.pathname === '/'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                    ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-400/40 shadow-[0_0_20px_rgba(0,255,255,0.3)]'
+                    : 'text-white/70 hover:bg-cyan-500/10 hover:text-white'
                 )}
               >
                 <Home className="h-5 w-5" />
@@ -120,7 +120,7 @@ export function MobileNav() {
 
             {navigationGroups.map((group) => (
               <div key={group.titleKey}>
-                <h3 className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                <h3 className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-cyan-400/60">
                   {group.title}
                 </h3>
                 <div className="space-y-1">
@@ -134,7 +134,7 @@ export function MobileNav() {
                           key={item.href}
                           className={cn(
                             'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors cursor-not-allowed opacity-50 mx-3',
-                            'text-slate-400'
+                            'text-white/40'
                           )}
                         >
                           <item.icon className="h-5 w-5" />
@@ -151,8 +151,8 @@ export function MobileNav() {
                         className={cn(
                           'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors mx-3',
                           isActive
-                            ? 'bg-blue-600 text-white'
-                            : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                            ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-400/40 shadow-[0_0_20px_rgba(0,255,255,0.3)]'
+                            : 'text-white/70 hover:bg-cyan-500/10 hover:text-white'
                         )}
                       >
                         <item.icon className="h-5 w-5" />
@@ -165,11 +165,11 @@ export function MobileNav() {
             ))}
           </nav>
 
-          <div className="mt-6 border-t border-slate-800 pt-4 space-y-2">
+          <div className="mt-6 border-t border-white/10 pt-4 space-y-2">
             <Link to="/admin/settings" onClick={() => setOpen(false)} className="block">
               <Button
                 variant="ghost"
-                className="w-full justify-start gap-3 text-slate-300 hover:bg-slate-800 hover:text-white"
+                className="w-full justify-start gap-3 text-white/70 hover:bg-cyan-500/10 hover:text-white"
               >
                 <Settings className="h-5 w-5" />
                 {t('common.settings')}
@@ -177,7 +177,7 @@ export function MobileNav() {
             </Link>
             <Button
               variant="ghost"
-              className="w-full justify-start gap-3 text-slate-300 hover:bg-slate-800 hover:text-white"
+              className="w-full justify-start gap-3 text-white/70 hover:bg-cyan-500/10 hover:text-white"
               onClick={() => {
                 setOpen(false);
                 signOut();

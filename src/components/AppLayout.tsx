@@ -15,7 +15,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { t } = useTranslation();
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50">
+    <div className="flex h-screen overflow-hidden bg-[#020617]">
       {/* Desktop Sidebar */}
       {!isMobile && <Sidebar />}
 
@@ -23,7 +23,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Mobile Header */}
         {isMobile && (
-          <header className="flex h-16 items-center border-b border-slate-200 bg-white px-4 justify-between">
+          <header className="flex h-16 items-center border-b border-white/10 bg-[#0d1b2e] px-4 justify-between">
             <div className="flex items-center gap-3">
               <MobileNav />
               <div className="flex items-center gap-3 ml-4">
@@ -32,7 +32,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                 </div>
                 <div>
                   <h1 className="font-bold text-base leading-tight">{t('navigation.fleetManager')}</h1>
-                  <p className="text-xs text-slate-500">{t('navigation.proDashboard')}</p>
+                  <p className="text-xs text-cyan-400/60">{t('navigation.proDashboard')}</p>
                 </div>
               </div>
             </div>
@@ -42,13 +42,13 @@ export function AppLayout({ children }: AppLayoutProps) {
 
         {/* Desktop Header with Language Switcher */}
         {!isMobile && (
-          <div className="flex h-16 items-center border-b border-slate-200 bg-white px-6 justify-end">
+          <div className="flex h-16 items-center border-b border-white/10 bg-[#0d1b2e] px-6 justify-end">
             <LanguageSwitcher />
           </div>
         )}
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto bg-slate-50">
+        <main className="flex-1 overflow-y-auto bg-transparent">
           {children}
         </main>
       </div>

@@ -29,7 +29,7 @@ export function QuickActions() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold text-slate-900">{t('dashboard.quickActions')}</h2>
+      <h2 className="text-lg font-semibold text-white">{t('dashboard.quickActions')}</h2>
       <div className="grid grid-cols-1 gap-3">
         {quickActions.map((action) => (
           <Link key={action.href} to={action.href}>
@@ -38,7 +38,7 @@ export function QuickActions() {
                 <div className={`flex h-12 w-12 items-center justify-center rounded-lg ${action.color}`}>
                   <action.icon className="h-6 w-6 text-white" />
                 </div>
-                <span className="text-base font-medium text-slate-900">{action.title}</span>
+                <span className="text-base font-medium text-white">{action.title}</span>
               </CardContent>
             </Card>
           </Link>

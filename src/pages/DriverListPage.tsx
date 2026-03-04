@@ -289,8 +289,8 @@ export default function DriverListPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">{t('drivers.title')}</h1>
-          <p className="text-slate-500 mt-1">{t('drivers.subtitle')}</p>
+          <h1 className="text-3xl font-bold text-white">{t('drivers.title')}</h1>
+          <p className="text-muted-foreground mt-1">{t('drivers.subtitle')}</p>
         </div>
         <Link to="/drivers/add">
           <Button>

@@ -705,7 +705,7 @@ export default function VehicleDetailPage() {
                       href={doc.file_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center justify-between rounded-md border border-border p-2 text-slate-900 hover:bg-muted"
+                      className="flex items-center justify-between rounded-md border border-border p-2 text-foreground hover:bg-muted"
                     >
                       <span>{doc.title}</span>
                       <span className="text-xs text-muted-foreground">{new Date(doc.created_at).toLocaleDateString('he-IL')}</span>
