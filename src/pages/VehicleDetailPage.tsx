@@ -333,7 +333,7 @@ export default function VehicleDetailPage() {
 
       <main className="container py-6 space-y-4">
         {/* Basic Info */}
-        {!isHandoverSection && <Card>
+        {!isHandoverSection && !isTaxSection && !isDocumentsSection && <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
