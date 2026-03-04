@@ -5,6 +5,7 @@ import { useDrivers } from '@/hooks/useDrivers';
 import { useCreateHandover, uploadSignature } from '@/hooks/useHandovers';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
+import { sendHandoverEmail } from '@/lib/sendHandoverEmail';
 import SignaturePad, { SignaturePadRef } from '@/components/SignaturePad';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -621,7 +622,30 @@ export default function VehicleHandoverWizard() {
         }).eq('id', driverId);
       }
 
-      toast.success('כל המסמכים נחתמו ונשמרו בהצלחה!');
+      // ── Send email directly from browser via Resend ─────────────────────────────
+      const savedDocs = (
+        docsToInsert as { driver_id: string; file_url: string; title: string }[]
+      ).map((d) => ({ title: d.title, file_url: d.file_url }));
+
+      const emailResult = await sendHandoverEmail({
+        docs:          savedDocs,
+        driverName,
+        driverEmail:   driver?.email ?? null,
+        vehicleLabel,
+        licenseNumber,
+        supabase,
+      });
+
+      if (emailResult.success) {
+        toast.success('כל המסמכים נחתמו ונשלח מייל!');
+      } else {
+        toast.success('כל המסמכים נשמרו בהצלחה.');
+        if (emailResult.error) {
+          console.warn('שליחת מייל נכשלה (אינו חוסם על השמירה):', emailResult.error);
+          toast.warning(`שליחת מייל נכשלה: ${emailResult.error}`);
+        }
+      }
+
       navigate(vehicleId ? `/vehicles/${vehicleId}` : '/vehicles');
     } catch (err) {
       console.error(err);
