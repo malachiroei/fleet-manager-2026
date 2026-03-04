@@ -124,14 +124,19 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
             {vehicle.manufacturer}&nbsp;{vehicle.model}&ensp;&middot;&ensp;{vehicle.year}
           </p>
 
-          {/* Digital license-plate block — z-10 so it floats above card layers */}
+          {/* Digital license-plate Hero ── */}
           <div className="relative z-10" dir="ltr">
             {/* Pulsing outer glow ring */}
-            <div className="pointer-events-none absolute -inset-1 animate-pulse rounded-xl opacity-40 blur-md bg-cyan-400/30" />
-            {/* Plate — glass Hero with internal cyan gradient */}
-            <div className="glass relative flex items-center justify-center bg-gradient-to-br from-cyan-500/10 via-transparent to-transparent px-8 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.7)]">
-              <span className="neon-plate-text relative font-mono text-6xl font-extrabold leading-none tracking-[0.3em] text-white">
-                {vehicle.plate_number}
+            <div className="pointer-events-none absolute -inset-2 animate-pulse rounded-2xl opacity-30 blur-lg bg-cyan-400/20" />
+            {/* Plate container — deep black glass */}
+            <div className="relative rounded-2xl bg-black/40 px-10 py-5 shadow-[0_8px_32px_rgba(0,0,0,0.9)]">
+              <span
+                className="font-mono text-6xl font-extrabold leading-none"
+                style={{ letterSpacing: '0.5em' }}
+              >
+                <span className="bg-gradient-to-b from-white to-cyan-400 bg-clip-text text-transparent">
+                  {vehicle.plate_number}
+                </span>
               </span>
             </div>
           </div>
@@ -216,28 +221,40 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
         {/* thin top separator shimmer */}
         <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/15 to-transparent" />
 
-        <div className="flex w-full divide-x divide-white/8 rtl:divide-x-reverse">
+        <div className="flex w-full">
+          {/* History */}
           <Link to={`/vehicles/${vehicle.id}#handover-history`} className="contents">
-            <button className="glass-button group/btn flex flex-1 flex-col items-center gap-1.5 py-3.5 text-[10px] font-bold text-white active:scale-95">
-              <ClipboardList className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_9px_rgba(34,211,238,1)] transition-all duration-200 group-hover/btn:drop-shadow-[0_0_14px_rgba(34,211,238,1)]" />
+            <button className="group/btn relative flex flex-1 flex-col items-center gap-1.5 border-t-2 border-l-2 border-cyan-500/50 px-2 py-3.5 text-[10px] font-bold text-white transition-all duration-300 hover:bg-cyan-500/10 hover:shadow-[0_0_20px_#00ffff] active:scale-95">
+              <ClipboardList className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_9px_rgba(34,211,238,1)] transition-all duration-300 group-hover/btn:drop-shadow-[0_0_16px_rgba(34,211,238,1)]" />
+              {/* Icon reflection */}
+              <ClipboardList className="pointer-events-none absolute top-[calc(50%-4px)] h-4 w-4 scale-y-[-1] text-cyan-400 opacity-[0.15] blur-[1px]" />
               היסטוריה
             </button>
           </Link>
+          {/* Tax data */}
           <Link to={`/vehicles/${vehicle.id}#tax-data`} className="contents">
-            <button className="glass-button group/btn flex flex-1 flex-col items-center gap-1.5 py-3.5 text-[10px] font-bold text-white active:scale-95">
-              <Zap className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_9px_rgba(34,211,238,1)] transition-all duration-200 group-hover/btn:drop-shadow-[0_0_14px_rgba(34,211,238,1)]" />
+            <button className="group/btn relative flex flex-1 flex-col items-center gap-1.5 border-t-2 border-l-2 border-cyan-500/50 px-2 py-3.5 text-[10px] font-bold text-white transition-all duration-300 hover:bg-cyan-500/10 hover:shadow-[0_0_20px_#00ffff] active:scale-95">
+              <Zap className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_9px_rgba(34,211,238,1)] transition-all duration-300 group-hover/btn:drop-shadow-[0_0_16px_rgba(34,211,238,1)]" />
+              {/* Icon reflection */}
+              <Zap className="pointer-events-none absolute top-[calc(50%-4px)] h-4 w-4 scale-y-[-1] text-cyan-400 opacity-[0.15] blur-[1px]" />
               נתוני מס
             </button>
           </Link>
+          {/* Overview */}
           <Link to={`/vehicles/${vehicle.id}#overview`} className="contents">
-            <button className="glass-button group/btn flex flex-1 flex-col items-center gap-1.5 py-3.5 text-[10px] font-bold text-white active:scale-95">
-              <Eye className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_9px_rgba(34,211,238,1)] transition-all duration-200 group-hover/btn:drop-shadow-[0_0_14px_rgba(34,211,238,1)]" />
+            <button className="group/btn relative flex flex-1 flex-col items-center gap-1.5 border-t-2 border-l-2 border-cyan-500/50 px-2 py-3.5 text-[10px] font-bold text-white transition-all duration-300 hover:bg-cyan-500/10 hover:shadow-[0_0_20px_#00ffff] active:scale-95">
+              <Eye className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_9px_rgba(34,211,238,1)] transition-all duration-300 group-hover/btn:drop-shadow-[0_0_16px_rgba(34,211,238,1)]" />
+              {/* Icon reflection */}
+              <Eye className="pointer-events-none absolute top-[calc(50%-4px)] h-4 w-4 scale-y-[-1] text-cyan-400 opacity-[0.15] blur-[1px]" />
               צפייה
             </button>
           </Link>
+          {/* Documents */}
           <Link to={`/vehicles/${vehicle.id}#vehicle-documents`} className="contents">
-            <button className="glass-button group/btn flex flex-1 flex-col items-center gap-1.5 py-3.5 text-[10px] font-bold text-white active:scale-95">
-              <FileText className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_9px_rgba(34,211,238,1)] transition-all duration-200 group-hover/btn:drop-shadow-[0_0_14px_rgba(34,211,238,1)]" />
+            <button className="group/btn relative flex flex-1 flex-col items-center gap-1.5 border-t-2 border-l-2 border-cyan-500/50 px-2 py-3.5 text-[10px] font-bold text-white transition-all duration-300 hover:bg-cyan-500/10 hover:shadow-[0_0_20px_#00ffff] active:scale-95">
+              <FileText className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_9px_rgba(34,211,238,1)] transition-all duration-300 group-hover/btn:drop-shadow-[0_0_16px_rgba(34,211,238,1)]" />
+              {/* Icon reflection */}
+              <FileText className="pointer-events-none absolute top-[calc(50%-4px)] h-4 w-4 scale-y-[-1] text-cyan-400 opacity-[0.15] blur-[1px]" />
               מסמכים
             </button>
           </Link>
