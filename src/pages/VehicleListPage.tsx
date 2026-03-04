@@ -90,7 +90,7 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
   const vehicleType = vehicle.vehicle_type_name || 'רכב';
 
   return (
-    <div className="audi-card group relative overflow-hidden rounded-2xl border-t-white/20 shadow-[0_0_25px_rgba(6,182,212,0.18)] transition-all duration-300 hover:border-cyan-400/70 hover:scale-[1.01] hover:shadow-[0_0_50px_rgba(6,182,212,0.35),0_0_0_1px_rgba(34,211,238,0.4)]">
+    <div className="audi-glass-card audi-card group relative overflow-hidden rounded-2xl border-t-white/20 shadow-[0_0_25px_rgba(6,182,212,0.18)] transition-all duration-300 hover:scale-[1.01] hover:shadow-[0_0_50px_rgba(6,182,212,0.35),0_0_0_1px_rgba(34,211,238,0.4)]">
       {/* Top light strip — thin white shimmer imitating a panel edge */}
       <div className="pointer-events-none absolute left-0 right-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/30 to-transparent" />
       {/* Top cyan glow line below the white strip */}
@@ -119,36 +119,31 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
           </p>
 
           {/* Digital license-plate block */}
-          <div
-            className="relative overflow-hidden rounded-xl border border-cyan-400/60 bg-[#050d1a] px-7 py-2.5 shadow-[0_0_15px_rgba(34,211,238,0.5),inset_0_0_18px_rgba(34,211,238,0.06)]"
-            dir="ltr"
-          >
-            {/* Blue strip at the top — like a real IL plate */}
-            <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-cyan-600/60 via-cyan-400/90 to-cyan-600/60" />
+          <div className="neon-plate" dir="ltr">
             {/* Subtle scanline texture */}
             <div className="pointer-events-none absolute inset-0 bg-[repeating-linear-gradient(0deg,transparent,transparent_3px,rgba(34,211,238,0.02)_3px,rgba(34,211,238,0.02)_4px)]" />
-            <span className="neon-plate-text relative text-5xl font-extrabold leading-none tracking-[0.3em]">
+            <span className="neon-plate-text relative font-mono text-5xl font-extrabold leading-none tracking-[0.3em] text-white">
               {vehicle.plate_number}
             </span>
           </div>
         </div>
 
-        {/* ── Row 3: Stats in individual inner cards (2 × 2) ── */}
-        <div className="grid grid-cols-2 gap-2">
+        {/* ── Row 3: 4 data-widget stats in 2×2 grid ── */}
+        <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-white/10">
           {/* Odometer */}
-          <div className="flex flex-col items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-3 py-3 backdrop-blur-sm transition-colors hover:border-cyan-400/30 hover:bg-white/8">
+          <div className="data-widget flex flex-col items-center gap-1 border-b border-white/10 transition-colors hover:bg-cyan-500/5">
             <Gauge className="h-4 w-4 text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.9)]" />
             <span className="text-[10px] font-semibold uppercase tracking-wide text-cyan-400/70">מד אוץ</span>
             <span className="text-sm font-extrabold text-white tabular-nums" dir="ltr">{vehicle.current_odometer.toLocaleString()}</span>
           </div>
           {/* Next maintenance */}
-          <div className="flex flex-col items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-3 py-3 backdrop-blur-sm transition-colors hover:border-cyan-400/30 hover:bg-white/8">
+          <div className="data-widget flex flex-col items-center gap-1 border-b border-white/10 transition-colors hover:bg-cyan-500/5">
             <CalendarClock className="h-4 w-4 text-cyan-400 drop-shadow-[0_0_7px_rgba(34,211,238,0.8)]" />
             <span className="text-[10px] font-semibold uppercase tracking-wide text-cyan-400/70">טיפול הבא</span>
             <span className="text-sm font-extrabold text-white tabular-nums">{vehicle.next_maintenance_km ? vehicle.next_maintenance_km.toLocaleString() : '—'}</span>
           </div>
           {/* Test expiry */}
-          <div className="flex flex-col items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-3 py-3 backdrop-blur-sm transition-colors hover:border-cyan-400/30 hover:bg-white/8">
+          <div className="data-widget flex flex-col items-center gap-1 transition-colors hover:bg-cyan-500/5">
             <div className="flex items-center gap-1">
               <Shield className="h-4 w-4 text-cyan-400 drop-shadow-[0_0_7px_rgba(34,211,238,0.8)]" />
               {testStatus === 'valid'
@@ -159,7 +154,7 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
             <span className="text-xs font-extrabold text-white tabular-nums">{new Date(vehicle.test_expiry).toLocaleDateString('he-IL')}</span>
           </div>
           {/* Insurance expiry */}
-          <div className="flex flex-col items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-3 py-3 backdrop-blur-sm transition-colors hover:border-cyan-400/30 hover:bg-white/8">
+          <div className="data-widget flex flex-col items-center gap-1 transition-colors hover:bg-cyan-500/5">
             <div className="flex items-center gap-1">
               <Shield className="h-4 w-4 text-cyan-400 drop-shadow-[0_0_7px_rgba(34,211,238,0.8)]" />
               {insuranceStatus === 'valid'
@@ -208,29 +203,28 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
         {/* thin top separator shimmer */}
         <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/15 to-transparent" />
 
-        <div className="grid grid-cols-4">
-          {/* btn base: shared classes extracted for readability */}
+        <div className="flex w-full divide-x divide-white/8 rtl:divide-x-reverse">
           <Link to={`/vehicles/${vehicle.id}#handover-history`} className="contents">
-            <button className="glass-button group/btn flex flex-col items-center gap-1.5 border-l border-white/8 px-1 py-3.5 text-[10px] font-semibold text-white/70 first:border-l-0 active:scale-95">
-              <ClipboardList className="h-4 w-4 text-[#38bdf8] drop-shadow-[0_0_7px_rgba(56,189,248,1)] transition-all duration-200 group-hover/btn:text-cyan-300 group-hover/btn:drop-shadow-[0_0_12px_rgba(34,211,238,1)]" />
+            <button className="glass-button group/btn flex flex-1 flex-col items-center gap-1.5 py-3.5 text-[10px] font-semibold text-white/70 active:scale-95">
+              <ClipboardList className="h-4 w-4 text-[#38bdf8] drop-shadow-[0_0_7px_rgba(56,189,248,1)] transition-all duration-200 group-hover/btn:drop-shadow-[0_0_12px_rgba(34,211,238,1)]" />
               היסטוריה
             </button>
           </Link>
           <Link to={`/vehicles/${vehicle.id}#tax-data`} className="contents">
-            <button className="glass-button group/btn flex flex-col items-center gap-1.5 border-l border-white/8 px-1 py-3.5 text-[10px] font-semibold text-white/70 active:scale-95">
-              <Zap className="h-4 w-4 text-[#38bdf8] drop-shadow-[0_0_7px_rgba(56,189,248,1)] transition-all duration-200 group-hover/btn:text-cyan-300 group-hover/btn:drop-shadow-[0_0_12px_rgba(34,211,238,1)]" />
+            <button className="glass-button group/btn flex flex-1 flex-col items-center gap-1.5 py-3.5 text-[10px] font-semibold text-white/70 active:scale-95">
+              <Zap className="h-4 w-4 text-[#38bdf8] drop-shadow-[0_0_7px_rgba(56,189,248,1)] transition-all duration-200 group-hover/btn:drop-shadow-[0_0_12px_rgba(34,211,238,1)]" />
               נתוני מס
             </button>
           </Link>
           <Link to={`/vehicles/${vehicle.id}#overview`} className="contents">
-            <button className="glass-button group/btn flex flex-col items-center gap-1.5 border-l border-white/8 px-1 py-3.5 text-[10px] font-semibold text-white/70 active:scale-95">
-              <Eye className="h-4 w-4 text-[#38bdf8] drop-shadow-[0_0_7px_rgba(56,189,248,1)] transition-all duration-200 group-hover/btn:text-cyan-300 group-hover/btn:drop-shadow-[0_0_12px_rgba(34,211,238,1)]" />
+            <button className="glass-button group/btn flex flex-1 flex-col items-center gap-1.5 py-3.5 text-[10px] font-semibold text-white/70 active:scale-95">
+              <Eye className="h-4 w-4 text-[#38bdf8] drop-shadow-[0_0_7px_rgba(56,189,248,1)] transition-all duration-200 group-hover/btn:drop-shadow-[0_0_12px_rgba(34,211,238,1)]" />
               צפייה
             </button>
           </Link>
           <Link to={`/vehicles/${vehicle.id}#vehicle-documents`} className="contents">
-            <button className="glass-button group/btn flex flex-col items-center gap-1.5 border-l border-white/8 px-1 py-3.5 text-[10px] font-semibold text-white/70 active:scale-95">
-              <FileText className="h-4 w-4 text-[#38bdf8] drop-shadow-[0_0_7px_rgba(56,189,248,1)] transition-all duration-200 group-hover/btn:text-cyan-300 group-hover/btn:drop-shadow-[0_0_12px_rgba(34,211,238,1)]" />
+            <button className="glass-button group/btn flex flex-1 flex-col items-center gap-1.5 py-3.5 text-[10px] font-semibold text-white/70 active:scale-95">
+              <FileText className="h-4 w-4 text-[#38bdf8] drop-shadow-[0_0_7px_rgba(56,189,248,1)] transition-all duration-200 group-hover/btn:drop-shadow-[0_0_12px_rgba(34,211,238,1)]" />
               מסמכים
             </button>
           </Link>

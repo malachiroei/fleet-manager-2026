@@ -70,4 +70,25 @@
     border-color: rgba(34, 211, 238, 0.5);
     box-shadow: 0 0 15px rgba(34, 211, 238, 0.3);
   }
+
+  .audi-glass-card {
+    background: linear-gradient(145deg, rgba(15, 23, 42, 0.9) 0%, rgba(2, 6, 23, 1) 100%);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(34, 211, 238, 0.3);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8), inset 0 0 15px rgba(34, 211, 238, 0.1);
+  }
+
+  .neon-plate {
+    background: rgba(6, 182, 212, 0.1);
+    border: 2px solid #22d3ee;
+    box-shadow: 0 0 15px rgba(34, 211, 238, 0.6);
+    border-radius: 8px;
+    padding: 10px 20px;
+  }
+
+  .data-widget {
+    background: rgba(255, 255, 255, 0.03);
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 12px;
+  }
 }
