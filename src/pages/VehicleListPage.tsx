@@ -90,172 +90,42 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
   const vehicleType = vehicle.vehicle_type_name || 'רכב';
 
   return (
-    <div className="audi-card group transition-all duration-300 hover:scale-[1.01] relative overflow-visible">
-      {/* Dynamic edge-lighting layer (intensifies on hover via CSS) */}
-      <div className="dynamic-glow rounded-[28px]" />
-      {/* Top-right corner cyan edge light */}
-      <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-cyan-500/20 blur-xl" />
-      {/* Top light strip */}
-      <div className="pointer-events-none absolute left-0 right-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/30 to-transparent" />
-      {/* Top cyan glow line */}
-      <div className="pointer-events-none absolute left-0 right-0 top-[1px] h-[2px] bg-gradient-to-r from-transparent via-cyan-400/70 to-transparent" />
-      {/* Ambient gradient */}
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-cyan-500/6 via-transparent to-blue-800/8" />
-      {/* Side glow accent */}
-      <div className="pointer-events-none absolute -left-12 top-1/4 h-40 w-40 rounded-full bg-cyan-500/5 blur-3xl" />
-      {/* Inner shadow overlay */}
-      <div className="pointer-events-none absolute inset-0 rounded-2xl shadow-[inset_0_4px_24px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.04)]" />
-
-      {/* Vehicle image (Audi style) */}
-      {vehicle.image_url && (
-        <div className="vehicle-image-container mb-2">
-          <img src={vehicle.image_url} alt={`${vehicle.manufacturer} ${vehicle.model}`} className="vehicle-image" />
+    <div className="audi-card audi-premium-card">
+      <div className="p-8 pt-6">
+        <div className="vehicle-title neon-title mb-2">
+          {vehicle.manufacturer} {vehicle.model}
         </div>
-      )}
-
-      <div className="relative space-y-3 p-8 pt-2">
-        {/* Title row */}
-        <div className="flex items-center justify-between mb-1">
-          <div>
-            <p className="vehicle-title">
-              {vehicle.manufacturer} {vehicle.model}
-              <span className="vehicle-year">{vehicle.year}</span>
-            </p>
-            <div className="vehicle-title-underline" />
-          </div>
-          <StatusBadge status={worstStatus} />
+        <div className="text-6xl font-black neon-plate-text tracking-widest mb-6">
+          {vehicle.plate_number}
         </div>
-
-        {/* License plate Hero */}
-        <div className="flex flex-col items-center gap-2 py-1">
-          <div className="relative z-10" dir="ltr">
-            <div className="pointer-events-none absolute -inset-2 animate-pulse rounded-2xl opacity-30 blur-lg bg-cyan-400/20" />
-            <div className="relative rounded-2xl bg-black/40 px-10 py-5 shadow-[0_8px_32px_rgba(0,0,0,0.9)]">
-              <span
-                className="neon-title font-mono text-6xl leading-none"
-                style={{ letterSpacing: '0.5em' }}
-              >
-                {vehicle.plate_number}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Stats grid */}
-        <div className="grid grid-cols-2 gap-6 mt-2">
-          {/* Odometer */}
-          <div className="glass audi-stat p-8 flex flex-col items-center gap-2 transition-colors hover:bg-cyan-500/5">
-            <Gauge className="h-7 w-7 text-cyan-300 drop-shadow-[0_0_12px_rgba(34,211,238,0.9)] mb-1" />
-            <span className="white-data text-2xl font-extrabold tabular-nums" dir="ltr">{vehicle.current_odometer.toLocaleString()}</span>
+        <div className="grid grid-cols-3 gap-6 mb-6">
+          <div className="audi-stat flex flex-col items-center justify-center p-6">
+            <span className="white-data text-2xl">{vehicle.current_odometer.toLocaleString()}</span>
             <span className="data-label-glow">קילומטראז׳</span>
           </div>
-          {/* Next maintenance */}
-          <div className="glass audi-stat p-8 flex flex-col items-center gap-2 transition-colors hover:bg-cyan-500/5">
-            <CalendarClock className="h-7 w-7 text-cyan-300 drop-shadow-[0_0_10px_rgba(34,211,238,0.8)] mb-1" />
-            <span className="white-data text-2xl font-extrabold">{vehicle.next_maintenance_km ? vehicle.next_maintenance_km.toLocaleString() : '—'}</span>
-            <span className="data-label-glow">טיפול הבא</span>
+          <div className="audi-stat flex flex-col items-center justify-center p-6">
+            <span className="white-data text-2xl">{new Date(vehicle.test_expiry).toLocaleDateString('he-IL')}</span>
+            <span className="data-label-glow">טסט</span>
           </div>
-          {/* Test expiry */}
-          <div className="glass audi-stat p-8 flex flex-col items-center gap-2 transition-colors hover:bg-cyan-500/5">
-            <div className="flex items-center gap-2 mb-1">
-              <Shield className="h-7 w-7 text-cyan-300 drop-shadow-[0_0_10px_rgba(34,211,238,0.8)]" />
-              {testStatus === 'valid'
-                ? <CircleCheck className="h-5 w-5 text-emerald-400 drop-shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
-                : <CircleAlert className="h-5 w-5 text-amber-400 drop-shadow-[0_0_6px_rgba(251,191,36,0.8)]" />}
-            </div>
-            <span className="white-data text-2xl font-extrabold">{new Date(vehicle.test_expiry).toLocaleDateString('he-IL')}</span>
-            <span className="data-label-glow">תוקף טסט</span>
-          </div>
-          {/* Insurance expiry */}
-          <div className="glass audi-stat p-8 flex flex-col items-center gap-2 transition-colors hover:bg-cyan-500/5">
-            <div className="flex items-center gap-2 mb-1">
-              <Shield className="h-7 w-7 text-cyan-300 drop-shadow-[0_0_10px_rgba(34,211,238,0.8)]" />
-              {insuranceStatus === 'valid'
-                ? <CircleCheck className="h-5 w-5 text-emerald-400 drop-shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
-                : <CircleAlert className="h-5 w-5 text-amber-400 drop-shadow-[0_0_6px_rgba(251,191,36,0.8)]" />}
-            </div>
-            <span className="white-data text-2xl font-extrabold">{new Date(vehicle.insurance_expiry).toLocaleDateString('he-IL')}</span>
-            <span className="data-label-glow">תוקף ביטוח</span>
+          <div className="audi-stat flex flex-col items-center justify-center p-6">
+            <span className="white-data text-2xl">{new Date(vehicle.insurance_expiry).toLocaleDateString('he-IL')}</span>
+            <span className="data-label-glow">ביטוח</span>
           </div>
         </div>
-
-        {/* Driver row (Audi style) */}
-        <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur-sm mt-4">
-          <UserRound className="h-6 w-6 shrink-0 text-cyan-300 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
-          <div className="flex flex-col">
-            <span className="text-xs uppercase tracking-wide text-white/60">נהג משויך</span>
-            <span className="text-white font-extrabold text-lg tracking-wide">{assignedDriver?.full_name ?? '—'}</span>
-          </div>
-        </div>
-
-        {/* Assign driver select (managers only) */}
-        {canEdit && (
-          <Select
-            value={assignedDriver?.id ?? '__none__'}
-            onValueChange={(value) => onAssignDriver(vehicle.id, value === '__none__' ? null : value)}
-            disabled={isAssigning}
-          >
-            <SelectTrigger className="border-cyan-400/35 bg-slate-900/60 text-cyan-100 focus:ring-cyan-400/40">
-              <SelectValue placeholder="שייך נהג" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">ללא נהג משויך</SelectItem>
-              {drivers.map((driver) => (
-                <SelectItem key={driver.id} value={driver.id}>
-                  {driver.full_name} ({driver.id_number})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-      </div>
-
-      {/* ── Bottom action panel ── */}
-      <div className="relative border-t border-white/8 bg-white/5 backdrop-blur-sm">
-        {/* thin top separator shimmer */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/15 to-transparent" />
-
-        <div className="flex w-full">
-          {/* History */}
-          <Link to={`/vehicles/${vehicle.id}#handover-history`} className="contents">
-            <button className="glass-button group/btn relative flex flex-1 flex-col items-center gap-1.5 transition-all duration-300 active:scale-95">
-              <ClipboardList className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_9px_rgba(34,211,238,1)] transition-all duration-300 group-hover/btn:drop-shadow-[0_0_16px_rgba(34,211,238,1)]" />
-              {/* Icon reflection */}
-              <ClipboardList className="pointer-events-none absolute top-[calc(50%-4px)] h-4 w-4 scale-y-[-1] text-cyan-400 opacity-[0.15] blur-[1px]" />
-              היסטוריה
-            </button>
+        <div className="flex w-full gap-4 mt-4">
+          <Link to={`/vehicles/${vehicle.id}#handover-history`} className="flex-1">
+            <button className="glass-button w-full py-4 text-lg font-bold">היסטוריה</button>
           </Link>
-          {/* Tax data */}
-          <Link to={`/vehicles/${vehicle.id}#tax-data`} className="contents">
-            <button className="glass-button group/btn relative flex flex-1 flex-col items-center gap-1.5 transition-all duration-300 active:scale-95">
-              <Zap className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_9px_rgba(34,211,238,1)] transition-all duration-300 group-hover/btn:drop-shadow-[0_0_16px_rgba(34,211,238,1)]" />
-              {/* Icon reflection */}
-              <Zap className="pointer-events-none absolute top-[calc(50%-4px)] h-4 w-4 scale-y-[-1] text-cyan-400 opacity-[0.15] blur-[1px]" />
-              נתוני מס
-            </button>
+          <Link to={`/vehicles/${vehicle.id}#tax-data`} className="flex-1">
+            <button className="glass-button w-full py-4 text-lg font-bold">נתוני מס</button>
           </Link>
-          {/* Overview */}
-          <Link to={`/vehicles/${vehicle.id}#overview`} className="contents">
-            <button className="glass-button group/btn relative flex flex-1 flex-col items-center gap-1.5 transition-all duration-300 active:scale-95">
-              <Eye className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_9px_rgba(34,211,238,1)] transition-all duration-300 group-hover/btn:drop-shadow-[0_0_16px_rgba(34,211,238,1)]" />
-              {/* Icon reflection */}
-              <Eye className="pointer-events-none absolute top-[calc(50%-4px)] h-4 w-4 scale-y-[-1] text-cyan-400 opacity-[0.15] blur-[1px]" />
-              צפייה
-            </button>
+          <Link to={`/vehicles/${vehicle.id}#overview`} className="flex-1">
+            <button className="glass-button w-full py-4 text-lg font-bold">צפייה</button>
           </Link>
-          {/* Documents */}
-          <Link to={`/vehicles/${vehicle.id}#vehicle-documents`} className="contents">
-            <button className="glass-button group/btn relative flex flex-1 flex-col items-center gap-1.5 transition-all duration-300 active:scale-95">
-              <FileText className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_9px_rgba(34,211,238,1)] transition-all duration-300 group-hover/btn:drop-shadow-[0_0_16px_rgba(34,211,238,1)]" />
-              {/* Icon reflection */}
-              <FileText className="pointer-events-none absolute top-[calc(50%-4px)] h-4 w-4 scale-y-[-1] text-cyan-400 opacity-[0.15] blur-[1px]" />
-              מסמכים
-            </button>
+          <Link to={`/vehicles/${vehicle.id}#vehicle-documents`} className="flex-1">
+            <button className="glass-button w-full py-4 text-lg font-bold">מסמכים</button>
           </Link>
         </div>
-
-        {/* Bottom glow line */}
-        <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-cyan-400/65 to-transparent" />
       </div>
     </div>
   );
