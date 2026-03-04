@@ -90,7 +90,7 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
   const vehicleType = vehicle.vehicle_type_name || 'רכב';
 
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-cyan-500/30 border-t-white/20 bg-gradient-to-b from-[#0f172a] to-[#020617] shadow-[0_0_25px_rgba(6,182,212,0.18)] backdrop-blur-xl transition-all duration-300 hover:border-cyan-400/70 hover:scale-[1.01] hover:shadow-[0_0_50px_rgba(6,182,212,0.35),0_0_0_1px_rgba(34,211,238,0.4)]">
+    <div className="audi-card group relative overflow-hidden rounded-2xl border-t-white/20 shadow-[0_0_25px_rgba(6,182,212,0.18)] transition-all duration-300 hover:border-cyan-400/70 hover:scale-[1.01] hover:shadow-[0_0_50px_rgba(6,182,212,0.35),0_0_0_1px_rgba(34,211,238,0.4)]">
       {/* Top light strip — thin white shimmer imitating a panel edge */}
       <div className="pointer-events-none absolute left-0 right-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/30 to-transparent" />
       {/* Top cyan glow line below the white strip */}
@@ -127,7 +127,7 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
             <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-cyan-600/60 via-cyan-400/90 to-cyan-600/60" />
             {/* Subtle scanline texture */}
             <div className="pointer-events-none absolute inset-0 bg-[repeating-linear-gradient(0deg,transparent,transparent_3px,rgba(34,211,238,0.02)_3px,rgba(34,211,238,0.02)_4px)]" />
-            <span className="relative font-mono text-[2rem] font-extrabold leading-none tracking-[0.3em] text-cyan-400 drop-shadow-[0_0_12px_rgba(34,211,238,0.9)]">
+            <span className="neon-plate-text relative text-5xl font-extrabold leading-none tracking-[0.3em]">
               {vehicle.plate_number}
             </span>
           </div>
@@ -211,25 +211,25 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
         <div className="grid grid-cols-4">
           {/* btn base: shared classes extracted for readability */}
           <Link to={`/vehicles/${vehicle.id}#handover-history`} className="contents">
-            <button className="group/btn flex flex-col items-center gap-1.5 border-l border-white/8 px-1 py-3.5 text-[10px] font-semibold text-white/70 transition-all duration-200 first:border-l-0 hover:bg-[rgba(34,211,238,0.12)] hover:text-white hover:shadow-[inset_0_0_20px_rgba(34,211,238,0.18),0_0_22px_rgba(34,211,238,0.35)] active:scale-95">
+            <button className="glass-button group/btn flex flex-col items-center gap-1.5 border-l border-white/8 px-1 py-3.5 text-[10px] font-semibold text-white/70 first:border-l-0 active:scale-95">
               <ClipboardList className="h-4 w-4 text-[#38bdf8] drop-shadow-[0_0_7px_rgba(56,189,248,1)] transition-all duration-200 group-hover/btn:text-cyan-300 group-hover/btn:drop-shadow-[0_0_12px_rgba(34,211,238,1)]" />
               היסטוריה
             </button>
           </Link>
           <Link to={`/vehicles/${vehicle.id}#tax-data`} className="contents">
-            <button className="group/btn flex flex-col items-center gap-1.5 border-l border-white/8 px-1 py-3.5 text-[10px] font-semibold text-white/70 transition-all duration-200 hover:bg-[rgba(34,211,238,0.12)] hover:text-white hover:shadow-[inset_0_0_20px_rgba(34,211,238,0.18),0_0_22px_rgba(34,211,238,0.35)] active:scale-95">
+            <button className="glass-button group/btn flex flex-col items-center gap-1.5 border-l border-white/8 px-1 py-3.5 text-[10px] font-semibold text-white/70 active:scale-95">
               <Zap className="h-4 w-4 text-[#38bdf8] drop-shadow-[0_0_7px_rgba(56,189,248,1)] transition-all duration-200 group-hover/btn:text-cyan-300 group-hover/btn:drop-shadow-[0_0_12px_rgba(34,211,238,1)]" />
               נתוני מס
             </button>
           </Link>
           <Link to={`/vehicles/${vehicle.id}#overview`} className="contents">
-            <button className="group/btn flex flex-col items-center gap-1.5 border-l border-white/8 px-1 py-3.5 text-[10px] font-semibold text-white/70 transition-all duration-200 hover:bg-[rgba(34,211,238,0.12)] hover:text-white hover:shadow-[inset_0_0_20px_rgba(34,211,238,0.18),0_0_22px_rgba(34,211,238,0.35)] active:scale-95">
+            <button className="glass-button group/btn flex flex-col items-center gap-1.5 border-l border-white/8 px-1 py-3.5 text-[10px] font-semibold text-white/70 active:scale-95">
               <Eye className="h-4 w-4 text-[#38bdf8] drop-shadow-[0_0_7px_rgba(56,189,248,1)] transition-all duration-200 group-hover/btn:text-cyan-300 group-hover/btn:drop-shadow-[0_0_12px_rgba(34,211,238,1)]" />
               צפייה
             </button>
           </Link>
           <Link to={`/vehicles/${vehicle.id}#vehicle-documents`} className="contents">
-            <button className="group/btn flex flex-col items-center gap-1.5 border-l border-white/8 px-1 py-3.5 text-[10px] font-semibold text-white/70 transition-all duration-200 hover:bg-[rgba(34,211,238,0.12)] hover:text-white hover:shadow-[inset_0_0_20px_rgba(34,211,238,0.18),0_0_22px_rgba(34,211,238,0.35)] active:scale-95">
+            <button className="glass-button group/btn flex flex-col items-center gap-1.5 border-l border-white/8 px-1 py-3.5 text-[10px] font-semibold text-white/70 active:scale-95">
               <FileText className="h-4 w-4 text-[#38bdf8] drop-shadow-[0_0_7px_rgba(56,189,248,1)] transition-all duration-200 group-hover/btn:text-cyan-300 group-hover/btn:drop-shadow-[0_0_12px_rgba(34,211,238,1)]" />
               מסמכים
             </button>
