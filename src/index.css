@@ -120,22 +120,32 @@
 
   /* ── Frosted glass card ── */
   .glass {
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.01));
+    background: rgba(2, 6, 23, 0.8);
     backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow:
-      0 8px 32px 0 rgba(0, 0, 0, 0.8),
-      inset 0 0 0 1px rgba(255, 255, 255, 0.1),
-      inset 0 4px 15px 0 rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(34, 211, 238, 0.3);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
     border-radius: 24px;
     position: relative;
     overflow: hidden;
   }
 
   .glass:hover {
-    border: 1px solid rgba(0, 255, 255, 0.3);
+    border: 1px solid rgba(34, 211, 238, 0.5);
     box-shadow: 0 0 50px rgba(0, 255, 255, 0.15);
     transform: translateY(-2px);
+  }
+
+  /* ── Neon white text with cyan glow ── */
+  .neon-text {
+    color: #ffffff !important;
+    text-shadow: 0 0 10px rgba(34, 211, 238, 0.8);
+  }
+
+  /* ── Muted cyan data labels ── */
+  .data-label {
+    color: rgba(165, 243, 252, 0.7);
+    font-size: 0.75rem;
+    text-transform: uppercase;
   }
 
   /* ── Audi premium card with z-layers, edge glow & scanlines ── */

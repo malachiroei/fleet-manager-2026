@@ -146,41 +146,41 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
         <div className="grid grid-cols-2 gap-6">
           {/* Odometer */}
           <div className="glass p-8 flex flex-col items-center gap-1 transition-colors hover:bg-cyan-500/5">
-            <Gauge className="h-4 w-4 text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.9)]" />
-            <span className="text-[9px] font-medium text-white/40">מרחק נסיעה</span>
-            <span className="text-[10px] font-bold uppercase tracking-wide text-cyan-400/80">מד אוץ</span>
-            <span className="text-sm font-extrabold text-white tabular-nums" dir="ltr">{vehicle.current_odometer.toLocaleString()}</span>
+            <Gauge className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.9)]" />
+            <span className="data-label">מרחק נסיעה</span>
+            <span className="data-label opacity-60">מד אוץ</span>
+            <span className="neon-text text-lg font-extrabold tabular-nums" dir="ltr">{vehicle.current_odometer.toLocaleString()}</span>
           </div>
           {/* Next maintenance */}
           <div className="glass p-8 flex flex-col items-center gap-1 transition-colors hover:bg-cyan-500/5">
-            <CalendarClock className="h-4 w-4 text-cyan-400 drop-shadow-[0_0_7px_rgba(34,211,238,0.8)]" />
-            <span className="text-[9px] font-medium text-white/40">מצב תחזוקה</span>
-            <span className="text-[10px] font-bold uppercase tracking-wide text-cyan-400/80">טיפול הבא</span>
-            <span className="text-sm font-extrabold text-white tabular-nums">{vehicle.next_maintenance_km ? vehicle.next_maintenance_km.toLocaleString() : '—'}</span>
+            <CalendarClock className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_7px_rgba(34,211,238,0.8)]" />
+            <span className="data-label">מצב תחזוקה</span>
+            <span className="data-label opacity-60">טיפול הבא</span>
+            <span className="neon-text text-lg font-extrabold tabular-nums">{vehicle.next_maintenance_km ? vehicle.next_maintenance_km.toLocaleString() : '—'}</span>
           </div>
           {/* Test expiry */}
           <div className="glass p-8 flex flex-col items-center gap-1 transition-colors hover:bg-cyan-500/5">
             <div className="flex items-center gap-1">
-              <Shield className="h-4 w-4 text-cyan-400 drop-shadow-[0_0_7px_rgba(34,211,238,0.8)]" />
+              <Shield className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_7px_rgba(34,211,238,0.8)]" />
               {testStatus === 'valid'
-                ? <CircleCheck className="h-3.5 w-3.5 text-emerald-400 drop-shadow-[0_0_4px_rgba(52,211,153,0.8)]" />
-                : <CircleAlert className="h-3.5 w-3.5 text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.8)]" />}
+                ? <CircleCheck className="h-4 w-4 text-emerald-400 drop-shadow-[0_0_4px_rgba(52,211,153,0.8)]" />
+                : <CircleAlert className="h-4 w-4 text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.8)]" />}
             </div>
-            <span className="text-[9px] font-medium text-white/40">בדיקת רכב</span>
-            <span className="text-[10px] font-bold uppercase tracking-wide text-cyan-400/80">תוקף טסט</span>
-            <span className="text-xs font-extrabold text-white tabular-nums">{new Date(vehicle.test_expiry).toLocaleDateString('he-IL')}</span>
+            <span className="data-label">בדיקת רכב</span>
+            <span className="data-label opacity-60">תוקף טסט</span>
+            <span className="neon-text text-base font-extrabold tabular-nums">{new Date(vehicle.test_expiry).toLocaleDateString('he-IL')}</span>
           </div>
           {/* Insurance expiry */}
           <div className="glass p-8 flex flex-col items-center gap-1 transition-colors hover:bg-cyan-500/5">
             <div className="flex items-center gap-1">
-              <Shield className="h-4 w-4 text-cyan-400 drop-shadow-[0_0_7px_rgba(34,211,238,0.8)]" />
+              <Shield className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_7px_rgba(34,211,238,0.8)]" />
               {insuranceStatus === 'valid'
-                ? <CircleCheck className="h-3.5 w-3.5 text-emerald-400 drop-shadow-[0_0_4px_rgba(52,211,153,0.8)]" />
-                : <CircleAlert className="h-3.5 w-3.5 text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.8)]" />}
+                ? <CircleCheck className="h-4 w-4 text-emerald-400 drop-shadow-[0_0_4px_rgba(52,211,153,0.8)]" />
+                : <CircleAlert className="h-4 w-4 text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.8)]" />}
             </div>
-            <span className="text-[9px] font-medium text-white/40">כיסוי ביטוחי</span>
-            <span className="text-[10px] font-bold uppercase tracking-wide text-cyan-400/80">תוקף ביטוח</span>
-            <span className="text-xs font-extrabold text-white tabular-nums">{new Date(vehicle.insurance_expiry).toLocaleDateString('he-IL')}</span>
+            <span className="data-label">כיסוי ביטוחי</span>
+            <span className="data-label opacity-60">תוקף ביטוח</span>
+            <span className="neon-text text-base font-extrabold tabular-nums">{new Date(vehicle.insurance_expiry).toLocaleDateString('he-IL')}</span>
           </div>
         </div>
 
@@ -224,7 +224,7 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
         <div className="flex w-full">
           {/* History */}
           <Link to={`/vehicles/${vehicle.id}#handover-history`} className="contents">
-            <button className="group/btn relative flex flex-1 flex-col items-center gap-1.5 border-t-2 border-l-2 border-cyan-500/50 px-2 py-3.5 text-[10px] font-bold text-white transition-all duration-300 hover:bg-cyan-500/10 hover:shadow-[0_0_20px_#00ffff] active:scale-95">
+            <button className="group/btn relative flex flex-1 flex-col items-center gap-1.5 border-t-2 border-l-2 border-cyan-500/30 bg-cyan-500/10 px-2 py-3.5 text-[10px] font-bold text-white transition-all duration-300 hover:bg-cyan-500/20 hover:border-cyan-500/60 hover:shadow-[0_0_20px_#00ffff] active:scale-95">
               <ClipboardList className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_9px_rgba(34,211,238,1)] transition-all duration-300 group-hover/btn:drop-shadow-[0_0_16px_rgba(34,211,238,1)]" />
               {/* Icon reflection */}
               <ClipboardList className="pointer-events-none absolute top-[calc(50%-4px)] h-4 w-4 scale-y-[-1] text-cyan-400 opacity-[0.15] blur-[1px]" />
@@ -233,7 +233,7 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
           </Link>
           {/* Tax data */}
           <Link to={`/vehicles/${vehicle.id}#tax-data`} className="contents">
-            <button className="group/btn relative flex flex-1 flex-col items-center gap-1.5 border-t-2 border-l-2 border-cyan-500/50 px-2 py-3.5 text-[10px] font-bold text-white transition-all duration-300 hover:bg-cyan-500/10 hover:shadow-[0_0_20px_#00ffff] active:scale-95">
+            <button className="group/btn relative flex flex-1 flex-col items-center gap-1.5 border-t-2 border-l-2 border-cyan-500/30 bg-cyan-500/10 px-2 py-3.5 text-[10px] font-bold text-white transition-all duration-300 hover:bg-cyan-500/20 hover:border-cyan-500/60 hover:shadow-[0_0_20px_#00ffff] active:scale-95">
               <Zap className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_9px_rgba(34,211,238,1)] transition-all duration-300 group-hover/btn:drop-shadow-[0_0_16px_rgba(34,211,238,1)]" />
               {/* Icon reflection */}
               <Zap className="pointer-events-none absolute top-[calc(50%-4px)] h-4 w-4 scale-y-[-1] text-cyan-400 opacity-[0.15] blur-[1px]" />
@@ -242,7 +242,7 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
           </Link>
           {/* Overview */}
           <Link to={`/vehicles/${vehicle.id}#overview`} className="contents">
-            <button className="group/btn relative flex flex-1 flex-col items-center gap-1.5 border-t-2 border-l-2 border-cyan-500/50 px-2 py-3.5 text-[10px] font-bold text-white transition-all duration-300 hover:bg-cyan-500/10 hover:shadow-[0_0_20px_#00ffff] active:scale-95">
+            <button className="group/btn relative flex flex-1 flex-col items-center gap-1.5 border-t-2 border-l-2 border-cyan-500/30 bg-cyan-500/10 px-2 py-3.5 text-[10px] font-bold text-white transition-all duration-300 hover:bg-cyan-500/20 hover:border-cyan-500/60 hover:shadow-[0_0_20px_#00ffff] active:scale-95">
               <Eye className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_9px_rgba(34,211,238,1)] transition-all duration-300 group-hover/btn:drop-shadow-[0_0_16px_rgba(34,211,238,1)]" />
               {/* Icon reflection */}
               <Eye className="pointer-events-none absolute top-[calc(50%-4px)] h-4 w-4 scale-y-[-1] text-cyan-400 opacity-[0.15] blur-[1px]" />
@@ -251,7 +251,7 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
           </Link>
           {/* Documents */}
           <Link to={`/vehicles/${vehicle.id}#vehicle-documents`} className="contents">
-            <button className="group/btn relative flex flex-1 flex-col items-center gap-1.5 border-t-2 border-l-2 border-cyan-500/50 px-2 py-3.5 text-[10px] font-bold text-white transition-all duration-300 hover:bg-cyan-500/10 hover:shadow-[0_0_20px_#00ffff] active:scale-95">
+            <button className="group/btn relative flex flex-1 flex-col items-center gap-1.5 border-t-2 border-l-2 border-cyan-500/30 bg-cyan-500/10 px-2 py-3.5 text-[10px] font-bold text-white transition-all duration-300 hover:bg-cyan-500/20 hover:border-cyan-500/60 hover:shadow-[0_0_20px_#00ffff] active:scale-95">
               <FileText className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_9px_rgba(34,211,238,1)] transition-all duration-300 group-hover/btn:drop-shadow-[0_0_16px_rgba(34,211,238,1)]" />
               {/* Icon reflection */}
               <FileText className="pointer-events-none absolute top-[calc(50%-4px)] h-4 w-4 scale-y-[-1] text-cyan-400 opacity-[0.15] blur-[1px]" />
