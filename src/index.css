@@ -119,6 +119,20 @@
     border: 1px solid rgba(34, 211, 238, 0.18) !important;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
   }
+
+  /* ── Radix UI Popover / Select / Dialog portals ── */
+  [data-radix-select-content],
+  [data-radix-popper-content-wrapper],
+  [role="listbox"],
+  [role="dialog"],
+  [data-radix-dialog-content] {
+    background: #0c1a2e !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border: 1px solid rgba(34, 211, 238, 0.3) !important;
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.9) !important;
+    color: #ffffff !important;
+  }
 }
 
 /* ── Vehicle Card Audi-style classes (scoped, do NOT affect global layout) ── */
