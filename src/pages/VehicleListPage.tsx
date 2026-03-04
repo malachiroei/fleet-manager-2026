@@ -29,9 +29,18 @@ function VehicleCard({ vehicle }: { vehicle: any }) {
         </div>
       </div>
       <div className="grid grid-cols-4 gap-2">
-        {['היסטוריה', 'נתוני מס', 'צפייה', 'מסמכים'].map((label) => (
-          <button key={label} className="glass-button py-3 text-sm font-bold uppercase">{label}</button>
-        ))}
+        <Link to={`/vehicles/${vehicle.id}#handover-history`}>
+          <button className="glass-button w-full py-3 text-sm font-bold">היסטוריה</button>
+        </Link>
+        <Link to={`/vehicles/${vehicle.id}#tax-data`}>
+          <button className="glass-button w-full py-3 text-sm font-bold">נתוני מס</button>
+        </Link>
+        <Link to={`/vehicles/${vehicle.id}#overview`}>
+          <button className="glass-button w-full py-3 text-sm font-bold">צפייה</button>
+        </Link>
+        <Link to={`/vehicles/${vehicle.id}#vehicle-documents`}>
+          <button className="glass-button w-full py-3 text-sm font-bold">מסמכים</button>
+        </Link>
       </div>
     </div>
   );
@@ -48,7 +57,9 @@ export default function VehicleListPage() {
       <div className="relative z-10 space-y-10">
         <div className="flex justify-between items-center">
           <h1 className="text-4xl font-black neon-title">ניהול צי רכבים</h1>
-          <Button className="bg-cyan-600 hover:bg-cyan-500 font-bold px-8 py-6 text-lg shadow-[0_0_20px_rgba(6,182,212,0.4)]">הוסף רכב</Button>
+          <Link to="/vehicles/add">
+            <Button className="bg-cyan-600 hover:bg-cyan-500 font-bold px-8 py-6 text-lg shadow-[0_0_20px_rgba(6,182,212,0.4)]">הוסף רכב</Button>
+          </Link>
         </div>
         <div className="relative max-w-xl">
           <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-cyan-500/50" />
