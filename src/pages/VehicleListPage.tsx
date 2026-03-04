@@ -90,7 +90,7 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
   const vehicleType = vehicle.vehicle_type_name || 'רכב';
 
   return (
-    <div className="glass audi-card group transition-all duration-300 hover:scale-[1.01] relative overflow-visible">
+    <div className="audi-card group transition-all duration-300 hover:scale-[1.01] relative overflow-visible">
       {/* Dynamic edge-lighting layer (intensifies on hover via CSS) */}
       <div className="dynamic-glow rounded-[28px]" />
       {/* Top-right corner cyan edge light */}
