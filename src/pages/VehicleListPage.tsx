@@ -131,12 +131,10 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
             {/* Plate container — deep black glass */}
             <div className="relative rounded-2xl bg-black/40 px-10 py-5 shadow-[0_8px_32px_rgba(0,0,0,0.9)]">
               <span
-                className="font-mono text-6xl font-extrabold leading-none"
+                className="neon-title font-mono text-6xl leading-none"
                 style={{ letterSpacing: '0.5em' }}
               >
-                <span className="bg-gradient-to-b from-white to-cyan-400 bg-clip-text text-transparent">
-                  {vehicle.plate_number}
-                </span>
+                {vehicle.plate_number}
               </span>
             </div>
           </div>
@@ -147,16 +145,16 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
           {/* Odometer */}
           <div className="glass p-8 flex flex-col items-center gap-1 transition-colors hover:bg-cyan-500/5">
             <Gauge className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.9)]" />
-            <span className="data-label">מרחק נסיעה</span>
-            <span className="data-label opacity-60">מד אוץ</span>
-            <span className="neon-text text-lg font-extrabold tabular-nums" dir="ltr">{vehicle.current_odometer.toLocaleString()}</span>
+            <span className="text-xs font-medium uppercase tracking-wide text-cyan-300">מרחק נסיעה</span>
+            <span className="text-xs uppercase tracking-wide text-cyan-300/60">מד אוץ</span>
+            <span className="white-data text-xl tabular-nums" dir="ltr">{vehicle.current_odometer.toLocaleString()}</span>
           </div>
           {/* Next maintenance */}
           <div className="glass p-8 flex flex-col items-center gap-1 transition-colors hover:bg-cyan-500/5">
             <CalendarClock className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_7px_rgba(34,211,238,0.8)]" />
-            <span className="data-label">מצב תחזוקה</span>
-            <span className="data-label opacity-60">טיפול הבא</span>
-            <span className="neon-text text-lg font-extrabold tabular-nums">{vehicle.next_maintenance_km ? vehicle.next_maintenance_km.toLocaleString() : '—'}</span>
+            <span className="text-xs font-medium uppercase tracking-wide text-cyan-300">מצב תחזוקה</span>
+            <span className="text-xs uppercase tracking-wide text-cyan-300/60">טיפול הבא</span>
+            <span className="white-data text-xl tabular-nums">{vehicle.next_maintenance_km ? vehicle.next_maintenance_km.toLocaleString() : '—'}</span>
           </div>
           {/* Test expiry */}
           <div className="glass p-8 flex flex-col items-center gap-1 transition-colors hover:bg-cyan-500/5">
@@ -166,9 +164,9 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
                 ? <CircleCheck className="h-4 w-4 text-emerald-400 drop-shadow-[0_0_4px_rgba(52,211,153,0.8)]" />
                 : <CircleAlert className="h-4 w-4 text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.8)]" />}
             </div>
-            <span className="data-label">בדיקת רכב</span>
-            <span className="data-label opacity-60">תוקף טסט</span>
-            <span className="neon-text text-base font-extrabold tabular-nums">{new Date(vehicle.test_expiry).toLocaleDateString('he-IL')}</span>
+            <span className="text-xs font-medium uppercase tracking-wide text-cyan-300">בדיקת רכב</span>
+            <span className="text-xs uppercase tracking-wide text-cyan-300/60">תוקף טסט</span>
+            <span className="white-data text-xl tabular-nums">{new Date(vehicle.test_expiry).toLocaleDateString('he-IL')}</span>
           </div>
           {/* Insurance expiry */}
           <div className="glass p-8 flex flex-col items-center gap-1 transition-colors hover:bg-cyan-500/5">
@@ -178,9 +176,9 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
                 ? <CircleCheck className="h-4 w-4 text-emerald-400 drop-shadow-[0_0_4px_rgba(52,211,153,0.8)]" />
                 : <CircleAlert className="h-4 w-4 text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.8)]" />}
             </div>
-            <span className="data-label">כיסוי ביטוחי</span>
-            <span className="data-label opacity-60">תוקף ביטוח</span>
-            <span className="neon-text text-base font-extrabold tabular-nums">{new Date(vehicle.insurance_expiry).toLocaleDateString('he-IL')}</span>
+            <span className="text-xs font-medium uppercase tracking-wide text-cyan-300">כיסוי ביטוחי</span>
+            <span className="text-xs uppercase tracking-wide text-cyan-300/60">תוקף ביטוח</span>
+            <span className="white-data text-xl tabular-nums">{new Date(vehicle.insurance_expiry).toLocaleDateString('he-IL')}</span>
           </div>
         </div>
 

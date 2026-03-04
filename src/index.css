@@ -120,10 +120,10 @@
 
   /* ── Frosted glass card ── */
   .glass {
-    background: rgba(2, 6, 23, 0.8);
-    backdrop-filter: blur(20px);
-    border: 1px solid rgba(34, 211, 238, 0.3);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+    background: rgba(15, 23, 42, 0.7);
+    backdrop-filter: blur(25px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
     border-radius: 24px;
     position: relative;
     overflow: hidden;
@@ -146,6 +146,20 @@
     color: rgba(165, 243, 252, 0.7);
     font-size: 0.75rem;
     text-transform: uppercase;
+  }
+
+  /* ── Neon white title with strong cyan glow ── */
+  .neon-title {
+    color: #ffffff !important;
+    text-shadow: 0 0 15px rgba(34, 211, 238, 0.9);
+    font-weight: 900;
+    letter-spacing: 0.2em;
+  }
+
+  /* ── Pure white data value ── */
+  .white-data {
+    color: #ffffff !important;
+    font-weight: 600;
   }
 
   /* ── Audi premium card with z-layers, edge glow & scanlines ── */
