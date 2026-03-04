@@ -1,39 +1,123 @@
 @import "tailwindcss";
 
 @theme {
-  --color-fleet-blue: #2563eb;
-  --color-fleet-dark: #1e293b;
+  --color-fleet-blue: #22d3ee;
+  --color-fleet-dark: #020617;
 }
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
+    /* ── Audi Dark Theme ── */
+    --background: 222 84% 2%;
+    --foreground: 210 40% 98%;
+    --card: 215 50% 7%;
+    --card-foreground: 210 40% 98%;
+    --popover: 215 50% 7%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 191 97% 53%;
+    --primary-foreground: 222 84% 5%;
+    --secondary: 217 33% 14%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 14%;
+    --muted-foreground: 215 20% 60%;
+    --accent: 217 33% 14%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 84% 60%;
     --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
-    --radius: 0.5rem;
+    --border: 191 50% 20%;
+    --input: 191 50% 20%;
+    --ring: 191 97% 53%;
+    --radius: 0.75rem;
   }
 
   body {
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
+    background-color: #020617;
+    background-image:
+      radial-gradient(ellipse at top right, rgba(34, 211, 238, 0.08) 0%, transparent 55%),
+      radial-gradient(ellipse at bottom left, rgba(14, 116, 144, 0.06) 0%, transparent 50%);
+    background-attachment: fixed;
+    color: #ffffff;
     font-family: 'Heebo', sans-serif;
     margin: 0;
+    min-height: 100vh;
+  }
+
+  /* ── Global typography ── */
+  h1, h2, h3, h4, h5, h6 {
+    color: #ffffff;
+  }
+
+  p, span, label, li, td, th {
+    color: inherit;
+  }
+
+  /* ── Global inputs ── */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  textarea,
+  select {
+    background-color: rgba(15, 23, 42, 0.85) !important;
+    border: 1px solid rgba(34, 211, 238, 0.3) !important;
+    color: #ffffff !important;
+    border-radius: 8px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):focus,
+  textarea:focus,
+  select:focus {
+    border-color: rgba(34, 211, 238, 0.7) !important;
+    box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.12) !important;
+    outline: none;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: rgba(148, 163, 184, 0.6) !important;
+  }
+}
+
+/* ── Global component overrides ── */
+@layer components {
+
+  /* Generic button → glass style */
+  button:not([class*="glass-button"]):not([data-no-theme]) {
+    background: rgba(34, 211, 238, 0.1);
+    border: 1px solid rgba(34, 211, 238, 0.35);
+    color: #ffffff;
+    font-weight: 600;
+    border-radius: 8px;
+    transition: background 0.25s, box-shadow 0.25s, border-color 0.25s;
+    cursor: pointer;
+  }
+
+  button:not([class*="glass-button"]):not([data-no-theme]):hover {
+    background: rgba(34, 211, 238, 0.2);
+    border-color: rgba(34, 211, 238, 0.65);
+    box-shadow: 0 0 14px rgba(34, 211, 238, 0.25);
+  }
+
+  /* Destructive / danger buttons keep red */
+  button[class*="destructive"],
+  button[data-variant="destructive"] {
+    background: rgba(239, 68, 68, 0.15) !important;
+    border-color: rgba(239, 68, 68, 0.5) !important;
+  }
+
+  button[class*="destructive"]:hover,
+  button[data-variant="destructive"]:hover {
+    background: rgba(239, 68, 68, 0.28) !important;
+    box-shadow: 0 0 14px rgba(239, 68, 68, 0.25) !important;
+  }
+
+  /* Cards → glass effect */
+  [class*="bg-card"],
+  .card,
+  [data-slot="card"] {
+    background: rgba(15, 23, 42, 0.75) !important;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(34, 211, 238, 0.18) !important;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
   }
 }
 
