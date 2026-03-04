@@ -61,57 +61,82 @@ function VehicleCard({ vehicle }: { vehicle: Vehicle }) {
 
 export default function VehicleListPage() {
   const { data: vehicles, isLoading, isError, error, refetch } = useVehicles();
-  const { t } = useTranslation();
-  const [search, setSearch] = useState('');
-
-  const filteredVehicles = vehicles?.filter(v => 
-    v.plate_number.includes(search) || v.manufacturer.toLowerCase().includes(search.toLowerCase())
-  );
-
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#050816] text-white">
-      {/* BACKGROUND EFFECTS */}
-      <div className="absolute left-1/2 top-[-200px] h-[800px] w-[800px] -translate-x-1/2 rounded-full bg-cyan-500/10 blur-[150px] pointer-events-none" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,255,255,0.03)_0%,transparent_70%)] pointer-events-none" />
+    <div className="relative min-h-screen overflow-hidden bg-[#020617] text-white">
+      {/* Radial cyan glow — the blue atmosphere behind everything */}
+      <div className="absolute left-1/2 top-[-200px] h-[900px] w-[900px] -translate-x-1/2 rounded-full bg-cyan-500/10 blur-[180px]" />
+      {/* Subtle radial grid overlay */}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,255,255,0.05)_0%,transparent_60%)]" />
 
-      <div className="relative z-10 p-8 space-y-10">
-        {/* TOP BAR */}
+      {/* Page content — sits above all background layers */}
+      <div className="relative z-10 px-4 py-6 space-y-6">
+        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-4xl font-black tracking-tight neon-title">ניהול צי רכבים</h1>
-            <p className="text-cyan-400/60 font-medium">מבט על של כל הרכבים במערכת</p>
+            <h1 className="text-3xl font-bold">{t('vehicles.title')}</h1>
+            <p className="text-blue-300/60 mt-1">{t('vehicles.subtitle')}</p>
           </div>
           <Link to="/vehicles/add">
-            <Button className="bg-cyan-600 hover:bg-cyan-500 shadow-[0_0_20px_rgba(6,182,212,0.4)] px-6 py-6 text-lg font-bold">
-              <Plus className="ml-2 h-5 w-5" /> הוסף רכב
+            <Button className="bg-blue-600 text-white hover:bg-blue-500 shadow-[0_0_18px_rgba(59,130,246,0.45)]">
+              <Plus className="h-4 w-4 mr-2" />
+              {t('vehicles.addVehicle')}
             </Button>
           </Link>
         </div>
 
-        {/* SEARCHBAR */}
-        <div className="relative max-w-xl">
-          <Search className="absolute right-4 top-1/2 -translate-y-1/2 h-5 w-5 text-cyan-500/50" />
-          <Input 
-            placeholder="חפש לפי מספר רכב או דגם..." 
+        {/* Search */}
+        <div className="relative max-w-md">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-blue-400/60" />
+          <Input
+            placeholder={t('vehicles.searchPlaceholder')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-14 bg-white/5 border-white/10 pr-12 text-xl focus:border-cyan-500/50 transition-all"
+            className="border-blue-500/30 bg-blue-950/40 pr-10 text-white placeholder:text-white/60 focus-visible:ring-blue-500/40"
           />
         </div>
 
-        {/* VEHICLE GRID */}
-        {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {[1, 2, 3].map(i => <Skeleton key={i} className="h-[450px] rounded-3xl bg-white/5" />)}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
-            {filteredVehicles?.map(vehicle => (
-              <VehicleCard key={vehicle.id} vehicle={vehicle} />
-            ))}
-          </div>
-        )}
-      </div>
+        {/* Content */}
+        <div>
+          {isLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+              {[1, 2, 3].map(i => <Skeleton key={i} className="h-48" />)}
+            </div>
+          ) : isError ? (
+            <Alert variant="destructive">
+              <AlertTitle>שגיאה בטעינת הרכבים</AlertTitle>
+              <AlertDescription className="space-y-3">
+                <p>{errorMessage}</p>
+                <Button variant="outline" size="sm" onClick={() => refetch()}>
+                  נסה שוב
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : filteredVehicles?.length === 0 ? (
+            <div className="rounded-2xl border border-blue-500/20 bg-blue-950/20 py-12 text-center">
+              <Car className="h-12 w-12 mx-auto text-blue-400/40 mb-4" />
+              <p className="text-blue-300/60">{t('vehicles.noVehicles')}</p>
+              <Link to="/vehicles/add">
+                <Button className="mt-4 bg-blue-600 text-white hover:bg-blue-500">
+                  <Plus className="h-4 w-4 mr-2" />
+                  {t('vehicles.addNewVehicle')}
+                </Button>
+              </Link>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+              {filteredVehicles?.map(vehicle => (
+                <VehicleCard
+                  key={vehicle.id}
+                  vehicle={vehicle}
+                  canEdit={isManager}
+                  drivers={drivers ?? []}
+                  onAssignDriver={handleAssignDriver}
+                  isAssigning={assignDriver.isPending}
+                  activeAssignment={(activeAssignments ?? []).find((assignment) => assignment.vehicle_id === vehicle.id) ?? null}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>{/* end z-10 content */}
     </div>
-  );
-}

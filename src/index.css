@@ -1,99 +1,62 @@
 @import "tailwindcss";
 
-@theme {
-  --color-fleet-blue: #2563eb;
-  --color-fleet-dark: #1e293b;
-}
-
 @layer base {
   body {
-    background: #050816; /* חזרה לרקע כהה עמוק */
-    color: #fff;
+    background: #020617 !important; /* שחור עמוק של אאודי */
+    color: #ffffff;
     font-family: 'Heebo', sans-serif;
     min-height: 100vh;
+    margin: 0;
   }
 }
 
 @layer components {
-  /* הפס הירוק בתחתית */
-  .production-bar {
-    background: #22c55e;
-    color: white !important;
-    font-weight: 800;
-    text-transform: uppercase;
-  }
-
-  /* ── Audi-style Vehicle Card ── */
+  /* כרטיס הזכוכית הראשי - כהה ושקוף */
   .audi-premium-card {
-    position: relative;
-    overflow: hidden;
-    background: linear-gradient(165deg, #0f172a 0%, #020617 100%);
-    box-shadow: inset 0 0 20px rgba(34, 211, 238, 0.1), 0 10px 30px rgba(0, 0, 0, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    background: linear-gradient(165deg, rgba(15, 23, 42, 0.9) 0%, rgba(2, 6, 23, 1) 100%);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(34, 211, 238, 0.3);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8), inset 0 0 20px rgba(34, 211, 238, 0.05);
     border-radius: 28px;
-    animation: screenFlicker 0.4s ease-out;
   }
 
-  .audi-premium-card::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(34, 211, 238, 0.015) 3px, rgba(34, 211, 238, 0.015) 4px);
-    pointer-events: none;
-    z-index: 0;
-  }
-
+  /* כותרת הדגם - לבן בוהק */
   .neon-title {
     color: #ffffff !important;
-    text-shadow: 0 0 15px rgba(34, 211, 238, 0.9);
+    text-shadow: 0 0 15px rgba(34, 211, 238, 0.8);
     font-weight: 900;
-    letter-spacing: 0.1em;
   }
 
+  /* מספר רכב - ציאן זוהר */
   .neon-plate-text {
-    color: #22d3ee;
-    text-shadow: 0 0 10px rgba(34, 211, 238, 0.8), 0 0 20px rgba(34, 211, 238, 0.4);
-    font-family: 'monospace';
+    color: #22d3ee !important;
+    text-shadow: 0 0 20px rgba(34, 211, 238, 0.6);
   }
 
+  /* משבצות נתונים - כהות יותר להפרדה */
   .audi-stat {
-    background: rgba(23, 37, 84, 0.4);
-    border-radius: 18px;
+    background: rgba(30, 41, 59, 0.5);
     border: 1px solid rgba(34, 211, 238, 0.2);
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
-    transition: all 0.3s ease;
+    border-radius: 16px;
   }
 
   .white-data {
     color: #ffffff !important;
-    font-weight: 700;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    font-weight: 800;
   }
 
   .data-label-glow {
-    color: rgba(165, 243, 252, 0.8) !important;
+    color: #a5f3fc !important; /* תכלת בהיר מאוד לקריאות */
     font-size: 0.8rem;
     font-weight: 600;
-    text-transform: uppercase;
   }
 
+  /* כפתורים - צריכים להיות בולטים */
   .glass-button {
-    background: rgba(34, 211, 238, 0.1) !important;
-    border: 1px solid rgba(34, 211, 238, 0.3) !important;
+    background: rgba(34, 211, 238, 0.15) !important;
+    border: 1px solid rgba(34, 211, 238, 0.5) !important;
     color: #ffffff !important;
     border-radius: 12px;
-    transition: all 0.3s ease;
+    font-weight: 700;
   }
-
-  .glass-button:hover {
-    background: rgba(34, 211, 238, 0.2) !important;
-    box-shadow: 0 0 15px rgba(34, 211, 238, 0.3);
-  }
-}
-
-@keyframes screenFlicker {
-  0% { opacity: 0.2; transform: scale(0.98); }
-  20% { opacity: 0.8; }
-  40% { opacity: 0.4; }
-  100% { opacity: 1; transform: scale(1); }
 }
