@@ -122,7 +122,8 @@ serve(async (req) => {
     const supabaseUrl         = Deno.env.get('SUPABASE_URL');
     const serviceRoleKey      = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const fromEmail           = Deno.env.get('NOTIFY_FROM_EMAIL') ?? 'Fleet Manager <onboarding@resend.dev>';
-    const fleetManagerEmail   = Deno.env.get('FLEET_MANAGER_EMAIL') ?? 'malachiroei@gmail.com';
+    // FLEET_MANAGER_EMAIL is now a last-resort fallback only — real list comes from system_settings
+    const fallbackManagerEmail = Deno.env.get('FLEET_MANAGER_EMAIL') ?? 'malachiroei@gmail.com';
 
     if (!resendApiKey || !supabaseUrl || !serviceRoleKey) {
       return new Response(
@@ -155,6 +156,22 @@ serve(async (req) => {
 
     // ── Supabase admin client ────────────────────────────────────────────────
     const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+    // ── 0. Resolve CC recipients from system_settings ────────────────────────
+    let ccEmails: string[] = [fallbackManagerEmail];
+    try {
+      const { data: settingsRow } = await supabase
+        .from('system_settings' as never)
+        .select('value')
+        .eq('key', 'notification_emails')
+        .maybeSingle() as { data: { value: unknown } | null };
+      const arr = settingsRow?.value;
+      if (Array.isArray(arr) && arr.length > 0) {
+        ccEmails = (arr as string[]).filter((e) => typeof e === 'string' && e.includes('@'));
+      }
+    } catch (settingsErr) {
+      console.warn('Could not read system_settings.notification_emails — using env fallback:', settingsErr);
+    }
 
     // ── 1. Fetch all docs from this wizard session ───────────────────────────
     //   All docs for the same driver inserted within 90 seconds of the anchor
@@ -269,9 +286,12 @@ serve(async (req) => {
     `.trim();
 
     // ── 5. Send via Resend ────────────────────────────────────────────────────
+    // Driver gets the email; all system_settings addresses are CC'd
     const recipients = [driverEmail];
-    if (fleetManagerEmail && fleetManagerEmail !== driverEmail) {
-      recipients.push(fleetManagerEmail);
+    for (const cc of ccEmails) {
+      if (cc !== driverEmail && !recipients.includes(cc)) {
+        recipients.push(cc);
+      }
     }
 
     const resendPayload = {
