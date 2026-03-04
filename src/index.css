@@ -61,35 +61,16 @@
 
 @layer base {
   body {
-    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-    color: #0f172a; /* טקסט כהה מאוד לקריאות מקסימלית */
+    background: #fff;
+    color: inherit;
     font-family: 'Heebo', sans-serif;
     min-height: 100vh;
   }
 }
 
 @layer components {
-  /* כרטיסיות תלת-ממדיות עם אפקט זכוכית בהירה */
-  .stats-card {
-    background: rgba(255, 255, 255, 0.7);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.8);
-    box-shadow: 20px 20px 60px #d1d5db, 
-                -20px -20px 60px #ffffff;
-    border-radius: 24px;
-    transition: all 0.3s ease;
-  }
-
-  .stats-card:hover {
-    transform: translateY(-5px) scale(1.01);
-    box-shadow: 10px 10px 30px #cbd5e1;
-  }
-
-  /* כותרות וטקסט - חובה כהה */
-  h1, h2, h3, p, span {
-    color: #0f172a !important; 
-    font-weight: 600;
-  }
+  /* הסרנו עיצוב גלובלי לכרטיסים וכותרות כדי להחזיר למראה המקורי */
+  /* אם יש צורך, ניתן להחזיר .stats-card רק לדפים רלוונטיים */
 
   /* הפס הירוק בתחתית */
   .production-bar {
