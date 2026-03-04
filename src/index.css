@@ -1,16 +1,44 @@
 @import "tailwindcss";
 
+@theme {
+  --color-fleet-blue: #2563eb;
+  --color-fleet-dark: #1e293b;
+}
+
 @layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+  }
+
   body {
-    background-color: #020617 !important; /* שחור עמוק חובה */
-    color: #ffffff;
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
     font-family: 'Heebo', sans-serif;
     margin: 0;
   }
 }
 
+/* ── Vehicle Card Audi-style classes (scoped, do NOT affect global layout) ── */
 @layer components {
-  /* כרטיס פרימיום כהה וחד */
   .audi-premium-card {
     background: linear-gradient(165deg, rgba(15, 23, 42, 0.95) 0%, rgba(2, 6, 23, 1) 100%);
     backdrop-filter: blur(25px);
@@ -27,17 +55,23 @@
     font-weight: 900;
   }
 
+  .neon-plate-text {
+    color: #22d3ee !important;
+    text-shadow: 0 0 20px rgba(34, 211, 238, 0.8), 0 0 40px rgba(34, 211, 238, 0.4);
+  }
+
   .white-data {
     color: #ffffff !important;
     font-weight: 800;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
   }
 
   .data-label-glow {
-    color: #22d3ee !important; /* ציאן בוהק לקריאות מקסימלית */
-    font-size: 0.9rem;
+    color: #22d3ee !important;
+    font-size: 0.85rem;
     font-weight: 700;
     text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .glass-button {
@@ -45,6 +79,24 @@
     border: 1px solid rgba(34, 211, 238, 0.5) !important;
     color: #ffffff !important;
     font-weight: 700;
+    font-size: 1rem !important;
     transition: all 0.3s ease;
+    border-radius: 8px;
+    padding: 12px 8px;
+  }
+
+  .glass-button:hover {
+    background: rgba(34, 211, 238, 0.25) !important;
+    box-shadow: 0 0 16px rgba(34, 211, 238, 0.35);
+  }
+
+  .glass {
+    background: rgba(15, 23, 42, 0.7);
+    backdrop-filter: blur(25px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
+    border-radius: 24px;
+    position: relative;
+    overflow: hidden;
   }
 }
