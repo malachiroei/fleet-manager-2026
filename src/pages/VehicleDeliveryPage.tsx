@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, type FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useVehicles, fetchActiveDriverAssignments } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
@@ -61,7 +61,7 @@ export default function VehicleDeliveryPage() {
   const selectedDriverData = drivers?.find(d => d.id === selectedDriver);
   const allPhotosUploaded = photoFront && photoBack && photoRight && photoLeft;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     
     if (!selectedVehicle || !selectedDriver) {
@@ -195,7 +195,14 @@ export default function VehicleDeliveryPage() {
       }
 
       toast.success('מסירת רכב נרשמה בהצלחה');
-      navigate('/');
+
+      if (assignmentMode === 'permanent') {
+        // For permanent handovers, continue to the full wizard
+        // (document signing, accessories checklist, health declaration, license scan)
+        navigate(`/handover/wizard?vehicleId=${selectedVehicle}&driverId=${selectedDriver}`);
+      } else {
+        navigate('/');
+      }
     } catch (error) {
       console.error('Error creating handover:', error);
       toast.error(`שגיאה ברישום מסירת הרכב: ${getErrorMessage(error)}`);
