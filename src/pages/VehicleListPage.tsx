@@ -90,9 +90,9 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
   const vehicleType = vehicle.vehicle_type_name || 'רכב';
 
   return (
-    <div className="audi-premium-card group rounded-2xl transition-all duration-300 hover:scale-[1.01]">
+    <div className="glass group transition-all duration-300 hover:scale-[1.01]">
       {/* Dynamic edge-lighting layer (intensifies on hover via CSS) */}
-      <div className="dynamic-glow rounded-2xl" />
+      <div className="dynamic-glow rounded-[24px]" />
 
       {/* Top-right corner cyan edge light */}
       <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-cyan-500/20 blur-xl" />
@@ -109,7 +109,7 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
       {/* Inner shadow overlay */}
       <div className="pointer-events-none absolute inset-0 rounded-2xl shadow-[inset_0_4px_24px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.04)]" />
 
-      <div className="relative space-y-3 p-4 md:p-5">
+      <div className="relative space-y-3 p-8">
 
         {/* ── Row 1: vehicle type chip + status badge ── */}
         <div className="flex items-center justify-between">
@@ -128,35 +128,33 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
           <div className="relative z-10" dir="ltr">
             {/* Pulsing outer glow ring */}
             <div className="pointer-events-none absolute -inset-1 animate-pulse rounded-xl opacity-40 blur-md bg-cyan-400/30" />
-            {/* Plate itself with floating dark outer shadow */}
-            <div className="neon-plate relative shadow-[0_8px_24px_rgba(0,0,0,0.7)]">
-              {/* Subtle scanline texture */}
-              <div className="pointer-events-none absolute inset-0 bg-[repeating-linear-gradient(0deg,transparent,transparent_3px,rgba(34,211,238,0.02)_3px,rgba(34,211,238,0.02)_4px)]" />
-              <span className="neon-plate-text relative font-mono text-5xl font-extrabold leading-none tracking-[0.3em] text-white">
+            {/* Plate — glass Hero with internal cyan gradient */}
+            <div className="glass relative flex items-center justify-center bg-gradient-to-br from-cyan-500/10 via-transparent to-transparent px-8 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.7)]">
+              <span className="neon-plate-text relative font-mono text-6xl font-extrabold leading-none tracking-[0.3em] text-white">
                 {vehicle.plate_number}
               </span>
             </div>
           </div>
         </div>
 
-        {/* ── Row 3: 4 data-widget stats in 2×2 grid ── */}
-        <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-white/10">
+        {/* ── Row 3: 4 depth-island stats in 2×2 grid ── */}
+        <div className="grid grid-cols-2 gap-6">
           {/* Odometer */}
-          <div className="data-widget flex flex-col items-center gap-0.5 border-b border-white/10 transition-colors hover:bg-cyan-500/5">
+          <div className="glass p-8 flex flex-col items-center gap-1 transition-colors hover:bg-cyan-500/5">
             <Gauge className="h-4 w-4 text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.9)]" />
             <span className="text-[9px] font-medium text-white/40">מרחק נסיעה</span>
             <span className="text-[10px] font-bold uppercase tracking-wide text-cyan-400/80">מד אוץ</span>
             <span className="text-sm font-extrabold text-white tabular-nums" dir="ltr">{vehicle.current_odometer.toLocaleString()}</span>
           </div>
           {/* Next maintenance */}
-          <div className="data-widget flex flex-col items-center gap-0.5 border-b border-white/10 transition-colors hover:bg-cyan-500/5">
+          <div className="glass p-8 flex flex-col items-center gap-1 transition-colors hover:bg-cyan-500/5">
             <CalendarClock className="h-4 w-4 text-cyan-400 drop-shadow-[0_0_7px_rgba(34,211,238,0.8)]" />
             <span className="text-[9px] font-medium text-white/40">מצב תחזוקה</span>
             <span className="text-[10px] font-bold uppercase tracking-wide text-cyan-400/80">טיפול הבא</span>
             <span className="text-sm font-extrabold text-white tabular-nums">{vehicle.next_maintenance_km ? vehicle.next_maintenance_km.toLocaleString() : '—'}</span>
           </div>
           {/* Test expiry */}
-          <div className="data-widget flex flex-col items-center gap-0.5 transition-colors hover:bg-cyan-500/5">
+          <div className="glass p-8 flex flex-col items-center gap-1 transition-colors hover:bg-cyan-500/5">
             <div className="flex items-center gap-1">
               <Shield className="h-4 w-4 text-cyan-400 drop-shadow-[0_0_7px_rgba(34,211,238,0.8)]" />
               {testStatus === 'valid'
@@ -168,7 +166,7 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
             <span className="text-xs font-extrabold text-white tabular-nums">{new Date(vehicle.test_expiry).toLocaleDateString('he-IL')}</span>
           </div>
           {/* Insurance expiry */}
-          <div className="data-widget flex flex-col items-center gap-0.5 transition-colors hover:bg-cyan-500/5">
+          <div className="glass p-8 flex flex-col items-center gap-1 transition-colors hover:bg-cyan-500/5">
             <div className="flex items-center gap-1">
               <Shield className="h-4 w-4 text-cyan-400 drop-shadow-[0_0_7px_rgba(34,211,238,0.8)]" />
               {insuranceStatus === 'valid'
@@ -277,7 +275,14 @@ export default function VehicleListPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#020617] px-4 py-6 space-y-6">
+    <div className="relative min-h-screen overflow-hidden bg-[#050816]">
+      {/* Radial cyan glow — the blue atmosphere behind everything */}
+      <div className="absolute left-1/2 top-[-200px] h-[900px] w-[900px] -translate-x-1/2 rounded-full bg-cyan-500/10 blur-[180px]" />
+      {/* Subtle radial grid overlay */}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,255,255,0.05)_0%,transparent_60%)]" />
+
+      {/* Page content — sits above all background layers */}
+      <div className="relative z-10 px-4 py-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -306,7 +311,7 @@ export default function VehicleListPage() {
       {/* Content */}
       <div>
         {isLoading ? (
-          <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
             {[1, 2, 3].map(i => <Skeleton key={i} className="h-48" />)}
           </div>
         ) : isError ? (
@@ -331,7 +336,7 @@ export default function VehicleListPage() {
             </Link>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
             {filteredVehicles?.map(vehicle => (
               <VehicleCard
                 key={vehicle.id} 
@@ -346,6 +351,7 @@ export default function VehicleListPage() {
           </div>
         )}
       </div>
+      </div>{/* end z-10 content */}
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
@@ -78,16 +79,16 @@ export function Sidebar() {
   ];
 
   return (
-    <div className="flex h-full w-64 flex-col bg-gradient-to-br from-slate-900 to-slate-800 text-slate-100 shadow-2xl rounded-xl border border-blue-900/30 backdrop-blur-lg">
+    <div className="glass flex h-full w-64 flex-col text-white">
       {/* Logo/Header */}
-      <div className="flex h-16 items-center border-b border-slate-800 px-6">
+      <div className="flex h-16 items-center border-b border-white/10 px-6">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600">
-            <Car className="h-5 w-5 text-white" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-cyan-400/40 bg-cyan-500/15 shadow-[0_0_14px_rgba(0,255,255,0.2)]">
+            <Car className="h-5 w-5 text-cyan-300" />
           </div>
           <div>
             <h1 className="font-bold text-base leading-tight text-white">{t('navigation.fleetManager')}</h1>
-            <p className="text-xs text-slate-400">{t('navigation.proDashboard')}</p>
+            <p className="text-xs text-cyan-400/60">{t('navigation.proDashboard')}</p>
           </div>
         </div>
       </div>
@@ -98,12 +99,12 @@ export function Sidebar() {
           {/* Home Button */}
           <Link to="/" className="block">
             <Button
-              variant={location.pathname === '/' ? 'default' : 'ghost'}
+              variant="ghost"
               className={cn(
-                'w-full justify-start gap-3 rounded-xl px-4 py-2 text-sm font-medium transition-all shadow-md bg-gradient-to-r from-blue-700 to-blue-500 hover:scale-105 hover:shadow-xl',
+                'w-full justify-start gap-3 rounded-xl px-4 py-2 text-sm font-medium transition-all duration-300',
                 location.pathname === '/'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-400/40 shadow-[0_0_20px_rgba(0,255,255,0.3)]'
+                  : 'text-white/70 hover:bg-cyan-500/10 hover:text-white hover:shadow-[0_0_20px_rgba(0,255,255,0.3)]'
               )}
             >
               <Home className="h-5 w-5" />
@@ -113,7 +114,7 @@ export function Sidebar() {
 
           {navigationGroups.map((group) => (
             <div key={group.titleKey}>
-              <h3 className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
+              <h3 className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-cyan-400/60">
                 {group.title}
               </h3>
               <div className="space-y-1">
@@ -125,10 +126,7 @@ export function Sidebar() {
                     return (
                       <div
                         key={item.href}
-                        className={cn(
-                          'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors cursor-not-allowed opacity-50',
-                          'text-slate-400'
-                        )}
+                        className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium cursor-not-allowed opacity-40 text-white/50"
                       >
                         <item.icon className="h-5 w-5" />
                         {item.title}
@@ -141,15 +139,15 @@ export function Sidebar() {
                       key={item.href}
                       to={item.href}
                       className={cn(
-                        'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                        'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-300',
                         isActive
-                          ? 'bg-blue-600 text-white'
-                          : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                          ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-400/40 shadow-[0_0_20px_rgba(0,255,255,0.3)]'
+                          : 'text-white/70 hover:bg-cyan-500/10 hover:text-white hover:shadow-[0_0_20px_rgba(0,255,255,0.3)]'
                       )}
                     >
                       <item.icon className="h-5 w-5" />
                       {item.title}
-                      {isActive && <ChevronRight className="ml-auto h-4 w-4" />}
+                      {isActive && <ChevronRight className="ml-auto h-4 w-4 text-cyan-400" />}
                     </Link>
                   );
                 })}
@@ -160,11 +158,11 @@ export function Sidebar() {
       </ScrollArea>
 
       {/* Footer Actions */}
-      <div className="border-t border-slate-800 p-3 space-y-2">
+      <div className="border-t border-white/10 p-3 space-y-2">
         <Link to="/admin/settings" className="block">
           <Button
             variant="ghost"
-            className="w-full justify-start gap-3 text-slate-300 hover:bg-slate-800 hover:text-white"
+            className="w-full justify-start gap-3 text-white/70 transition-all duration-300 hover:bg-cyan-500/10 hover:text-white hover:shadow-[0_0_20px_rgba(0,255,255,0.3)]"
           >
             <Settings className="h-5 w-5" />
             {t('common.settings')}
@@ -172,7 +170,7 @@ export function Sidebar() {
         </Link>
         <Button
           variant="ghost"
-          className="w-full justify-start gap-3 text-slate-300 hover:bg-slate-800 hover:text-white"
+          className="w-full justify-start gap-3 text-white/70 transition-all duration-300 hover:bg-cyan-500/10 hover:text-white hover:shadow-[0_0_20px_rgba(0,255,255,0.3)]"
           onClick={signOut}
         >
           <LogOut className="h-5 w-5" />
