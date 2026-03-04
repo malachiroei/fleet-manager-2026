@@ -72,10 +72,36 @@
   }
 
   .audi-glass-card {
-    background: linear-gradient(145deg, rgba(15, 23, 42, 0.9) 0%, rgba(2, 6, 23, 1) 100%);
+    background:
+      radial-gradient(circle at top left, rgba(34, 211, 238, 0.05), transparent 60%),
+      linear-gradient(180deg, #0f172a 0%, #020617 100%);
     backdrop-filter: blur(16px);
     border: 1px solid rgba(34, 211, 238, 0.3);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-left: 1px solid rgba(255, 255, 255, 0.05);
     box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8), inset 0 0 15px rgba(34, 211, 238, 0.1);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .audi-glass-card::before {
+    content: '';
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 3px,
+      rgba(34, 211, 238, 0.015) 3px,
+      rgba(34, 211, 238, 0.015) 4px
+    );
+    z-index: 0;
+  }
+
+  .audi-glass-card > * {
+    position: relative;
+    z-index: 1;
   }
 
   .neon-plate {

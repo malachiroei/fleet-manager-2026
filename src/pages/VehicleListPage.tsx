@@ -119,49 +119,57 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
           </p>
 
           {/* Digital license-plate block */}
-          <div className="neon-plate" dir="ltr">
-            {/* Subtle scanline texture */}
-            <div className="pointer-events-none absolute inset-0 bg-[repeating-linear-gradient(0deg,transparent,transparent_3px,rgba(34,211,238,0.02)_3px,rgba(34,211,238,0.02)_4px)]" />
-            <span className="neon-plate-text relative font-mono text-5xl font-extrabold leading-none tracking-[0.3em] text-white">
-              {vehicle.plate_number}
-            </span>
+          <div className="relative" dir="ltr">
+            {/* Pulsing outer glow ring — subtle, on glow layer only */}
+            <div className="pointer-events-none absolute -inset-1 animate-pulse rounded-xl opacity-40 blur-md bg-cyan-400/30" />
+            <div className="neon-plate relative">
+              {/* Subtle scanline texture */}
+              <div className="pointer-events-none absolute inset-0 bg-[repeating-linear-gradient(0deg,transparent,transparent_3px,rgba(34,211,238,0.02)_3px,rgba(34,211,238,0.02)_4px)]" />
+              <span className="neon-plate-text relative font-mono text-5xl font-extrabold leading-none tracking-[0.3em] text-white">
+                {vehicle.plate_number}
+              </span>
+            </div>
           </div>
         </div>
 
         {/* ── Row 3: 4 data-widget stats in 2×2 grid ── */}
         <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-white/10">
           {/* Odometer */}
-          <div className="data-widget flex flex-col items-center gap-1 border-b border-white/10 transition-colors hover:bg-cyan-500/5">
+          <div className="data-widget flex flex-col items-center gap-0.5 border-b border-white/10 transition-colors hover:bg-cyan-500/5">
             <Gauge className="h-4 w-4 text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.9)]" />
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-cyan-400/70">מד אוץ</span>
+            <span className="text-[9px] font-medium text-white/40">מרחק נסיעה</span>
+            <span className="text-[10px] font-bold uppercase tracking-wide text-cyan-400/80">מד אוץ</span>
             <span className="text-sm font-extrabold text-white tabular-nums" dir="ltr">{vehicle.current_odometer.toLocaleString()}</span>
           </div>
           {/* Next maintenance */}
-          <div className="data-widget flex flex-col items-center gap-1 border-b border-white/10 transition-colors hover:bg-cyan-500/5">
+          <div className="data-widget flex flex-col items-center gap-0.5 border-b border-white/10 transition-colors hover:bg-cyan-500/5">
             <CalendarClock className="h-4 w-4 text-cyan-400 drop-shadow-[0_0_7px_rgba(34,211,238,0.8)]" />
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-cyan-400/70">טיפול הבא</span>
+            <span className="text-[9px] font-medium text-white/40">מצב תחזוקה</span>
+            <span className="text-[10px] font-bold uppercase tracking-wide text-cyan-400/80">טיפול הבא</span>
             <span className="text-sm font-extrabold text-white tabular-nums">{vehicle.next_maintenance_km ? vehicle.next_maintenance_km.toLocaleString() : '—'}</span>
           </div>
           {/* Test expiry */}
-          <div className="data-widget flex flex-col items-center gap-1 transition-colors hover:bg-cyan-500/5">
+          <div className="data-widget flex flex-col items-center gap-0.5 transition-colors hover:bg-cyan-500/5">
             <div className="flex items-center gap-1">
               <Shield className="h-4 w-4 text-cyan-400 drop-shadow-[0_0_7px_rgba(34,211,238,0.8)]" />
               {testStatus === 'valid'
                 ? <CircleCheck className="h-3.5 w-3.5 text-emerald-400 drop-shadow-[0_0_4px_rgba(52,211,153,0.8)]" />
                 : <CircleAlert className="h-3.5 w-3.5 text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.8)]" />}
             </div>
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-cyan-400/70">תוקף טסט</span>
+            <span className="text-[9px] font-medium text-white/40">בדיקת רכב</span>
+            <span className="text-[10px] font-bold uppercase tracking-wide text-cyan-400/80">תוקף טסט</span>
             <span className="text-xs font-extrabold text-white tabular-nums">{new Date(vehicle.test_expiry).toLocaleDateString('he-IL')}</span>
           </div>
           {/* Insurance expiry */}
-          <div className="data-widget flex flex-col items-center gap-1 transition-colors hover:bg-cyan-500/5">
+          <div className="data-widget flex flex-col items-center gap-0.5 transition-colors hover:bg-cyan-500/5">
             <div className="flex items-center gap-1">
               <Shield className="h-4 w-4 text-cyan-400 drop-shadow-[0_0_7px_rgba(34,211,238,0.8)]" />
               {insuranceStatus === 'valid'
                 ? <CircleCheck className="h-3.5 w-3.5 text-emerald-400 drop-shadow-[0_0_4px_rgba(52,211,153,0.8)]" />
                 : <CircleAlert className="h-3.5 w-3.5 text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.8)]" />}
             </div>
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-cyan-400/70">תוקף ביטוח</span>
+            <span className="text-[9px] font-medium text-white/40">כיסוי ביטוחי</span>
+            <span className="text-[10px] font-bold uppercase tracking-wide text-cyan-400/80">תוקף ביטוח</span>
             <span className="text-xs font-extrabold text-white tabular-nums">{new Date(vehicle.insurance_expiry).toLocaleDateString('he-IL')}</span>
           </div>
         </div>
@@ -205,26 +213,26 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
 
         <div className="flex w-full divide-x divide-white/8 rtl:divide-x-reverse">
           <Link to={`/vehicles/${vehicle.id}#handover-history`} className="contents">
-            <button className="glass-button group/btn flex flex-1 flex-col items-center gap-1.5 py-3.5 text-[10px] font-semibold text-white/70 active:scale-95">
-              <ClipboardList className="h-4 w-4 text-[#38bdf8] drop-shadow-[0_0_7px_rgba(56,189,248,1)] transition-all duration-200 group-hover/btn:drop-shadow-[0_0_12px_rgba(34,211,238,1)]" />
+            <button className="glass-button group/btn flex flex-1 flex-col items-center gap-1.5 py-3.5 text-[10px] font-bold text-white active:scale-95">
+              <ClipboardList className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_9px_rgba(34,211,238,1)] transition-all duration-200 group-hover/btn:drop-shadow-[0_0_14px_rgba(34,211,238,1)]" />
               היסטוריה
             </button>
           </Link>
           <Link to={`/vehicles/${vehicle.id}#tax-data`} className="contents">
-            <button className="glass-button group/btn flex flex-1 flex-col items-center gap-1.5 py-3.5 text-[10px] font-semibold text-white/70 active:scale-95">
-              <Zap className="h-4 w-4 text-[#38bdf8] drop-shadow-[0_0_7px_rgba(56,189,248,1)] transition-all duration-200 group-hover/btn:drop-shadow-[0_0_12px_rgba(34,211,238,1)]" />
+            <button className="glass-button group/btn flex flex-1 flex-col items-center gap-1.5 py-3.5 text-[10px] font-bold text-white active:scale-95">
+              <Zap className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_9px_rgba(34,211,238,1)] transition-all duration-200 group-hover/btn:drop-shadow-[0_0_14px_rgba(34,211,238,1)]" />
               נתוני מס
             </button>
           </Link>
           <Link to={`/vehicles/${vehicle.id}#overview`} className="contents">
-            <button className="glass-button group/btn flex flex-1 flex-col items-center gap-1.5 py-3.5 text-[10px] font-semibold text-white/70 active:scale-95">
-              <Eye className="h-4 w-4 text-[#38bdf8] drop-shadow-[0_0_7px_rgba(56,189,248,1)] transition-all duration-200 group-hover/btn:drop-shadow-[0_0_12px_rgba(34,211,238,1)]" />
+            <button className="glass-button group/btn flex flex-1 flex-col items-center gap-1.5 py-3.5 text-[10px] font-bold text-white active:scale-95">
+              <Eye className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_9px_rgba(34,211,238,1)] transition-all duration-200 group-hover/btn:drop-shadow-[0_0_14px_rgba(34,211,238,1)]" />
               צפייה
             </button>
           </Link>
           <Link to={`/vehicles/${vehicle.id}#vehicle-documents`} className="contents">
-            <button className="glass-button group/btn flex flex-1 flex-col items-center gap-1.5 py-3.5 text-[10px] font-semibold text-white/70 active:scale-95">
-              <FileText className="h-4 w-4 text-[#38bdf8] drop-shadow-[0_0_7px_rgba(56,189,248,1)] transition-all duration-200 group-hover/btn:drop-shadow-[0_0_12px_rgba(34,211,238,1)]" />
+            <button className="glass-button group/btn flex flex-1 flex-col items-center gap-1.5 py-3.5 text-[10px] font-bold text-white active:scale-95">
+              <FileText className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_9px_rgba(34,211,238,1)] transition-all duration-200 group-hover/btn:drop-shadow-[0_0_14px_rgba(34,211,238,1)]" />
               מסמכים
             </button>
           </Link>
