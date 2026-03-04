@@ -205,7 +205,7 @@ export default function VehicleDeliveryPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-[#020617] text-white">
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
           <div className="flex items-center gap-3">
@@ -354,7 +354,7 @@ export default function VehicleDeliveryPage() {
           </Card>
 
           {/* Submit */}
-          <div className="fixed bottom-12 left-0 right-0 p-4 bg-background border-t border-border">
+          <div className="fixed bottom-12 left-0 right-0 p-4 bg-[#020617]/95 backdrop-blur-sm border-t border-white/10">
             <div className="container">
               <Button 
                 type="submit" 
