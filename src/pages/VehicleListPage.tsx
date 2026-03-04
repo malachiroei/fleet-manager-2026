@@ -90,13 +90,11 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
   const vehicleType = vehicle.vehicle_type_name || 'רכב';
 
   return (
-    <div className="glass group transition-all duration-300 hover:scale-[1.01]">
+    <div className="glass audi-card group transition-all duration-300 hover:scale-[1.01] relative overflow-visible">
       {/* Dynamic edge-lighting layer (intensifies on hover via CSS) */}
-      <div className="dynamic-glow rounded-[24px]" />
-
+      <div className="dynamic-glow rounded-[28px]" />
       {/* Top-right corner cyan edge light */}
       <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-cyan-500/20 blur-xl" />
-
       {/* Top light strip */}
       <div className="pointer-events-none absolute left-0 right-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/30 to-transparent" />
       {/* Top cyan glow line */}
@@ -105,31 +103,33 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-cyan-500/6 via-transparent to-blue-800/8" />
       {/* Side glow accent */}
       <div className="pointer-events-none absolute -left-12 top-1/4 h-40 w-40 rounded-full bg-cyan-500/5 blur-3xl" />
-
       {/* Inner shadow overlay */}
       <div className="pointer-events-none absolute inset-0 rounded-2xl shadow-[inset_0_4px_24px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.04)]" />
 
-      <div className="relative space-y-3 p-8">
+      {/* Vehicle image (Audi style) */}
+      {vehicle.image_url && (
+        <div className="vehicle-image-container mb-2">
+          <img src={vehicle.image_url} alt={`${vehicle.manufacturer} ${vehicle.model}`} className="vehicle-image" />
+        </div>
+      )}
 
-        {/* ── Row 1: manufacturer + model title + status badge ── */}
-        <div className="flex items-center justify-between">
+      <div className="relative space-y-3 p-8 pt-2">
+        {/* Title row */}
+        <div className="flex items-center justify-between mb-1">
           <div>
-            <p className="neon-title text-xl leading-tight">
+            <p className="vehicle-title">
               {vehicle.manufacturer} {vehicle.model}
-              <span className="ml-2 text-sm font-normal text-white/50">{vehicle.year}</span>
+              <span className="vehicle-year">{vehicle.year}</span>
             </p>
+            <div className="vehicle-title-underline" />
           </div>
           <StatusBadge status={worstStatus} />
         </div>
 
-        {/* ── Row 2: Digital license plate ── */}
+        {/* License plate Hero */}
         <div className="flex flex-col items-center gap-2 py-1">
-
-          {/* Digital license-plate Hero ── */}
           <div className="relative z-10" dir="ltr">
-            {/* Pulsing outer glow ring */}
             <div className="pointer-events-none absolute -inset-2 animate-pulse rounded-2xl opacity-30 blur-lg bg-cyan-400/20" />
-            {/* Plate container — deep black glass */}
             <div className="relative rounded-2xl bg-black/40 px-10 py-5 shadow-[0_8px_32px_rgba(0,0,0,0.9)]">
               <span
                 className="neon-title font-mono text-6xl leading-none"
@@ -141,54 +141,54 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
           </div>
         </div>
 
-        {/* ── Row 3: 4 depth-island stats in 2×2 grid ── */}
-        <div className="grid grid-cols-2 gap-6">
+        {/* Stats grid */}
+        <div className="grid grid-cols-2 gap-6 mt-2">
           {/* Odometer */}
-          <div className="glass p-8 flex flex-col items-center gap-1 transition-colors hover:bg-cyan-500/5">
-            <Gauge className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.9)]" />
-            <span className="white-data text-xl tabular-nums" dir="ltr">{vehicle.current_odometer.toLocaleString()}</span>
+          <div className="glass audi-stat p-8 flex flex-col items-center gap-2 transition-colors hover:bg-cyan-500/5">
+            <Gauge className="h-7 w-7 text-cyan-300 drop-shadow-[0_0_12px_rgba(34,211,238,0.9)] mb-1" />
+            <span className="white-data text-2xl font-extrabold tabular-nums" dir="ltr">{vehicle.current_odometer.toLocaleString()}</span>
             <span className="data-label-glow">קילומטראז׳</span>
           </div>
           {/* Next maintenance */}
-          <div className="glass p-8 flex flex-col items-center gap-1 transition-colors hover:bg-cyan-500/5">
-            <CalendarClock className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_7px_rgba(34,211,238,0.8)]" />
-            <span className="white-data text-xl tabular-nums">{vehicle.next_maintenance_km ? vehicle.next_maintenance_km.toLocaleString() : '—'}</span>
+          <div className="glass audi-stat p-8 flex flex-col items-center gap-2 transition-colors hover:bg-cyan-500/5">
+            <CalendarClock className="h-7 w-7 text-cyan-300 drop-shadow-[0_0_10px_rgba(34,211,238,0.8)] mb-1" />
+            <span className="white-data text-2xl font-extrabold">{vehicle.next_maintenance_km ? vehicle.next_maintenance_km.toLocaleString() : '—'}</span>
             <span className="data-label-glow">טיפול הבא</span>
           </div>
           {/* Test expiry */}
-          <div className="glass p-8 flex flex-col items-center gap-1 transition-colors hover:bg-cyan-500/5">
-            <div className="flex items-center gap-1">
-              <Shield className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_7px_rgba(34,211,238,0.8)]" />
+          <div className="glass audi-stat p-8 flex flex-col items-center gap-2 transition-colors hover:bg-cyan-500/5">
+            <div className="flex items-center gap-2 mb-1">
+              <Shield className="h-7 w-7 text-cyan-300 drop-shadow-[0_0_10px_rgba(34,211,238,0.8)]" />
               {testStatus === 'valid'
-                ? <CircleCheck className="h-4 w-4 text-emerald-400 drop-shadow-[0_0_4px_rgba(52,211,153,0.8)]" />
-                : <CircleAlert className="h-4 w-4 text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.8)]" />}
+                ? <CircleCheck className="h-5 w-5 text-emerald-400 drop-shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
+                : <CircleAlert className="h-5 w-5 text-amber-400 drop-shadow-[0_0_6px_rgba(251,191,36,0.8)]" />}
             </div>
-            <span className="white-data text-xl tabular-nums">{new Date(vehicle.test_expiry).toLocaleDateString('he-IL')}</span>
+            <span className="white-data text-2xl font-extrabold">{new Date(vehicle.test_expiry).toLocaleDateString('he-IL')}</span>
             <span className="data-label-glow">תוקף טסט</span>
           </div>
           {/* Insurance expiry */}
-          <div className="glass p-8 flex flex-col items-center gap-1 transition-colors hover:bg-cyan-500/5">
-            <div className="flex items-center gap-1">
-              <Shield className="h-5 w-5 text-cyan-400 drop-shadow-[0_0_7px_rgba(34,211,238,0.8)]" />
+          <div className="glass audi-stat p-8 flex flex-col items-center gap-2 transition-colors hover:bg-cyan-500/5">
+            <div className="flex items-center gap-2 mb-1">
+              <Shield className="h-7 w-7 text-cyan-300 drop-shadow-[0_0_10px_rgba(34,211,238,0.8)]" />
               {insuranceStatus === 'valid'
-                ? <CircleCheck className="h-4 w-4 text-emerald-400 drop-shadow-[0_0_4px_rgba(52,211,153,0.8)]" />
-                : <CircleAlert className="h-4 w-4 text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.8)]" />}
+                ? <CircleCheck className="h-5 w-5 text-emerald-400 drop-shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
+                : <CircleAlert className="h-5 w-5 text-amber-400 drop-shadow-[0_0_6px_rgba(251,191,36,0.8)]" />}
             </div>
-            <span className="white-data text-xl tabular-nums">{new Date(vehicle.insurance_expiry).toLocaleDateString('he-IL')}</span>
+            <span className="white-data text-2xl font-extrabold">{new Date(vehicle.insurance_expiry).toLocaleDateString('he-IL')}</span>
             <span className="data-label-glow">תוקף ביטוח</span>
           </div>
         </div>
 
-        {/* ── Row 4: Assigned driver ── */}
-        <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur-sm">
-          <UserRound className="h-5 w-5 shrink-0 text-cyan-400 drop-shadow-[0_0_6px_rgba(34,211,238,0.8)]" />
+        {/* Driver row (Audi style) */}
+        <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur-sm mt-4">
+          <UserRound className="h-6 w-6 shrink-0 text-cyan-300 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
           <div className="flex flex-col">
             <span className="text-xs uppercase tracking-wide text-white/60">נהג משויך</span>
-            <span className="text-white font-bold text-lg">{assignedDriver?.full_name ?? '—'}</span>
+            <span className="text-white font-extrabold text-lg tracking-wide">{assignedDriver?.full_name ?? '—'}</span>
           </div>
         </div>
 
-        {/* ── Row 5: Assign driver select (managers only) ── */}
+        {/* Assign driver select (managers only) */}
         {canEdit && (
           <Select
             value={assignedDriver?.id ?? '__none__'}
@@ -208,8 +208,7 @@ function VehicleCard({ vehicle, canEdit, drivers, onAssignDriver, isAssigning, a
             </SelectContent>
           </Select>
         )}
-
-      </div>{/* ── end main content ── */}
+      </div>
 
       {/* ── Bottom action panel ── */}
       <div className="relative border-t border-white/8 bg-white/5 backdrop-blur-sm">
