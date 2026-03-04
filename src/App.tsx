@@ -25,8 +25,7 @@ import VehicleReturnPage from "./pages/VehicleReturnPage";
 import AdminSettingsPage from "./pages/AdminSettingsPage";
 import NotFound from "./pages/NotFound";
 import ScanReportPage from "./pages/ScanReportPage";
-import ReportsPage from "./pages/ReportsPage";
-
+import ReportsPage from "./pages/ReportsPage";import VehicleHandoverWizard from './pages/VehicleHandoverWizard';
 const queryClient = new QueryClient();
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -84,6 +83,7 @@ function AppRoutes() {
       <Route path="/maintenance/add" element={<ProtectedRoute><AddMaintenancePage /></ProtectedRoute>} />
       <Route path="/handover/delivery" element={<ProtectedRoute><VehicleDeliveryPage /></ProtectedRoute>} />
       <Route path="/handover/return" element={<ProtectedRoute><VehicleReturnPage /></ProtectedRoute>} />
+      <Route path="/handover/wizard" element={<ProtectedRoute><VehicleHandoverWizard /></ProtectedRoute>} />
       <Route path="/admin/settings" element={<ProtectedRoute><AdminSettingsPage /></ProtectedRoute>} />
       <Route path="/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
       <Route path="/reports/scan" element={<ProtectedRoute><ScanReportPage /></ProtectedRoute>} />
