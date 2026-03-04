@@ -2,61 +2,49 @@
 
 @layer base {
   body {
-    background: #020617 !important; /* שחור עמוק של אאודי */
+    background-color: #020617 !important; /* שחור עמוק חובה */
     color: #ffffff;
     font-family: 'Heebo', sans-serif;
-    min-height: 100vh;
     margin: 0;
   }
 }
 
 @layer components {
-  /* כרטיס הזכוכית הראשי - כהה ושקוף */
+  /* כרטיס פרימיום כהה וחד */
   .audi-premium-card {
-    background: linear-gradient(165deg, rgba(15, 23, 42, 0.9) 0%, rgba(2, 6, 23, 1) 100%);
-    backdrop-filter: blur(20px);
+    background: linear-gradient(165deg, rgba(15, 23, 42, 0.95) 0%, rgba(2, 6, 23, 1) 100%);
+    backdrop-filter: blur(25px);
     border: 1px solid rgba(34, 211, 238, 0.3);
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8), inset 0 0 20px rgba(34, 211, 238, 0.05);
+    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.9);
     border-radius: 28px;
+    position: relative;
+    overflow: hidden;
   }
 
-  /* כותרת הדגם - לבן בוהק */
   .neon-title {
     color: #ffffff !important;
     text-shadow: 0 0 15px rgba(34, 211, 238, 0.8);
     font-weight: 900;
   }
 
-  /* מספר רכב - ציאן זוהר */
-  .neon-plate-text {
-    color: #22d3ee !important;
-    text-shadow: 0 0 20px rgba(34, 211, 238, 0.6);
-  }
-
-  /* משבצות נתונים - כהות יותר להפרדה */
-  .audi-stat {
-    background: rgba(30, 41, 59, 0.5);
-    border: 1px solid rgba(34, 211, 238, 0.2);
-    border-radius: 16px;
-  }
-
   .white-data {
     color: #ffffff !important;
     font-weight: 800;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
   }
 
   .data-label-glow {
-    color: #a5f3fc !important; /* תכלת בהיר מאוד לקריאות */
-    font-size: 0.8rem;
-    font-weight: 600;
+    color: #22d3ee !important; /* ציאן בוהק לקריאות מקסימלית */
+    font-size: 0.9rem;
+    font-weight: 700;
+    text-transform: uppercase;
   }
 
-  /* כפתורים - צריכים להיות בולטים */
   .glass-button {
     background: rgba(34, 211, 238, 0.15) !important;
     border: 1px solid rgba(34, 211, 238, 0.5) !important;
     color: #ffffff !important;
-    border-radius: 12px;
     font-weight: 700;
+    transition: all 0.3s ease;
   }
 }
