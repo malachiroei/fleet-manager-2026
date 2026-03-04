@@ -598,17 +598,27 @@ export default function VehicleHandoverWizard() {
         licenseBack  ? uploadFileToStorage(licenseBack,  `${base}/license_back.jpg`)  : Promise.resolve(null),
       ]);
 
-      // Save to driver_documents
+      // Save to driver_documents (schema: driver_id, file_url, title)
       const docsToInsert = [
-        sig1Url && { driver_id: driverId, document_type: 'handover_receipt',    document_url: sig1Url, uploaded_by: user?.id ?? null, notes: `טופס קבלת רכב - חתימה | רכב: ${vehicleLabel}` },
-        sig2Url && { driver_id: driverId, document_type: 'procedure_agreement', document_url: sig2Url, uploaded_by: user?.id ?? null, notes: 'נוהל 04-05-001 - חתימה' },
-        sig3Url && { driver_id: driverId, document_type: 'health_declaration',  document_url: sig3Url, uploaded_by: user?.id ?? null, notes: 'הצהרת בריאות - חתימה' },
-        frontUrl && { driver_id: driverId, document_type: 'license_front',      document_url: frontUrl, uploaded_by: user?.id ?? null, notes: `רישיון נהיגה צד א׳ | מס׳: ${licenseNumber}` },
-        backUrl  && { driver_id: driverId, document_type: 'license_back',       document_url: backUrl,  uploaded_by: user?.id ?? null, notes: `רישיון נהיגה צד ב׳ | תוקף: ${licenseExpiry}` },
+        sig1Url  && { driver_id: driverId, file_url: sig1Url,  title: `handover_receipt | רכב: ${vehicleLabel}` },
+        sig2Url  && { driver_id: driverId, file_url: sig2Url,  title: `procedure_agreement | נוהל 04-05-001 | רכב: ${vehicleLabel}` },
+        sig3Url  && { driver_id: driverId, file_url: sig3Url,  title: `health_declaration | הצהרת בריאות | רכב: ${vehicleLabel}` },
+        frontUrl && { driver_id: driverId, file_url: frontUrl, title: `license_front | מס׳: ${licenseNumber}` },
+        backUrl  && { driver_id: driverId, file_url: backUrl,  title: `license_back | תוקף: ${licenseExpiry}` },
       ].filter(Boolean);
 
       if (docsToInsert.length > 0) {
         await supabase.from('driver_documents').insert(docsToInsert as never);
+      }
+
+      // Update driver record with license details
+      if (driverId) {
+        await supabase.from('drivers').update({
+          license_number:    licenseNumber   || undefined,
+          license_expiry:    licenseExpiry   || undefined,
+          license_front_url: frontUrl        || undefined,
+          license_back_url:  backUrl         || undefined,
+        }).eq('id', driverId);
       }
 
       toast.success('כל המסמכים נחתמו ונשמרו בהצלחה!');
