@@ -16,16 +16,16 @@ function VehicleCard({ vehicle }: { vehicle: any }) {
       </div>
       <div className="grid grid-cols-3 gap-4 mb-8">
         <div className="bg-white/5 rounded-2xl p-4 flex flex-col items-center border border-white/10">
-          <span className="white-data text-2xl">{vehicle.current_odometer.toLocaleString()}</span>
+          <span className="white-data text-2xl tabular-nums" dir="ltr">{vehicle.current_odometer.toLocaleString()}</span>
           <span className="data-label-glow">ק"מ</span>
         </div>
         <div className="bg-white/5 rounded-2xl p-4 flex flex-col items-center border border-white/10">
-          <span className="white-data text-2xl">{new Date(vehicle.test_expiry).toLocaleDateString('he-IL')}</span>
-          <span className="data-label-glow">טסט</span>
+          <span className="white-data text-2xl">{vehicle.year}</span>
+          <span className="data-label-glow">שנה</span>
         </div>
         <div className="bg-white/5 rounded-2xl p-4 flex flex-col items-center border border-white/10">
-          <span className="white-data text-2xl">{new Date(vehicle.insurance_expiry).toLocaleDateString('he-IL')}</span>
-          <span className="data-label-glow">ביטוח</span>
+          <span className="white-data text-lg text-center leading-tight">{vehicle.ownership_type ?? '—'}</span>
+          <span className="data-label-glow">בעלות</span>
         </div>
       </div>
       <div className="grid grid-cols-4 gap-2">
