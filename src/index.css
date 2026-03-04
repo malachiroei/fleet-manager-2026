@@ -1,57 +1,3 @@
-/* ===== Audi-style Vehicle Card Redesign ===== */
-.audi-card {
-  background: linear-gradient(145deg, #101c2c 60%, #1e293b 100%);
-  border-radius: 28px;
-  box-shadow: 0 10px 40px rgba(0,0,0,0.85), 0 0 0 1.5px #22d3ee33;
-  border: 1.5px solid #22d3ee22;
-  overflow: visible;
-  position: relative;
-}
-.vehicle-image-container {
-  background: linear-gradient(145deg, #0f172a 60%, #1e293b 100%);
-  border-radius: 24px 24px 0 0;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.7);
-  overflow: hidden;
-  margin-bottom: 12px;
-}
-.vehicle-image {
-  width: 100%;
-  height: 120px;
-  object-fit: cover;
-  display: block;
-  border-radius: 24px 24px 0 0;
-}
-.vehicle-title {
-  color: #fff;
-  font-size: 2rem;
-  font-weight: 900;
-  text-shadow: 0 0 18px #22d3ee, 0 2px 8px #000;
-  margin-bottom: 2px;
-  letter-spacing: 0.08em;
-  line-height: 1.1;
-}
-.vehicle-year {
-  color: #a5f3fc;
-  font-size: 1.1rem;
-  font-weight: 400;
-  margin-right: 8px;
-}
-.vehicle-title-underline {
-  width: 60px;
-  height: 3px;
-  background: linear-gradient(90deg, #22d3ee 0%, #fff 100%);
-  border-radius: 2px;
-  margin-bottom: 12px;
-  margin-top: 2px;
-  box-shadow: 0 0 8px #22d3ee99;
-}
-.audi-stat {
-  background: linear-gradient(135deg, #172554 60%, #0e172a 100%);
-  border-radius: 18px;
-  border: 1.5px solid #22d3ee33;
-  box-shadow: 0 2px 18px #22d3ee22, 0 2px 8px #000;
-  min-height: 120px;
-}
 @import "tailwindcss";
 
 @theme {
@@ -61,17 +7,14 @@
 
 @layer base {
   body {
-    background: #fff;
-    color: inherit;
+    background: #050816; /* חזרה לרקע כהה עמוק */
+    color: #fff;
     font-family: 'Heebo', sans-serif;
     min-height: 100vh;
   }
 }
 
 @layer components {
-  /* הסרנו עיצוב גלובלי לכרטיסים וכותרות כדי להחזיר למראה המקורי */
-  /* אם יש צורך, ניתן להחזיר .stats-card רק לדפים רלוונטיים */
-
   /* הפס הירוק בתחתית */
   .production-bar {
     background: #22c55e;
@@ -80,187 +23,77 @@
     text-transform: uppercase;
   }
 
-  /* ── Audi-style VehicleCard classes ── */
-
-  .neon-plate-text {
-    color: #22d3ee;
-    text-shadow: 0 0 10px rgba(34, 211, 238, 0.8), 0 0 20px rgba(34, 211, 238, 0.4);
-    font-family: 'JetBrains Mono', monospace;
-  }
-
-  .glass-button {
-    background: rgba(34, 211, 238, 0.15) !important;
-    border: 1px solid rgba(34, 211, 238, 0.5) !important;
-    color: #ffffff !important;
-    font-weight: 800 !important;
-    font-size: 0.95rem !important;
-    text-transform: none;
-    padding: 14px 10px !important;
-    transition: all 0.3s ease;
-  }
-
-  .glass-button:hover {
-    background: rgba(34, 211, 238, 0.1);
-    border-color: rgba(34, 211, 238, 0.5);
-    box-shadow: 0 0 15px rgba(34, 211, 238, 0.3);
-  }
-
-  .audi-glass-card {
-    background:
-      radial-gradient(circle at top left, rgba(34, 211, 238, 0.05), transparent 60%),
-      linear-gradient(180deg, #0f172a 0%, #020617 100%);
-    backdrop-filter: blur(16px);
-    border: 1px solid rgba(34, 211, 238, 0.3);
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-    border-left: 1px solid rgba(255, 255, 255, 0.05);
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8), inset 0 0 15px rgba(34, 211, 238, 0.1);
-    position: relative;
-    overflow: hidden;
-  }
-
-  .audi-glass-card::before {
-    content: '';
-    pointer-events: none;
-    position: absolute;
-    inset: 0;
-    background: repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 3px,
-      rgba(34, 211, 238, 0.015) 3px,
-      rgba(34, 211, 238, 0.015) 4px
-    );
-    z-index: 0;
-  }
-
-  .audi-glass-card > * {
-    position: relative;
-    z-index: 1;
-  }
-
-  .neon-plate {
-    background: rgba(6, 182, 212, 0.1);
-    border: 2px solid #22d3ee;
-    box-shadow: 0 0 15px rgba(34, 211, 238, 0.6);
-    border-radius: 8px;
-    padding: 10px 20px;
-  }
-
-  .data-widget {
-    background: rgba(255, 255, 255, 0.03);
-    border-right: 1px solid rgba(255, 255, 255, 0.1);
-    padding: 12px;
-  }
-
-  /* ── Frosted glass card ── */
-  .glass {
-    background: rgba(15, 23, 42, 0.7);
-    backdrop-filter: blur(25px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
-    border-radius: 24px;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .glass:hover {
-    border: 1px solid rgba(34, 211, 238, 0.5);
-    box-shadow: 0 0 50px rgba(0, 255, 255, 0.15);
-    transform: translateY(-2px);
-  }
-
-  /* ── Neon white text with cyan glow ── */
-  .neon-text {
-    color: #ffffff !important;
-    text-shadow: 0 0 10px rgba(34, 211, 238, 0.8);
-  }
-
-  /* ── Muted cyan data labels ── */
-  .data-label {
-    color: rgba(165, 243, 252, 0.7);
-    font-size: 0.75rem;
-    text-transform: uppercase;
-  }
-
-  /* ── Neon white title with strong cyan glow ── */
-  .neon-title {
-    color: #ffffff !important;
-    text-shadow: 0 0 15px rgba(34, 211, 238, 0.9);
-    font-weight: 900;
-    letter-spacing: 0.2em;
-  }
-
-  /* ── Glowing data label ── */
-  .data-label-glow {
-    color: #ffffff !important;
-    opacity: 1 !important;
-    font-size: 0.85rem;
-    font-weight: 600;
-    text-shadow: 0 0 5px rgba(34, 211, 238, 0.5);
-    display: block;
-    margin-top: 4px;
-  }
-
-  /* ── Pure white data value ── */
-  .white-data {
-    color: #ffffff !important;
-    font-weight: 600;
-    filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.8));
-  }
-
-  /* ── Text contrast boost inside glass cards ── */
-  .glass span,
-  .glass p,
-  .glass button {
-    text-shadow: 0 2px 2px rgba(0, 0, 0, 0.8);
-  }
-
-  /* ── Audi premium card with z-layers, edge glow & scanlines ── */
+  /* ── Audi-style Vehicle Card ── */
   .audi-premium-card {
     position: relative;
     overflow: hidden;
     background: linear-gradient(165deg, #0f172a 0%, #020617 100%);
     box-shadow: inset 0 0 20px rgba(34, 211, 238, 0.1), 0 10px 30px rgba(0, 0, 0, 0.5);
     border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 28px;
     animation: screenFlicker 0.4s ease-out;
   }
 
-  /* Digital scanlines overlay */
   .audi-premium-card::after {
     content: '';
     position: absolute;
     inset: 0;
-    background:
-      linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%),
-      linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.02));
-    background-size: 100% 3px, 3px 100%;
+    background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(34, 211, 238, 0.015) 3px, rgba(34, 211, 238, 0.015) 4px);
     pointer-events: none;
-    opacity: 0.1;
     z-index: 0;
   }
 
-  /* Dynamic edge-lighting glow — intensifies on hover */
-  .audi-premium-card .dynamic-glow {
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.15);
-    transition: box-shadow 0.3s ease;
-    pointer-events: none;
-    z-index: 1;
+  .neon-title {
+    color: #ffffff !important;
+    text-shadow: 0 0 15px rgba(34, 211, 238, 0.9);
+    font-weight: 900;
+    letter-spacing: 0.1em;
   }
 
-  .audi-premium-card:hover .dynamic-glow {
-    box-shadow:
-      inset 0 0 0 1px rgba(34, 211, 238, 0.5),
-      inset 0 0 30px rgba(34, 211, 238, 0.08);
+  .neon-plate-text {
+    color: #22d3ee;
+    text-shadow: 0 0 10px rgba(34, 211, 238, 0.8), 0 0 20px rgba(34, 211, 238, 0.4);
+    font-family: 'monospace';
+  }
+
+  .audi-stat {
+    background: rgba(23, 37, 84, 0.4);
+    border-radius: 18px;
+    border: 1px solid rgba(34, 211, 238, 0.2);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+    transition: all 0.3s ease;
+  }
+
+  .white-data {
+    color: #ffffff !important;
+    font-weight: 700;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+  }
+
+  .data-label-glow {
+    color: rgba(165, 243, 252, 0.8) !important;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .glass-button {
+    background: rgba(34, 211, 238, 0.1) !important;
+    border: 1px solid rgba(34, 211, 238, 0.3) !important;
+    color: #ffffff !important;
+    border-radius: 12px;
+    transition: all 0.3s ease;
+  }
+
+  .glass-button:hover {
+    background: rgba(34, 211, 238, 0.2) !important;
+    box-shadow: 0 0 15px rgba(34, 211, 238, 0.3);
   }
 }
 
-/* ── Screen-flicker entrance animation ── */
 @keyframes screenFlicker {
-  0%   { opacity: 0.2; transform: scale(0.98); }
-  20%  { opacity: 0.8; }
-  40%  { opacity: 0.4; }
-  100% { opacity: 1;   transform: scale(1); }
+  0% { opacity: 0.2; transform: scale(0.98); }
+  20% { opacity: 0.8; }
+  40% { opacity: 0.4; }
+  100% { opacity: 1; transform: scale(1); }
 }
