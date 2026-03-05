@@ -123,6 +123,20 @@ export function usePricingData() {
   });
 }
 
+export function usePricingRowCount() {
+  return useQuery({
+    queryKey: ['pricing-row-count'],
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from('pricing_data')
+        .select('id', { count: 'exact', head: true });
+      if (error) throw error;
+      return count ?? 0;
+    },
+    staleTime: 60_000,
+  });
+}
+
 export function usePricingLookup(manufacturerCode: string | null, modelCode: string | null, registrationYear?: number | null) {
   return useQuery({
     queryKey: ['pricing-lookup', manufacturerCode, modelCode, registrationYear],
@@ -204,6 +218,19 @@ export function useSyncVehiclesFromPricing() {
 
   return useMutation({
     mutationFn: async () => {
+      // Guard: make sure pricing_data table actually has rows
+      const { count: pricingCount, error: countError } = await supabase
+        .from('pricing_data')
+        .select('id', { count: 'exact', head: true });
+
+      if (countError) throw countError;
+
+      if (!pricingCount || pricingCount === 0) {
+        throw new Error(
+          'טבלת המחירון ריקה — יש לטעון תחילה את קובץ ה-Excel של משרד התחבורה דרך כפתור “בחר קובץ” למעלה'
+        );
+      }
+
       // Always fetch live vehicles from Supabase — never rely on stale localStorage cache
       const { data: vehiclesData, error: vehiclesError } = await supabase
         .from('vehicles')
@@ -218,11 +245,12 @@ export function useSyncVehiclesFromPricing() {
       );
 
       if (vehiclesToSync.length === 0) {
-        return { updated: 0, total: 0 };
+        return { updated: 0, notFound: 0, notFoundNames: [] as string[], total: 0 };
       }
 
       const cache = new Map<string, PricingData | null>();
       let updated = 0;
+      const notFoundNames: string[] = [];
 
       for (const vehicle of vehiclesToSync) {
         const cacheKey = `${normalizeCode(vehicle.manufacturer_code)}|${normalizeCode(vehicle.model_code)}|${vehicle.year}`;
@@ -243,7 +271,12 @@ export function useSyncVehiclesFromPricing() {
         }
 
         const pricingRow = cache.get(cacheKey);
-        if (!pricingRow) continue;
+        if (!pricingRow) {
+          notFoundNames.push(
+            `${vehicle.manufacturer} ${vehicle.model} (${vehicle.plate_number} — קוד: ${vehicle.manufacturer_code}/${vehicle.model_code})`
+          );
+          continue;
+        }
 
         const patch = {
           tax_value_price:  pricingRow.usage_value,
@@ -271,6 +304,7 @@ export function useSyncVehiclesFromPricing() {
 
         if (updateError) {
           console.error('[useSyncVehiclesFromPricing] update error for', vehicle.id, updateError);
+          notFoundNames.push(`${vehicle.manufacturer} ${vehicle.model} (שגיאת DB)`);
           continue;
         }
 
@@ -281,7 +315,7 @@ export function useSyncVehiclesFromPricing() {
       const { data: refreshed } = await supabase.from('vehicles').select('*').eq('is_active', true);
       if (refreshed) saveStoredVehicles(refreshed as Vehicle[]);
 
-      return { updated, total: vehiclesToSync.length };
+      return { updated, notFound: notFoundNames.length, notFoundNames, total: vehiclesToSync.length };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
