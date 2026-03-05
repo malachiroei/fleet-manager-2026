@@ -662,30 +662,27 @@ export default function VehicleHandoverWizard() {
   const handleFinish = async () => {
     setSubmitting(true);
     try {
-      // ── Debug: dump URL params so we can trace issues in the console ──
+      // ── Trace URL params ──────────────────────────────────────────────────────
       console.log('[Wizard] handleFinish — URL params:', { vehicleId, driverId, handoverId, reportUrl });
       if (!reportUrl) {
-        console.warn('[Wizard] reportUrl is empty — PDF attachment will be missing from email');
+        console.warn('[Wizard] reportUrl is empty — main PDF attachment will be missing from email');
       }
 
+      // ── Upload ALL 5 wizard documents in one concurrent batch ─────────────────
+      // Using a single base timestamp so every file lands under the same folder.
       const base = `documents/${vehicleId}/${Date.now()}`;
 
-      // Upload all 3 signatures — unique index prevents filename collisions
-      const [sig1Url, sig2Url, sig3Url] = await Promise.all([
-        uploadSigToStorage(sig1Ref, 1),
-        uploadSigToStorage(sig2Ref, 2),
-        uploadSigToStorage(sig3Ref, 3),
-      ]);
-
-      // Upload license photos
-      const [frontUrl, backUrl] = await Promise.all([
-        licenseFront ? uploadFileToStorage(licenseFront, `${base}/license_front.jpg`) : Promise.resolve(null),
-        licenseBack  ? uploadFileToStorage(licenseBack,  `${base}/license_back.jpg`)  : Promise.resolve(null),
+      const [sig1Url, sig2Url, sig3Url, frontUrl, backUrl] = await Promise.all([
+        uploadSigToStorage(sig1Ref,  1),                                                                               // אישור קבלת רכב
+        uploadSigToStorage(sig2Ref,  2),                                                                               // נוהל שימוש
+        uploadSigToStorage(sig3Ref,  3),                                                                               // הצהרת בריאות
+        licenseFront ? uploadFileToStorage(licenseFront, `${base}/license_front.jpg`) : Promise.resolve(null),        // רישיון קדמי
+        licenseBack  ? uploadFileToStorage(licenseBack,  `${base}/license_back.jpg`)  : Promise.resolve(null),        // רישיון אחורי
       ]);
 
       console.log('[Wizard] Upload results:', { sig1Url, sig2Url, sig3Url, frontUrl, backUrl });
 
-      // Save to driver_documents (schema: driver_id, file_url, title)
+      // ── Save all 5 docs to driver_documents ───────────────────────────────────
       const docsToInsert = [
         sig1Url  && { driver_id: driverId, file_url: sig1Url,  title: `אישור קבלת רכב | ${vehicleLabel}` },
         sig2Url  && { driver_id: driverId, file_url: sig2Url,  title: `התחייבות נוהל שימוש ברכב | ${vehicleLabel}` },
@@ -698,45 +695,53 @@ export default function VehicleHandoverWizard() {
         await supabase.from('driver_documents').insert(docsToInsert as never);
       }
 
-      // Update driver record with license details
+      // ── Update driver record with license details ─────────────────────────────
       if (driverId) {
         await supabase.from('drivers').update({
-          license_number:    licenseNumber   || undefined,
-          license_expiry:    licenseExpiry   || undefined,
-          license_front_url: frontUrl        || undefined,
-          license_back_url:  backUrl         || undefined,
+          license_number:    licenseNumber || undefined,
+          license_expiry:    licenseExpiry || undefined,
+          license_front_url: frontUrl      || undefined,
+          license_back_url:  backUrl       || undefined,
         }).eq('id', driverId);
       }
 
-      // ── Send email via edge function with all attachments ───────────────────────
-      try {
-        // Build the extra-attachments list (signatures + license photos)
-        const additionalAttachments = [
-          ...(sig1Url  ? [{ filename: 'אישור_קבלת_רכב.png',      url: sig1Url  }] : []),
-          ...(sig2Url  ? [{ filename: 'התחייבות_נוהל_שימוש.png', url: sig2Url  }] : []),
-          ...(sig3Url  ? [{ filename: 'הצהרת_בריאות.png',        url: sig3Url  }] : []),
-          ...(frontUrl ? [{ filename: 'צילום_רישיון_קדמי.jpg',   url: frontUrl }] : []),
-          ...(backUrl  ? [{ filename: 'צילום_רישיון_אחורי.jpg',  url: backUrl  }] : []),
-        ];
-        // +1 for the main PDF (טופס_מסירת_רכב.pdf) handled by the edge function
-        console.log(`[Wizard] Starting email send with ${additionalAttachments.length + 1} attachments`, {
-          reportUrl,
-          handoverId,
-          additionalAttachments: additionalAttachments.map(a => ({ filename: a.filename, hasUrl: !!a.url })),
-        });
+      // ── Build attachment list — abort email if any file is missing ─────────────
+      const allAttachments: { filename: string; url: string }[] = [
+        { filename: 'טופס_קבלת_רכב.png',   url: sig1Url  ?? '' },
+        { filename: 'נוהל_שימוש.png',       url: sig2Url  ?? '' },
+        { filename: 'הצהרת_בריאות.png',     url: sig3Url  ?? '' },
+        { filename: 'רישיון_קדמי.jpg',      url: frontUrl ?? '' },
+        { filename: 'רישיון_אחורי.jpg',     url: backUrl  ?? '' },
+      ];
 
+      const missingAttachments = allAttachments.filter(a => !a.url);
+      if (missingAttachments.length > 0) {
+        console.error('[Wizard] Aborting email — the following uploads failed:', missingAttachments.map(a => a.filename));
+        toast.success('כל המסמכים נשמרו, אך שליחת המייל בוטלה כי חלק מהקבצים לא הועלו.');
+        navigate(vehicleId ? `/vehicles/${vehicleId}` : '/vehicles');
+        return;
+      }
+
+      // ── Send email with all 6 attachments (5 wizard files + 1 PDF from reportUrl) ──
+      console.log(`[Wizard] Starting email send with ${allAttachments.length + 1} attachments`, {
+        reportUrl,
+        handoverId,
+        files: allAttachments.map(a => a.filename),
+      });
+
+      try {
         await sendHandoverNotificationEmail({
           handoverId,
           vehicleId,
-          handoverType: 'delivery',
+          handoverType:   'delivery',
           assignmentMode: 'permanent',
           vehicleLabel,
-          driverLabel: driverName,
+          driverLabel:    driverName,
           odometerReading: 0,
-          fuelLevel: 0,
-          notes: healthNotes || null,
+          fuelLevel:       0,
+          notes:           healthNotes || null,
           reportUrl,
-          additionalAttachments,
+          additionalAttachments: allAttachments,
         });
         console.log('[Wizard] Email sent successfully');
         toast.success('כל המסמכים נחתמו ונשלח מייל!');
