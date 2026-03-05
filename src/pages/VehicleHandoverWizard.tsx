@@ -624,36 +624,43 @@ export default function VehicleHandoverWizard() {
     return false;
   }, [step, sig1OK, sig2OK, procedureRead, sig3OK, healthItems, licenseNumber, licenseExpiry, licenseFront, licenseBack]);
 
-  // ── Upload helper ──
+  // ── Upload helper — always targets the public vehicle-documents bucket ──
   const uploadFileToStorage = async (file: File, path: string): Promise<string | null> => {
     try {
       const { error } = await supabase.storage
         .from('vehicle-documents')
         .upload(path, file, { upsert: true });
-      if (error) throw error;
+      if (error) {
+        console.error(`[Wizard] storage upload failed for "${path}":`, error.message);
+        return null;
+      }
       const { data } = supabase.storage.from('vehicle-documents').getPublicUrl(path);
+      console.log(`[Wizard] uploaded OK → ${path}`);
       return data.publicUrl;
     } catch (e) {
-      console.error('Upload error', e);
+      console.error(`[Wizard] storage upload exception for "${path}":`, e);
       return null;
     }
   };
 
-  // Upload a signature canvas dataUrl as a PNG into vehicle-documents (public bucket).
-  // Each call gets a unique path via the supplied index so concurrent uploads never collide.
+  // ── Convert a signature-pad dataUrl into a File and upload to vehicle-documents ──
   const uploadSigToStorage = async (
     ref: RefObject<SignaturePadRef>,
-    index: number
+    filename: string,
+    path: string
   ): Promise<string | null> => {
     const dataUrl = ref.current?.getDataUrl();
-    if (!dataUrl) return null;
+    if (!dataUrl) {
+      console.warn(`[Wizard] signature pad empty for ${filename}`);
+      return null;
+    }
     try {
       const resp = await fetch(dataUrl);
       const blob = await resp.blob();
-      const file = new File([blob], `sig_${index}.png`, { type: 'image/png' });
-      return await uploadFileToStorage(file, `documents/${vehicleId}/${Date.now()}_sig_${index}.png`);
+      const file = new File([blob], filename, { type: 'image/png' });
+      return await uploadFileToStorage(file, path);
     } catch (e) {
-      console.error(`[Wizard] sig${index} upload failed:`, e);
+      console.error(`[Wizard] signature conversion failed for ${filename}:`, e);
       return null;
     }
   };
@@ -669,15 +676,20 @@ export default function VehicleHandoverWizard() {
       }
 
       // ── Upload ALL 5 wizard documents in one concurrent batch ─────────────────
-      // Using a single base timestamp so every file lands under the same folder.
-      const base = `documents/${vehicleId}/${Date.now()}`;
+      // All go to vehicle-documents (public bucket). Unique timestamp per file via index suffix.
+      const ts = Date.now();
+      const folder = `documents/${vehicleId}/${ts}`;
 
       const [sig1Url, sig2Url, sig3Url, frontUrl, backUrl] = await Promise.all([
-        uploadSigToStorage(sig1Ref,  1),                                                                               // אישור קבלת רכב
-        uploadSigToStorage(sig2Ref,  2),                                                                               // נוהל שימוש
-        uploadSigToStorage(sig3Ref,  3),                                                                               // הצהרת בריאות
-        licenseFront ? uploadFileToStorage(licenseFront, `${base}/license_front.jpg`) : Promise.resolve(null),        // רישיון קדמי
-        licenseBack  ? uploadFileToStorage(licenseBack,  `${base}/license_back.jpg`)  : Promise.resolve(null),        // רישיון אחורי
+        uploadSigToStorage(sig1Ref, 'טופס_קבלת_רכב.png',  `${folder}/sig_1_${ts}.png`),
+        uploadSigToStorage(sig2Ref, 'נוהל_שימוש.png',      `${folder}/sig_2_${ts}.png`),
+        uploadSigToStorage(sig3Ref, 'הצהרת_בריאות.png',    `${folder}/sig_3_${ts}.png`),
+        licenseFront
+          ? uploadFileToStorage(licenseFront, `${folder}/license_front_${ts}.jpg`)
+          : Promise.resolve(null),
+        licenseBack
+          ? uploadFileToStorage(licenseBack,  `${folder}/license_back_${ts}.jpg`)
+          : Promise.resolve(null),
       ]);
 
       console.log('[Wizard] Upload results:', { sig1Url, sig2Url, sig3Url, frontUrl, backUrl });
@@ -707,11 +719,11 @@ export default function VehicleHandoverWizard() {
 
       // ── Build attachment list — abort email if any file is missing ─────────────
       const allAttachments: { filename: string; url: string }[] = [
-        { filename: 'טופס_קבלת_רכב.png',   url: sig1Url  ?? '' },
-        { filename: 'נוהל_שימוש.png',       url: sig2Url  ?? '' },
-        { filename: 'הצהרת_בריאות.png',     url: sig3Url  ?? '' },
-        { filename: 'רישיון_קדמי.jpg',      url: frontUrl ?? '' },
-        { filename: 'רישיון_אחורי.jpg',     url: backUrl  ?? '' },
+        { filename: 'טופס_קבלת_רכב.png',  url: sig1Url  ?? '' },
+        { filename: 'נוהל_שימוש.png',      url: sig2Url  ?? '' },
+        { filename: 'הצהרת_בריאות.png',    url: sig3Url  ?? '' },
+        { filename: 'רישיון_קדמי.jpg',     url: frontUrl ?? '' },
+        { filename: 'רישיון_אחורי.jpg',    url: backUrl  ?? '' },
       ];
 
       const missingAttachments = allAttachments.filter(a => !a.url);
