@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, RefObject } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useVehicles } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
-import { useCreateHandover, uploadSignature, sendHandoverNotificationEmail } from '@/hooks/useHandovers';
+import { useCreateHandover, sendHandoverNotificationEmail } from '@/hooks/useHandovers';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import SignaturePad, { SignaturePadRef } from '@/components/SignaturePad';
@@ -639,15 +639,21 @@ export default function VehicleHandoverWizard() {
     }
   };
 
+  // Upload a signature canvas dataUrl as a PNG into vehicle-documents (public bucket).
+  // Each call gets a unique path via the supplied index so concurrent uploads never collide.
   const uploadSigToStorage = async (
     ref: RefObject<SignaturePadRef>,
-    name: string
+    index: number
   ): Promise<string | null> => {
     const dataUrl = ref.current?.getDataUrl();
     if (!dataUrl) return null;
     try {
-      return await uploadSignature(dataUrl, vehicleId, name as 'delivery' | 'return');
-    } catch {
+      const resp = await fetch(dataUrl);
+      const blob = await resp.blob();
+      const file = new File([blob], `sig_${index}.png`, { type: 'image/png' });
+      return await uploadFileToStorage(file, `documents/${vehicleId}/${Date.now()}_sig_${index}.png`);
+    } catch (e) {
+      console.error(`[Wizard] sig${index} upload failed:`, e);
       return null;
     }
   };
@@ -664,11 +670,11 @@ export default function VehicleHandoverWizard() {
 
       const base = `documents/${vehicleId}/${Date.now()}`;
 
-      // Upload all 3 signatures
+      // Upload all 3 signatures — unique index prevents filename collisions
       const [sig1Url, sig2Url, sig3Url] = await Promise.all([
-        uploadSigToStorage(sig1Ref, 'delivery'),
-        uploadSigToStorage(sig2Ref, 'delivery'),
-        uploadSigToStorage(sig3Ref, 'delivery'),
+        uploadSigToStorage(sig1Ref, 1),
+        uploadSigToStorage(sig2Ref, 2),
+        uploadSigToStorage(sig3Ref, 3),
       ]);
 
       // Upload license photos
@@ -676,6 +682,8 @@ export default function VehicleHandoverWizard() {
         licenseFront ? uploadFileToStorage(licenseFront, `${base}/license_front.jpg`) : Promise.resolve(null),
         licenseBack  ? uploadFileToStorage(licenseBack,  `${base}/license_back.jpg`)  : Promise.resolve(null),
       ]);
+
+      console.log('[Wizard] Upload results:', { sig1Url, sig2Url, sig3Url, frontUrl, backUrl });
 
       // Save to driver_documents (schema: driver_id, file_url, title)
       const docsToInsert = [
