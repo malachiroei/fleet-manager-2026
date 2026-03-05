@@ -344,6 +344,35 @@ export default function VehicleDetailPage() {
         </div>
       </header>
 
+      {/* Tab navigation */}
+      <div className="sticky top-[65px] z-10 bg-card border-b border-border">
+        <div className="container">
+          <nav className="flex gap-1 overflow-x-auto" aria-label="סעיפי רכב">
+            {[
+              { label: 'סקירה', hash: '' },
+              { label: 'נתוני מס', hash: '#tax-data' },
+              { label: 'מסירות', hash: '#handover-history' },
+              { label: 'מסמכים', hash: '#vehicle-documents' },
+            ].map(({ label, hash }) => {
+              const active = hash === '' ? (!section || section === 'overview') : section === hash.slice(1);
+              return (
+                <Link
+                  key={hash}
+                  to={`/vehicles/${vehicle.id}${hash}`}
+                  className={`whitespace-nowrap px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                    active
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
+                  }`}
+                >
+                  {label}
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
+      </div>
+
       <main className="container py-6 space-y-4">
         {/* Basic Info */}
         {!isHandoverSection && !isTaxSection && !isDocumentsSection && <Card>
