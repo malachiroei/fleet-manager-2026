@@ -484,7 +484,7 @@ function Step4({
               onChange={(e) => setLicenseNumber(e.target.value)}
               placeholder="00000000"
               dir="ltr"
-              className="mt-1 border-slate-600 bg-slate-800 text-white placeholder:text-slate-500 focus:border-cyan-400"
+              className="mt-1 border-slate-700 bg-slate-900 text-white placeholder:text-slate-500 focus:border-cyan-400"
             />
           </div>
           <div>
@@ -493,7 +493,7 @@ function Step4({
               type="date"
               value={licenseExpiry}
               onChange={(e) => setLicenseExpiry(e.target.value)}
-              className="mt-1 border-slate-600 bg-slate-800 text-white focus:border-cyan-400"
+              className="mt-1 border-slate-700 bg-slate-900 text-white focus:border-cyan-400"
             />
           </div>
           <div>
@@ -503,7 +503,7 @@ function Step4({
               onChange={(e) => setLicenseClass(e.target.value)}
               placeholder="B, C1..."
               dir="ltr"
-              className="mt-1 border-slate-600 bg-slate-800 text-white placeholder:text-slate-500 focus:border-cyan-400"
+              className="mt-1 border-slate-700 bg-slate-900 text-white placeholder:text-slate-500 focus:border-cyan-400"
             />
           </div>
         </div>
@@ -821,8 +821,8 @@ export default function VehicleHandoverWizard() {
         )}
       </main>
 
-      {/* Fixed bottom navigation — raised 40 px to clear the test-build banner */}
-      <div className="fixed bottom-10 left-0 right-0 bg-[#020617]/95 backdrop-blur-sm border-t border-white/10 py-4 z-20">
+      {/* Fixed bottom navigation — raised 56 px to clear the test-build banner */}
+      <div className="fixed bottom-14 left-0 right-0 bg-[#020617]/95 backdrop-blur-sm border-t border-white/10 py-4 z-20">
         <div className="container max-w-3xl mx-auto flex items-center gap-3">
           {step > 0 && (
             <Button
