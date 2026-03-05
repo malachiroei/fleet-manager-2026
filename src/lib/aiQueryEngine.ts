@@ -68,7 +68,7 @@ function detectIntent(q: string): Intent {
   if (/כמה\s*קיל|מד.?(אמת|מרחק|קיל)|odo/.test(t))  return 'vehicle_odometer';
   if (/מי.*(נהג|אחראי|מחזיק).*רכב/.test(t))          return 'vehicle_driver';
   if (/סטטוס|מצב|תקין|תוקף.*רכב/.test(t))            return 'vehicle_status';
-  if (/ללא\s*נהג|אין\s*נהג|לא\s*משויך|פנוי|פנויים|ללא\s*שיוך/.test(t)) return 'vehicle_unassigned';
+  if (/ללא\s*נהג|אין\s*נהג|לא\s*משויך|פנוי\b|פנויים|ללא\s*שיוך|חופשי|חופשיים|ריק.*רכב|רכב.*ריק|מי\s*חופשי|מי\s*פנוי/.test(t)) return 'vehicle_unassigned';
   if (/רשימ|כמה\s*רכב|כל\s*הרכב/.test(t))             return 'vehicle_list';
   if (/רכב.*\d{4,}|\d{4,}.*רכב|לוחית|לוח\s*רישוי/.test(t)) return 'vehicle_by_plate';
   if (/נהג|נהגת|שם.*נהג/.test(t) && !/רכב/.test(t)) return 'driver_by_name';
@@ -177,22 +177,31 @@ async function resolveVehicleStatus(plate: string | null): Promise<string> {
 }
 
 async function resolveUnassignedVehicles(): Promise<string> {
-  const { data } = await supabase
+  // Fetch ALL active vehicles and filter client-side to handle null, undefined,
+  // empty string, or any falsy driver assignment — more reliable than .is(null).
+  const { data, error } = await supabase
     .from('vehicles')
-    .select('plate_number, manufacturer, model, year, status')
-    .is('assigned_driver_id', null)
-    .eq('is_active', true)
+    .select('plate_number, manufacturer, model, year, status, assigned_driver_id, is_active')
     .order('manufacturer');
 
-  if (!data?.length) {
-    return 'כל הרכבים הפעילים בצי משויכים כרגע לנהגים. לא נמצאו רכבים פנויים.';
+  if (error) return `שגיאה בשאילתה: ${error.message}`;
+
+  const all = (data ?? []).filter(v => v.is_active !== false);
+  const total = all.length;
+
+  const unassigned = all.filter(
+    v => !v.assigned_driver_id || String(v.assigned_driver_id).trim() === ''
+  );
+
+  if (!unassigned.length) {
+    return `כרגע כל ${total > 0 ? total : ''} הרכבים מאוישים — לא נמצאו רכבים ללא נהג.`;
   }
 
-  const list = data
-    .map((v, i) => `${i + 1}. ${v.manufacturer} ${v.model} ${v.year} — ${v.plate_number} ${statusLabel(v.status)}`)
+  const list = unassigned
+    .map((v, i) => `${i + 1}. **${v.manufacturer} ${v.model}** — ${v.plate_number}`)
     .join('\n');
 
-  return `רכבים פעילים **ללא נהג משויך** (${data.length}):\n${list}`;
+  return `נמצאו **${unassigned.length}** רכבים ללא נהג משויך (מתוך ${total} פעילים):\n${list}`;
 }
 
 async function resolveVehicleList(): Promise<string> {
