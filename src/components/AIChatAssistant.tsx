@@ -163,7 +163,7 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
         onClick={() => setOpen(o => !o)}
         aria-label={open ? 'סגור עוזר AI' : 'פתח עוזר AI'}
         className={`
-          fixed bottom-[4.5rem] left-5 z-50 h-14 w-14 rounded-full shadow-xl
+          fixed bottom-[6.75rem] left-5 z-50 h-14 w-14 rounded-full shadow-xl
           flex items-center justify-center transition-all duration-200
           ${open
             ? 'bg-slate-700 hover:bg-slate-600 shadow-slate-900/50'
@@ -185,7 +185,7 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
       {/* ── Chat Panel ────────────────────────────────────────────────────── */}
       <div
         className={`
-          fixed bottom-[9rem] left-5 z-50
+          fixed bottom-[11.25rem] left-5 z-50
           w-[22rem] sm:w-[26rem]
           flex flex-col
           rounded-2xl border border-white/10

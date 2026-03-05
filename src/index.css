@@ -223,10 +223,8 @@
 }
 
 .light body {
-  background-color: #f0f4f8 !important;
-  background-image:
-    radial-gradient(ellipse at top right, rgba(34, 211, 238, 0.07) 0%, transparent 55%),
-    radial-gradient(ellipse at bottom left, rgba(14, 116, 144, 0.05) 0%, transparent 50%) !important;
+  background-color: #f8fafc !important;
+  background-image: none !important;
   color: #0f172a !important;
 }
 
@@ -238,7 +236,7 @@
 .light .bg-\[\#020617\],
 .light .bg-\[\#0d1b2e\],
 .light .bg-\[\#091423\] {
-  background-color: #f0f4f8 !important;
+  background-color: #f8fafc !important;
 }
 
 /* Sidebar */
@@ -256,32 +254,43 @@
 
 /* Cards */
 .light [data-slot="card"],
-.light .card {
+.light .card,
+.light [class*="bg-card"] {
   background: #ffffff !important;
-  border-color: #e2e8f0 !important;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.08) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04) !important;
 }
 
-/* General text */
+/* General text — all white variants → slate-900 */
 .light .text-white,
 .light .text-white\/90,
+.light .text-white\/80,
 .light .text-white\/70,
-.light .text-white\/60 {
-  color: #1e293b !important;
+.light .text-white\/60,
+.light .text-white\/50 {
+  color: #0f172a !important;
 }
+.light .text-white\/40,
 .light .text-white\/30,
 .light .text-white\/20,
-.light .text-white\/15 {
+.light .text-white\/15,
+.light .text-white\/10 {
   color: #94a3b8 !important;
 }
 .light .text-slate-700,
 .light .text-slate-800,
 .light .text-slate-900 {
-  color: #1e293b !important;
+  color: #0f172a !important;
 }
 .light .text-slate-500,
 .light .text-slate-400 {
   color: #64748b !important;
+}
+.light .text-slate-300,
+.light .text-slate-200 {
+  color: #94a3b8 !important;
 }
 
 /* Inputs */
@@ -315,3 +324,25 @@
 /* AI Chat panel in light mode */
 .light .bg-\[\#0d1b2e\]\/95 { background-color: rgba(255,255,255,0.97) !important; }
 .light .bg-\[\#091423\] { background-color: #f8fafc !important; }
+
+/* AI FAB — keep blue gradient even in light mode */
+.light button.rounded-full[class*="from-cyan-"] {
+  background: linear-gradient(135deg, #06b6d4 0%, #2563eb 100%) !important;
+  border: none !important;
+  box-shadow: 0 4px 14px rgba(6,182,212,0.45) !important;
+  color: #ffffff !important;
+}
+.light button.rounded-full[class*="from-cyan-"]:hover {
+  background: linear-gradient(135deg, #22d3ee 0%, #3b82f6 100%) !important;
+  box-shadow: 0 6px 20px rgba(6,182,212,0.55) !important;
+}
+
+/* Muted section backgrounds */
+.light .bg-slate-800,
+.light .bg-slate-900,
+.light .bg-slate-950 {
+  background-color: #f1f5f9 !important;
+}
+.light .bg-slate-700 {
+  background-color: #e2e8f0 !important;
+}
