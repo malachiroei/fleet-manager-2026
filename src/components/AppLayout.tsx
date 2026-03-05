@@ -4,6 +4,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { Sidebar } from './Sidebar';
 import { MobileNav } from './MobileNav';
 import { LanguageSwitcher } from './LanguageSwitcher';
+import { AIChatAssistant } from './AIChatAssistant';
 import { Car } from 'lucide-react';
 
 interface AppLayoutProps {
@@ -52,6 +53,9 @@ export function AppLayout({ children }: AppLayoutProps) {
           {children}
         </main>
       </div>
+
+      {/* AI Chat Assistant — floating button available on all pages */}
+      <AIChatAssistant />
     </div>
   );
 }
