@@ -104,6 +104,13 @@ serve(async (req) => {
     }
 
     const { to, subject, payload } = (await req.json()) as NotificationRequest;
+    console.log('[send-handover-notification] received request:', {
+      to,
+      subject,
+      handoverId: payload.handoverId,
+      reportUrl: payload.reportUrl,
+      additionalAttachments: (payload.additionalAttachments ?? []).map(a => a.filename),
+    });
     const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
     let persistedPdfUrl = payload.reportUrl;

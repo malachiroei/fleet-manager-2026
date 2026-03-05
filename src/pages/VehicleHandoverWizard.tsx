@@ -656,6 +656,12 @@ export default function VehicleHandoverWizard() {
   const handleFinish = async () => {
     setSubmitting(true);
     try {
+      // ── Debug: dump URL params so we can trace issues in the console ──
+      console.log('[Wizard] handleFinish — URL params:', { vehicleId, driverId, handoverId, reportUrl });
+      if (!reportUrl) {
+        console.warn('[Wizard] reportUrl is empty — PDF attachment will be missing from email');
+      }
+
       const base = `documents/${vehicleId}/${Date.now()}`;
 
       // Upload all 3 signatures
@@ -696,6 +702,21 @@ export default function VehicleHandoverWizard() {
 
       // ── Send email via edge function with all attachments ───────────────────────
       try {
+        // Build the extra-attachments list (signatures + license photos)
+        const additionalAttachments = [
+          ...(sig1Url  ? [{ filename: 'אישור_קבלת_רכב.png',      url: sig1Url  }] : []),
+          ...(sig2Url  ? [{ filename: 'התחייבות_נוהל_שימוש.png', url: sig2Url  }] : []),
+          ...(sig3Url  ? [{ filename: 'הצהרת_בריאות.png',        url: sig3Url  }] : []),
+          ...(frontUrl ? [{ filename: 'צילום_רישיון_קדמי.jpg',   url: frontUrl }] : []),
+          ...(backUrl  ? [{ filename: 'צילום_רישיון_אחורי.jpg',  url: backUrl  }] : []),
+        ];
+        // +1 for the main PDF (טופס_מסירת_רכב.pdf) handled by the edge function
+        console.log(`[Wizard] Starting email send with ${additionalAttachments.length + 1} attachments`, {
+          reportUrl,
+          handoverId,
+          additionalAttachments: additionalAttachments.map(a => ({ filename: a.filename, hasUrl: !!a.url })),
+        });
+
         await sendHandoverNotificationEmail({
           handoverId,
           vehicleId,
@@ -707,17 +728,12 @@ export default function VehicleHandoverWizard() {
           fuelLevel: 0,
           notes: healthNotes || null,
           reportUrl,
-          additionalAttachments: [
-            ...(sig1Url  ? [{ filename: 'אישור_קבלת_רכב.png',      url: sig1Url  }] : []),
-            ...(sig2Url  ? [{ filename: 'התחייבות_נוהל_שימוש.png', url: sig2Url  }] : []),
-            ...(sig3Url  ? [{ filename: 'הצהרת_בריאות.png',        url: sig3Url  }] : []),
-            ...(frontUrl ? [{ filename: 'צילום_רישיון_קדמי.jpg',   url: frontUrl }] : []),
-            ...(backUrl  ? [{ filename: 'צילום_רישיון_אחורי.jpg',  url: backUrl  }] : []),
-          ],
+          additionalAttachments,
         });
+        console.log('[Wizard] Email sent successfully');
         toast.success('כל המסמכים נחתמו ונשלח מייל!');
       } catch (emailErr) {
-        console.warn('שליחת מייל נכשלה (אינו חוסם על השמירה):', emailErr);
+        console.warn('[Wizard] Email send failed (does not block save):', emailErr);
         toast.success('כל המסמכים נשמרו בהצלחה.');
       }
 
