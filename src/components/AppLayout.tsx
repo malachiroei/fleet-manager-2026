@@ -5,7 +5,8 @@ import { Sidebar } from './Sidebar';
 import { MobileNav } from './MobileNav';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { AIChatAssistant } from './AIChatAssistant';
-import { Car } from 'lucide-react';
+import { useTheme } from '@/hooks/useTheme';
+import { Sun, Moon, Car } from 'lucide-react';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -14,6 +15,17 @@ interface AppLayoutProps {
 export function AppLayout({ children }: AppLayoutProps) {
   const isMobile = useIsMobile();
   const { t } = useTranslation();
+  const { theme, toggleTheme } = useTheme();
+
+  const ThemeToggle = () => (
+    <button
+      onClick={toggleTheme}
+      title={theme === 'dark' ? 'עבור למצב בהיר' : 'עבור למצב כהה'}
+      className="h-8 w-8 rounded-lg flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+    >
+      {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+    </button>
+  );
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#020617]">
@@ -37,13 +49,17 @@ export function AppLayout({ children }: AppLayoutProps) {
                 </div>
               </div>
             </div>
-            <LanguageSwitcher />
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
+              <LanguageSwitcher />
+            </div>
           </header>
         )}
 
         {/* Desktop Header with Language Switcher */}
         {!isMobile && (
-          <div className="flex h-16 items-center border-b border-white/10 bg-[#0d1b2e] px-6 justify-end">
+          <div className="flex h-16 items-center border-b border-white/10 bg-[#0d1b2e] px-6 justify-end gap-2">
+            <ThemeToggle />
             <LanguageSwitcher />
           </div>
         )}

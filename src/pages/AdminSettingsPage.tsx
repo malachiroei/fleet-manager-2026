@@ -8,10 +8,12 @@ import { supabase } from '@/integrations/supabase/client';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import PricingDataUploader from '@/components/PricingDataUploader';
 import FleetDataImporter from '@/components/FleetDataImporter';
-import { ArrowRight, Settings, Shield, Mail, Loader2 } from 'lucide-react';
+import { ArrowRight, Settings, Shield, Mail, Loader2, Monitor, Moon, Sun } from 'lucide-react';
+import { useTheme } from '@/hooks/useTheme';
 import { toast } from 'sonner';
  
 export default function AdminSettingsPage() {
+    const { theme, setTheme } = useTheme();
     const lastPricingUpload = localStorage.getItem('last_pricing_upload');
     const lastVehicleUpload = localStorage.getItem('last_vehicle_upload');
     const lastDriverUpload = localStorage.getItem('last_driver_upload');
@@ -255,6 +257,50 @@ export default function AdminSettingsPage() {
                   </div>
                 </>
               )}
+            </CardContent>
+          </Card>
+
+          {/* Display Settings */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-500/10">
+                  <Monitor className="h-5 w-5 text-purple-400" />
+                </div>
+                <div>
+                  <CardTitle>הגדרות תצוגה</CardTitle>
+                  <CardDescription>בחר בין מצב כהה (קיימי) למצב בהיר. הבחירה נשמרת בקשיית הדפדפן.</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setTheme('dark')}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
+                    theme === 'dark'
+                      ? 'border-cyan-400 bg-cyan-500/15 text-cyan-300'
+                      : 'border-border bg-secondary/50 text-muted-foreground hover:border-cyan-400/50'
+                  }`}
+                >
+                  <Moon className="h-4 w-4" />
+                  מצב כהה
+                </button>
+                <button
+                  onClick={() => setTheme('light')}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
+                    theme === 'light'
+                      ? 'border-amber-400 bg-amber-500/15 text-amber-400'
+                      : 'border-border bg-secondary/50 text-muted-foreground hover:border-amber-400/50'
+                  }`}
+                >
+                  <Sun className="h-4 w-4" />
+                  מצב בהיר
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-3">
+                מצב פעיל כעת: <strong>{theme === 'dark' ? 'כהה 🌙' : 'בהיר ☀️'}</strong>
+              </p>
             </CardContent>
           </Card>
 

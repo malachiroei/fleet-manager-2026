@@ -198,3 +198,120 @@
     overflow: hidden;
   }
 }
+
+/* ── Light Mode overrides ────────────────────────────────────── */
+:root.light {
+  --background: 210 20% 96%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 11%;
+  --primary: 191 80% 40%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 210 20% 90%;
+  --secondary-foreground: 222 47% 20%;
+  --muted: 210 20% 90%;
+  --muted-foreground: 215 20% 45%;
+  --accent: 210 20% 90%;
+  --accent-foreground: 222 47% 11%;
+  --destructive: 0 84% 55%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 210 20% 82%;
+  --input: 210 20% 82%;
+  --ring: 191 80% 40%;
+}
+
+.light body {
+  background-color: #f0f4f8 !important;
+  background-image:
+    radial-gradient(ellipse at top right, rgba(34, 211, 238, 0.07) 0%, transparent 55%),
+    radial-gradient(ellipse at bottom left, rgba(14, 116, 144, 0.05) 0%, transparent 50%) !important;
+  color: #0f172a !important;
+}
+
+.light h1, .light h2, .light h3, .light h4, .light h5, .light h6 {
+  color: #0f172a !important;
+}
+
+/* Main layout shells */
+.light .bg-\[\#020617\],
+.light .bg-\[\#0d1b2e\],
+.light .bg-\[\#091423\] {
+  background-color: #f0f4f8 !important;
+}
+
+/* Sidebar */
+.light [class*="sidebar"],
+.light aside {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+/* Header bars */
+.light header {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+/* Cards */
+.light [data-slot="card"],
+.light .card {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08) !important;
+}
+
+/* General text */
+.light .text-white,
+.light .text-white\/90,
+.light .text-white\/70,
+.light .text-white\/60 {
+  color: #1e293b !important;
+}
+.light .text-white\/30,
+.light .text-white\/20,
+.light .text-white\/15 {
+  color: #94a3b8 !important;
+}
+.light .text-slate-700,
+.light .text-slate-800,
+.light .text-slate-900 {
+  color: #1e293b !important;
+}
+.light .text-slate-500,
+.light .text-slate-400 {
+  color: #64748b !important;
+}
+
+/* Inputs */
+.light input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+.light textarea,
+.light select {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+.light input::placeholder,
+.light textarea::placeholder {
+  color: rgba(100,116,139,0.7) !important;
+}
+
+/* Muted backgrounds */
+.light .bg-white\/5,
+.light .bg-white\/8,
+.light .bg-white\/10 {
+  background-color: rgba(0,0,0,0.04) !important;
+}
+.light .border-white\/10 {
+  border-color: #e2e8f0 !important;
+}
+
+/* Cyan accents stay */
+.light .text-cyan-400 { color: #0891b2 !important; }
+.light .text-cyan-300 { color: #06b6d4 !important; }
+.light .border-cyan-400\/30 { border-color: rgba(8,145,178,0.3) !important; }
+
+/* AI Chat panel in light mode */
+.light .bg-\[\#0d1b2e\]\/95 { background-color: rgba(255,255,255,0.97) !important; }
+.light .bg-\[\#091423\] { background-color: #f8fafc !important; }

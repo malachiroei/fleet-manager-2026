@@ -25,7 +25,9 @@ import VehicleReturnPage from "./pages/VehicleReturnPage";
 import AdminSettingsPage from "./pages/AdminSettingsPage";
 import NotFound from "./pages/NotFound";
 import ScanReportPage from "./pages/ScanReportPage";
-import ReportsPage from "./pages/ReportsPage";import VehicleHandoverWizard from './pages/VehicleHandoverWizard';
+import ReportsPage from "./pages/ReportsPage";
+import VehicleHandoverWizard from './pages/VehicleHandoverWizard';
+import { ThemeProvider } from '@/hooks/useTheme';
 const queryClient = new QueryClient();
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -94,6 +96,7 @@ function AppRoutes() {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
+    <ThemeProvider>
     <TooltipProvider>
       <Toaster />
       <Sonner />
@@ -112,6 +115,7 @@ const App = () => (
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 
