@@ -36,25 +36,6 @@ export interface SendHandoverEmailParams {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function toBase64(bytes: Uint8Array): string {
-  let binary = '';
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return btoa(binary);
-}
-
-function mimeFromUrl(url: string): string {
-  const ext = url.split('?')[0].split('.').pop()?.toLowerCase() ?? '';
-  const map: Record<string, string> = {
-    pdf: 'application/pdf', png: 'image/png',
-    jpg: 'image/jpeg', jpeg: 'image/jpeg',
-    webp: 'image/webp', gif: 'image/gif',
-  };
-  return map[ext] ?? 'application/octet-stream';
-}
-
 const DOC_LABEL: Record<string, string> = {
   handover_receipt:    'טופס קבלת רכב (חתימה)',
   procedure_agreement: 'נוהל 04-05-001 — אישור תנאי שימוש (חתימה)',
@@ -128,24 +109,13 @@ export async function sendHandoverEmail({
     if (!recipients.includes(cc)) recipients.push(cc);
   }
 
-  // ── 4. Download files and build attachments ────────────────────────────────
-  interface Attachment { filename: string; content: string; type: string; }
-  const attachments: Attachment[] = [];
-
-  for (const doc of docs) {
-    try {
-      const resp = await fetch(doc.file_url);
-      if (!resp.ok) { console.warn(`Could not fetch ${doc.file_url} (${resp.status})`); continue; }
-      const bytes = new Uint8Array(await resp.arrayBuffer());
-      attachments.push({
-        filename: filenameFor(doc.title, doc.file_url),
-        content:  toBase64(bytes),
-        type:     mimeFromUrl(doc.file_url),
-      });
-    } catch (dlErr) {
-      console.warn('Attachment download error:', dlErr);
-    }
-  }
+  // ── 4. Build attachments using Resend's `path` field ─────────────────────
+  // Resend downloads each URL server-side — avoids browser CORS restrictions.
+  interface Attachment { filename: string; path: string; }
+  const attachments: Attachment[] = docs.map((doc) => ({
+    filename: filenameFor(doc.title, doc.file_url),
+    path:     doc.file_url,
+  }));
 
   // ── 5. Build HTML body ─────────────────────────────────────────────────────
   const sentAt = new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
@@ -190,8 +160,7 @@ export async function sendHandoverEmail({
         html,
         attachments: attachments.map((a) => ({
           filename: a.filename,
-          content:  a.content,
-          type:     a.type,
+          path:     a.path,
         })),
       }),
     });
