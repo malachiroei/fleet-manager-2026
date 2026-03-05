@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, RefObject } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useVehicles } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
-import { useCreateHandover, sendHandoverNotificationEmail } from '@/hooks/useHandovers';
+import { useCreateHandover, sendHandoverNotificationEmail, generateReceptionPDF, generateProcedurePDF, generateHealthDeclarationPDF } from '@/hooks/useHandovers';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import SignaturePad, { SignaturePadRef } from '@/components/SignaturePad';
@@ -601,10 +601,7 @@ export default function VehicleHandoverWizard() {
   const sig2Ref = useRef<SignaturePadRef>(null);
   const sig3Ref = useRef<SignaturePadRef>(null);
 
-  // Container refs — used by html2canvas to snapshot the full form card
-  const step1ContainerRef = useRef<HTMLDivElement>(null);
-  const step2ContainerRef = useRef<HTMLDivElement>(null);
-  const step3ContainerRef = useRef<HTMLDivElement>(null);
+
 
   // Wizard state
   const [accessories, setAccessories] = useState<AccessoryItem[]>(INITIAL_ACCESSORIES);
@@ -638,24 +635,6 @@ export default function VehicleHandoverWizard() {
     return false;
   }, [step, sig1OK, sig2OK, procedureRead, sig3OK, healthItems, licenseNumber, licenseExpiry, licenseFront, licenseBack]);
 
-  // ── Capture the full form card (content + signature) as a PNG dataUrl via html2canvas ──
-  const captureStepAsDataUrl = async (containerRef: RefObject<HTMLDivElement>): Promise<string | null> => {
-    if (!containerRef.current) return null;
-    try {
-      const { default: html2canvas } = await import('html2canvas');
-      const canvas = await html2canvas(containerRef.current, {
-        scale: 2,          // 2× for crisp output
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        logging: false,
-      });
-      return canvas.toDataURL('image/png');
-    } catch (e) {
-      console.error('[Wizard] html2canvas capture failed:', e);
-      return null;
-    }
-  };
-
   // ── Upload helper — always targets the public vehicle-documents bucket ──
   const uploadFileToStorage = async (file: File, path: string): Promise<string | null> => {
     try {
@@ -675,23 +654,21 @@ export default function VehicleHandoverWizard() {
     }
   };
 
-  // ── Convert a captured signature dataUrl into a File and upload to vehicle-documents ──
-  const uploadSigToStorage = async (
-    dataUrl: string | null,
-    filename: string,
-    path: string
-  ): Promise<string | null> => {
-    if (!dataUrl) {
-      console.warn(`[Wizard] signature dataUrl is empty for ${filename}`);
-      return null;
-    }
+  // ── Upload a Blob directly to vehicle-documents (used for generated PDFs) ──
+  const uploadBlobToStorage = async (blob: Blob, path: string): Promise<string | null> => {
     try {
-      const resp = await fetch(dataUrl);
-      const blob = await resp.blob();
-      const file = new File([blob], filename, { type: 'image/png' });
-      return await uploadFileToStorage(file, path);
+      const { error } = await supabase.storage
+        .from('vehicle-documents')
+        .upload(path, blob, { upsert: true, contentType: 'application/pdf' });
+      if (error) {
+        console.error(`[Wizard] PDF upload failed for "${path}":`, error.message);
+        return null;
+      }
+      const { data } = supabase.storage.from('vehicle-documents').getPublicUrl(path);
+      console.log(`[Wizard] PDF uploaded OK → ${path}`);
+      return data.publicUrl;
     } catch (e) {
-      console.error(`[Wizard] signature conversion failed for ${filename}:`, e);
+      console.error(`[Wizard] PDF upload exception for "${path}":`, e);
       return null;
     }
   };
@@ -711,10 +688,17 @@ export default function VehicleHandoverWizard() {
       const ts = Date.now();
       const folder = `documents/${vehicleId}/${ts}`;
 
+      // Generate formatted PDFs for each wizard step (full content + embedded signature)
+      const [pdf1Blob, pdf2Blob, pdf3Blob] = await Promise.all([
+        generateReceptionPDF({ vehicleLabel, driverName, date: today, accessories, signatureDataUrl: sig1DataUrl }),
+        generateProcedurePDF({ vehicleLabel, driverName, date: today, clauses: PROCEDURE_CLAUSES, signatureDataUrl: sig2DataUrl }),
+        generateHealthDeclarationPDF({ vehicleLabel, driverName, date: today, healthItems, notes: healthNotes, signatureDataUrl: sig3DataUrl }),
+      ]);
+
       const [sig1Url, sig2Url, sig3Url, frontUrl, backUrl] = await Promise.all([
-        uploadSigToStorage(sig1DataUrl, 'טופס_קבלת_רכב.png',  `${folder}/sig_1_${ts}.png`),
-        uploadSigToStorage(sig2DataUrl, 'נוהל_שימוש.png',      `${folder}/sig_2_${ts}.png`),
-        uploadSigToStorage(sig3DataUrl, 'הצהרת_בריאות.png',    `${folder}/sig_3_${ts}.png`),
+        uploadBlobToStorage(pdf1Blob, `${folder}/קבלת_רכב_${ts}.pdf`),
+        uploadBlobToStorage(pdf2Blob, `${folder}/נוהל_שימוש_${ts}.pdf`),
+        uploadBlobToStorage(pdf3Blob, `${folder}/הצהרת_בריאות_${ts}.pdf`),
         licenseFront
           ? uploadFileToStorage(licenseFront, `${folder}/license_front_${ts}.jpg`)
           : Promise.resolve(null),
@@ -750,11 +734,11 @@ export default function VehicleHandoverWizard() {
 
       // ── Build attachment list — abort email if any file is missing ─────────────
       const allAttachments: { filename: string; url: string }[] = [
-        { filename: 'טופס_קבלת_רכב.png',  url: sig1Url  ?? '' },
-        { filename: 'נוהל_שימוש.png',      url: sig2Url  ?? '' },
-        { filename: 'הצהרת_בריאות.png',    url: sig3Url  ?? '' },
-        { filename: 'רישיון_קדמי.jpg',     url: frontUrl ?? '' },
-        { filename: 'רישיון_אחורי.jpg',    url: backUrl  ?? '' },
+        { filename: 'טופס_קבלת_רכב.pdf',   url: sig1Url  ?? '' },
+        { filename: 'נוהל_שימוש_ברכב.pdf',  url: sig2Url  ?? '' },
+        { filename: 'הצהרת_בריאות.pdf',     url: sig3Url  ?? '' },
+        { filename: 'רישיון_קדמי.jpg',      url: frontUrl ?? '' },
+        { filename: 'רישיון_אחורי.jpg',     url: backUrl  ?? '' },
       ];
 
       const missingAttachments = allAttachments.filter(a => !a.url);
@@ -838,7 +822,6 @@ export default function VehicleHandoverWizard() {
             vehicleLabel={vehicleLabel}
             driverName={driverName}
             date={today}
-            containerRef={step1ContainerRef}
           />
         )}
         {step === 1 && (
@@ -850,7 +833,6 @@ export default function VehicleHandoverWizard() {
             vehicleLabel={vehicleLabel}
             driverName={driverName}
             date={today}
-            containerRef={step2ContainerRef}
           />
         )}
         {step === 2 && (
@@ -864,7 +846,6 @@ export default function VehicleHandoverWizard() {
             vehicleLabel={vehicleLabel}
             driverName={driverName}
             date={today}
-            containerRef={step3ContainerRef}
           />
         )}
         {step === 3 && (
@@ -924,10 +905,10 @@ export default function VehicleHandoverWizard() {
                   return;
                 }
                 if (!canAdvance()) return;
-                // Capture the FULL form card (text + signature) with html2canvas before unmounting
-                if (step === 0) setSig1DataUrl(await captureStepAsDataUrl(step1ContainerRef));
-                if (step === 1) setSig2DataUrl(await captureStepAsDataUrl(step2ContainerRef));
-                if (step === 2) setSig3DataUrl(await captureStepAsDataUrl(step3ContainerRef));
+                // Capture raw signature dataUrl from ref before the step unmounts
+                if (step === 0) setSig1DataUrl(sig1Ref.current?.getDataUrl() ?? null);
+                if (step === 1) setSig2DataUrl(sig2Ref.current?.getDataUrl() ?? null);
+                if (step === 2) setSig3DataUrl(sig3Ref.current?.getDataUrl() ?? null);
                 setStep(s => s + 1);
               }}
               disabled={step !== 1 && step !== 2 && !canAdvance()}

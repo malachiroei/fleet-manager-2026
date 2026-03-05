@@ -200,6 +200,212 @@ async function createPdfBlob(lines: string[], photos: Array<{ key: string; url: 
   return doc.output('blob');
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Wizard step PDF generators
+// ─────────────────────────────────────────────────────────────────────
+
+async function buildWizardPdfDoc(
+  title: string,
+  vehicleLabel: string,
+  driverName: string,
+  date: string,
+) {
+  const { jsPDF } = await import('jspdf');
+
+  if (!cachedHebrewFontBase64) {
+    const fontResponse = await fetch(hebrewFontUrl);
+    if (!fontResponse.ok) throw new Error(`Font fetch failed: ${fontResponse.status}`);
+    cachedHebrewFontBase64 = arrayBufferToBase64(await fontResponse.arrayBuffer());
+  }
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4', compress: true });
+  doc.addFileToVFS('NotoSansHebrew.ttf', cachedHebrewFontBase64);
+  doc.addFont('NotoSansHebrew.ttf', 'NotoSansHebrew', 'normal');
+  doc.setFont('NotoSansHebrew', 'normal');
+  doc.setR2L(true);
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const rightX = pageWidth - 40;
+
+  doc.setFontSize(18);
+  doc.text(title, pageWidth / 2, 50, { align: 'center' });
+
+  doc.setFontSize(10);
+  let y = 76;
+  for (const line of [`תאריך: ${date}`, `רכב: ${vehicleLabel}`, `נהג: ${driverName}`]) {
+    doc.text(line, rightX, y, { align: 'right' });
+    y += 14;
+  }
+
+  doc.setDrawColor(180);
+  doc.line(40, y + 4, pageWidth - 40, y + 4);
+  y += 18;
+
+  return { doc, pageWidth, rightX, y };
+}
+
+function addSignatureToPdf(
+  doc: ReturnType<Awaited<ReturnType<typeof buildWizardPdfDoc>>['doc']['constructor']>,
+  signatureDataUrl: string | null,
+  y: number,
+  pageWidth: number,
+  rightX: number,
+  label: string,
+) {
+  doc.setFontSize(11);
+  doc.text(label, rightX, y, { align: 'right' });
+  const sigW = 220, sigH = 64;
+  const sigX = pageWidth - 40 - sigW;
+  const sigY = y + 10;
+  doc.rect(sigX, sigY, sigW, sigH);
+  if (signatureDataUrl) {
+    (doc as any).addImage(signatureDataUrl, 'PNG', sigX + 2, sigY + 2, sigW - 4, sigH - 4);
+  }
+}
+
+export async function generateReceptionPDF({
+  vehicleLabel,
+  driverName,
+  date,
+  accessories,
+  signatureDataUrl,
+}: {
+  vehicleLabel: string;
+  driverName: string;
+  date: string;
+  accessories: Array<{ name: string; maxPrice: string; checked: boolean; notes: string }>;
+  signatureDataUrl: string | null;
+}): Promise<Blob> {
+  const { doc, pageWidth, rightX, y: startY } = await buildWizardPdfDoc(
+    'טופס קבלת רכב',
+    vehicleLabel,
+    driverName,
+    date,
+  );
+  let y = startY;
+
+  doc.setFontSize(10);
+  doc.text('אני הח"מ מאשר/ת כי קיבלתי את הרכב הנ"ל וכי הפריטים הבאים נמסרו לי:', rightX, y, { align: 'right' });
+  y += 18;
+
+  doc.setFontSize(9);
+  for (const acc of accessories) {
+    const mark = acc.checked ? '[✓]' : '[ ]';
+    const notePart = acc.notes ? ` — ${acc.notes}` : '';
+    const line = `${mark}  ${acc.name}  (${acc.maxPrice})${notePart}`;
+    doc.text(line, rightX, y, { align: 'right' });
+    y += 14;
+  }
+
+  y += 12;
+  addSignatureToPdf(doc as any, signatureDataUrl, y, pageWidth, rightX, 'חתימת הנהג — אישור קבלת הרכב והאביזרים:');
+  return doc.output('blob');
+}
+
+export async function generateProcedurePDF({
+  vehicleLabel,
+  driverName,
+  date,
+  clauses,
+  signatureDataUrl,
+}: {
+  vehicleLabel: string;
+  driverName: string;
+  date: string;
+  clauses: Array<{ id: number; text: string }>;
+  signatureDataUrl: string | null;
+}): Promise<Blob> {
+  const { doc, pageWidth, rightX, y: startY } = await buildWizardPdfDoc(
+    'נוהל שימוש ברכב חברה',
+    vehicleLabel,
+    driverName,
+    date,
+  );
+  const pageHeight = doc.internal.pageSize.getHeight();
+  let y = startY;
+
+  doc.setFontSize(9);
+  for (const clause of clauses) {
+    const split = doc.splitTextToSize(`${clause.id}. ${clause.text}`, 460) as string[];
+    if (y + split.length * 13 + 90 > pageHeight) {
+      doc.addPage();
+      y = 50;
+    }
+    doc.text(split, rightX, y, { align: 'right' });
+    y += split.length * 13 + 3;
+  }
+
+  y += 10;
+  doc.setFontSize(9);
+  const commitText = doc.splitTextToSize(
+    'בחתימתי אני מאשר/ת כי קראתי והבנתי את כלל סעיפי נוהל 04-05-001 ואני מתחייב/ת לפעול על-פיו.',
+    460,
+  ) as string[];
+  if (y + commitText.length * 13 + 90 > pageHeight) {
+    doc.addPage();
+    y = 50;
+  }
+  doc.text(commitText, rightX, y, { align: 'right' });
+  y += commitText.length * 13 + 10;
+
+  addSignatureToPdf(doc as any, signatureDataUrl, y, pageWidth, rightX, 'חתימת הנהג — הצהרת מחויבות לנוהל שימוש ברכב:');
+  return doc.output('blob');
+}
+
+export async function generateHealthDeclarationPDF({
+  vehicleLabel,
+  driverName,
+  date,
+  healthItems,
+  notes,
+  signatureDataUrl,
+}: {
+  vehicleLabel: string;
+  driverName: string;
+  date: string;
+  healthItems: Array<{ text: string; checked: boolean }>;
+  notes: string;
+  signatureDataUrl: string | null;
+}): Promise<Blob> {
+  const { doc, pageWidth, rightX, y: startY } = await buildWizardPdfDoc(
+    'הצהרת בריאות נהג',
+    vehicleLabel,
+    driverName,
+    date,
+  );
+  let y = startY;
+
+  doc.setFontSize(10);
+  doc.text('אני הח"מ מצהיר/ה כי מצב בריאותי מאפשר נהיגה בטוחה, וכי הפרטים הבאים נכונים:', rightX, y, {
+    align: 'right',
+  });
+  y += 18;
+
+  doc.setFontSize(9);
+  for (let i = 0; i < healthItems.length; i++) {
+    const item = healthItems[i];
+    const mark = item.checked ? '[✓]' : '[ ]';
+    const split = doc.splitTextToSize(`${mark}  ${i + 1}. ${item.text}`, 460) as string[];
+    doc.text(split, rightX, y, { align: 'right' });
+    y += split.length * 13 + 4;
+  }
+
+  if (notes) {
+    y += 6;
+    doc.setFontSize(10);
+    doc.text('הערות:', rightX, y, { align: 'right' });
+    y += 14;
+    doc.setFontSize(9);
+    const splitNotes = doc.splitTextToSize(notes, 460) as string[];
+    doc.text(splitNotes, rightX, y, { align: 'right' });
+    y += splitNotes.length * 13 + 4;
+  }
+
+  y += 12;
+  addSignatureToPdf(doc as any, signatureDataUrl, y, pageWidth, rightX, 'חתימת הנהג — הצהרת בריאות:');
+  return doc.output('blob');
+}
+
 interface ArchivedHandoverResult {
   reportUrl: string;
   handover: {
