@@ -238,7 +238,8 @@ function Step1({
                     value={item.notes}
                     onChange={(e) => setNotes(item.id, e.target.value)}
                     placeholder="הערה..."
-                    className="w-full text-xs border border-slate-200 rounded px-2 py-1 bg-white text-slate-700 placeholder:text-slate-300 focus:outline-none focus:border-blue-400"
+                    className="w-full text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
+                    style={{ background: '#ffffff', color: '#334155' }}
                   />
                 </td>
               </tr>
@@ -713,8 +714,8 @@ export default function VehicleHandoverWizard() {
         if (emailResult.error) {
           const isApiKeyMissing = emailResult.error.includes('VITE_RESEND_API_KEY') || emailResult.error.toLowerCase().includes('not configured');
           if (isApiKeyMissing) {
-            console.info('שליחת מייל: נדרש להגדיר VITE_RESEND_API_KEY ב-Vercel');
-            toast.info('המסמכים נשמרו. כדי להפעיל אימייל אוטומטי — הגדר VITE_RESEND_API_KEY בהגדרות Vercel.', { duration: 8000 });
+            // Edge function handles email via DB trigger — no need to alert the user
+            console.info('sendHandoverEmail: VITE_RESEND_API_KEY not set — relying on edge function DB trigger');
           } else {
             console.warn('שליחת מייל נכשלה (אינו חוסם על השמירה):', emailResult.error);
           }
