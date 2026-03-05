@@ -159,7 +159,7 @@ function SignatureBlock({ sigRef, label, onSign }: {
 // Step 1 — Vehicle Reception
 // ─────────────────────────────────────────────
 function Step1({
-  accessories, setAccessories, sigRef, onSign, vehicleLabel, driverName, date,
+  accessories, setAccessories, sigRef, onSign, vehicleLabel, driverName, date, containerRef,
 }: {
   accessories: AccessoryItem[];
   setAccessories: (a: AccessoryItem[]) => void;
@@ -168,6 +168,7 @@ function Step1({
   vehicleLabel: string;
   driverName: string;
   date: string;
+  containerRef?: RefObject<HTMLDivElement>;
 }) {
   const toggle = (id: string) =>
     setAccessories(accessories.map(a => a.id === id ? { ...a, checked: !a.checked } : a));
@@ -180,7 +181,7 @@ function Step1({
     setAccessories(accessories.map(a => ({ ...a, checked: !allChecked })));
 
   return (
-    <div className="bg-white text-slate-900 rounded-2xl p-6 shadow-xl">
+    <div ref={containerRef} className="bg-white text-slate-900 rounded-2xl p-6 shadow-xl">
       <OfficialDocHeader
         title="טופס קבלת רכב"
         subtitle="יש לסמן ✓ על כל פריט המצוי ברכב ולחתום בתחתית הטופס"
@@ -261,7 +262,7 @@ function Step1({
 // Step 2 — Usage Procedure
 // ─────────────────────────────────────────────
 function Step2({
-  procedureRead, setProcedureRead, sigRef, onSign, vehicleLabel, driverName, date,
+  procedureRead, setProcedureRead, sigRef, onSign, vehicleLabel, driverName, date, containerRef,
 }: {
   procedureRead: boolean;
   setProcedureRead: (v: boolean) => void;
@@ -270,9 +271,10 @@ function Step2({
   vehicleLabel: string;
   driverName: string;
   date: string;
+  containerRef?: RefObject<HTMLDivElement>;
 }) {
   return (
-    <div className="bg-white text-slate-900 rounded-2xl p-6 shadow-xl">
+    <div ref={containerRef} className="bg-white text-slate-900 rounded-2xl p-6 shadow-xl">
       <OfficialDocHeader
         title="נוהל שימוש ברכב חברה"
         subtitle="נוהל מס׳ 04-05-001 — קרא בעיון ואשר חתימה בתחתית"
@@ -316,7 +318,7 @@ function Step2({
 // Step 3 — Health Declaration
 // ─────────────────────────────────────────────
 function Step3({
-  healthItems, setHealthItems, notes, setNotes, sigRef, onSign, vehicleLabel, driverName, date,
+  healthItems, setHealthItems, notes, setNotes, sigRef, onSign, vehicleLabel, driverName, date, containerRef,
 }: {
   healthItems: HealthDeclaration[];
   setHealthItems: (h: HealthDeclaration[]) => void;
@@ -327,6 +329,7 @@ function Step3({
   vehicleLabel: string;
   driverName: string;
   date: string;
+  containerRef?: RefObject<HTMLDivElement>;
 }) {
   const toggle = (id: string) =>
     setHealthItems(healthItems.map(h => h.id === id ? { ...h, checked: !h.checked } : h));
@@ -336,7 +339,7 @@ function Step3({
     setHealthItems(healthItems.map(h => ({ ...h, checked: !allChecked })));
 
   return (
-    <div className="bg-white text-slate-900 rounded-2xl p-6 shadow-xl">
+    <div ref={containerRef} className="bg-white text-slate-900 rounded-2xl p-6 shadow-xl">
       <OfficialDocHeader
         title="הצהרת בריאות לנהג"
         subtitle="יש לסמן ✓ על כל סעיף ולחתום. ידוע כי מסירת פרטים כוזבים מהווה עבירה."
@@ -598,6 +601,11 @@ export default function VehicleHandoverWizard() {
   const sig2Ref = useRef<SignaturePadRef>(null);
   const sig3Ref = useRef<SignaturePadRef>(null);
 
+  // Container refs — used by html2canvas to snapshot the full form card
+  const step1ContainerRef = useRef<HTMLDivElement>(null);
+  const step2ContainerRef = useRef<HTMLDivElement>(null);
+  const step3ContainerRef = useRef<HTMLDivElement>(null);
+
   // Wizard state
   const [accessories, setAccessories] = useState<AccessoryItem[]>(INITIAL_ACCESSORIES);
   const [sig1OK, setSig1OK] = useState(false);
@@ -629,6 +637,24 @@ export default function VehicleHandoverWizard() {
     if (step === 3) return !!licenseNumber && !!licenseExpiry && !!licenseFront && !!licenseBack;
     return false;
   }, [step, sig1OK, sig2OK, procedureRead, sig3OK, healthItems, licenseNumber, licenseExpiry, licenseFront, licenseBack]);
+
+  // ── Capture the full form card (content + signature) as a PNG dataUrl via html2canvas ──
+  const captureStepAsDataUrl = async (containerRef: RefObject<HTMLDivElement>): Promise<string | null> => {
+    if (!containerRef.current) return null;
+    try {
+      const { default: html2canvas } = await import('html2canvas');
+      const canvas = await html2canvas(containerRef.current, {
+        scale: 2,          // 2× for crisp output
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      });
+      return canvas.toDataURL('image/png');
+    } catch (e) {
+      console.error('[Wizard] html2canvas capture failed:', e);
+      return null;
+    }
+  };
 
   // ── Upload helper — always targets the public vehicle-documents bucket ──
   const uploadFileToStorage = async (file: File, path: string): Promise<string | null> => {
@@ -812,6 +838,7 @@ export default function VehicleHandoverWizard() {
             vehicleLabel={vehicleLabel}
             driverName={driverName}
             date={today}
+            containerRef={step1ContainerRef}
           />
         )}
         {step === 1 && (
@@ -823,6 +850,7 @@ export default function VehicleHandoverWizard() {
             vehicleLabel={vehicleLabel}
             driverName={driverName}
             date={today}
+            containerRef={step2ContainerRef}
           />
         )}
         {step === 2 && (
@@ -836,6 +864,7 @@ export default function VehicleHandoverWizard() {
             vehicleLabel={vehicleLabel}
             driverName={driverName}
             date={today}
+            containerRef={step3ContainerRef}
           />
         )}
         {step === 3 && (
@@ -884,7 +913,7 @@ export default function VehicleHandoverWizard() {
 
           {step < STEPS.length - 1 ? (
             <Button
-              onClick={() => {
+              onClick={async () => {
                 // Step-specific validation toasts before advancing
                 if (step === 1 && !procedureRead) {
                   toast.error('יש לאשר את קריאת הסעיפים בטרם המעבר');
@@ -895,10 +924,10 @@ export default function VehicleHandoverWizard() {
                   return;
                 }
                 if (!canAdvance()) return;
-                // Capture the current step's signature dataUrl BEFORE the component unmounts
-                if (step === 0) setSig1DataUrl(sig1Ref.current?.getDataUrl() ?? null);
-                if (step === 1) setSig2DataUrl(sig2Ref.current?.getDataUrl() ?? null);
-                if (step === 2) setSig3DataUrl(sig3Ref.current?.getDataUrl() ?? null);
+                // Capture the FULL form card (text + signature) with html2canvas before unmounting
+                if (step === 0) setSig1DataUrl(await captureStepAsDataUrl(step1ContainerRef));
+                if (step === 1) setSig2DataUrl(await captureStepAsDataUrl(step2ContainerRef));
+                if (step === 2) setSig3DataUrl(await captureStepAsDataUrl(step3ContainerRef));
                 setStep(s => s + 1);
               }}
               disabled={step !== 1 && step !== 2 && !canAdvance()}
