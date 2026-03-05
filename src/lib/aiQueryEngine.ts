@@ -53,6 +53,7 @@ type Intent =
   | 'vehicle_odometer'
   | 'vehicle_status'
   | 'vehicle_list'
+  | 'vehicle_unassigned'
   | 'driver_by_name'
   | 'driver_license'
   | 'driver_documents'
@@ -67,6 +68,7 @@ function detectIntent(q: string): Intent {
   if (/כמה\s*קיל|מד.?(אמת|מרחק|קיל)|odo/.test(t))  return 'vehicle_odometer';
   if (/מי.*(נהג|אחראי|מחזיק).*רכב/.test(t))          return 'vehicle_driver';
   if (/סטטוס|מצב|תקין|תוקף.*רכב/.test(t))            return 'vehicle_status';
+  if (/ללא\s*נהג|אין\s*נהג|לא\s*משויך|פנוי|פנויים|ללא\s*שיוך/.test(t)) return 'vehicle_unassigned';
   if (/רשימ|כמה\s*רכב|כל\s*הרכב/.test(t))             return 'vehicle_list';
   if (/רכב.*\d{4,}|\d{4,}.*רכב|לוחית|לוח\s*רישוי/.test(t)) return 'vehicle_by_plate';
   if (/נהג|נהגת|שם.*נהג/.test(t) && !/רכב/.test(t)) return 'driver_by_name';
@@ -172,6 +174,25 @@ async function resolveVehicleStatus(plate: string | null): Promise<string> {
   טסט: ${fmt(v.test_expiry)}
   ביטוח: ${fmt(v.insurance_expiry)}
   ${v.mandatory_end_date ? `חובה: ${fmt(v.mandatory_end_date)}` : ''}`.trimEnd();
+}
+
+async function resolveUnassignedVehicles(): Promise<string> {
+  const { data } = await supabase
+    .from('vehicles')
+    .select('plate_number, manufacturer, model, year, status')
+    .is('assigned_driver_id', null)
+    .eq('is_active', true)
+    .order('manufacturer');
+
+  if (!data?.length) {
+    return 'כל הרכבים הפעילים בצי משויכים כרגע לנהגים. לא נמצאו רכבים פנויים.';
+  }
+
+  const list = data
+    .map((v, i) => `${i + 1}. ${v.manufacturer} ${v.model} ${v.year} — ${v.plate_number} ${statusLabel(v.status)}`)
+    .join('\n');
+
+  return `רכבים פעילים **ללא נהג משויך** (${data.length}):\n${list}`;
 }
 
 async function resolveVehicleList(): Promise<string> {
@@ -331,6 +352,7 @@ export async function processFleetQuery(
       case 'vehicle_driver':    return await resolveVehicleDriver(plate, q);
       case 'vehicle_odometer':  return await resolveVehicleOdometer(plate);
       case 'vehicle_status':    return await resolveVehicleStatus(plate);
+      case 'vehicle_unassigned': return await resolveUnassignedVehicles();
       case 'vehicle_list':      return await resolveVehicleList();
       case 'driver_by_name':    return await resolveDriverByName(name, q);
       case 'driver_license':    return await resolveDriverLicense(name);
