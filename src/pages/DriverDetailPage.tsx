@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useDriver } from '@/hooks/useDrivers';
+import { useDriverDocuments } from '@/hooks/useDriverDocuments';
 import { useActiveDriverVehicleAssignments } from '@/hooks/useVehicles';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -67,6 +68,7 @@ function DocumentThumbnail({ title, src, onClick }: { title: string; src: string
 export default function DriverDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data: driver, isLoading } = useDriver(id || '');
+  const { data: dbDocuments } = useDriverDocuments(id || '');
   const { data: activeAssignments } = useActiveDriverVehicleAssignments();
   const [selectedImage, setSelectedImage] = useState<{ src: string; title: string } | null>(null);
 
@@ -118,14 +120,14 @@ export default function DriverDetailPage() {
 
   const license = calculateStatusWithDays(driver.license_expiry);
 
-  // Combine header-level legacy docs with the dynamic array
-  const allDocuments: DriverDocument[] = [
-    ...(driver.documents || []),
-  ];
+  // Documents from driver_documents table (wizard + manually uploaded)
+  const dbDocs: DriverDocument[] = dbDocuments ?? [];
+  const dbUrls = new Set(dbDocs.map(d => d.file_url));
 
-  // ALWAYS check and add legacy fields if they exist (backward compatibility AND mixed mode)
-  if (driver.license_front_url) {
-    allDocuments.push({
+  // Legacy fields — only add if not already covered by a DB doc (avoids duplicates)
+  const legacyDocs: DriverDocument[] = [];
+  if (driver.license_front_url && !dbUrls.has(driver.license_front_url)) {
+    legacyDocs.push({
       id: 'legacy-front',
       driver_id: driver.id,
       title: 'רישיון נהיגה (קדמי)',
@@ -133,8 +135,8 @@ export default function DriverDetailPage() {
       created_at: new Date().toISOString()
     });
   }
-  if (driver.license_back_url) {
-    allDocuments.push({
+  if (driver.license_back_url && !dbUrls.has(driver.license_back_url)) {
+    legacyDocs.push({
       id: 'legacy-back',
       driver_id: driver.id,
       title: 'רישיון נהיגה (אחורי)',
@@ -142,8 +144,8 @@ export default function DriverDetailPage() {
       created_at: new Date().toISOString()
     });
   }
-  if (driver.health_declaration_url) {
-    allDocuments.push({
+  if (driver.health_declaration_url && !dbUrls.has(driver.health_declaration_url)) {
+    legacyDocs.push({
       id: 'legacy-health',
       driver_id: driver.id,
       title: 'הצהרת בריאות',
@@ -151,6 +153,8 @@ export default function DriverDetailPage() {
       created_at: new Date().toISOString()
     });
   }
+
+  const allDocuments: DriverDocument[] = [...dbDocs, ...legacyDocs];
 
   return (
     <div className="min-h-screen bg-[#020617] text-white">

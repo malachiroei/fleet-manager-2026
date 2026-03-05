@@ -673,11 +673,11 @@ export default function VehicleHandoverWizard() {
 
       // Save to driver_documents (schema: driver_id, file_url, title)
       const docsToInsert = [
-        sig1Url  && { driver_id: driverId, file_url: sig1Url,  title: `handover_receipt | רכב: ${vehicleLabel}` },
-        sig2Url  && { driver_id: driverId, file_url: sig2Url,  title: `procedure_agreement | נוהל 04-05-001 | רכב: ${vehicleLabel}` },
-        sig3Url  && { driver_id: driverId, file_url: sig3Url,  title: `health_declaration | הצהרת בריאות | רכב: ${vehicleLabel}` },
-        frontUrl && { driver_id: driverId, file_url: frontUrl, title: `license_front | מס׳: ${licenseNumber}` },
-        backUrl  && { driver_id: driverId, file_url: backUrl,  title: `license_back | תוקף: ${licenseExpiry}` },
+        sig1Url  && { driver_id: driverId, file_url: sig1Url,  title: `אישור קבלת רכב | ${vehicleLabel}` },
+        sig2Url  && { driver_id: driverId, file_url: sig2Url,  title: `התחייבות נוהל שימוש ברכב | ${vehicleLabel}` },
+        sig3Url  && { driver_id: driverId, file_url: sig3Url,  title: `הצהרת בריאות חתומה | ${vehicleLabel}` },
+        frontUrl && { driver_id: driverId, file_url: frontUrl, title: `רישיון נהיגה (קדמי) | מס׳: ${licenseNumber}` },
+        backUrl  && { driver_id: driverId, file_url: backUrl,  title: `רישיון נהיגה (אחורי) | תוקף: ${licenseExpiry}` },
       ].filter(Boolean);
 
       if (docsToInsert.length > 0) {
