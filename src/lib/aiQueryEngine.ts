@@ -44,6 +44,26 @@ function extractName(text: string): string | null {
 }
 
 // ─────────────────────────────────────────────
+// Fleet configuration — update these values to match org policy
+// ─────────────────────────────────────────────
+
+const FLEET_CONFIG = {
+  deductibleAmount: 2000,      // ₪ — השתתפות עצמית בנזק
+  companyName: 'Fleet Manager 2026',
+  vehiclesPagePath: '/vehicles',
+  driversPagePath: '/drivers',
+  reportsPagePath: '/reports',
+} as const;
+
+/** Format a Supabase Storage URL as a clean markdown link */
+function formatFileLink(url: string | null | undefined, label: string): string {
+  if (!url) return '(לא הועלה)';
+  const isPdf = /\.pdf(\?|$)/i.test(url) || url.includes('application%2Fpdf');
+  const icon  = isPdf ? '📄' : '🖼️';
+  return `[${icon} ${label}](${url})`;
+}
+
+// ─────────────────────────────────────────────
 // Intent detection
 // ─────────────────────────────────────────────
 
@@ -300,8 +320,8 @@ async function resolveDriverLicense(name: string | null): Promise<string> {
   if (!data?.length) return `לא מצאתי נהג בשם "${name}".`;
 
   const lines = data.map(d => {
-    const frontLink = d.license_front_url ? `[צד א']( ${d.license_front_url})` : '(לא הועלה)';
-    const backLink  = d.license_back_url  ? `[צד ב'](${d.license_back_url})`   : '(לא הועלה)';
+    const frontLink = formatFileLink(d.license_front_url, 'צד קדמי');
+    const backLink  = formatFileLink(d.license_back_url,  'צד אחורי');
     return `📄 רישיון **${d.full_name}**:
   מספר: ${d.license_number ?? 'לא ידוע'}
   תוקף: ${fmt(d.license_expiry)} · ${statusLabel(d.status)}
@@ -332,9 +352,10 @@ async function resolveDriverDocuments(name: string | null, rawQ: string): Promis
 
   if (!docs?.length) return `לא נמצאו מסמכים עבור ${driver.full_name}.`;
 
-  const list = docs.map((d, i) =>
-    `${i + 1}. ${d.title ?? 'ללא שם'} (${fmt(d.created_at)})\n   🔗 ${d.file_url}`,
-  ).join('\n');
+  const list = docs.map((d, i) => {
+    const link = formatFileLink(d.file_url, d.title ?? 'פתח מסמך');
+    return `${i + 1}. **${d.title ?? 'ללא שם'}** (${fmt(d.created_at)}) — ${link}`;
+  }).join('\n');
 
   return `📁 מסמכים של **${driver.full_name}** (${docs.length}):\n${list}`;
 }
@@ -357,11 +378,12 @@ async function resolveDocumentsSearch(rawQ: string): Promise<string> {
   const nameMap: Record<string, string> = {};
   driversData?.forEach(d => { nameMap[d.id] = d.full_name; });
 
-  const list = docs.map((d, i) =>
-    `${i + 1}. **${d.title ?? 'ללא שם'}** — ${nameMap[d.driver_id] ?? 'נהג לא ידוע'} (${fmt(d.created_at)})\n   🔗 ${d.file_url}`,
-  ).join('\n');
+  const list = docs.map((d, i) => {
+    const link = formatFileLink(d.file_url, 'פתח מסמך');
+    return `${i + 1}. **${d.title ?? 'ללא שם'}** — ${nameMap[d.driver_id] ?? 'נהג לא ידוע'} (${fmt(d.created_at)}) — ${link}`;
+  }).join('\n');
 
-  return `📂 מסמכים אחרונים (${docs.length}):\n${list}\n\nלתיק מלא — עבור לדף הנהג הרלוונטי.`;
+  return `📂 מסמכים אחרונים (${docs.length}):\n${list}\n\nלתיק מלא — [עבור לדף הנהגים](${FLEET_CONFIG.driversPagePath}).`;
 }
 
 async function resolveGeneralStats(): Promise<string> {
