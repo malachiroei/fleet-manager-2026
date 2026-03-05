@@ -470,15 +470,66 @@
   color: #0f172a !important;
 }
 
-/* Generic glass/dark button override in light mode */
-.light button:not([class*="glass-button"]):not([data-no-theme]):not(.rounded-full) {
-  background: rgba(15,23,42,0.06) !important;
-  border: 1px solid #cbd5e1 !important;
+/* Generic glass/dark button override in light mode
+   — exclusions: rounded-full FAB, brand-colored buttons, icon-only buttons */
+.light button:not([class*="glass-button"])
+         :not([data-no-theme])
+         :not(.rounded-full)
+         :not([class*="bg-cyan"])
+         :not([class*="bg-blue"])
+         :not([class*="bg-green"])
+         :not([class*="bg-red"])
+         :not([class*="bg-yellow"])
+         :not([class*="bg-emerald"])
+         :not([class*="bg-rose"])
+         :not([class*="from-cyan"])
+         :not([class*="from-blue"]) {
+  background: rgba(15,23,42,0.05) !important;
+  border: 1px solid #e2e8f0 !important;
   color: #0f172a !important;
   box-shadow: none !important;
 }
-.light button:not([class*="glass-button"]):not([data-no-theme]):not(.rounded-full):hover {
-  background: rgba(15,23,42,0.1) !important;
-  border-color: #94a3b8 !important;
+.light button:not([class*="glass-button"])
+         :not([data-no-theme])
+         :not(.rounded-full)
+         :not([class*="bg-cyan"])
+         :not([class*="bg-blue"])
+         :not([class*="bg-green"])
+         :not([class*="bg-red"])
+         :not([class*="bg-yellow"])
+         :not([class*="bg-emerald"])
+         :not([class*="bg-rose"])
+         :not([class*="from-cyan"])
+         :not([class*="from-blue"]):hover {
+  background: rgba(15,23,42,0.09) !important;
+  border-color: #cbd5e1 !important;
   box-shadow: none !important;
 }
+
+/* Branded action buttons stay their true color in light mode */
+.light button[class*="bg-cyan"],
+.light button[class*="bg-blue"],
+.light button[class*="bg-green"],
+.light button[class*="bg-emerald"],
+.light button[class*="bg-red"],
+.light button[class*="bg-rose"],
+.light button[class*="from-cyan"],
+.light button[class*="from-blue"] {
+  color: #ffffff !important;
+}
+
+/* Nav / sidebar links — keep them legible */
+.light nav a, .light [class*="NavLink"], .light [class*="navlink"] {
+  color: #334155 !important;
+}
+.light nav a:hover, .light nav a[class*="active"] {
+  color: #0f172a !important;
+  background-color: #f1f5f9 !important;
+}
+
+/* Form labels */
+.light label { color: #374151 !important; }
+
+/* border-white/5 and /3 → slate-100 */
+.light .border-white\/5  { border-color: #f1f5f9 !important; }
+.light .border-white\/3  { border-color: #f8fafc !important; }

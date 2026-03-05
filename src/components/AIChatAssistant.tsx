@@ -1,4 +1,4 @@
-﻿import { useState, useRef, useEffect, KeyboardEvent, ChangeEvent } from 'react';
+import { useState, useRef, useEffect, KeyboardEvent, ChangeEvent } from 'react';
 import { Bot, X, Send, Loader2, Sparkles, ChevronDown, Paperclip, ArrowUpRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { processFleetQuery } from '@/lib/aiQueryEngine';
@@ -13,9 +13,9 @@ import {
   type FlowState,
 } from '@/lib/botFlowEngine';
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────
 // Types
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────
 
 /** Context injected from the current page so the AI knows what the user is looking at. */
 export interface AIChatContext {
@@ -44,29 +44,29 @@ interface AIChatAssistantProps {
   context?: AIChatContext;
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────
 // Helpers
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────
 
 function formatTime(d: Date) {
   return d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
 }
 
-const WELCOME_MSG = `×©×œ×•×! ×× ×™ **Fleet AI**, ×¢×•×–×¨ ×—×›× ×”×ž×—×•×‘×¨ ×œ× ×ª×•× ×™ ×”×¦×™ ×‘×–×ž×Ÿ ××ž×ª.
+const WELCOME_MSG = `שלום! אני **Fleet AI**, עוזר חכם המחובר לנתוני הצי בזמן אמת.
 
-×× ×™ ×™×›×•×œ ×œ×¢×–×•×¨ ×œ×š ×¢×:
-â€¢ ×¤×¨×˜×™ ×¨×›×‘ ×œ×¤×™ ×œ×•×—×™×ª ×¨×™×©×•×™
-â€¢ ×ž×™ ×”× ×”×’ ×©×œ ×¨×›×‘ / ×¨×›×‘×™× ×œ×œ× × ×”×’
-â€¢ ×§×™×œ×•×ž×˜×¨××–' ×•×ž×¦×‘ ×ª×—×–×•×§×”
-â€¢ ×©××œ×•×ª ×¢×œ **× ×•×”×œ 04-05-001** (× ×–×§, ××—×¨×™×•×ª, ×”×©×ª×ª×¤×•×ª ×¢×¦×ž×™×ª)
-â€¢ **×”×§×ž×ª × ×”×’ ×—×“×©** â€” ×›×ª×•×‘ "×”×§× × ×”×’"
-â€¢ **×”×§×ž×ª ×¨×›×‘ ×—×“×©** â€” ×›×ª×•×‘ "×”×§× ×¨×›×‘"
+אני יכול לעזור לך עם:
+• פרטי רכב לפי לוחית רישוי
+• מי הנהג של רכב / רכבים ללא נהג
+• קילומטראז' ומצב תחזוקה
+• שאלות על **נוהל 04-05-001** (נזק, אחריות, השתתפות עצמית)
+• **הקמת נהג חדש** — כתוב "הקם נהג"
+• **הקמת רכב חדש** — כתוב "הקם רכב"
 
-×©××œ ××•×ª×™ ×‘×¢×‘×¨×™×ª ×—×•×¤×©×™×ª! ðŸš—`;
+שאל אותי בעברית חופשית! 🚗`;
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────
 // Component
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────
 
 export function AIChatAssistant({ context }: AIChatAssistantProps) {
   const navigate = useNavigate();
@@ -93,29 +93,29 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
     }
   }, [open, messages]);
 
-  // â”€â”€ Add messages â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Add messages
   const addBot = (content: string, action?: MessageAction) =>
     setMessages(prev => [...prev, { id: 'bot-' + Date.now(), role: 'assistant', content, timestamp: new Date(), action }]);
 
   const addUser = (content: string) =>
     setMessages(prev => [...prev, { id: 'usr-' + Date.now(), role: 'user', content, timestamp: new Date() }]);
 
-  // â”€â”€ File picked during a flow step â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // File picked during a flow step
   const handleFilePicked = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!flowState || !file) return;
-    addUser(`ðŸ“Ž ${file.name}`);
+    addUser(`📎 ${file.name}`);
 
     const { nextState, prompt, showSummary, cancelled } = advanceFlow(flowState, file.name, file);
 
-    if (cancelled) { setFlowState(null); addBot('×”×¤×¢×•×œ×” ×‘×•×˜×œ×”. ×›×™×¦×“ ××•×›×œ ×œ×¢×–×•×¨?'); return; }
+    if (cancelled) { setFlowState(null); addBot('הפעולה בוטלה. כיצה אוכל לעזור?'); return; }
     setFlowState(nextState);
     if (showSummary) { setAwaitingConfirm(true); addBot(buildSummary(nextState)); }
     else if (prompt) addBot(prompt);
     e.target.value = '';
   };
 
-  // â”€â”€ Main send handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Main send handler
   const sendMessage = async () => {
     const text = input.trim();
     if (!text || loading) return;
@@ -126,50 +126,50 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
       addUser(text);
       const { nextState, prompt, error, showSummary, cancelled } = advanceFlow(flowState, text);
 
-      if (cancelled) { setFlowState(null); addBot('×”×¤×¢×•×œ×” ×‘×•×˜×œ×”. ×›×™×¦×“ ××•×›×œ ×œ×¢×–×•×¨?'); return; }
-      if (error)     { addBot(`âš ï¸ ${error}`); return; }
+      if (cancelled) { setFlowState(null); addBot('הפעולה בוטלה. כיצה אוכל לעזור?'); return; }
+      if (error)     { addBot(`⚠️ ${error}`); return; }
       setFlowState(nextState);
       if (showSummary) { setAwaitingConfirm(true); addBot(buildSummary(nextState)); return; }
       if (prompt) addBot(prompt);
       return;
     }
 
-    // CASE 2: Awaiting ×›×Ÿ / ×œ× confirmation
+    // CASE 2: Awaiting כן / לא confirmation
     if (flowState && awaitingConfirm) {
       const answer = handleConfirmation(text);
       addUser(text);
 
       if (answer === 'no') {
         setFlowState(null); setAwaitingConfirm(false);
-        addBot('×”×¤×¢×•×œ×” ×‘×•×˜×œ×”. × ×™×ª×Ÿ ×œ×”×ª×—×™×œ ×ž×—×“×© ×‘×›×œ ×¢×ª.');
+        addBot('הפעולה בוטלה. ניתן להתחיל מחדש בכל עת.');
         return;
       }
       if (answer === 'invalid') {
-        addBot('× × ×œ×›×ª×•×‘ **×›×Ÿ** ×œ××™×©×•×¨ ×©×ž×™×¨×”, ××• **×œ×** ×œ×‘×™×˜×•×œ.');
+        addBot('נא לכתוב **כן** לאישור שמירה, או **לא** לביטול.');
         return;
       }
 
       // Execute!
       setAwaitingConfirm(false);
       setLoading(true);
-      addBot('â³ ×©×•×ž×¨ × ×ª×•× ×™×...');
+      addBot('⏳ שומר נתונים...');
 
       const result = await executeFlow(flowState);
       setLoading(false);
       setFlowState(null);
 
       if (!result.success) {
-        addBot(`âŒ ×©×’×™××” ×‘×©×ž×™×¨×”: ${result.error ?? '×©×’×™××” ×œ× ×™×“×•×¢×”'}`);
+        addBot(`❌ שגיאה בשמירה: ${result.error ?? 'שגיאה לא ידועה'}`);
         return;
       }
 
       const isDriver = result.entityType === 'create_driver';
       const path     = isDriver ? `/drivers/${result.entityId}` : `/vehicles/${result.entityId}`;
-      const label    = isDriver ? '×¦×¤×” ×‘×›×¨×˜×™×¡ ×”× ×”×’ ×”×—×“×©' : '×¦×¤×” ×‘×›×¨×˜×™×¡ ×”×¨×›×‘ ×”×—×“×©';
-      const emoji    = isDriver ? 'ðŸ‘¤' : 'ðŸš—';
+      const label    = isDriver ? 'צפה בכרטיס הנהג החדש' : 'צפה בכרטיס הרכב החדש';
+      const emoji    = isDriver ? '👤' : '🚗';
 
       addBot(
-        `${emoji} **×”×”×§×ž×” ×”×•×©×œ×ž×” ×‘×”×¦×œ×—×”!**\n×”× ×ª×•× ×™× × ×©×ž×¨×• ×‘×ž×¢×¨×›×ª. ×œ×—×¥ ×¢×œ ×”×›×¤×ª×•×¨ ×œ×ž×˜×” ×œ×¦×¤×™×™×”.`,
+        `${emoji} **ההקמה הושלמה בהצלחה!**\nהנתונים נשמרו במערכת. לחץ על הכפתור למטה לצפייה.`,
         { label, href: path },
       );
       return;
@@ -183,8 +183,8 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
       const first   = currentField(newFlow);
       setFlowState(newFlow);
       const intro = flowType === 'create_driver'
-        ? 'ðŸ‘¤ **×”×§×ž×ª × ×”×’ ×—×“×©** â€” ×××¡×•×£ ×›×ž×” ×¤×¨×˜×™×.\n×‘×›×œ ×©×œ×‘ × ×™×ª×Ÿ ×œ×›×ª×•×‘ **"×‘×™×˜×•×œ"** ×œ×¢×¦×™×¨×”.\n\n'
-        : 'ðŸš— **×”×§×ž×ª ×¨×›×‘ ×—×“×©** â€” ×××¡×•×£ ×›×ž×” ×¤×¨×˜×™×.\n×‘×›×œ ×©×œ×‘ × ×™×ª×Ÿ ×œ×›×ª×•×‘ **"×‘×™×˜×•×œ"** ×œ×¢×¦×™×¨×”.\n\n';
+        ? '👤 **הקמת נהג חדש** — אאסוף כמה פרטים.\nבכל שלב ניתן לכתוב **"ביטול"** לעצירה.\n\n'
+        : '🚗 **הקמת רכב חדש** — אאסוף כמה פרטים.\nבכל שלב ניתן לכתוב **"ביטול"** לעצירה.\n\n';
       addBot(intro + first.prompt);
       return;
     }
@@ -196,7 +196,7 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
       const reply = await processFleetQuery(text, context);
       addBot(reply);
     } catch {
-      addBot('××™×¨×¢×” ×©×’×™××”. × ×¡×” ×©× ×™×ª.');
+      addBot('אירעה שגיאה. נסה שנית.');
     } finally {
       setLoading(false);
     }
@@ -207,8 +207,8 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
   };
 
   const contextLabel =
-    context?.vehicleLabel ? `×¨×›×‘: ${context.vehicleLabel}` :
-    context?.driverName   ? `× ×”×’: ${context.driverName}`   :
+    context?.vehicleLabel ? `רכב: ${context.vehicleLabel}` :
+    context?.driverName   ? `נהג: ${context.driverName}`   :
     null;
 
   // Is current flow step expecting a file?
@@ -217,10 +217,10 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
 
   // Flow progress
   const flowProgress = flowState
-    ? { current: flowState.stepIndex, total: flowState.type === 'create_driver' ? 8 : 7, label: flowState.type === 'create_driver' ? '×”×§×ž×ª × ×”×’' : '×”×§×ž×ª ×¨×›×‘' }
+    ? { current: flowState.stepIndex, total: flowState.type === 'create_driver' ? 8 : 7, label: flowState.type === 'create_driver' ? 'הקמת נהג' : 'הקמת רכב' }
     : null;
 
-  // â”€â”€ Render message text â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Render message text
   const URL_RE = /(https?:\/\/[^\s)]+)/g;
   const renderContent = (content: string) =>
     content.split('\n').map((line, i, arr) => {
@@ -239,7 +239,7 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
                     chunk.match(/^https?:\/\//) ? (
                       <a key={k} href={chunk} target="_blank" rel="noopener noreferrer"
                          className="text-cyan-400 underline underline-offset-2 break-all hover:text-cyan-300">
-                        ðŸ”— ×¤×ª×— ×§×•×‘×¥
+                        🔗 פתח קובץ
                       </a>
                     ) : chunk,
                   )}
@@ -255,12 +255,12 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
 
   return (
     <>
-      {/* â”€â”€ FAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* FAB */}
       <button
         onClick={() => setOpen(o => !o)}
-        aria-label={open ? '×¡×’×•×¨ ×¢×•×–×¨ AI' : '×¤×ª×— ×¢×•×–×¨ AI'}
+        aria-label={open ? 'סגור עוזר AI' : 'פתח עוזר AI'}
         className={`
-          fixed bottom-[6.75rem] left-5 z-50 h-14 w-14 rounded-full shadow-xl
+          fixed bottom-[8.75rem] left-5 z-50 h-14 w-14 rounded-full shadow-xl
           flex items-center justify-center transition-all duration-200
           ${open
             ? 'bg-slate-700 hover:bg-slate-600 shadow-slate-900/50'
@@ -275,10 +275,10 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
         )}
       </button>
 
-      {/* â”€â”€ Chat Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* Chat Panel */}
       <div
         className={`
-          fixed bottom-[11.25rem] left-5 z-50
+          fixed bottom-[13.25rem] left-5 z-50
           w-[22rem] sm:w-[26rem]
           flex flex-col
           rounded-2xl border border-white/10
@@ -299,8 +299,8 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
             <p className="font-bold text-sm text-white leading-tight">Fleet AI Assistant</p>
             <p className="text-xs text-cyan-400/60 truncate">
               {flowProgress
-                ? `${flowProgress.label} Â· ×©×œ×‘ ${Math.min(flowProgress.current + 1, flowProgress.total)} / ${flowProgress.total}`
-                : contextLabel ?? '×ž×•×›×Ÿ ×œ×©××œ×•×ª'}
+                ? `${flowProgress.label} · שלב ${Math.min(flowProgress.current + 1, flowProgress.total)} / ${flowProgress.total}`
+                : contextLabel ?? 'מוכן לשאלות'}
             </p>
           </div>
           <button
@@ -388,7 +388,7 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
         {/* Context badge */}
         {context && !flowProgress && (
           <div className="px-4 py-1.5 bg-cyan-950/40 border-t border-white/5 flex items-center gap-1.5 shrink-0">
-            <span className="text-[10px] text-cyan-400/50 font-medium">×§×•× ×˜×§×¡×˜ ×¤×¢×™×œ:</span>
+            <span className="text-[10px] text-cyan-400/50 font-medium">קונטקסט פעיל:</span>
             <span className="text-[10px] text-cyan-300/60 truncate">{contextLabel}</span>
           </div>
         )}
@@ -409,7 +409,7 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
                 "
               >
                 <Paperclip className="h-3.5 w-3.5" />
-                ×¦×¨×£ ×§×•×‘×¥ / ×ª×ž×•× ×”
+                צרף קובץ / תמונה
               </label>
               <input
                 id="bot-file-input"
@@ -429,9 +429,9 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={
-                awaitingConfirm     ? '×›×ª×•×‘ "×›×Ÿ" ×œ××™×©×•×¨ ××• "×œ×" ×œ×‘×™×˜×•×œ...' :
-                currentStepIsFile   ? '××• ×›×ª×•×‘ "×“×œ×’" ×œ×“×™×œ×•×’...' :
-                '×©××œ ×©××œ×”...'
+                awaitingConfirm     ? 'כתוב "כן" לאישור או "לא" לביטול...' :
+                currentStepIsFile   ? 'או כתוב "דלג" לדילוג...' :
+                'שאל שאלה...'
               }
               dir="rtl"
               disabled={loading}
@@ -451,7 +451,7 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
                 flex items-center justify-center
                 transition-colors shrink-0
               "
-              aria-label="×©×œ×—"
+              aria-label="שלח"
             >
               {loading
                 ? <Loader2 className="h-4 w-4 text-white animate-spin" />
@@ -460,7 +460,7 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
             </button>
           </div>
           <p className="text-[10px] text-white/15 text-center mt-1.5 select-none">
-            Fleet Manager AI Â· ×ž×—×•×‘×¨ ×œ× ×ª×•× ×™ Supabase ×‘×–×ž×Ÿ ××ž×ª
+            Fleet Manager AI · מחובר לנתוני Supabase בזמן אמת
           </p>
         </div>
       </div>
