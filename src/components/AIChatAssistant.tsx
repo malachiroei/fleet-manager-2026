@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, KeyboardEvent } from 'react';
 import { Bot, X, Send, Loader2, Sparkles, ChevronDown } from 'lucide-react';
+import { processFleetQuery } from '@/lib/aiQueryEngine';
 
 // ─────────────────────────────────────────────
 // Types
@@ -48,7 +49,16 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
     {
       id: 'welcome',
       role: 'assistant',
-      content: 'שלום! אני עוזר ה-AI של Fleet Manager 2026. אוכל לסייע לך בשאלות על הצי, הנהגים, תחזוקה ועוד. איך אוכל לעזור?',
+      content: `שלום! אני **Fleet AI**, עוזר חכם המחובר לנתוני הצי בזמן אמת.
+
+אני יכול לעזור לך עם:
+• פרטי רכב לפי לוחית רישוי
+• מי הנהג של רכב
+• קילומטראז' ומצב תחזוקה
+• פרטי נהגים ומסמכים
+• סטטיסטיקות כלליות על הצי
+
+שאל אותי בעברית חופשית! 🚗`,
       timestamp: new Date(),
     },
   ]);
@@ -79,24 +89,7 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
     setLoading(true);
 
     try {
-      // ── TODO: Replace with real AI API call ──────────────────────────────────
-      // When integrating, pass `context` alongside the message so the model
-      // knows which vehicle/driver the user is currently viewing, e.g.:
-      //
-      //   const response = await fetch('/api/ai-chat', {
-      //     method: 'POST',
-      //     headers: { 'Content-Type': 'application/json' },
-      //     body: JSON.stringify({ message: text, context, history: messages }),
-      //   });
-      //   const { reply } = await response.json();
-      //
-      // For now, simulate a short delay and return a placeholder.
-      await new Promise(r => setTimeout(r, 900));
-
-      const reply =
-        context?.vehicleLabel
-          ? `קיבלתי את שאלתך על הרכב "${context.vehicleLabel}". חיבור ל-AI engine יתווסף בקרוב — בינתיים אני ממתין לאינטגרציה! 🚗`
-          : 'קיבלתי את שאלתך. חיבור ל-AI engine יתווסף בקרוב — בינתיים אני ממתין לאינטגרציה! 🤖';
+      const reply = await processFleetQuery(text, context);
 
       const botMsg: Message = {
         id:        (Date.now() + 1).toString(),
@@ -127,6 +120,41 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
     context?.vehicleLabel ? `רכב: ${context.vehicleLabel}` :
     context?.driverName   ? `נהג: ${context.driverName}`   :
     null;
+
+  // ── Render message with light markdown (bold, links, newlines) ──
+  const URL_RE = /(https?:\/\/[^\s)]+)/g;
+  const renderContent = (content: string) => {
+    return content.split('\n').map((line, i, arr) => {
+      const parts = line.split(/\*\*(.+?)\*\*/g);
+      return (
+        <span key={i}>
+          {parts.map((part, j) => {
+            if (j % 2 === 1) {
+              return <strong key={j} className="font-bold text-white">{part}</strong>;
+            }
+            if (URL_RE.test(part)) {
+              URL_RE.lastIndex = 0;
+              const chunks = part.split(URL_RE);
+              return (
+                <span key={j}>
+                  {chunks.map((chunk, k) =>
+                    chunk.match(/^https?:\/\//) ? (
+                      <a key={k} href={chunk} target="_blank" rel="noopener noreferrer"
+                         className="text-cyan-400 underline underline-offset-2 break-all hover:text-cyan-300">
+                        🔗 פתח קובץ
+                      </a>
+                    ) : chunk,
+                  )}
+                </span>
+              );
+            }
+            return part;
+          })}
+          {i < arr.length - 1 && <br />}
+        </span>
+      );
+    });
+  };
 
   return (
     <>
@@ -210,7 +238,7 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
                   `}
                   dir="rtl"
                 >
-                  {msg.content}
+                  {renderContent(msg.content)}
                 </div>
                 <span className={`text-[10px] text-white/20 ${msg.role === 'user' ? 'text-left' : 'text-right'}`}>
                   {formatTime(msg.timestamp)}
@@ -281,7 +309,7 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
             </button>
           </div>
           <p className="text-[10px] text-white/15 text-center mt-1.5 select-none">
-            Fleet Manager AI · בטא — לא מחובר עדיין
+            Fleet Manager AI · מחובר לנתוני Supabase בזמן אמת
           </p>
         </div>
       </div>
