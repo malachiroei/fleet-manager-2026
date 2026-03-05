@@ -252,7 +252,7 @@
   border-color: #e2e8f0 !important;
 }
 
-/* Cards */
+/* Cards — Radix/shadcn cards */
 .light [data-slot="card"],
 .light .card,
 .light [class*="bg-card"] {
@@ -260,7 +260,69 @@
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
   border: 1px solid #e2e8f0 !important;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04) !important;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.04) !important;
+  border-radius: 1rem !important;
+}
+
+/* ── Audi premium card overrides for Light Mode ──────────────── */
+.light .audi-premium-card {
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.04) !important;
+  border-radius: 1.5rem !important;
+}
+.light .audi-premium-card::before,
+.light .audi-premium-card::after {
+  display: none !important;
+}
+
+/* neon-title → clean dark heading */
+.light .neon-title {
+  color: #0f172a !important;
+  text-shadow: none !important;
+}
+
+/* neon-plate-text → deep navy, no glow */
+.light .neon-plate-text {
+  color: #1e3a5f !important;
+  text-shadow: none !important;
+}
+
+/* white-data → slate-900, no shadow */
+.light .white-data {
+  color: #0f172a !important;
+  text-shadow: none !important;
+}
+
+/* data-label-glow → muted slate-blue, no glow */
+.light .data-label-glow {
+  color: #475569 !important;
+  text-shadow: none !important;
+}
+
+/* glass-button → clean bordered button */
+.light .glass-button {
+  background: #f1f5f9 !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+  text-shadow: none !important;
+  box-shadow: none !important;
+}
+.light .glass-button:hover {
+  background: #e2e8f0 !important;
+  border-color: #94a3b8 !important;
+  box-shadow: none !important;
+}
+
+/* glass panel → white card */
+.light .glass {
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.04) !important;
 }
 
 /* General text — all white variants → slate-900 */
