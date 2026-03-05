@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Textarea } from '@/components/ui/textarea';
 // Badge no longer needed — replaced with plain span
 import { toast } from 'sonner';
 import {
@@ -315,10 +316,12 @@ function Step2({
 // Step 3 — Health Declaration
 // ─────────────────────────────────────────────
 function Step3({
-  healthItems, setHealthItems, sigRef, onSign, vehicleLabel, driverName, date,
+  healthItems, setHealthItems, notes, setNotes, sigRef, onSign, vehicleLabel, driverName, date,
 }: {
   healthItems: HealthDeclaration[];
   setHealthItems: (h: HealthDeclaration[]) => void;
+  notes: string;
+  setNotes: (v: string) => void;
   sigRef: RefObject<SignaturePadRef>;
   onSign: (has: boolean) => void;
   vehicleLabel: string;
@@ -327,6 +330,10 @@ function Step3({
 }) {
   const toggle = (id: string) =>
     setHealthItems(healthItems.map(h => h.id === id ? { ...h, checked: !h.checked } : h));
+
+  const allChecked = healthItems.every(h => h.checked);
+  const toggleAll  = () =>
+    setHealthItems(healthItems.map(h => ({ ...h, checked: !allChecked })));
 
   return (
     <div className="bg-white text-slate-900 rounded-2xl p-6 shadow-xl">
@@ -338,9 +345,24 @@ function Step3({
         driverName={driverName}
       />
 
-      <p className="text-sm text-slate-600 mb-5">
+      <p className="text-sm text-slate-600 mb-3">
         אני הח"מ מצהיר/ה כי מצב בריאותי מאפשר נהיגה בטוחה, וכי הפרטים הבאים נכונים:
       </p>
+
+      {/* Quick-select button */}
+      <div className="flex justify-end mb-2">
+        <button
+          type="button"
+          onClick={toggleAll}
+          className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
+            allChecked
+              ? 'bg-emerald-100 border-emerald-400 text-emerald-700 hover:bg-emerald-200'
+              : 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700'
+          }`}
+        >
+          {allChecked ? '✔ כל הסעיפים אושרו' : 'אני מצהיר כי כל הסעיפים תקינים'}
+        </button>
+      </div>
 
       <div className="space-y-3 mb-6">
         {healthItems.map((item, i) => (
@@ -366,9 +388,21 @@ function Step3({
         ))}
       </div>
 
-      <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 text-xs text-rose-800 mb-2">
+      <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 text-xs text-rose-800 mb-4">
         <Heart className="inline h-3.5 w-3.5 ml-1" />
         הצהרת בריאות זו הינה תנאי סף לקבלת רכב חברה. מסירת פרטים כוזבים תגרור הפסקת הטיפול בהפרת רישיון.
+      </div>
+
+      {/* Additional notes */}
+      <div className="mb-4">
+        <Label className="text-slate-700 text-sm font-semibold block mb-1">הערות נוספות</Label>
+        <Textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="הערות רפואיות, מגבלות נהיגה, או כל מידע רלוונטי אחר..."
+          rows={3}
+          className="border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:border-blue-400 resize-none"
+        />
       </div>
 
       <SignatureBlock sigRef={sigRef} label="חתימת הנהג — הצהרת בריאות:" onSign={onSign} />
@@ -568,6 +602,7 @@ export default function VehicleHandoverWizard() {
   const [sig2OK, setSig2OK] = useState(false);
 
   const [healthItems, setHealthItems] = useState<HealthDeclaration[]>(INITIAL_HEALTH);
+  const [healthNotes, setHealthNotes] = useState('');
   const [sig3OK, setSig3OK] = useState(false);
 
   const [licenseNumber, setLicenseNumber] = useState('');
@@ -741,6 +776,8 @@ export default function VehicleHandoverWizard() {
           <Step3
             healthItems={healthItems}
             setHealthItems={setHealthItems}
+            notes={healthNotes}
+            setNotes={setHealthNotes}
             sigRef={sig3Ref}
             onSign={setSig3OK}
             vehicleLabel={vehicleLabel}
@@ -795,10 +832,14 @@ export default function VehicleHandoverWizard() {
                   toast.error('יש לאשר את קריאת הסעיפים בטרם המעבר');
                   return;
                 }
+                if (step === 2 && !healthItems.every(h => h.checked)) {
+                  toast.error('עליך לאשר את כל סעיפי הבריאות כדי להמשיך');
+                  return;
+                }
                 if (!canAdvance()) return;
                 setStep(s => s + 1);
               }}
-              disabled={step !== 1 && !canAdvance()}
+              disabled={step !== 1 && step !== 2 && !canAdvance()}
               className="gap-2 bg-cyan-500 hover:bg-cyan-400 text-[#020617] font-bold px-6"
             >
               הבא
