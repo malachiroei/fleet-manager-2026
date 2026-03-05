@@ -323,15 +323,15 @@ export async function executeFlow(state: FlowState): Promise<FlowExecuteResult> 
       const driverId = inserted.id;
       const ts = Date.now();
 
-      // Upload license photos
+      // Upload license photos and update the canonical URL fields on the driver row
       if (state.files.license_front) {
         const url = await uploadFile(
           state.files.license_front,
           `driver_${driverId}/license_front_${ts}.jpg`,
         );
         if (url) {
-          // Store as both the main license_image_url (if field exists) and as a document record
-          await (supabase.from('drivers') as any).update({ license_image_url: url }).eq('id', driverId);
+          // Update dedicated column so DriverDetailPage & AI query can read it
+          await supabase.from('drivers').update({ license_front_url: url } as any).eq('id', driverId);
           await supabase.from('driver_documents').insert({
             driver_id: driverId,
             title: 'רישיון נהיגה — צד א׳',
@@ -345,6 +345,8 @@ export async function executeFlow(state: FlowState): Promise<FlowExecuteResult> 
           `driver_${driverId}/license_back_${ts}.jpg`,
         );
         if (url) {
+          // Update dedicated column
+          await supabase.from('drivers').update({ license_back_url: url } as any).eq('id', driverId);
           await supabase.from('driver_documents').insert({
             driver_id: driverId,
             title: 'רישיון נהיגה — צד ב׳',

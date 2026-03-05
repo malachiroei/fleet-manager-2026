@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogClose, DialogTitle } from '@/components/ui/dialog';
 import {
-  ArrowRight, User, CreditCard, Phone, Mail, MapPin, Briefcase, Car, Edit, Shield, FileText, X, Eye
+  ArrowRight, User, CreditCard, Phone, Mail, MapPin, Briefcase, Car, Edit, Shield, FileText, X, Eye, ExternalLink
 } from 'lucide-react';
 import type { ComplianceStatus, DriverDocument } from '@/types/fleet';
 
@@ -48,7 +48,22 @@ function getDocumentUrl(path: string | null): string | undefined {
   return path.replace('/src/assets/documents', 'http://localhost:3000/assets/documents');
 }
 
-function DocumentThumbnail({ title, src, onClick }: { title: string; src: string; onClick: () => void }) {
+function FileCard({ title, src, onClick }: { title: string; src: string; onClick: () => void }) {
+  const isPdf = /\.pdf(\?|$)/i.test(src) || src.includes('/pdf') || src.includes('content-type=application%2Fpdf');
+  if (isPdf) {
+    return (
+      <a
+        href={src}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="group relative aspect-square rounded-lg border border-border bg-muted/30 overflow-hidden cursor-pointer hover:shadow-md transition-all flex flex-col items-center justify-center gap-2 p-3 no-underline"
+      >
+        <FileText className="h-10 w-10 text-red-400" />
+        <p className="text-xs font-medium truncate text-center w-full text-foreground">{title}</p>
+        <ExternalLink className="h-3.5 w-3.5 text-muted-foreground absolute top-2 left-2" />
+      </a>
+    );
+  }
   return (
     <div
       className="group relative aspect-square rounded-lg border border-border bg-muted/30 overflow-hidden cursor-pointer hover:shadow-md transition-all"
@@ -164,7 +179,7 @@ export default function DriverDetailPage() {
             <div className="flex items-center gap-3">
               <Link to="/drivers"><Button variant="ghost" size="icon"><ArrowRight className="h-5 w-5" /></Button></Link>
               <div>
-                <h1 className="font-bold text-xl">{driver.full_name}</h1>
+                <h1 className="font-bold text-xl text-foreground">{driver.full_name}</h1>
                 <p className="text-sm text-muted-foreground">ת.ז. {driver.id_number}</p>
               </div>
             </div>
@@ -293,7 +308,7 @@ export default function DriverDetailPage() {
             </CardHeader>
             <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {allDocuments.map((doc) => (
-                <DocumentThumbnail
+                <FileCard
                   key={doc.id}
                   title={doc.title}
                   src={getDocumentUrl(doc.file_url)!}

@@ -28,7 +28,8 @@ import {
   Loader2,
   Zap,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  ExternalLink,
 } from 'lucide-react';
 import type { ComplianceStatus } from '@/types/fleet';
 
@@ -120,6 +121,18 @@ function HandoverHistoryList({ handovers }: { handovers: any[] }) {
                   </div>
                 )}
                 {h.notes && <p className="text-sm text-muted-foreground">{h.notes}</p>}
+                {h.pdf_url && (
+                  <a
+                    href={h.pdf_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    צפה בטופס PDF
+                    <ExternalLink className="h-3 w-3 opacity-60" />
+                  </a>
+                )}
               </div>
             )}
           </div>
