@@ -34,6 +34,7 @@ interface AccessoryItem {
   name: string;
   maxPrice: string;
   checked: boolean;
+  notes: string;
 }
 
 interface HealthDeclaration {
@@ -69,16 +70,16 @@ interface WizardState {
 // Static data
 // ─────────────────────────────────────────────
 const INITIAL_ACCESSORIES: AccessoryItem[] = [
-  { id: 'spare_wheel',    name: 'גלגל רזרבי',             maxPrice: '₪800',  checked: false },
-  { id: 'jack',           name: 'מגבה',                   maxPrice: '₪150',  checked: false },
-  { id: 'wheel_wrench',   name: 'מפתח גלגל',              maxPrice: '₪80',   checked: false },
-  { id: 'warning_tri',    name: 'משולש אזהרה',            maxPrice: '₪60',   checked: false },
-  { id: 'toolkit',        name: 'כלי עבודה',              maxPrice: '₪120',  checked: false },
-  { id: 'first_aid',      name: 'ערכת עזרה ראשונה',       maxPrice: '₪200',  checked: false },
-  { id: 'fire_ext',       name: 'מטף כיבוי אש',           maxPrice: '₪250',  checked: false },
-  { id: 'fuel_card',      name: 'כרטיס דלק',              maxPrice: '—',     checked: false },
-  { id: 'manual',         name: 'ספר הוראות הפעלה',       maxPrice: '₪100',  checked: false },
-  { id: 'reflective',     name: 'אפוד זוהר',              maxPrice: '₪50',   checked: false },
+  { id: 'spare_wheel',    name: 'גלגל רזרבי',             maxPrice: '₪800',  checked: false, notes: '' },
+  { id: 'jack',           name: 'מגבה',                   maxPrice: '₪150',  checked: false, notes: '' },
+  { id: 'wheel_wrench',   name: 'מפתח גלגל',              maxPrice: '₪80',   checked: false, notes: '' },
+  { id: 'warning_tri',    name: 'משולש אזהרה',            maxPrice: '₪60',   checked: false, notes: '' },
+  { id: 'toolkit',        name: 'סט כלים',                maxPrice: '₪120',  checked: false, notes: '' },
+  { id: 'first_aid',      name: 'ערכת עזרה ראשונה',       maxPrice: '₪200',  checked: false, notes: '' },
+  { id: 'fire_ext',       name: 'מטף כיבוי אש',           maxPrice: '₪250',  checked: false, notes: '' },
+  { id: 'fuel_card',      name: 'כרטיס דלק',              maxPrice: '—',     checked: false, notes: '' },
+  { id: 'manual',         name: 'ספר הוראות הפעלה',       maxPrice: '₪100',  checked: false, notes: '' },
+  { id: 'reflective',     name: 'אפוד זוהר',              maxPrice: '₪50',   checked: false, notes: '' },
 ];
 
 const PROCEDURE_CLAUSES: ProcedureClause[] = [
@@ -171,6 +172,13 @@ function Step1({
   const toggle = (id: string) =>
     setAccessories(accessories.map(a => a.id === id ? { ...a, checked: !a.checked } : a));
 
+  const setNotes = (id: string, notes: string) =>
+    setAccessories(accessories.map(a => a.id === id ? { ...a, notes } : a));
+
+  const allChecked = accessories.every(a => a.checked);
+  const toggleAll  = () =>
+    setAccessories(accessories.map(a => ({ ...a, checked: !allChecked })));
+
   return (
     <div className="bg-white text-slate-900 rounded-2xl p-6 shadow-xl">
       <OfficialDocHeader
@@ -181,32 +189,57 @@ function Step1({
         driverName={driverName}
       />
 
-      <p className="text-sm text-slate-600 mb-4">
+      <p className="text-sm text-slate-600 mb-3">
         אני הח"מ מאשר/ת כי קיבלתי את הרכב הנ"ל וכי הפריטים הבאים נמסרו לי:
       </p>
+
+      {/* Quick-select button */}
+      <div className="flex justify-end mb-2">
+        <button
+          type="button"
+          onClick={toggleAll}
+          className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
+            allChecked
+              ? 'bg-emerald-100 border-emerald-400 text-emerald-700 hover:bg-emerald-200'
+              : 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700'
+          }`}
+        >
+          {allChecked ? '✔ הכל סומן כתקין' : '✔ סמן הכל כתקין'}
+        </button>
+      </div>
 
       {/* Accessories table */}
       <div className="border border-slate-200 rounded-lg overflow-hidden mb-4">
         <table className="w-full text-sm">
           <thead className="bg-slate-100">
             <tr>
-              <th className="text-right px-4 py-2.5 font-semibold text-slate-700 w-10">✓</th>
-              <th className="text-right px-4 py-2.5 font-semibold text-slate-700">פריט</th>
-              <th className="text-right px-4 py-2.5 font-semibold text-slate-700">מחיר תקרה לנזק</th>
+              <th className="px-3 py-2.5 font-semibold text-slate-700 w-9 text-center">✓</th>
+              <th className="text-right px-3 py-2.5 font-semibold text-slate-700">פריט</th>
+              <th className="text-right px-3 py-2.5 font-semibold text-slate-700 w-24">תקרה</th>
+              <th className="text-right px-3 py-2.5 font-semibold text-slate-700 w-40">הערות</th>
             </tr>
           </thead>
           <tbody>
             {accessories.map((item, i) => (
               <tr key={item.id} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
-                <td className="px-4 py-2.5">
+                <td className="px-3 py-2 text-center">
                   <Checkbox
                     checked={item.checked}
                     onCheckedChange={() => toggle(item.id)}
                     className="border-slate-400 data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
                   />
                 </td>
-                <td className="px-4 py-2.5 font-medium text-slate-800">{item.name}</td>
-                <td className="px-4 py-2.5 text-slate-600 tabular-nums">{item.maxPrice}</td>
+                <td className="px-3 py-2 font-medium text-slate-800">{item.name}</td>
+                <td className="px-3 py-2 text-slate-500 tabular-nums text-xs">{item.maxPrice}</td>
+                <td className="px-3 py-2">
+                  <input
+                    type="text"
+                    value={item.notes}
+                    onChange={(e) => setNotes(item.id, e.target.value)}
+                    placeholder="הערה..."
+                    className="w-full text-xs border border-slate-200 rounded px-2 py-1 bg-white text-slate-700 placeholder:text-slate-300 focus:outline-none focus:border-blue-400"
+                  />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -728,8 +761,8 @@ export default function VehicleHandoverWizard() {
         )}
       </main>
 
-      {/* Fixed bottom navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-[#020617]/95 backdrop-blur-sm border-t border-white/10 py-4 z-20">
+      {/* Fixed bottom navigation — raised 40 px to clear the test-build banner */}
+      <div className="fixed bottom-10 left-0 right-0 bg-[#020617]/95 backdrop-blur-sm border-t border-white/10 py-4 z-20">
         <div className="container max-w-3xl mx-auto flex items-center gap-3">
           {step > 0 && (
             <Button
