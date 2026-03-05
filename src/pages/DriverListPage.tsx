@@ -287,13 +287,13 @@ export default function DriverListPage() {
   return (
     <div className="container py-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+        <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold text-white">{t('drivers.title')}</h1>
-          <p className="text-muted-foreground mt-1">{t('drivers.subtitle')}</p>
+          <h1 className="text-2xl md:text-3xl font-bold text-white">{t('drivers.title')}</h1>
+          <p className="text-muted-foreground mt-1 text-sm">{t('drivers.subtitle')}</p>
         </div>
-        <Link to="/drivers/add">
-          <Button>
+        <Link to="/drivers/add" className="shrink-0">
+          <Button size="sm">
             <Plus className="h-4 w-4 mr-2" />
             {t('drivers.addDriver')}
           </Button>
