@@ -204,9 +204,17 @@ export function useSyncVehiclesFromPricing() {
 
   return useMutation({
     mutationFn: async () => {
-      const vehicles = getStoredVehicles();
-      const vehiclesToSync = vehicles.filter((vehicle) =>
-        Boolean(vehicle.manufacturer_code && vehicle.model_code && vehicle.year)
+      // Always fetch live vehicles from Supabase — never rely on stale localStorage cache
+      const { data: vehiclesData, error: vehiclesError } = await supabase
+        .from('vehicles')
+        .select('*')
+        .eq('is_active', true);
+
+      if (vehiclesError) throw vehiclesError;
+
+      const vehicles: Vehicle[] = (vehiclesData || []) as Vehicle[];
+      const vehiclesToSync = vehicles.filter(
+        (v) => Boolean(v.manufacturer_code && v.model_code && v.year)
       );
 
       if (vehiclesToSync.length === 0) {
@@ -215,31 +223,64 @@ export function useSyncVehiclesFromPricing() {
 
       const cache = new Map<string, PricingData | null>();
       let updated = 0;
-      const updatedVehicles = [...vehicles];
 
-      for (let i = 0; i < updatedVehicles.length; i++) {
-        const vehicle = updatedVehicles[i];
-
-        if (!vehicle.manufacturer_code || !vehicle.model_code || !vehicle.year) {
-          continue;
-        }
-
+      for (const vehicle of vehiclesToSync) {
         const cacheKey = `${normalizeCode(vehicle.manufacturer_code)}|${normalizeCode(vehicle.model_code)}|${vehicle.year}`;
 
         if (!cache.has(cacheKey)) {
-          const candidates = await fetchPricingCandidates(vehicle.manufacturer_code, vehicle.model_code, vehicle.year);
-          const bestMatch = findBestPricingMatch(candidates, vehicle.manufacturer_code, vehicle.model_code, vehicle.year);
+          const candidates = await fetchPricingCandidates(
+            vehicle.manufacturer_code!,
+            vehicle.model_code!,
+            vehicle.year
+          );
+          const bestMatch = findBestPricingMatch(
+            candidates,
+            vehicle.manufacturer_code!,
+            vehicle.model_code!,
+            vehicle.year
+          );
           cache.set(cacheKey, bestMatch);
         }
 
         const pricingRow = cache.get(cacheKey);
         if (!pricingRow) continue;
 
-        updatedVehicles[i] = applyPricingToVehicle(vehicle, pricingRow);
+        const patch = {
+          tax_value_price:  pricingRow.usage_value,
+          tax_year:         pricingRow.usage_year,
+          adjusted_price:   pricingRow.adjusted_price,
+          vehicle_type_code: pricingRow.vehicle_type_code,
+          model_description: pricingRow.model_description,
+          fuel_type:        pricingRow.fuel_type,
+          commercial_name:  pricingRow.commercial_name,
+          is_automatic:     pricingRow.is_automatic,
+          drive_type:       pricingRow.drive_type,
+          green_score:      pricingRow.green_score,
+          pollution_level:  pricingRow.pollution_level,
+          engine_volume:    pricingRow.engine_volume_cc?.toString() || vehicle.engine_volume,
+          weight:           pricingRow.weight,
+          list_price:       pricingRow.list_price,
+          effective_date:   pricingRow.effective_date,
+          updated_at:       new Date().toISOString(),
+        };
+
+        const { error: updateError } = await supabase
+          .from('vehicles')
+          .update(patch as any)
+          .eq('id', vehicle.id);
+
+        if (updateError) {
+          console.error('[useSyncVehiclesFromPricing] update error for', vehicle.id, updateError);
+          continue;
+        }
+
         updated += 1;
       }
 
-      saveStoredVehicles(updatedVehicles);
+      // Also refresh localStorage cache so per-vehicle cards see fresh data
+      const { data: refreshed } = await supabase.from('vehicles').select('*').eq('is_active', true);
+      if (refreshed) saveStoredVehicles(refreshed as Vehicle[]);
+
       return { updated, total: vehiclesToSync.length };
     },
     onSuccess: () => {
