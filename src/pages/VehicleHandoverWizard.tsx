@@ -689,16 +689,18 @@ export default function VehicleHandoverWizard() {
       const folder = `documents/${vehicleId}/${ts}`;
 
       // Generate formatted PDFs for each wizard step (full content + embedded signature)
+      // Wrap each individually so one failure doesn't abort the others
       const [pdf1Blob, pdf2Blob, pdf3Blob] = await Promise.all([
-        generateReceptionPDF({ vehicleLabel, driverName, date: today, accessories, signatureDataUrl: sig1DataUrl }),
-        generateProcedurePDF({ vehicleLabel, driverName, date: today, clauses: PROCEDURE_CLAUSES, signatureDataUrl: sig2DataUrl }),
-        generateHealthDeclarationPDF({ vehicleLabel, driverName, date: today, healthItems, notes: healthNotes, signatureDataUrl: sig3DataUrl }),
+        generateReceptionPDF({ vehicleLabel, driverName, date: today, accessories, signatureDataUrl: sig1DataUrl }).catch((e) => { console.error('[Wizard] PDF1 generation failed:', e); return null; }),
+        generateProcedurePDF({ vehicleLabel, driverName, date: today, clauses: PROCEDURE_CLAUSES, signatureDataUrl: sig2DataUrl }).catch((e) => { console.error('[Wizard] PDF2 generation failed:', e); return null; }),
+        generateHealthDeclarationPDF({ vehicleLabel, driverName, date: today, healthItems, notes: healthNotes, signatureDataUrl: sig3DataUrl }).catch((e) => { console.error('[Wizard] PDF3 generation failed:', e); return null; }),
       ]);
 
+      // Use ASCII-only storage paths to avoid upload failures with Hebrew filenames
       const [sig1Url, sig2Url, sig3Url, frontUrl, backUrl] = await Promise.all([
-        uploadBlobToStorage(pdf1Blob, `${folder}/קבלת_רכב_${ts}.pdf`),
-        uploadBlobToStorage(pdf2Blob, `${folder}/נוהל_שימוש_${ts}.pdf`),
-        uploadBlobToStorage(pdf3Blob, `${folder}/הצהרת_בריאות_${ts}.pdf`),
+        pdf1Blob ? uploadBlobToStorage(pdf1Blob, `${folder}/reception_${ts}.pdf`) : Promise.resolve(null),
+        pdf2Blob ? uploadBlobToStorage(pdf2Blob, `${folder}/procedure_${ts}.pdf`) : Promise.resolve(null),
+        pdf3Blob ? uploadBlobToStorage(pdf3Blob, `${folder}/health_${ts}.pdf`)    : Promise.resolve(null),
         licenseFront
           ? uploadFileToStorage(licenseFront, `${folder}/license_front_${ts}.jpg`)
           : Promise.resolve(null),
@@ -732,21 +734,18 @@ export default function VehicleHandoverWizard() {
         }).eq('id', driverId);
       }
 
-      // ── Build attachment list — abort email if any file is missing ─────────────
+      // ── Build attachment list — filter out any that failed, always send email ──
       const allAttachments: { filename: string; url: string }[] = [
-        { filename: 'טופס_קבלת_רכב.pdf',   url: sig1Url  ?? '' },
-        { filename: 'נוהל_שימוש_ברכב.pdf',  url: sig2Url  ?? '' },
-        { filename: 'הצהרת_בריאות.pdf',     url: sig3Url  ?? '' },
-        { filename: 'רישיון_קדמי.jpg',      url: frontUrl ?? '' },
-        { filename: 'רישיון_אחורי.jpg',     url: backUrl  ?? '' },
-      ];
+        sig1Url  && { filename: 'טופס_קבלת_רכב.pdf',  url: sig1Url  },
+        sig2Url  && { filename: 'נוהל_שימוש_ברכב.pdf', url: sig2Url  },
+        sig3Url  && { filename: 'הצהרת_בריאות.pdf',    url: sig3Url  },
+        frontUrl && { filename: 'רישיון_קדמי.jpg',     url: frontUrl },
+        backUrl  && { filename: 'רישיון_אחורי.jpg',    url: backUrl  },
+      ].filter(Boolean) as { filename: string; url: string }[];
 
-      const missingAttachments = allAttachments.filter(a => !a.url);
-      if (missingAttachments.length > 0) {
-        console.error('[Wizard] Aborting email — the following uploads failed:', missingAttachments.map(a => a.filename));
-        toast.success('כל המסמכים נשמרו, אך שליחת המייל בוטלה כי חלק מהקבצים לא הועלו.');
-        navigate(vehicleId ? `/vehicles/${vehicleId}` : '/vehicles');
-        return;
+      const failedCount = 5 - allAttachments.length;
+      if (failedCount > 0) {
+        console.warn(`[Wizard] ${failedCount} file(s) failed to upload — sending email with ${allAttachments.length} attachments`);
       }
 
       // ── Send email with all 6 attachments (5 wizard files + 1 PDF from reportUrl) ──
@@ -771,7 +770,7 @@ export default function VehicleHandoverWizard() {
           additionalAttachments: allAttachments,
         });
         console.log('[Wizard] Email sent successfully');
-        toast.success('כל המסמכים נחתמו ונשלח מייל!');
+        toast.success(failedCount > 0 ? `המייל נשלח עם ${allAttachments.length} קבצים (${failedCount} נכשלו)` : 'כל המסמכים נחתמו ונשלח מייל!');
       } catch (emailErr) {
         console.warn('[Wizard] Email send failed (does not block save):', emailErr);
         toast.success('כל המסמכים נשמרו בהצלחה.');
