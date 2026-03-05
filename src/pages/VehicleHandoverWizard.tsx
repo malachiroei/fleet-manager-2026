@@ -676,42 +676,72 @@ export default function VehicleHandoverWizard() {
   // ── Final submit ──
   const handleFinish = async () => {
     setSubmitting(true);
+
+    // ── Step 1: Generate PDFs (each failure is isolated) ──────────────────────
+    console.log('[Wizard] handleFinish start', { vehicleId, driverId, handoverId, reportUrl });
+    const ts     = Date.now();
+    const folder = `documents/${vehicleId || 'unknown'}/${ts}`;
+
+    const [pdf1Blob, pdf2Blob, pdf3Blob] = await Promise.all([
+      generateReceptionPDF({ vehicleLabel, driverName, date: today, accessories, signatureDataUrl: sig1DataUrl })
+        .catch((e) => { console.error('[Wizard] PDF1 failed:', e); return null; }),
+      generateProcedurePDF({ vehicleLabel, driverName, date: today, clauses: PROCEDURE_CLAUSES, signatureDataUrl: sig2DataUrl })
+        .catch((e) => { console.error('[Wizard] PDF2 failed:', e); return null; }),
+      generateHealthDeclarationPDF({ vehicleLabel, driverName, date: today, healthItems, notes: healthNotes, signatureDataUrl: sig3DataUrl })
+        .catch((e) => { console.error('[Wizard] PDF3 failed:', e); return null; }),
+    ]);
+    console.log('[Wizard] PDF blobs:', { pdf1: !!pdf1Blob, pdf2: !!pdf2Blob, pdf3: !!pdf3Blob });
+
+    // ── Step 2: Upload all files (each failure is isolated) ───────────────────
+    const [sig1Url, sig2Url, sig3Url, frontUrl, backUrl] = await Promise.all([
+      pdf1Blob ? uploadBlobToStorage(pdf1Blob, `${folder}/reception_${ts}.pdf`)  : Promise.resolve(null),
+      pdf2Blob ? uploadBlobToStorage(pdf2Blob, `${folder}/procedure_${ts}.pdf`)  : Promise.resolve(null),
+      pdf3Blob ? uploadBlobToStorage(pdf3Blob, `${folder}/health_${ts}.pdf`)     : Promise.resolve(null),
+      licenseFront ? uploadFileToStorage(licenseFront, `${folder}/license_front_${ts}.jpg`) : Promise.resolve(null),
+      licenseBack  ? uploadFileToStorage(licenseBack,  `${folder}/license_back_${ts}.jpg`)  : Promise.resolve(null),
+    ]);
+    console.log('[Wizard] Upload URLs:', { sig1Url, sig2Url, sig3Url, frontUrl, backUrl });
+
+    // ── Step 3: Build attachment list — include only successful uploads ────────
+    const allAttachments: { filename: string; url: string }[] = [
+      sig1Url  && { filename: 'טופס_קבלת_רכב.pdf',  url: sig1Url  },
+      sig2Url  && { filename: 'נוהל_שימוש_ברכב.pdf', url: sig2Url  },
+      sig3Url  && { filename: 'הצהרת_בריאות.pdf',    url: sig3Url  },
+      frontUrl && { filename: 'רישיון_קדמי.jpg',     url: frontUrl },
+      backUrl  && { filename: 'רישיון_אחורי.jpg',    url: backUrl  },
+    ].filter(Boolean) as { filename: string; url: string }[];
+
+    const failedCount = 5 - allAttachments.length;
+    console.log(`[Wizard] ${allAttachments.length} attachments ready, ${failedCount} failed`);
+
+    // ── Step 4: Send email — ALWAYS, regardless of upload failures ────────────
     try {
-      // ── Trace URL params ──────────────────────────────────────────────────────
-      console.log('[Wizard] handleFinish — URL params:', { vehicleId, driverId, handoverId, reportUrl });
-      if (!reportUrl) {
-        console.warn('[Wizard] reportUrl is empty — main PDF attachment will be missing from email');
-      }
+      await sendHandoverNotificationEmail({
+        handoverId,
+        vehicleId,
+        handoverType:    'delivery',
+        assignmentMode:  'permanent',
+        vehicleLabel,
+        driverLabel:     driverName,
+        odometerReading: 0,
+        fuelLevel:       0,
+        notes:           healthNotes || null,
+        reportUrl,
+        additionalAttachments: allAttachments,
+      });
+      console.log('[Wizard] Email sent OK');
+      toast.success(
+        failedCount > 0
+          ? `המייל נשלח עם ${allAttachments.length} מתוך 5 קבצים`
+          : 'כל המסמכים נחתמו ונשלח מייל בהצלחה!',
+      );
+    } catch (emailErr) {
+      console.warn('[Wizard] Email failed:', emailErr);
+      toast.success('המסמכים נשמרו. שליחת המייל נכשלה.');
+    }
 
-      // ── Upload ALL 5 wizard documents in one concurrent batch ─────────────────
-      // All go to vehicle-documents (public bucket). Unique timestamp per file via index suffix.
-      const ts = Date.now();
-      const folder = `documents/${vehicleId}/${ts}`;
-
-      // Generate formatted PDFs for each wizard step (full content + embedded signature)
-      // Wrap each individually so one failure doesn't abort the others
-      const [pdf1Blob, pdf2Blob, pdf3Blob] = await Promise.all([
-        generateReceptionPDF({ vehicleLabel, driverName, date: today, accessories, signatureDataUrl: sig1DataUrl }).catch((e) => { console.error('[Wizard] PDF1 generation failed:', e); return null; }),
-        generateProcedurePDF({ vehicleLabel, driverName, date: today, clauses: PROCEDURE_CLAUSES, signatureDataUrl: sig2DataUrl }).catch((e) => { console.error('[Wizard] PDF2 generation failed:', e); return null; }),
-        generateHealthDeclarationPDF({ vehicleLabel, driverName, date: today, healthItems, notes: healthNotes, signatureDataUrl: sig3DataUrl }).catch((e) => { console.error('[Wizard] PDF3 generation failed:', e); return null; }),
-      ]);
-
-      // Use ASCII-only storage paths to avoid upload failures with Hebrew filenames
-      const [sig1Url, sig2Url, sig3Url, frontUrl, backUrl] = await Promise.all([
-        pdf1Blob ? uploadBlobToStorage(pdf1Blob, `${folder}/reception_${ts}.pdf`) : Promise.resolve(null),
-        pdf2Blob ? uploadBlobToStorage(pdf2Blob, `${folder}/procedure_${ts}.pdf`) : Promise.resolve(null),
-        pdf3Blob ? uploadBlobToStorage(pdf3Blob, `${folder}/health_${ts}.pdf`)    : Promise.resolve(null),
-        licenseFront
-          ? uploadFileToStorage(licenseFront, `${folder}/license_front_${ts}.jpg`)
-          : Promise.resolve(null),
-        licenseBack
-          ? uploadFileToStorage(licenseBack,  `${folder}/license_back_${ts}.jpg`)
-          : Promise.resolve(null),
-      ]);
-
-      console.log('[Wizard] Upload results:', { sig1Url, sig2Url, sig3Url, frontUrl, backUrl });
-
-      // ── Save all 5 docs to driver_documents ───────────────────────────────────
+    // ── Step 5: Persist to DB (failures here do NOT block navigation) ─────────
+    try {
       const docsToInsert = [
         sig1Url  && { driver_id: driverId, file_url: sig1Url,  title: `אישור קבלת רכב | ${vehicleLabel}` },
         sig2Url  && { driver_id: driverId, file_url: sig2Url,  title: `התחייבות נוהל שימוש ברכב | ${vehicleLabel}` },
@@ -721,68 +751,25 @@ export default function VehicleHandoverWizard() {
       ].filter(Boolean);
 
       if (docsToInsert.length > 0) {
-        await supabase.from('driver_documents').insert(docsToInsert as never);
+        const { error: insertErr } = await supabase.from('driver_documents').insert(docsToInsert as never);
+        if (insertErr) console.error('[Wizard] driver_documents insert error:', insertErr.message);
       }
 
-      // ── Update driver record with license details ─────────────────────────────
       if (driverId) {
-        await supabase.from('drivers').update({
+        const { error: updateErr } = await supabase.from('drivers').update({
           license_number:    licenseNumber || undefined,
           license_expiry:    licenseExpiry || undefined,
           license_front_url: frontUrl      || undefined,
           license_back_url:  backUrl       || undefined,
         }).eq('id', driverId);
+        if (updateErr) console.error('[Wizard] drivers update error:', updateErr.message);
       }
-
-      // ── Build attachment list — filter out any that failed, always send email ──
-      const allAttachments: { filename: string; url: string }[] = [
-        sig1Url  && { filename: 'טופס_קבלת_רכב.pdf',  url: sig1Url  },
-        sig2Url  && { filename: 'נוהל_שימוש_ברכב.pdf', url: sig2Url  },
-        sig3Url  && { filename: 'הצהרת_בריאות.pdf',    url: sig3Url  },
-        frontUrl && { filename: 'רישיון_קדמי.jpg',     url: frontUrl },
-        backUrl  && { filename: 'רישיון_אחורי.jpg',    url: backUrl  },
-      ].filter(Boolean) as { filename: string; url: string }[];
-
-      const failedCount = 5 - allAttachments.length;
-      if (failedCount > 0) {
-        console.warn(`[Wizard] ${failedCount} file(s) failed to upload — sending email with ${allAttachments.length} attachments`);
-      }
-
-      // ── Send email with all 6 attachments (5 wizard files + 1 PDF from reportUrl) ──
-      console.log(`[Wizard] Starting email send with ${allAttachments.length + 1} attachments`, {
-        reportUrl,
-        handoverId,
-        files: allAttachments.map(a => a.filename),
-      });
-
-      try {
-        await sendHandoverNotificationEmail({
-          handoverId,
-          vehicleId,
-          handoverType:   'delivery',
-          assignmentMode: 'permanent',
-          vehicleLabel,
-          driverLabel:    driverName,
-          odometerReading: 0,
-          fuelLevel:       0,
-          notes:           healthNotes || null,
-          reportUrl,
-          additionalAttachments: allAttachments,
-        });
-        console.log('[Wizard] Email sent successfully');
-        toast.success(failedCount > 0 ? `המייל נשלח עם ${allAttachments.length} קבצים (${failedCount} נכשלו)` : 'כל המסמכים נחתמו ונשלח מייל!');
-      } catch (emailErr) {
-        console.warn('[Wizard] Email send failed (does not block save):', emailErr);
-        toast.success('כל המסמכים נשמרו בהצלחה.');
-      }
-
-      navigate(vehicleId ? `/vehicles/${vehicleId}` : '/vehicles');
-    } catch (err) {
-      console.error(err);
-      toast.error('שגיאה בשמירת המסמכים. נסה שנית.');
-    } finally {
-      setSubmitting(false);
+    } catch (dbErr) {
+      console.error('[Wizard] DB persist error (non-blocking):', dbErr);
     }
+
+    setSubmitting(false);
+    navigate(vehicleId ? `/vehicles/${vehicleId}` : '/vehicles');
   };
 
   // ── Render ──
