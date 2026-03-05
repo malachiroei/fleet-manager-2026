@@ -474,36 +474,38 @@ function Step4({
         ))}
       </div>
 
-      {/* Fields */}
-      <div className="grid grid-cols-3 gap-4">
-        <div>
-          <Label className="text-slate-700 text-sm font-semibold">מספר רישיון *</Label>
-          <Input
-            value={licenseNumber}
-            onChange={(e) => setLicenseNumber(e.target.value)}
-            placeholder="00000000"
-            dir="ltr"
-            className="mt-1 border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:border-blue-500"
-          />
-        </div>
-        <div>
-          <Label className="text-slate-700 text-sm font-semibold">תוקף רישיון *</Label>
-          <Input
-            type="date"
-            value={licenseExpiry}
-            onChange={(e) => setLicenseExpiry(e.target.value)}
-            className="mt-1 border-slate-300 bg-white text-slate-900 focus:border-blue-500"
-          />
-        </div>
-        <div>
-          <Label className="text-slate-700 text-sm font-semibold">דרגת רישיון</Label>
-          <Input
-            value={licenseClass}
-            onChange={(e) => setLicenseClass(e.target.value)}
-            placeholder="B, C1..."
-            dir="ltr"
-            className="mt-1 border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:border-blue-500"
-          />
+      {/* Fields — dark panel for legibility */}
+      <div className="bg-slate-900 rounded-xl p-4">
+        <div className="grid grid-cols-3 gap-4">
+          <div>
+            <Label className="text-slate-300 text-sm font-semibold">מספר רישיון *</Label>
+            <Input
+              value={licenseNumber}
+              onChange={(e) => setLicenseNumber(e.target.value)}
+              placeholder="00000000"
+              dir="ltr"
+              className="mt-1 border-slate-600 bg-slate-800 text-white placeholder:text-slate-500 focus:border-cyan-400"
+            />
+          </div>
+          <div>
+            <Label className="text-slate-300 text-sm font-semibold">תוקף רישיון *</Label>
+            <Input
+              type="date"
+              value={licenseExpiry}
+              onChange={(e) => setLicenseExpiry(e.target.value)}
+              className="mt-1 border-slate-600 bg-slate-800 text-white focus:border-cyan-400"
+            />
+          </div>
+          <div>
+            <Label className="text-slate-300 text-sm font-semibold">דרגת רישיון</Label>
+            <Input
+              value={licenseClass}
+              onChange={(e) => setLicenseClass(e.target.value)}
+              placeholder="B, C1..."
+              dir="ltr"
+              className="mt-1 border-slate-600 bg-slate-800 text-white placeholder:text-slate-500 focus:border-cyan-400"
+            />
+          </div>
         </div>
       </div>
 
@@ -709,8 +711,13 @@ export default function VehicleHandoverWizard() {
       } else {
         toast.success('כל המסמכים נשמרו בהצלחה.');
         if (emailResult.error) {
-          console.warn('שליחת מייל נכשלה (אינו חוסם על השמירה):', emailResult.error);
-          toast.warning(`שליחת מייל נכשלה: ${emailResult.error}`);
+          const isApiKeyMissing = emailResult.error.includes('VITE_RESEND_API_KEY') || emailResult.error.toLowerCase().includes('not configured');
+          if (isApiKeyMissing) {
+            console.info('שליחת מייל: נדרש להגדיר VITE_RESEND_API_KEY ב-Vercel');
+            toast.info('המסמכים נשמרו. כדי להפעיל אימייל אוטומטי — הגדר VITE_RESEND_API_KEY בהגדרות Vercel.', { duration: 8000 });
+          } else {
+            console.warn('שליחת מייל נכשלה (אינו חוסם על השמירה):', emailResult.error);
+          }
         }
       }
 
@@ -820,7 +827,12 @@ export default function VehicleHandoverWizard() {
               {step === 0 && 'נדרשת חתימה להמשך'}
               {step === 1 && (!procedureRead ? 'סמן קריאה ואישור להמשך' : 'נדרשת חתימה להמשך')}
               {step === 2 && (!healthItems.every(h => h.checked) ? 'סמן את כל סעיפי הבריאות' : 'נדרשת חתימה להמשך')}
-              {step === 3 && 'מלא שדות חובה וצלם רישיון'}
+              {step === 3 && (
+                !licenseFront ? 'חסר צילום צד א׳' :
+                !licenseBack  ? 'חסר צילום צד ב׳' :
+                !licenseNumber ? 'חסר מספר רישיון' :
+                'חסר תוקף רישיון'
+              )}
             </p>
           )}
 
@@ -847,8 +859,14 @@ export default function VehicleHandoverWizard() {
             </Button>
           ) : (
             <Button
-              disabled={!canAdvance() || submitting}
-              onClick={handleFinish}
+              disabled={submitting}
+              onClick={() => {
+                if (!licenseFront) { toast.error('נא לצלם את צד א׳ של הרישיון'); return; }
+                if (!licenseBack)  { toast.error('נא לצלם את צד ב׳ של הרישיון'); return; }
+                if (!licenseNumber) { toast.error('נא להזין מספר רישיון'); return; }
+                if (!licenseExpiry) { toast.error('נא להזין תוקף רישיון'); return; }
+                handleFinish();
+              }}
               className="gap-2 bg-emerald-500 hover:bg-emerald-400 text-white font-bold px-8"
             >
               {submitting
