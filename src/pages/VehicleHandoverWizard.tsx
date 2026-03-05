@@ -602,6 +602,12 @@ export default function VehicleHandoverWizard() {
   const [accessories, setAccessories] = useState<AccessoryItem[]>(INITIAL_ACCESSORIES);
   const [sig1OK, setSig1OK] = useState(false);
 
+  // Captured signature dataUrls — stored when user advances past each step
+  // (SignaturePad components unmount on step change, refs go null)
+  const [sig1DataUrl, setSig1DataUrl] = useState<string | null>(null);
+  const [sig2DataUrl, setSig2DataUrl] = useState<string | null>(null);
+  const [sig3DataUrl, setSig3DataUrl] = useState<string | null>(null);
+
   const [procedureRead, setProcedureRead] = useState(false);
   const [sig2OK, setSig2OK] = useState(false);
 
@@ -643,15 +649,14 @@ export default function VehicleHandoverWizard() {
     }
   };
 
-  // ── Convert a signature-pad dataUrl into a File and upload to vehicle-documents ──
+  // ── Convert a captured signature dataUrl into a File and upload to vehicle-documents ──
   const uploadSigToStorage = async (
-    ref: RefObject<SignaturePadRef>,
+    dataUrl: string | null,
     filename: string,
     path: string
   ): Promise<string | null> => {
-    const dataUrl = ref.current?.getDataUrl();
     if (!dataUrl) {
-      console.warn(`[Wizard] signature pad empty for ${filename}`);
+      console.warn(`[Wizard] signature dataUrl is empty for ${filename}`);
       return null;
     }
     try {
@@ -681,9 +686,9 @@ export default function VehicleHandoverWizard() {
       const folder = `documents/${vehicleId}/${ts}`;
 
       const [sig1Url, sig2Url, sig3Url, frontUrl, backUrl] = await Promise.all([
-        uploadSigToStorage(sig1Ref, 'טופס_קבלת_רכב.png',  `${folder}/sig_1_${ts}.png`),
-        uploadSigToStorage(sig2Ref, 'נוהל_שימוש.png',      `${folder}/sig_2_${ts}.png`),
-        uploadSigToStorage(sig3Ref, 'הצהרת_בריאות.png',    `${folder}/sig_3_${ts}.png`),
+        uploadSigToStorage(sig1DataUrl, 'טופס_קבלת_רכב.png',  `${folder}/sig_1_${ts}.png`),
+        uploadSigToStorage(sig2DataUrl, 'נוהל_שימוש.png',      `${folder}/sig_2_${ts}.png`),
+        uploadSigToStorage(sig3DataUrl, 'הצהרת_בריאות.png',    `${folder}/sig_3_${ts}.png`),
         licenseFront
           ? uploadFileToStorage(licenseFront, `${folder}/license_front_${ts}.jpg`)
           : Promise.resolve(null),
@@ -890,6 +895,10 @@ export default function VehicleHandoverWizard() {
                   return;
                 }
                 if (!canAdvance()) return;
+                // Capture the current step's signature dataUrl BEFORE the component unmounts
+                if (step === 0) setSig1DataUrl(sig1Ref.current?.getDataUrl() ?? null);
+                if (step === 1) setSig2DataUrl(sig2Ref.current?.getDataUrl() ?? null);
+                if (step === 2) setSig3DataUrl(sig3Ref.current?.getDataUrl() ?? null);
                 setStep(s => s + 1);
               }}
               disabled={step !== 1 && step !== 2 && !canAdvance()}
