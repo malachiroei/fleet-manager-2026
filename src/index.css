@@ -408,3 +408,77 @@
 .light .bg-slate-700 {
   background-color: #e2e8f0 !important;
 }
+
+/* ── Final alignment — page-level containers ──────────────────── */
+
+/* Full-page wrappers (e.g. min-h-screen bg-[#020617] text-white) */
+.light [class*="min-h-screen"][class*="bg-\["] {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+.light .min-h-screen {
+  background-color: #f8fafc;
+}
+
+/* Any remaining dark hardcoded backgrounds */
+.light .bg-\[\#020617\] { background-color: #f8fafc !important; }
+.light .bg-\[\#0d1b2e\] { background-color: #f8fafc !important; }
+.light .bg-\[\#091423\] { background-color: #f8fafc !important; }
+.light .bg-\[\#0c1a2e\] { background-color: #f8fafc !important; }
+.light .bg-\[\#0f172a\] { background-color: #f1f5f9 !important; }
+
+/* Tables */
+.light table { color: #0f172a !important; }
+.light thead, .light th {
+  background-color: #f1f5f9 !important;
+  color: #475569 !important;
+  border-color: #e2e8f0 !important;
+}
+.light td, .light tr {
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+.light tbody tr:hover {
+  background-color: #f8fafc !important;
+}
+
+/* Badges / status chips with dark bg */
+.light .bg-green-500\/20  { background-color: #dcfce7 !important; }
+.light .bg-red-500\/20    { background-color: #fee2e2 !important; }
+.light .bg-yellow-500\/20 { background-color: #fef9c3 !important; }
+.light .bg-blue-500\/20   { background-color: #dbeafe !important; }
+.light .bg-cyan-500\/20,
+.light .bg-cyan-400\/20   { background-color: #cffafe !important; }
+
+/* Dividers / separators */
+.light hr,
+.light [class*="border-white"],
+.light [class*="border-slate-700"],
+.light [class*="border-slate-800"] {
+  border-color: #e2e8f0 !important;
+}
+
+/* Shadcn popover / select dropdowns */
+.light [data-radix-select-content],
+.light [data-radix-popper-content-wrapper],
+.light [role="listbox"],
+.light [role="dialog"],
+.light [data-radix-dialog-content] {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.1) !important;
+  color: #0f172a !important;
+}
+
+/* Generic glass/dark button override in light mode */
+.light button:not([class*="glass-button"]):not([data-no-theme]):not(.rounded-full) {
+  background: rgba(15,23,42,0.06) !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: none !important;
+}
+.light button:not([class*="glass-button"]):not([data-no-theme]):not(.rounded-full):hover {
+  background: rgba(15,23,42,0.1) !important;
+  border-color: #94a3b8 !important;
+  box-shadow: none !important;
+}

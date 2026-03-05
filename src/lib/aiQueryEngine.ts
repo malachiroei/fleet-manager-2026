@@ -47,6 +47,46 @@ function extractName(text: string): string | null {
 // Intent detection
 // ─────────────────────────────────────────────
 
+// ─────────────────────────────────────────────
+// Procedure 04-05-001 Knowledge Base
+// All 21 clauses embedded to enable offline citation
+// ─────────────────────────────────────────────
+
+const PROCEDURE_04_05_001 = [
+  { id: 1,  keywords: ['בלבד','עבודה','שימוש','מוסמך'],  text: 'הרכב ישמש לצרכי עבודה בלבד, לנסיעות מוסמכות על-פי תפקיד המחזיק.' },
+  { id: 2,  keywords: ['אלכוהול','סמים','תרופות','דייס'],  text: 'חל איסור מוחלט על נהיגה תחת השפעת אלכוהול, סמים או תרופות המשפיעות על הנהיגה.' },
+  { id: 3,  keywords: ['עייפות','נום','עייפ'],  text: 'חל איסור על נהיגה במצב עייפות. הנהג חייב להפסיק לנסוע ולנוח.' },
+  { id: 4,  keywords: ['חוקי תנועה','בטיחות','צייתת'],  text: 'הנהג חייב לציית לכל חוקי התנועה ולשמור על בטיחות הנסיעה בכל עת.' },
+  { id: 5,  keywords: ['בדיקות','שמן','מים','צמיגים','תחזוקת','בדיקה'],  text: 'הנהג אחראי לבצע בדיקות שגרתיות: מפלס שמן, מים, לחץ צמיגים לפני נסיעה.' },
+  { id: 6,  keywords: ['תאונה','דיווח','דיווח תאונה'],  text: 'כל תאונה — יש לדווח לממונה ולמחלקת הרכב באופן מידי, ללא דיחוי.' },
+  { id: 7,  keywords: ['נזק','נזקים','דיווח נזק','רישום'],  text: 'כל נזק לרכב, יהיה קטן ככל שיהיה, יש לדווח ולתעד בטרם לקיחת הרכב.' },
+  { id: 8,  keywords: ['עישון','אכילה','שתייה'],  text: 'חל איסור מוחלט על עישון, אכילה ושתייה ברכב המגורים/נוסעים.' },
+  { id: 9,  keywords: ['נקיון','נקי','החזרה'],  text: 'הנהג מחויב להחזיר את הרכב נקי ומסודר, ולדאוג לניקיון שוטף.' },
+  { id: 10, keywords: ['חנייה','דוח','דוחות חנייה'],  text: 'חניה תבוצע במקומות מורשים בלבד. דוחות חנייה בגין חנייה אסורה — על חשבון הנהג.' },
+  { id: 11, keywords: ['כביש 6','אגרה','מנהרות','טול'],  text: 'עמלות כבישי אגרה (כביש 6, מנהרות וכד׳) — יחוייבו על חשבון הנהג, אלא אם הוסמך אחרת.' },
+  { id: 12, keywords: ['אישי','שימוש פרטי','שעות'],  text: 'חל איסור להשתמש ברכב למטרות אישיות מחוץ לשעות ולמסגרת האישור שניתן.' },
+  { id: 13, keywords: ['השכרה','הלוואה','צד שלישי'],  text: 'הנהג אינו רשאי להשכיר, להלווות או להעביר את הרכב לצד שלישי כלשהו.' },
+  { id: 14, keywords: ['שינויים','שדרוג','תוספות'],  text: 'חל איסור מוחלט לבצע שינויים, תוספות או שדרוגים ברכב ללא אישור מחלקת הרכב.' },
+  { id: 15, keywords: ['חול','גבולות','נסיעה לחול'],  text: 'נסיעה מחוץ לגבולות ישראל מחייבת אישור מפורש מראש ממנהל המחלקה.' },
+  { id: 16, keywords: ['חפצי ערך','ציוד','גניבה'],  text: 'אין להשאיר חפצי ערך או ציוד ארגוני ברכב בעת חנייה. הסיכון — על הנהג.' },
+  { id: 17, keywords: ['מד אמת','קילומטראז','עדכון'],  text: 'הנהג מחויב לעדכן קריאת מד-אמת בכל תחילת חודש ועם סיום נסיעה עסקית.' },
+  { id: 18, keywords: ['ביטוח','רישיון','תוקף'],  text: 'הנהג אחראי לוודא שהביטוח והרישיונות בתוקף. נסיעה עם רישיון פג תוקף — אחריות הנהג.' },
+  { id: 19, keywords: ['ביטוח פרטי','חיוב אישי','נזק','השתתפות עצמי'],  text: 'רכב חברה אינו מבוטח לשימוש פרטי מלא; נהיגה חריגה עלולה לגרור חיוב אישי בנזק.' },
+  { id: 20, keywords: ['החזרה','מפתחות','אביזרים'],  text: 'החזרת הרכב תיעשה באותו מצב שכי החרגה הוחזר, כולל מפתחות, ניירות ואביזרים.' },
+  { id: 21, keywords: ['הפרה','עונשין','אחריות','משמעת'],  text: 'הפרת נוהל זה תגרור נקיטת הליכים משמעתיים וגישת אחריות אישית לנזקים.' },
+];
+
+/** Find the most relevant clause(s) for a question */
+function searchProcedure(query: string): Array<{ id: number; text: string }> {
+  const t = query.toLowerCase();
+  const scored = PROCEDURE_04_05_001.map(clause => {
+    const score = clause.keywords.filter(k => t.includes(k)).length;
+    return { ...clause, score };
+  });
+  const matches = scored.filter(c => c.score > 0).sort((a, b) => b.score - a.score);
+  return matches.length ? matches.slice(0, 3) : [];
+}
+
 type Intent =
   | 'vehicle_by_plate'
   | 'vehicle_driver'
@@ -59,10 +99,13 @@ type Intent =
   | 'driver_documents'
   | 'documents_search'
   | 'stats_general'
+  | 'procedure_query'
   | 'unknown';
 
 function detectIntent(q: string): Intent {
   const t = q.toLowerCase();
+  // Procedure / policy questions — must check before generic document checks
+  if (/נוהל|04-05|04.05|הליך|חוק.*רכב|תנאי.*שימוש|השתתפות עצמית|נזק.*אשמ|אשמ.*נהג|קנס|דוח|אחריות.*נהג|חובות.*נהג|מותר|אסור|רשאי|כביש 6|אגרה|ביטוח פרטי|מחוץ לגבולות|חול|נסיעה.*אישי|שימוש אישי|ניקיון|מד.?אמת.*חודש|תאונה.*דיווח/.test(t)) return 'procedure_query';
   if (/מסמך|קובץ|pdf|רישיון.*נהג|תיק\s*נהג/.test(t)) return 'driver_documents';
   if (/חפש|מסמכים|כל\s*הקבצים/.test(t))              return 'documents_search';
   if (/כמה\s*קיל|מד.?(אמת|מרחק|קיל)|odo/.test(t))  return 'vehicle_odometer';
@@ -343,6 +386,33 @@ async function resolveGeneralStats(): Promise<string> {
 }
 
 // ─────────────────────────────────────────────
+// Procedure 04-05-001 resolver
+// ─────────────────────────────────────────────
+
+function resolveProcedureQuery(q: string): string {
+  const matches = searchProcedure(q);
+
+  if (!matches.length) {
+    // Return a quick summary of key policy points
+    return `נוהל **04-05-001 — שימוש ברכב חברה** כולל 21 סעיפים. נקודות מרכזיות:
+• **סעיף 10** — דוחות חנייה אסורה על חשבון הנהג
+• **סעיף 11** — כביש 6 / אגרות על חשבון הנהג
+• **סעיף 19** — נזק בשימוש חריג / פרטי גורר חיוב אישי
+• **סעיף 6** — כל תאונה חייבת דיווח מידי
+• **סעיף 21** — הפרת נוהל גוררת אחריות אישית
+
+שאל שאלה מפורטתת ואצטט את הסעיף הרלוונטי.`;
+  }
+
+  const cited = matches
+    .map(c => `> סעיף **${c.id}** בנוהל 04-05-001:
+> _“${c.text}”_`)
+    .join('\n\n');
+
+  return `לפי נוהל **04-05-001 — שימוש ברכב חברה**:\n\n${cited}`;
+}
+
+// ─────────────────────────────────────────────
 // Main entry
 // ─────────────────────────────────────────────
 
@@ -368,6 +438,7 @@ export async function processFleetQuery(
       case 'driver_documents':  return await resolveDriverDocuments(name, q);
       case 'documents_search':  return await resolveDocumentsSearch(q);
       case 'stats_general':     return await resolveGeneralStats();
+      case 'procedure_query':   return resolveProcedureQuery(q);
 
       default: {
         // fallback: try to auto-detect if there's a plate number or name in the question
