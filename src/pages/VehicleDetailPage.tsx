@@ -429,7 +429,7 @@ export default function VehicleDetailPage() {
                 </div>
                 <CardTitle>נתוני מס</CardTitle>
               </div>
-              {vehicle.manufacturer_code && vehicle.model_code && (
+              {vehicle.manufacturer_code && vehicle.model_code ? (
                 <Button
                   variant="outline"
                   size="sm"
@@ -443,10 +443,36 @@ export default function VehicleDetailPage() {
                   )}
                   סנכרון נתונים
                 </Button>
+              ) : (
+                <Link to={`/vehicles/${vehicle.id}/edit`}>
+                  <Button variant="outline" size="sm" className="border-amber-500/50 text-amber-400 hover:bg-amber-500/10">
+                    <Edit className="h-4 w-4 ml-1" />
+                    הגדר קוד תוצר/דגם
+                  </Button>
+                </Link>
               )}
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
+            {(!vehicle.manufacturer_code || !vehicle.model_code) && (
+              <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
+                <span className="text-amber-400 text-lg leading-none mt-0.5">⚠️</span>
+                <div className="space-y-1">
+                  <p className="font-medium text-amber-300">חסרים קודי יצרן/דגם</p>
+                  <p className="text-amber-400/80">
+                    כדי לסנכרן נתוני מס ושווי שימוש, יש להגדיר{' '}
+                    {!vehicle.manufacturer_code && <strong>קוד תוצר</strong>}
+                    {!vehicle.manufacturer_code && !vehicle.model_code && ' ו'}
+                    {!vehicle.model_code && <strong>קוד דגם</strong>}
+                    {' '}בדף עריכת הרכב.
+                  </p>
+                  <Link to={`/vehicles/${vehicle.id}/edit`} className="inline-flex items-center gap-1 text-amber-300 hover:text-amber-200 underline underline-offset-2 text-xs font-medium">
+                    <Edit className="h-3 w-3" />
+                    פתח עריכת רכב
+                  </Link>
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               {/* A - שנת מס */}
               <div>
