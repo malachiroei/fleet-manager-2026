@@ -789,8 +789,16 @@ export default function VehicleHandoverWizard() {
 
           {step < STEPS.length - 1 ? (
             <Button
-              disabled={!canAdvance()}
-              onClick={() => setStep(s => s + 1)}
+              onClick={() => {
+                // Step-specific validation toasts before advancing
+                if (step === 1 && !procedureRead) {
+                  toast.error('יש לאשר את קריאת הסעיפים בטרם המעבר');
+                  return;
+                }
+                if (!canAdvance()) return;
+                setStep(s => s + 1);
+              }}
+              disabled={step !== 1 && !canAdvance()}
               className="gap-2 bg-cyan-500 hover:bg-cyan-400 text-[#020617] font-bold px-6"
             >
               הבא
