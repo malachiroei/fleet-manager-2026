@@ -2,10 +2,9 @@ import { useState, useRef, useCallback, RefObject } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useVehicles } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
-import { useCreateHandover, uploadSignature } from '@/hooks/useHandovers';
+import { useCreateHandover, uploadSignature, sendHandoverNotificationEmail } from '@/hooks/useHandovers';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
-import { sendHandoverEmail } from '@/lib/sendHandoverEmail';
 import SignaturePad, { SignaturePadRef } from '@/components/SignaturePad';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -576,8 +575,10 @@ export default function VehicleHandoverWizard() {
   const { data: drivers  } = useDrivers();
   const { user } = useAuth();
 
-  const vehicleId = searchParams.get('vehicleId') ?? '';
-  const driverId  = searchParams.get('driverId')  ?? '';
+  const vehicleId  = searchParams.get('vehicleId')  ?? '';
+  const driverId   = searchParams.get('driverId')   ?? '';
+  const reportUrl  = decodeURIComponent(searchParams.get('reportUrl')  ?? '');
+  const handoverId = decodeURIComponent(searchParams.get('handoverId') ?? '');
 
   const vehicle = vehicles?.find(v => v.id === vehicleId);
   const driver  = drivers?.find(d => d.id === driverId);
@@ -693,33 +694,31 @@ export default function VehicleHandoverWizard() {
         }).eq('id', driverId);
       }
 
-      // ── Send email directly from browser via Resend ─────────────────────────────
-      const savedDocs = (
-        docsToInsert as { driver_id: string; file_url: string; title: string }[]
-      ).map((d) => ({ title: d.title, file_url: d.file_url }));
-
-      const emailResult = await sendHandoverEmail({
-        docs:          savedDocs,
-        driverName,
-        driverEmail:   driver?.email ?? null,
-        vehicleLabel,
-        licenseNumber,
-        supabase,
-      });
-
-      if (emailResult.success) {
+      // ── Send email via edge function with all attachments ───────────────────────
+      try {
+        await sendHandoverNotificationEmail({
+          handoverId,
+          vehicleId,
+          handoverType: 'delivery',
+          assignmentMode: 'permanent',
+          vehicleLabel,
+          driverLabel: driverName,
+          odometerReading: 0,
+          fuelLevel: 0,
+          notes: healthNotes || null,
+          reportUrl,
+          additionalAttachments: [
+            ...(sig1Url  ? [{ filename: 'אישור_קבלת_רכב.png',      url: sig1Url  }] : []),
+            ...(sig2Url  ? [{ filename: 'התחייבות_נוהל_שימוש.png', url: sig2Url  }] : []),
+            ...(sig3Url  ? [{ filename: 'הצהרת_בריאות.png',        url: sig3Url  }] : []),
+            ...(frontUrl ? [{ filename: 'צילום_רישיון_קדמי.jpg',   url: frontUrl }] : []),
+            ...(backUrl  ? [{ filename: 'צילום_רישיון_אחורי.jpg',  url: backUrl  }] : []),
+          ],
+        });
         toast.success('כל המסמכים נחתמו ונשלח מייל!');
-      } else {
+      } catch (emailErr) {
+        console.warn('שליחת מייל נכשלה (אינו חוסם על השמירה):', emailErr);
         toast.success('כל המסמכים נשמרו בהצלחה.');
-        if (emailResult.error) {
-          const isApiKeyMissing = emailResult.error.includes('VITE_RESEND_API_KEY') || emailResult.error.toLowerCase().includes('not configured');
-          if (isApiKeyMissing) {
-            // Edge function handles email via DB trigger — no need to alert the user
-            console.info('sendHandoverEmail: VITE_RESEND_API_KEY not set — relying on edge function DB trigger');
-          } else {
-            console.warn('שליחת מייל נכשלה (אינו חוסם על השמירה):', emailResult.error);
-          }
-        }
       }
 
       navigate(vehicleId ? `/vehicles/${vehicleId}` : '/vehicles');

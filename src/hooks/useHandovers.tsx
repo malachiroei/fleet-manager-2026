@@ -571,6 +571,8 @@ interface SendHandoverEmailInput {
   fuelLevel: number;
   notes: string | null;
   reportUrl: string;
+  /** Extra files to attach alongside the PDF (wizard documents). */
+  additionalAttachments?: { filename: string; url: string }[];
 }
 
 export async function sendHandoverNotificationEmail(input: SendHandoverEmailInput) {
@@ -584,6 +586,7 @@ export async function sendHandoverNotificationEmail(input: SendHandoverEmailInpu
         ...input,
         recordUrl: buildHandoverRecordUrl(input.vehicleId, input.handoverId),
         sentAt: new Date().toISOString(),
+        additionalAttachments: input.additionalAttachments ?? [],
       },
     },
   });

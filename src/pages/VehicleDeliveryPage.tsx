@@ -176,31 +176,35 @@ export default function VehicleDeliveryPage() {
         return;
       }
 
-      try {
-        await sendHandoverNotificationEmail({
-          handoverId: handover.id,
-          vehicleId: selectedVehicle,
-          handoverType: 'delivery',
-          assignmentMode,
-          vehicleLabel: `${selectedVehicleData?.manufacturer ?? ''} ${selectedVehicleData?.model ?? ''} (${selectedVehicleData?.plate_number ?? ''})`.trim(),
-          driverLabel: selectedDriverData?.full_name ?? 'לא ידוע',
-          odometerReading: parseInt(odometer),
-          fuelLevel,
-          notes: notes || null,
-          reportUrl,
-        });
-      } catch (emailError) {
-        console.error('Email notification error:', emailError);
-        toast.warning('הטופס נשמר, אך שליחת המייל נכשלה');
-      }
-
       toast.success('מסירת רכב נרשמה בהצלחה');
 
       if (assignmentMode === 'permanent') {
-        // For permanent handovers, continue to the full wizard
-        // (document signing, accessories checklist, health declaration, license scan)
-        navigate(`/handover/wizard?vehicleId=${selectedVehicle}&driverId=${selectedDriver}`);
+        // For permanent handovers — skip email here, the Wizard will send it
+        // after collecting all 5 signed documents.
+        navigate(
+          `/handover/wizard?vehicleId=${selectedVehicle}&driverId=${selectedDriver}` +
+          `&handoverId=${encodeURIComponent(handover.id)}` +
+          `&reportUrl=${encodeURIComponent(reportUrl)}`
+        );
       } else {
+        // For non-permanent handovers — send email immediately
+        try {
+          await sendHandoverNotificationEmail({
+            handoverId: handover.id,
+            vehicleId: selectedVehicle,
+            handoverType: 'delivery',
+            assignmentMode,
+            vehicleLabel: `${selectedVehicleData?.manufacturer ?? ''} ${selectedVehicleData?.model ?? ''} (${selectedVehicleData?.plate_number ?? ''})`.trim(),
+            driverLabel: selectedDriverData?.full_name ?? 'לא ידוע',
+            odometerReading: parseInt(odometer),
+            fuelLevel,
+            notes: notes || null,
+            reportUrl,
+          });
+        } catch (emailError) {
+          console.error('Email notification error:', emailError);
+          toast.warning('הטופס נשמר, אך שליחת המייל נכשלה');
+        }
         navigate('/');
       }
     } catch (error) {

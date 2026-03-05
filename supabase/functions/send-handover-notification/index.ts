@@ -22,6 +22,7 @@ interface NotificationRequest {
     recordUrl?: string;
     reportUrl: string;
     sentAt: string;
+    additionalAttachments?: { filename: string; url: string }[];
   };
 }
 
@@ -41,6 +42,34 @@ function isUuid(value: string) {
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ── Build the full attachments array ─────────────────────────────────────────
+async function buildAttachments(
+  payload: NotificationRequest['payload'],
+  pdfBase64: string
+): Promise<{ filename: string; content: string }[]> {
+  // 1. Main delivery form PDF
+  const list: { filename: string; content: string }[] = [
+    { filename: 'טופס_מסירת_רכב.pdf', content: pdfBase64 },
+  ];
+
+  // 2. Any additional wizard attachments (signatures + license photos)
+  for (const att of payload.additionalAttachments ?? []) {
+    try {
+      const resp = await fetch(att.url);
+      if (!resp.ok) {
+        console.warn(`Could not download attachment ${att.filename} (${resp.status})`);
+        continue;
+      }
+      const bytes = new Uint8Array(await resp.arrayBuffer());
+      list.push({ filename: att.filename, content: toBase64(bytes) });
+    } catch (e) {
+      console.warn(`Error downloading attachment ${att.filename}:`, e);
+    }
+  }
+
+  return list;
 }
 
 serve(async (req) => {
@@ -169,12 +198,7 @@ serve(async (req) => {
         to: [to],
         subject,
         html,
-        attachments: [
-          {
-            filename: `handover-${payload.handoverId ?? 'report'}.pdf`,
-            content: pdfContentBase64,
-          },
-        ],
+        attachments: await buildAttachments(payload, pdfContentBase64),
       }),
     });
 
