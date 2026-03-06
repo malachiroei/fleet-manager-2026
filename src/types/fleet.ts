@@ -82,6 +82,13 @@ export interface Vehicle {
   weight: number | null;
   list_price: number | null;
   effective_date: string | null;
+  // Maintenance folder fields
+  last_service_date: string | null;
+  last_service_km: number | null;
+  last_tire_change_date: string | null;
+  next_tire_change_date: string | null;
+  last_inspection_date: string | null;
+  next_inspection_date: string | null;
 }
 
 export interface Driver {

@@ -32,6 +32,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import type { ComplianceStatus } from '@/types/fleet';
+import { VehicleFolders } from '@/components/VehicleFolders';
 
 function StatusBadge({ status, daysLeft }: { status: ComplianceStatus; daysLeft?: number }) {
   const config = {
@@ -159,6 +160,7 @@ export default function VehicleDetailPage() {
   const isTaxSection = section === 'tax-data';
   const isHandoverSection = section === 'handover-history';
   const isDocumentsSection = section === 'vehicle-documents';
+  const isFoldersSection    = section === 'vehicle-folders';
 
   const { data: vehicleDocuments = [], refetch: refetchVehicleDocuments } = useQuery({
     queryKey: ['vehicle-documents', vehicle?.id],
@@ -352,6 +354,7 @@ export default function VehicleDetailPage() {
               { label: 'סקירה', hash: '' },
               { label: 'נתוני מס', hash: '#tax-data' },
               { label: 'מסירות', hash: '#handover-history' },
+              { label: 'תיקייות ניהול', hash: '#vehicle-folders' },
               { label: 'מסמכים', hash: '#vehicle-documents' },
             ].map(({ label, hash }) => {
               const active = hash === '' ? (!section || section === 'overview') : section === hash.slice(1);
@@ -742,6 +745,9 @@ export default function VehicleDetailPage() {
           </CardContent>
         </Card>
         )}
+
+        {/* Vehicle Folders */}
+        {isFoldersSection && <VehicleFolders vehicle={vehicle} />}
 
         {/* Vehicle Documents */}
         {isDocumentsSection && (
