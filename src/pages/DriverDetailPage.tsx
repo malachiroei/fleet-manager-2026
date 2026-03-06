@@ -226,7 +226,7 @@ export default function DriverDetailPage() {
         {isDriverFolders && <DriverFolders driver={driver} />}
 
         {/* Contact Info */}
-        {!isDriverFolders && {!isDriverFolders && <Card>
+        {!isDriverFolders && <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent/10">
