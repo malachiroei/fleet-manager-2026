@@ -204,20 +204,26 @@ export default function OrgSettingsPage() {
   // Tab 3 — UI Labels
   const { data: labels, isLoading: labelsLoading } = useUiLabels();
   const updateLabels = useUpdateUiLabels();
-  const [labelEdits, setLabelEdits] = useState<Record<string, string>>({});
+  const [labelEdits, setLabelEdits] = useState<Record<string, { custom_label: string; is_visible: boolean }>>({});
   const [savingLabels, setSavingLabels] = useState(false);
 
   useEffect(() => {
     if (!labels) return;
-    const map: Record<string, string> = {};
-    labels.forEach((l) => { map[l.key] = l.custom_label; });
+    const map: Record<string, { custom_label: string; is_visible: boolean }> = {};
+    labels.forEach((l) => { map[l.key] = { custom_label: l.custom_label, is_visible: l.is_visible !== false }; });
     setLabelEdits(map);
   }, [labels]);
 
   const handleSaveLabels = async () => {
     setSavingLabels(true);
     try {
-      await updateLabels.mutateAsync(Object.entries(labelEdits).map(([key, custom_label]) => ({ key, custom_label: String(custom_label) })));
+      await updateLabels.mutateAsync(
+        Object.entries(labelEdits).map(([key, v]) => ({
+          key,
+          custom_label: String(v.custom_label),
+          is_visible: v.is_visible,
+        }))
+      );
       toast.success('שמות מותאמים נשמרו');
     } catch { toast.error('שמירה נכשלה'); }
     finally { setSavingLabels(false); }
@@ -356,26 +362,65 @@ export default function OrgSettingsPage() {
                 <CardHeader>
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-500/10"><Tag className="h-5 w-5 text-violet-600 dark:text-violet-400" /></div>
-                    <div><CardTitle>שמות מותאמים (White Labeling)</CardTitle><CardDescription>שנה שמות כפתורים ותפריטים. השאר ריק לשמירת ברירת מחדל.</CardDescription></div>
+                    <div>
+                      <CardTitle>שמות מותאמים (White Labeling)</CardTitle>
+                      <CardDescription>שנה שמות כפתורים ותפריטים, או הסתר פריטים מהתפריט לגמרי. שינויים יושפעו בסידבר ובכפתורי האפליקציה.</CardDescription>
+                    </div>
                   </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="pb-2">
                   {labelsLoading ? (
                     <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
                   ) : (
-                    <div className="space-y-3">
-                      {(labels ?? []).map((lbl) => (
-                        <div key={lbl.key} className="grid grid-cols-2 gap-3 items-center py-1 border-b border-border/50 last:border-0">
-                          <div>
-                            <p className="text-xs text-muted-foreground font-mono">{lbl.key}</p>
-                            <p className="text-sm font-medium text-foreground">{lbl.default_label}</p>
-                          </div>
-                          <Input
-                            value={labelEdits[lbl.key] ?? ''}
-                            onChange={(e) => setLabelEdits(prev => ({ ...prev, [lbl.key]: e.target.value }))}
-                            placeholder={lbl.default_label}
-                            className="text-sm"
-                          />
+                    <div className="space-y-6">
+                      {/* Column headers */}
+                      <div className="grid grid-cols-[1fr_180px_60px] gap-3 px-1 pb-1 border-b border-border">
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">שם ברירת מחדל</p>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">שם מותאם</p>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide text-center">הצג</p>
+                      </div>
+                      {/* Group items */}
+                      {Object.entries(
+                        (labels ?? []).reduce<Record<string, typeof labels>>((acc, lbl) => {
+                          const g = lbl.group_name || 'כללי';
+                          if (!acc[g]) acc[g] = [];
+                          acc[g].push(lbl);
+                          return acc;
+                        }, {} as Record<string, NonNullable<typeof labels>>)
+                      ).map(([groupName, items]) => (
+                        <div key={groupName} className="space-y-1">
+                          <h3 className="text-xs font-bold text-foreground/50 uppercase tracking-widest px-1 mb-2">{groupName}</h3>
+                          {items.map((lbl) => {
+                            const edit = labelEdits[lbl.key] ?? { custom_label: lbl.custom_label, is_visible: lbl.is_visible !== false };
+                            const setEdit = (patch: Partial<{ custom_label: string; is_visible: boolean }>) =>
+                              setLabelEdits(prev => ({ ...prev, [lbl.key]: { ...edit, ...patch } }));
+                            return (
+                              <div
+                                key={lbl.key}
+                                className={`grid grid-cols-[1fr_180px_60px] gap-3 items-center px-2 py-2 rounded-lg transition-colors ${
+                                  edit.is_visible ? 'hover:bg-muted/40' : 'opacity-50 bg-muted/20'
+                                }`}
+                              >
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium text-foreground leading-tight truncate">{lbl.default_label}</p>
+                                  <p className="text-[10px] text-muted-foreground font-mono truncate">{lbl.key}</p>
+                                </div>
+                                <Input
+                                  value={edit.custom_label}
+                                  onChange={(e) => setEdit({ custom_label: e.target.value })}
+                                  placeholder={lbl.default_label}
+                                  className="text-sm h-8"
+                                  disabled={!edit.is_visible}
+                                />
+                                <div className="flex justify-center">
+                                  <Switch
+                                    checked={edit.is_visible}
+                                    onCheckedChange={(v) => setEdit({ is_visible: v })}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       ))}
                     </div>
@@ -384,7 +429,7 @@ export default function OrgSettingsPage() {
               </Card>
               <div className="flex justify-start pb-6">
                 <Button onClick={handleSaveLabels} disabled={savingLabels} size="lg" className="gap-2 px-8">
-                  {savingLabels ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} שמור שמות
+                  {savingLabels ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} שמור שנויים
                 </Button>
               </div>
             </TabsContent>

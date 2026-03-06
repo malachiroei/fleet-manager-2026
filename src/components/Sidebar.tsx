@@ -19,7 +19,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
-import { useLabel } from '@/hooks/useUiLabels';
+import { useLabel, useIsVisible } from '@/hooks/useUiLabels';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
 
@@ -43,6 +43,7 @@ export function Sidebar() {
   const { signOut } = useAuth();
   const { t } = useTranslation();
   const label = useLabel();
+  const isVis = useIsVisible();
 
   const navigationGroups: NavGroup[] = [
     {
@@ -116,13 +117,16 @@ export function Sidebar() {
             </Button>
           </Link>
 
-          {navigationGroups.map((group) => (
+          {navigationGroups.map((group) => {
+            const visibleItems = group.items.filter(item => !item.uiKey || isVis(item.uiKey));
+            if (visibleItems.length === 0) return null;
+            return (
             <div key={group.titleKey}>
               <h3 className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-cyan-400/60">
                 {group.title}
               </h3>
               <div className="space-y-1">
-                {group.items.map((item) => {
+                {visibleItems.map((item) => {
                   const isActive = location.pathname === item.href || 
                                    location.pathname.startsWith(item.href + '/');
                   
@@ -157,7 +161,8 @@ export function Sidebar() {
                 })}
               </div>
             </div>
-          ))}
+            );
+          })}
         </nav>
       </ScrollArea>
 

@@ -6,6 +6,8 @@ export interface UiLabel {
   key: string;
   default_label: string;
   custom_label: string;
+  is_visible: boolean;
+  group_name: string;
   updated_at: string;
 }
 
@@ -19,6 +21,7 @@ export function useUiLabels() {
       const { data, error } = await (supabase as any)
         .from('ui_customization')
         .select('*')
+        .order('group_name')
         .order('key');
       if (error) throw error;
       return (data ?? []) as UiLabel[];
@@ -27,7 +30,7 @@ export function useUiLabels() {
   });
 }
 
-/** Returns a function `label(key)` that resolves override or falls back to default */
+/** Returns a function `label(key, fallback?)` — resolves custom override → default → fallback */
 export function useLabel() {
   const { data: labels } = useUiLabels();
   return (key: string, fallback?: string): string => {
@@ -38,14 +41,29 @@ export function useLabel() {
   };
 }
 
+/** Returns a function `isVisible(key)` — true by default when data is not yet loaded */
+export function useIsVisible() {
+  const { data: labels } = useUiLabels();
+  return (key: string): boolean => {
+    const row = labels?.find((l) => l.key === key);
+    if (row === undefined) return true;
+    return row.is_visible !== false;
+  };
+}
+
 export function useUpdateUiLabels() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (updates: Array<{ key: string; custom_label: string }>) => {
+    mutationFn: async (updates: Array<{ key: string; custom_label: string; is_visible?: boolean }>) => {
       for (const u of updates) {
+        const patch: Record<string, unknown> = {
+          custom_label: u.custom_label,
+          updated_at: new Date().toISOString(),
+        };
+        if (u.is_visible !== undefined) patch.is_visible = u.is_visible;
         const { error } = await (supabase as any)
           .from('ui_customization')
-          .update({ custom_label: u.custom_label, updated_at: new Date().toISOString() })
+          .update(patch)
           .eq('key', u.key);
         if (error) throw error;
       }
