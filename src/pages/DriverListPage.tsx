@@ -105,8 +105,10 @@ function DriverCard({
             {/* RIGHT — driver info */}
             <div className="flex flex-1 items-center justify-between gap-4 px-5 py-4">
               <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent/10">
-                  <User className="h-6 w-6 text-accent" />
+                <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-base font-bold text-white shadow-md ${
+                  licenseStatus === 'expired' ? 'bg-red-600' : licenseStatus === 'warning' ? 'bg-amber-600' : 'bg-emerald-600'
+                }`}>
+                  {driver.full_name.trim().slice(0, 2)}
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-foreground">{driver.full_name}</h3>

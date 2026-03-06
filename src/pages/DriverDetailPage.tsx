@@ -212,40 +212,6 @@ export default function DriverDetailPage() {
       </header>
 
       <main className="container py-6 space-y-5">
-        {/* ── Hero card ─────────────────────────────────────── */}
-        <Card className="overflow-hidden">
-          <div className="h-1.5 bg-gradient-to-l from-primary via-accent/50 to-primary/20" />
-          <CardContent className="p-5">
-            <div className="flex items-stretch gap-5">
-              {/* RIGHT: avatar + name + info */}
-              <div className="flex flex-1 items-start gap-4 min-w-0">
-                <div className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl text-xl font-bold text-white shadow-lg ${
-                  license.status === 'expired' ? 'bg-red-600' : license.status === 'warning' ? 'bg-amber-600' : 'bg-emerald-600'
-                }`}>
-                  {driver.full_name.trim().slice(0, 2)}
-                </div>
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-3xl font-bold text-foreground">{driver.full_name}</h2>
-                    <StatusBadge status={license.status} daysLeft={license.daysLeft} />
-                    {!driver.is_active && (
-                      <span className="rounded-full bg-muted px-2.5 py-0.5 text-sm text-muted-foreground border border-border">לא פעיל</span>
-                    )}
-                  </div>
-                  <div className="mt-1.5 flex flex-wrap gap-x-5 gap-y-1 text-base text-muted-foreground">
-                    <span>ת.ז. {driver.id_number}</span>
-                    {driver.driver_code && <span>קוד: {driver.driver_code}</span>}
-                    {driver.employee_number && <span>מ. עובד: {driver.employee_number}</span>}
-                    {driver.job_title && <span>{driver.job_title}</span>}
-                    {driver.department && <span>{driver.department}</span>}
-                  </div>
-                </div>
-              </div>
-
-            </div>
-          </CardContent>
-        </Card>
-
         <>
 
             {/* ── Two-column grid ───────────────────────────────── */}
