@@ -13,15 +13,12 @@ import {
   BarChart3,
   Calculator,
   Droplet,
-  Settings,
-  Building2,
-  LogOut,
   ChevronRight
 } from 'lucide-react';
-import { useAuth } from '@/hooks/useAuth';
 import { useLabel, useIsVisible } from '@/hooks/useUiLabels';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
+import { SidebarUserMenu } from './SidebarUserMenu';
 
 interface NavItem {
   title: string;
@@ -40,7 +37,6 @@ interface NavGroup {
 
 export function Sidebar() {
   const location = useLocation();
-  const { signOut } = useAuth();
   const { t } = useTranslation();
   const label = useLabel();
   const isVis = useIsVisible();
@@ -166,39 +162,9 @@ export function Sidebar() {
         </nav>
       </ScrollArea>
 
-      {/* Footer Actions */}
-      <div className="border-t border-white/10 p-3 space-y-2">
-        <Link to="/admin/settings" className="block">
-          <Button
-            variant="ghost"
-            className="w-full justify-start gap-3 text-white/70 transition-all duration-300 hover:bg-cyan-500/10 hover:text-white hover:shadow-[0_0_20px_rgba(0,255,255,0.3)]"
-          >
-            <Settings className="h-5 w-5" />
-            {t('common.settings')}
-          </Button>
-        </Link>
-        <Link to="/admin/org-settings" className="block">
-          <Button
-            variant="ghost"
-            className={cn(
-              'w-full justify-start gap-3 transition-all duration-300',
-              location.pathname === '/admin/org-settings'
-                ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-400/40 shadow-[0_0_20px_rgba(0,255,255,0.3)]'
-                : 'text-white/70 hover:bg-cyan-500/10 hover:text-white hover:shadow-[0_0_20px_rgba(0,255,255,0.3)]'
-            )}
-          >
-            <Building2 className="h-5 w-5" />
-            {label('nav.org_settings', 'הגדרות ארגון')}
-          </Button>
-        </Link>
-        <Button
-          variant="ghost"
-          className="w-full justify-start gap-3 text-white/70 transition-all duration-300 hover:bg-cyan-500/10 hover:text-white hover:shadow-[0_0_20px_rgba(0,255,255,0.3)]"
-          onClick={signOut}
-        >
-          <LogOut className="h-5 w-5" />
-          {t('common.logout')}
-        </Button>
+      {/* Footer — User Menu */}
+      <div className="border-t border-white/10 p-3">
+        <SidebarUserMenu />
       </div>
     </div>
   );
