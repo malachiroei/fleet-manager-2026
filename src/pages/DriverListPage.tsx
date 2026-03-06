@@ -3,8 +3,6 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useDrivers, useDeleteDriver } from '@/hooks/useDrivers';
 import {
-  useVehicles,
-  useAssignDriverToVehicle,
   useActiveDriverVehicleAssignments,
   type ActiveDriverVehicleAssignment,
 } from '@/hooks/useVehicles';
@@ -17,13 +15,6 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -34,17 +25,16 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
-  ArrowRight,
   Plus,
   Search,
   User,
   Trash2,
   Edit,
-  Eye,
+  Car,
   Phone,
   Mail
 } from 'lucide-react';
-import type { Driver, DriverSummary, Vehicle, ComplianceStatus } from '@/types/fleet';
+import type { DriverSummary, ComplianceStatus } from '@/types/fleet';
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -72,149 +62,95 @@ function DriverCard({
   driver,
   onDelete,
   canEdit,
-  vehicles,
-  onAssignVehicle,
-  isAssigning,
-  handoverHistory,
   driverActiveAssignments,
-  allActiveAssignments,
 }: {
   driver: DriverSummary;
   onDelete: () => void;
   canEdit: boolean;
-  vehicles: Vehicle[];
-  onAssignVehicle: (driverId: string, vehicleId: string | null) => void;
-  isAssigning: boolean;
   driverActiveAssignments: ActiveDriverVehicleAssignment[];
-  allActiveAssignments: ActiveDriverVehicleAssignment[];
 }) {
-  const calculateStatus = (expiryDate: string): ComplianceStatus => {
-    const today = new Date();
-    const expiry = new Date(expiryDate);
-    const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  const today = new Date();
+  const expiry = new Date(driver.license_expiry);
+  const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  const licenseStatus: ComplianceStatus = diffDays < 0 ? 'expired' : diffDays <= 30 ? 'warning' : 'valid';
 
-    if (diffDays < 0) return 'expired';
-    if (diffDays <= 30) return 'warning';
-    return 'valid';
-  };
-
-  const licenseStatus = calculateStatus(driver.license_expiry);
   const assignedVehicles = driverActiveAssignments
-    .map((assignment) => assignment.vehicle)
-    .filter((vehicle): vehicle is NonNullable<ActiveDriverVehicleAssignment['vehicle']> => !!vehicle);
-  const assignedVehicleIds = new Set(allActiveAssignments.map((assignment) => assignment.vehicle_id));
-  const assignableVehicles = vehicles.filter(
-    (vehicle) => !assignedVehicleIds.has(vehicle.id) || assignedVehicles.some((assignedVehicle) => assignedVehicle.id === vehicle.id)
-  );
-  const selectedVehicleValue = assignedVehicles.length > 1
-    ? '__multiple__'
-    : (assignedVehicles[0]?.id ?? '__none__');
+    .map((a) => a.vehicle)
+    .filter((v): v is NonNullable<ActiveDriverVehicleAssignment['vehicle']> => !!v);
+
   return (
-    <Card className="card-hover">
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/10">
-              <User className="h-6 w-6 text-accent" />
+    <Link to={`/drivers/${driver.id}`} className="block group">
+      <Card className="card-hover border border-border hover:border-primary/40 transition-all cursor-pointer">
+        <CardContent className="p-0">
+          <div className="flex items-stretch">
+            {/* LEFT — vehicle */}
+            <div className="flex flex-col justify-center gap-1.5 px-5 py-4 min-w-[200px] border-r border-border bg-muted/20">
+              {assignedVehicles.length > 0 ? (
+                assignedVehicles.map((v) => (
+                  <div key={v.id} className="flex items-center gap-2 text-sm font-semibold text-primary">
+                    <Car className="h-4 w-4 shrink-0" />
+                    <span>{v.manufacturer} {v.model}</span>
+                    <span className="text-xs font-normal text-muted-foreground">({v.plate_number})</span>
+                  </div>
+                ))
+              ) : (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Car className="h-4 w-4" />
+                  <span>אין רכב משויך</span>
+                </div>
+              )}
             </div>
-            <div>
-              <h3 className="font-semibold">{driver.full_name}</h3>
-              <p className="text-sm text-muted-foreground">ת.ז. {driver.id_number}</p>
-              <div className="text-sm mt-1">
-                <span className="text-muted-foreground">רכבים משויכים:</span>
-                {assignedVehicles.length === 0 ? (
-                  <span className="mr-1">לא משויך</span>
-                ) : (
-                  <ul className="mt-1 space-y-0.5">
-                    {assignedVehicles.map((vehicle) => (
-                      <li key={vehicle.id}>{vehicle.manufacturer} {vehicle.model} ({vehicle.plate_number})</li>
-                    ))}
-                  </ul>
+
+            {/* RIGHT — driver info */}
+            <div className="flex flex-1 items-center justify-between gap-4 px-5 py-4">
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent/10">
+                  <User className="h-6 w-6 text-accent" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-foreground">{driver.full_name}</h3>
+                  <p className="text-sm text-muted-foreground">ת.ז. {driver.id_number}</p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-0.5">
+                    {driver.phone && (
+                      <span className="text-sm text-muted-foreground" dir="ltr">{driver.phone}</span>
+                    )}
+                    {driver.email && (
+                      <span className="text-sm text-muted-foreground" dir="ltr">{driver.email}</span>
+                    )}
+                    <span className="text-sm text-muted-foreground">
+                      רישיון: {new Date(driver.license_expiry).toLocaleDateString('he-IL')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <StatusBadge status={licenseStatus} />
+                {canEdit && (
+                  <div className="flex gap-1" onClick={(e) => e.preventDefault()}>
+                    <Link to={`/drivers/${driver.id}/edit`} onClick={(e) => e.stopPropagation()}>
+                      <Button variant="ghost" size="icon" className="h-8 w-8">
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    </Link>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(); }}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
                 )}
               </div>
             </div>
           </div>
-          <StatusBadge status={licenseStatus} />
-        </div>
-
-        <div className="mt-4 space-y-2 text-sm">
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground">רישיון:</span>
-            <span>{new Date(driver.license_expiry).toLocaleDateString('he-IL')}</span>
-          </div>
-          {driver.phone && (
-            <div className="flex items-center gap-2">
-              <Phone className="h-4 w-4 text-muted-foreground" />
-              <span dir="ltr">{driver.phone}</span>
-            </div>
-          )}
-          {driver.email && (
-            <div className="flex items-center gap-2">
-              <Mail className="h-4 w-4 text-muted-foreground" />
-              <span dir="ltr" className="text-xs">{driver.email}</span>
-            </div>
-          )}
-          {canEdit && (
-            <div>
-              <Select
-                value={selectedVehicleValue}
-                onValueChange={(value) => {
-                  if (value === '__multiple__') return;
-                  onAssignVehicle(driver.id, value === '__none__' ? null : value);
-                }}
-                disabled={isAssigning}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="בחר רכב" />
-                </SelectTrigger>
-                <SelectContent>
-                  {selectedVehicleValue === '__multiple__' && (
-                    <SelectItem value="__multiple__" disabled>משויכים מספר רכבים</SelectItem>
-                  )}
-                  <SelectItem value="__none__">ללא רכב משויך</SelectItem>
-                  {assignableVehicles.map((vehicle) => (
-                    <SelectItem key={vehicle.id} value={vehicle.id}>
-                      {vehicle.manufacturer} {vehicle.model} ({vehicle.plate_number})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-        </div>
-
-        <div className="mt-4 flex gap-2">
-          <Link to={`/drivers/${driver.id}`} className="flex-1">
-            <Button variant="outline" size="sm" className="w-full gap-1">
-              <Eye className="h-4 w-4" />
-              צפייה
-            </Button>
-          </Link>
-          {canEdit && (
-            <>
-              <Link to={`/drivers/${driver.id}/edit`}>
-                <Button variant="outline" size="sm">
-                  <Edit className="h-4 w-4" />
-                </Button>
-              </Link>
-              <Button variant="outline" size="sm" onClick={onDelete}>
-                <Trash2 className="h-4 w-4 text-destructive" />
-              </Button>
-            </>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </Link>
   );
 }
 
 export default function DriverListPage() {
   const { data: drivers, isLoading, isError, error, refetch } = useDrivers();
-  const { data: vehicles } = useVehicles();
   const { data: activeAssignments } = useActiveDriverVehicleAssignments();
   const deleteDriver = useDeleteDriver();
-  const assignDriver = useAssignDriverToVehicle();
-  const { isManager, user } = useAuth();
+  const { isManager } = useAuth();
   const { t } = useTranslation();
   const [search, setSearch] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -227,25 +163,8 @@ export default function DriverListPage() {
     d.phone?.includes(search)
   );
 
-  const handleAssignVehicle = (driverId: string, vehicleId: string | null) => {
-    if (vehicleId) {
-      assignDriver.mutate({
-        vehicleId,
-        driverId,
-        assignedBy: user?.id ?? null,
-      });
-      return;
-    }
-
-    const currentAssignment = (activeAssignments ?? []).find((assignment) => assignment.driver_id === driverId);
-    if (!currentAssignment) return;
-
-    assignDriver.mutate({
-      vehicleId: currentAssignment.vehicle_id,
-      driverId: null,
-      assignedBy: user?.id ?? null,
-    });
-  };
+  const _assignDriver = assignDriver; // kept for potential future use
+  void user; void _assignDriver;
 
   return (
     <div className="container py-6 space-y-6">
@@ -311,11 +230,7 @@ export default function DriverListPage() {
                 driver={driver}
                 onDelete={() => setDeleteId(driver.id)}
                 canEdit={isManager}
-                vehicles={vehicles ?? []}
-                onAssignVehicle={handleAssignVehicle}
-                isAssigning={assignDriver.isPending}
                 driverActiveAssignments={(activeAssignments ?? []).filter((assignment) => assignment.driver_id === driver.id)}
-                allActiveAssignments={activeAssignments ?? []}
               />
             ))}
           </div>

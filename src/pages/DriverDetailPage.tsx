@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams, Link, useLocation } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { useDriver } from '@/hooks/useDrivers';
 import DriverFolders from '@/components/DriverFolders';
 import { useDriverDocuments } from '@/hooks/useDriverDocuments';
@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogClose, DialogTitle } from '@/components/ui/dialog';
 import {
-  ArrowRight, User, CreditCard, Phone, Mail, MapPin, Briefcase, Car, Edit, Shield, FileText, X, Eye, ExternalLink
+  ArrowRight, User, CreditCard, Phone, Briefcase, Car, Edit, FileText, X, Eye, ExternalLink
 } from 'lucide-react';
 import type { ComplianceStatus, DriverDocument } from '@/types/fleet';
 
@@ -83,9 +83,9 @@ function FileCard({ title, src, onClick }: { title: string; src: string; onClick
 
 function InfoRow({ label, value, dir }: { label: string; value: string; dir?: 'ltr' }) {
   return (
-    <div className="flex items-center justify-between py-1.5 border-b border-border/30 last:border-0">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className="text-sm font-medium text-foreground" dir={dir}>{value}</span>
+    <div className="flex items-center justify-between py-2 border-b border-border/30 last:border-0">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="text-base font-medium text-foreground" dir={dir}>{value}</span>
     </div>
   );
 }
@@ -96,18 +96,15 @@ function CompInfoRow({ label, date }: { label: string; date: string }) {
   const daysLeft = Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
   const color = daysLeft < 0 ? 'text-red-400' : daysLeft <= 30 ? 'text-amber-400' : 'text-emerald-400';
   return (
-    <div className="flex items-center justify-between py-1.5 border-b border-border/30 last:border-0">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className={`text-sm font-medium ${color}`}>{d.toLocaleDateString('he-IL')}</span>
+    <div className="flex items-center justify-between py-2 border-b border-border/30 last:border-0">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className={`text-base font-semibold ${color}`}>{d.toLocaleDateString('he-IL')}</span>
     </div>
   );
 }
 
 export default function DriverDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const location = useLocation();
-  const section = location.hash.replace('#', '') || 'overview';
-  const isDriverFolders = section === 'driver-folders';
   const { data: driver, isLoading } = useDriver(id || '');
   const { data: dbDocuments } = useDriverDocuments(id || '');
   const { data: activeAssignments } = useActiveDriverVehicleAssignments();
@@ -196,6 +193,7 @@ export default function DriverDetailPage() {
   }
 
   const allDocuments: DriverDocument[] = [...dbDocs, ...legacyDocs];
+  void allDocuments; // available for future use (e.g. document folder)
 
   return (
     <div className="min-h-screen bg-[#020617] text-white">
@@ -216,87 +214,67 @@ export default function DriverDetailPage() {
         </div>
       </header>
 
-      {/* Tab navigation */}
-      <div className="sticky top-[65px] z-10 bg-card border-b border-border">
-        <div className="container">
-          <nav className="flex gap-1 overflow-x-auto" aria-label="סעיפי נהג">
-            {[
-              { label: 'סקירה', hash: '' },
-              { label: 'תיקיות ניהול', hash: '#driver-folders' },
-            ].map(({ label, hash }) => {
-              const active = hash === '' ? (!section || section === 'overview') : section === hash.slice(1);
-              return (
-                <Link
-                  key={hash}
-                  to={`/drivers/${driver.id}${hash}`}
-                  className={`whitespace-nowrap px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                    active
-                      ? 'border-primary text-primary'
-                      : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
-                  }`}
-                >
-                  {label}
-                </Link>
-              );
-            })}
-          </nav>
-        </div>
-      </div>
-
-      <main className="container py-6 space-y-4">
-        {/* Folders view */}
-        {isDriverFolders && <DriverFolders driver={driver} />}
-
-        {!isDriverFolders && (
-          <>
-            {/* ── Hero card ─────────────────────────────────────── */}
-            <Card className="overflow-hidden">
-              <div className="h-1.5 bg-gradient-to-l from-primary via-accent/50 to-primary/20" />
-              <CardContent className="p-5">
-                <div className="flex items-start gap-5">
-                  {/* Avatar */}
-                  <div className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl text-xl font-bold text-white shadow-lg ${
-                    license.status === 'expired' ? 'bg-red-600' : license.status === 'warning' ? 'bg-amber-600' : 'bg-emerald-600'
-                  }`}>
-                    {driver.full_name.trim().slice(0, 2)}
+      <main className="container py-6 space-y-5">
+        {/* ── Hero card ─────────────────────────────────────── */}
+        <Card className="overflow-hidden">
+          <div className="h-1.5 bg-gradient-to-l from-primary via-accent/50 to-primary/20" />
+          <CardContent className="p-5">
+            <div className="flex items-stretch gap-5">
+              {/* RIGHT: avatar + name + info */}
+              <div className="flex flex-1 items-start gap-4 min-w-0">
+                <div className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl text-xl font-bold text-white shadow-lg ${
+                  license.status === 'expired' ? 'bg-red-600' : license.status === 'warning' ? 'bg-amber-600' : 'bg-emerald-600'
+                }`}>
+                  {driver.full_name.trim().slice(0, 2)}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-3xl font-bold text-foreground">{driver.full_name}</h2>
+                    <StatusBadge status={license.status} daysLeft={license.daysLeft} />
+                    {!driver.is_active && (
+                      <span className="rounded-full bg-muted px-2.5 py-0.5 text-sm text-muted-foreground border border-border">לא פעיל</span>
+                    )}
                   </div>
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="text-2xl font-bold text-foreground">{driver.full_name}</h2>
-                      <StatusBadge status={license.status} daysLeft={license.daysLeft} />
-                      {!driver.is_active && (
-                        <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs text-muted-foreground border border-border">לא פעיל</span>
-                      )}
-                    </div>
-                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-muted-foreground">
-                      <span>ת.ז. {driver.id_number}</span>
-                      {driver.driver_code && <span>קוד: {driver.driver_code}</span>}
-                      {driver.employee_number && <span>מ. עובד: {driver.employee_number}</span>}
-                      {driver.job_title && <span>{driver.job_title}</span>}
-                      {driver.department && <span>{driver.department}</span>}
-                    </div>
-                    {/* Assigned vehicles chips */}
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {assignedVehicles.length > 0 ? (
-                        assignedVehicles.map((v) => (
-                          <Link
-                            key={v.id}
-                            to={`/vehicles/${v.id}`}
-                            className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary px-3 py-1 text-xs hover:bg-primary/20 transition-colors"
-                          >
-                            <Car className="h-3 w-3" />
-                            {v.manufacturer} {v.model} · {v.plate_number}
-                          </Link>
-                        ))
-                      ) : (
-                        <span className="text-xs text-muted-foreground">אין רכב משויך</span>
-                      )}
-                    </div>
+                  <div className="mt-1.5 flex flex-wrap gap-x-5 gap-y-1 text-base text-muted-foreground">
+                    <span>ת.ז. {driver.id_number}</span>
+                    {driver.driver_code && <span>קוד: {driver.driver_code}</span>}
+                    {driver.employee_number && <span>מ. עובד: {driver.employee_number}</span>}
+                    {driver.job_title && <span>{driver.job_title}</span>}
+                    {driver.department && <span>{driver.department}</span>}
                   </div>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+
+              {/* Divider */}
+              <div className="w-px bg-border" />
+
+              {/* LEFT: vehicle */}
+              <div className="flex flex-col justify-center gap-2 min-w-[200px]">
+                <p className="text-sm font-semibold text-muted-foreground mb-1">רכב משויך</p>
+                {assignedVehicles.length > 0 ? (
+                  assignedVehicles.map((v) => (
+                    <Link
+                      key={v.id}
+                      to={`/vehicles/${v.id}`}
+                      className="flex items-center gap-2 rounded-xl bg-primary/10 border border-primary/20 text-primary px-4 py-2.5 text-base font-semibold hover:bg-primary/20 transition-colors"
+                    >
+                      <Car className="h-5 w-5 shrink-0" />
+                      <span>{v.manufacturer} {v.model}</span>
+                      <span className="text-sm font-normal text-muted-foreground">({v.plate_number})</span>
+                    </Link>
+                  ))
+                ) : (
+                  <span className="text-base text-muted-foreground">אין רכב משויך</span>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* ── Folders (always visible) ────────────────────── */}
+        <DriverFolders driver={driver} />
+
+        <>
 
             {/* ── Two-column grid ───────────────────────────────── */}
             <div className="grid gap-4 md:grid-cols-2">
@@ -310,7 +288,7 @@ export default function DriverDetailPage() {
                       <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-sky-500/10">
                         <User className="h-4 w-4 text-sky-400" />
                       </div>
-                      <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">פרטים אישיים</CardTitle>
+                      <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">פרטים אישיים</CardTitle>
                     </div>
                   </CardHeader>
                   <CardContent className="px-4 pb-4 pt-0">
@@ -333,7 +311,7 @@ export default function DriverDetailPage() {
                       <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-cyan-500/10">
                         <Phone className="h-4 w-4 text-cyan-400" />
                       </div>
-                      <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">פרטי קשר</CardTitle>
+                      <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">פרטי קשר</CardTitle>
                     </div>
                   </CardHeader>
                   <CardContent className="px-4 pb-4 pt-0">
@@ -357,7 +335,7 @@ export default function DriverDetailPage() {
                       <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-purple-500/10">
                         <Briefcase className="h-4 w-4 text-purple-400" />
                       </div>
-                      <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">פרטי העסקה</CardTitle>
+                      <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">פרטי העסקה</CardTitle>
                     </div>
                   </CardHeader>
                   <CardContent className="px-4 pb-4 pt-0">
@@ -386,21 +364,21 @@ export default function DriverDetailPage() {
                       <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-amber-500/10">
                         <CreditCard className="h-4 w-4 text-amber-400" />
                       </div>
-                      <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">רישיונות ותאימות</CardTitle>
+                      <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">רישיונות ותאימות</CardTitle>
                     </div>
                   </CardHeader>
                   <CardContent className="px-4 pb-4 pt-0">
                     {/* License — main row with status badge */}
-                    <div className="flex items-center justify-between py-1.5 border-b border-border/30">
+                    <div className="flex items-center justify-between py-2 border-b border-border/30">
                       <div>
-                        <p className="text-sm font-medium">רישיון נהיגה</p>
+                        <p className="text-base font-semibold">רישיון נהיגה</p>
                         {driver.license_number && (
-                          <p className="text-xs text-muted-foreground">מס' {driver.license_number}</p>
+                          <p className="text-sm text-muted-foreground">מס' {driver.license_number}</p>
                         )}
                       </div>
                       <div className="text-left space-y-0.5">
                         <StatusBadge status={license.status} daysLeft={license.daysLeft} />
-                        <p className="text-xs text-muted-foreground">{new Date(driver.license_expiry).toLocaleDateString('he-IL')}</p>
+                        <p className="text-sm text-muted-foreground">{new Date(driver.license_expiry).toLocaleDateString('he-IL')}</p>
                       </div>
                     </div>
                     {driver.health_declaration_date && (
@@ -430,31 +408,7 @@ export default function DriverDetailPage() {
               </div>
             </div>
 
-            {/* ── Scanned Documents ─────────────────────────────── */}
-            {allDocuments.length > 0 && (
-              <Card>
-                <CardHeader className="pb-2 pt-4 px-4">
-                  <div className="flex items-center gap-2">
-                    <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-blue-500/10">
-                      <FileText className="h-4 w-4 text-blue-400" />
-                    </div>
-                    <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">מסמכים סרוקים</CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent className="px-4 pb-4 pt-0 grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {allDocuments.map((doc) => (
-                    <FileCard
-                      key={doc.id}
-                      title={doc.title}
-                      src={getDocumentUrl(doc.file_url)!}
-                      onClick={() => setSelectedImage({ src: getDocumentUrl(doc.file_url)!, title: doc.title })}
-                    />
-                  ))}
-                </CardContent>
-              </Card>
-            )}
-          </>
-        )}
+        </>
       </main>
 
       <Dialog open={!!selectedImage} onOpenChange={(open) => !open && setSelectedImage(null)}>
