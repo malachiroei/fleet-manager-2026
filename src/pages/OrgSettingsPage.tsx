@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useOrgSettings, useUpdateOrgSettings, uploadTemplatePdf } from '@/hooks/useOrgSettings';
-import { useUiLabels, useUpdateUiLabels } from '@/hooks/useUiLabels';
+import { useUiLabels, useUpdateUiLabels, UiLabel } from '@/hooks/useUiLabels';
 import {
   useOrgDocumentsAdmin, useCreateOrgDocument,
   useUpdateOrgDocument, useDeleteOrgDocument,
@@ -381,12 +381,12 @@ export default function OrgSettingsPage() {
                       </div>
                       {/* Group items */}
                       {Object.entries(
-                        (labels ?? []).reduce<Record<string, typeof labels>>((acc, lbl) => {
+                        (labels ?? []).reduce<Record<string, UiLabel[]>>((acc, lbl) => {
                           const g = lbl.group_name || 'כללי';
                           if (!acc[g]) acc[g] = [];
                           acc[g].push(lbl);
                           return acc;
-                        }, {} as Record<string, NonNullable<typeof labels>>)
+                        }, {})
                       ).map(([groupName, items]) => (
                         <div key={groupName} className="space-y-1">
                           <h3 className="text-xs font-bold text-foreground/50 uppercase tracking-widest px-1 mb-2">{groupName}</h3>
