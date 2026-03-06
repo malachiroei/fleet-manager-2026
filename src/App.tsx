@@ -28,6 +28,7 @@ import NotFound from "./pages/NotFound";
 import ScanReportPage from "./pages/ScanReportPage";
 import ReportsPage from "./pages/ReportsPage";
 import VehicleHandoverWizard from './pages/VehicleHandoverWizard';
+import TransfersPage from './pages/TransfersPage';
 import { ThemeProvider } from '@/hooks/useTheme';
 const queryClient = new QueryClient();
 
@@ -84,6 +85,7 @@ function AppRoutes() {
       <Route path="/compliance" element={<ProtectedRoute><CompliancePage /></ProtectedRoute>} />
       <Route path="/procedure6-complaints" element={<ProtectedRoute><Procedure6ComplaintsPage /></ProtectedRoute>} />
       <Route path="/maintenance/add" element={<ProtectedRoute><AddMaintenancePage /></ProtectedRoute>} />
+      <Route path="/vehicles/transfers" element={<ProtectedRoute><TransfersPage /></ProtectedRoute>} />
       <Route path="/handover/delivery" element={<ProtectedRoute><VehicleDeliveryPage /></ProtectedRoute>} />
       <Route path="/handover/return" element={<ProtectedRoute><VehicleReturnPage /></ProtectedRoute>} />
       <Route path="/handover/wizard" element={<ProtectedRoute><VehicleHandoverWizard /></ProtectedRoute>} />

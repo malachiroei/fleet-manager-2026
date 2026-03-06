@@ -19,6 +19,7 @@ export const DEFAULT_UI_LABELS: Omit<UiLabel, 'id' | 'updated_at'>[] = [
   { key: 'nav.home',             default_label: 'בית',               custom_label: '', is_visible: true, group_name: 'ניווט ראשי' },
   { key: 'nav.vehicles',         default_label: 'רכבים',             custom_label: '', is_visible: true, group_name: 'רכבים' },
   { key: 'nav.fleet_management', default_label: 'ניהול צי רכבים',   custom_label: '', is_visible: true, group_name: 'רכבים' },
+  { key: 'nav.transfers',        default_label: 'העברות',             custom_label: '', is_visible: true, group_name: 'רכבים' },
   { key: 'nav.vehicle_delivery', default_label: 'מסירת רכב',        custom_label: '', is_visible: true, group_name: 'רכבים' },
   { key: 'nav.compliance',       default_label: 'התראות חריגה',      custom_label: '', is_visible: true, group_name: 'רכבים' },
   { key: 'nav.drivers',          default_label: 'נהגים',             custom_label: '', is_visible: true, group_name: 'תפעולי' },

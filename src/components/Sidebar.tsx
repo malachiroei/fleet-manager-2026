@@ -13,6 +13,7 @@ import {
   BarChart3,
   Calculator,
   Droplet,
+  ArrowLeftRight,
   ChevronRight
 } from 'lucide-react';
 import { useLabel, useIsVisible } from '@/hooks/useUiLabels';
@@ -47,6 +48,7 @@ export function Sidebar() {
       titleKey: 'navigation.vehicles',
       items: [
         { title: t('navigation.fleetManagement'), titleKey: 'navigation.fleetManagement', uiKey: 'nav.fleet_management', href: '/vehicles', icon: Car },
+        { title: 'העברות', titleKey: 'navigation.transfers', uiKey: 'nav.transfers', href: '/vehicles/transfers', icon: ArrowLeftRight },
         { title: t('navigation.vehicleDelivery'), titleKey: 'navigation.vehicleDelivery', uiKey: 'nav.vehicle_delivery', href: '/handover/delivery', icon: Truck },
         { title: t('navigation.exceptionAlerts'), titleKey: 'navigation.exceptionAlerts', uiKey: 'nav.compliance', href: '/compliance', icon: AlertTriangle },
       ],
