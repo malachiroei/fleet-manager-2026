@@ -163,9 +163,6 @@ export default function DriverListPage() {
     d.phone?.includes(search)
   );
 
-  const _assignDriver = assignDriver; // kept for potential future use
-  void user; void _assignDriver;
-
   return (
     <div className="container py-6 space-y-6">
       {/* Header */}
