@@ -83,25 +83,6 @@ function DriverCard({
       <Card className="card-hover border border-border hover:border-primary/40 transition-all cursor-pointer">
         <CardContent className="p-0">
           <div className="flex items-stretch">
-            {/* LEFT — vehicle */}
-            <div className="flex flex-col justify-center gap-2 px-5 py-4 min-w-[220px] border-r border-border bg-muted/20">
-              <p className="text-xs text-muted-foreground mb-0.5">רכב משויך</p>
-              {assignedVehicles.length > 0 ? (
-                assignedVehicles.map((v) => (
-                  <div key={v.id} className="flex items-center gap-2 rounded-xl bg-primary/10 border border-primary/20 text-primary px-3 py-2 text-sm font-semibold">
-                    <Car className="h-4 w-4 shrink-0" />
-                    <span>{v.manufacturer} {v.model}</span>
-                    <span className="text-xs font-normal text-muted-foreground">({v.plate_number})</span>
-                  </div>
-                ))
-              ) : (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Car className="h-4 w-4" />
-                  <span>אין רכב משויך</span>
-                </div>
-              )}
-            </div>
-
             {/* RIGHT — driver info */}
             <div className="flex flex-1 items-center justify-between gap-4 px-5 py-4">
               <div className="flex items-center gap-4">
@@ -141,6 +122,25 @@ function DriverCard({
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* LEFT — vehicle */}
+            <div className="flex flex-col justify-center gap-2 px-5 py-4 min-w-[220px] border-l border-border bg-muted/20">
+              <p className="text-xs text-muted-foreground mb-0.5">רכב משויך</p>
+              {assignedVehicles.length > 0 ? (
+                assignedVehicles.map((v) => (
+                  <div key={v.id} className="flex items-center gap-2 rounded-xl bg-primary/10 border border-primary/20 text-primary px-3 py-2 text-sm font-semibold">
+                    <Car className="h-4 w-4 shrink-0" />
+                    <span>{v.manufacturer} {v.model}</span>
+                    <span className="text-xs font-normal text-muted-foreground">({v.plate_number})</span>
+                  </div>
+                ))
+              ) : (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Car className="h-4 w-4" />
+                  <span>אין רכב משויך</span>
+                </div>
+              )}
             </div>
           </div>
         </CardContent>
