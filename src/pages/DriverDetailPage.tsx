@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useLocation } from 'react-router-dom';
 import { useDriver } from '@/hooks/useDrivers';
+import DriverFolders from '@/components/DriverFolders';
 import { useDriverDocuments } from '@/hooks/useDriverDocuments';
 import { useActiveDriverVehicleAssignments } from '@/hooks/useVehicles';
 import { Button } from '@/components/ui/button';
@@ -82,6 +83,9 @@ function FileCard({ title, src, onClick }: { title: string; src: string; onClick
 
 export default function DriverDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
+  const section = location.hash.replace('#', '') || 'overview';
+  const isDriverFolders = section === 'driver-folders';
   const { data: driver, isLoading } = useDriver(id || '');
   const { data: dbDocuments } = useDriverDocuments(id || '');
   const { data: activeAssignments } = useActiveDriverVehicleAssignments();
@@ -190,9 +194,39 @@ export default function DriverDetailPage() {
         </div>
       </header>
 
+      {/* Tab navigation */}
+      <div className="sticky top-[65px] z-10 bg-card border-b border-border">
+        <div className="container">
+          <nav className="flex gap-1 overflow-x-auto" aria-label="סעיפי נהג">
+            {[
+              { label: 'סקירה', hash: '' },
+              { label: 'תיקיות ניהול', hash: '#driver-folders' },
+            ].map(({ label, hash }) => {
+              const active = hash === '' ? (!section || section === 'overview') : section === hash.slice(1);
+              return (
+                <Link
+                  key={hash}
+                  to={`/drivers/${driver.id}${hash}`}
+                  className={`whitespace-nowrap px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                    active
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
+                  }`}
+                >
+                  {label}
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
+      </div>
+
       <main className="container py-6 space-y-4">
+        {/* Driver Folders */}
+        {isDriverFolders && <DriverFolders driver={driver} />}
+
         {/* Contact Info */}
-        <Card>
+        {!isDriverFolders && {!isDriverFolders && <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent/10">
@@ -224,10 +258,10 @@ export default function DriverDetailPage() {
               <p className="text-muted-foreground">לא הוזנו פרטי קשר</p>
             )}
           </CardContent>
-        </Card>
+        </Card>}
 
         {/* Professional */}
-        {(driver.job_title || driver.department) && (
+        {!isDriverFolders && (driver.job_title || driver.department) && (
           <Card>
             <CardHeader>
               <div className="flex items-center gap-3">
@@ -245,7 +279,7 @@ export default function DriverDetailPage() {
         )}
 
         {/* License & Compliance */}
-        <Card>
+        {!isDriverFolders && <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10">
@@ -291,12 +325,51 @@ export default function DriverDetailPage() {
                 </div>
               </div>
             )}
+            {driver.birth_date && (
+              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                <div>
+                  <p className="font-medium">תאריך לידה</p>
+                  <p className="text-sm text-muted-foreground">{new Date(driver.birth_date).toLocaleDateString('he-IL')}</p>
+                </div>
+              </div>
+            )}
+            {driver.family_permit_date && (
+              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                <div>
+                  <p className="font-medium">היתר בני משפחה</p>
+                  <p className="text-sm text-muted-foreground">{new Date(driver.family_permit_date).toLocaleDateString('he-IL')}</p>
+                </div>
+              </div>
+            )}
+            {driver.driving_permit && (
+              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                <div>
+                  <p className="font-medium">היתר נהיגה</p>
+                  <p className="text-sm text-muted-foreground">{driver.driving_permit}</p>
+                </div>
+              </div>
+            )}
+            {driver.is_field_person && (
+              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                <div>
+                  <p className="font-medium">איש שטח</p>
+                  <p className="text-sm text-muted-foreground">כן</p>
+                </div>
+              </div>
+            )}
+            {driver.practical_driving_test_date && (
+              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                <div>
+                  <p className="font-medium">מבחן מעשי בנהיגה</p>
+                  <p className="text-sm text-muted-foreground">{new Date(driver.practical_driving_test_date).toLocaleDateString('he-IL')}</p>
+                </div>
+              </div>
+            )}
           </CardContent>
-        </Card>
+        </Card>}
 
         {/* Scanned Documents */}
-        {/* Scanned Documents */}
-        {allDocuments.length > 0 && (
+        {!isDriverFolders && allDocuments.length > 0 && (
           <Card>
             <CardHeader>
               <div className="flex items-center gap-3">
@@ -320,7 +393,7 @@ export default function DriverDetailPage() {
         )}
 
         {/* Assigned Vehicles */}
-        <Card>
+        {!isDriverFolders && <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-500/10">
@@ -350,7 +423,7 @@ export default function DriverDetailPage() {
               <p className="text-muted-foreground">אין רכבים מוקצים</p>
             )}
           </CardContent>
-        </Card>
+        </Card>}
       </main>
 
       <Dialog open={!!selectedImage} onOpenChange={(open) => !open && setSelectedImage(null)}>

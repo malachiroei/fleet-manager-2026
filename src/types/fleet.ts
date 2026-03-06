@@ -127,6 +127,12 @@ export interface Driver {
   group_name: string | null;
   group_code: string | null;
   documents?: DriverDocument[];
+  // Driver folder fields
+  birth_date: string | null;
+  family_permit_date: string | null;
+  driving_permit: string | null;
+  is_field_person: boolean;
+  practical_driving_test_date: string | null;
 }
 
 export interface DriverSummary {
