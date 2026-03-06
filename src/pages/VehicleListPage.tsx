@@ -5,16 +5,22 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Plus, Search } from 'lucide-react';
 
+function fmtDate(d: string | null): string {
+  if (!d) return '—';
+  const dt = new Date(d);
+  return `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}/${dt.getFullYear()}`;
+}
+
 function VehicleCard({ vehicle }: { vehicle: any }) {
   return (
     <div className="audi-premium-card p-4 md:p-8">
       <div className="mb-2 text-lg md:text-2xl font-black neon-title uppercase">
         {vehicle.manufacturer} {vehicle.model}
       </div>
-      <div className="mb-4 md:mb-8 text-4xl md:text-6xl font-black tracking-[0.15em] md:tracking-[0.2em] text-cyan-400 text-center drop-shadow-[0_0_15px_rgba(34,211,238,0.5)]">
+      <div className="mb-4 text-2xl md:text-4xl font-black tracking-[0.1em] md:tracking-[0.15em] text-cyan-400 text-center drop-shadow-[0_0_10px_rgba(34,211,238,0.4)]">
         {vehicle.plate_number}
       </div>
-      <div className="grid grid-cols-3 gap-2 md:gap-4 mb-4 md:mb-8">
+      <div className="grid grid-cols-3 gap-2 md:gap-4 mb-3">
         <div className="bg-white/5 rounded-xl md:rounded-2xl p-2 md:p-4 flex flex-col items-center border border-white/10">
           <span className="white-data text-base md:text-2xl tabular-nums" dir="ltr">{vehicle.current_odometer.toLocaleString()}</span>
           <span className="data-label-glow text-xs">ק"מ</span>
@@ -26,6 +32,20 @@ function VehicleCard({ vehicle }: { vehicle: any }) {
         <div className="bg-white/5 rounded-xl md:rounded-2xl p-2 md:p-4 flex flex-col items-center border border-white/10">
           <span className="white-data text-sm md:text-lg text-center leading-tight">{vehicle.ownership_type ?? '—'}</span>
           <span className="data-label-glow text-xs">בעלות</span>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-2 mb-4">
+        <div className="bg-white/5 rounded-xl p-2 flex flex-col items-center border border-white/10">
+          <span className="white-data text-xs md:text-sm tabular-nums" dir="ltr">{fmtDate(vehicle.created_at)}</span>
+          <span className="data-label-glow text-xs">תאריך הקמה</span>
+        </div>
+        <div className="bg-white/5 rounded-xl p-2 flex flex-col items-center border border-cyan-500/20">
+          <span className="text-cyan-300 text-xs md:text-sm font-bold tabular-nums" dir="ltr">{fmtDate(vehicle.purchase_date)}</span>
+          <span className="data-label-glow text-xs">תחילת עסקה</span>
+        </div>
+        <div className="bg-white/5 rounded-xl p-2 flex flex-col items-center border border-orange-500/20">
+          <span className="text-orange-300 text-xs md:text-sm font-bold tabular-nums" dir="ltr">{fmtDate(vehicle.sale_date)}</span>
+          <span className="data-label-glow text-xs">סיום עסקה</span>
         </div>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">

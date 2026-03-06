@@ -112,6 +112,8 @@ export default function EditVehiclePage() {
         ownership_type: formData.get('ownership_type') as string || null,
         leasing_company_name: formData.get('leasing_company_name') as string || null,
         pickup_date: formData.get('pickup_date') as string || null,
+        purchase_date: formData.get('purchase_date') as string || null,
+        sale_date: formData.get('sale_date') as string || null,
         // Operational costs fields
         tax_value_price: taxValuePrice
           ? parseFloat(taxValuePrice)
@@ -209,6 +211,14 @@ export default function EditVehiclePage() {
               <div>
                 <Label htmlFor="pickup_date">תאריך קליטה</Label>
                 <Input id="pickup_date" name="pickup_date" type="date" defaultValue={vehicle.pickup_date || ''} />
+              </div>
+              <div>
+                <Label htmlFor="purchase_date">תאריך קניה / תחילת עסקה</Label>
+                <Input id="purchase_date" name="purchase_date" type="date" defaultValue={(vehicle as any).purchase_date || ''} />
+              </div>
+              <div>
+                <Label htmlFor="sale_date">תאריך מכירה / סיום עסקה</Label>
+                <Input id="sale_date" name="sale_date" type="date" defaultValue={(vehicle as any).sale_date || ''} />
               </div>
             </CardContent>
           </Card>

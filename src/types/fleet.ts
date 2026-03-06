@@ -57,6 +57,7 @@ export interface Vehicle {
   chassis_number: string | null;
   average_fuel_consumption: number | null;
   monthly_total_cost: number | null;
+  purchase_date: string | null;
   sale_date: string | null;
   group_name: string | null;
   internal_number: string | null;
