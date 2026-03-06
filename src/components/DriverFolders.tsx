@@ -11,6 +11,7 @@ import {
 } from '@/hooks/useDriverFolders';
 import { useComplaints } from '@/hooks/useComplaints';
 import { useHandoverHistory } from '@/hooks/useHandovers';
+import { useDriverDocuments } from '@/hooks/useDriverDocuments';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,6 +28,9 @@ import {
   Users,
   ArrowLeftRight,
   MessageSquareWarning,
+  FileText,
+  ExternalLink,
+  Eye,
   Plus,
   Trash2,
   ChevronDown,
@@ -37,7 +41,7 @@ import type { Driver } from '@/types/fleet';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type FolderTab = 'events' | 'accidents' | 'complaints' | 'transfers' | 'family';
+type FolderTab = 'events' | 'accidents' | 'complaints' | 'transfers' | 'family' | 'documents';
 
 interface Props {
   driver: Driver;
@@ -692,6 +696,87 @@ function FamilyTab({ driver }: { driver: Driver }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
+// ─── Documents tab ───────────────────────────────────────────────────────────
+
+function DocumentsTab({ driver }: { driver: Driver }) {
+  const { data: docs = [], isLoading } = useDriverDocuments(driver.id);
+  const [lightbox, setLightbox] = useState<{ src: string; title: string } | null>(null);
+
+  const getUrl = (path: string | null): string | undefined => {
+    if (!path) return undefined;
+    if (path.startsWith('http') || path.startsWith('data:')) return path;
+    return path.replace('/src/assets/documents', 'http://localhost:3000/assets/documents');
+  };
+
+  const dbUrls = new Set(docs.map((d) => d.file_url));
+  const legacyDocs: { id: string; title: string; file_url: string }[] = [];
+  if ((driver as any).license_front_url && !dbUrls.has((driver as any).license_front_url))
+    legacyDocs.push({ id: 'leg-front', title: 'רישיון נהיגה (קדמי)', file_url: (driver as any).license_front_url });
+  if ((driver as any).license_back_url && !dbUrls.has((driver as any).license_back_url))
+    legacyDocs.push({ id: 'leg-back', title: 'רישיון נהיגה (אחורי)', file_url: (driver as any).license_back_url });
+  if ((driver as any).health_declaration_url && !dbUrls.has((driver as any).health_declaration_url))
+    legacyDocs.push({ id: 'leg-health', title: 'הצהרת בריאות', file_url: (driver as any).health_declaration_url });
+  const allDocs = [...docs, ...legacyDocs];
+
+  if (isLoading) return <p className="text-muted-foreground text-sm p-4">טוען...</p>;
+
+  if (allDocs.length === 0)
+    return (
+      <div className="text-center py-8 text-muted-foreground text-sm">
+        <FileText className="h-8 w-8 mx-auto mb-2 opacity-30" />
+        אין מסמכים לנהג זה
+      </div>
+    );
+
+  return (
+    <>
+      <p className="text-sm text-muted-foreground mb-3">{allDocs.length} מסמכים</p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {allDocs.map((doc) => {
+          const src = getUrl(doc.file_url);
+          if (!src) return null;
+          const isPdf = /\.pdf(\?|$)/i.test(src) || src.includes('/pdf') || src.includes('content-type=application%2Fpdf');
+          if (isPdf)
+            return (
+              <a key={doc.id} href={src} target="_blank" rel="noopener noreferrer"
+                className="group relative aspect-square rounded-lg border border-border bg-muted/30 overflow-hidden flex flex-col items-center justify-center gap-2 p-3 no-underline hover:shadow-md transition-all">
+                <FileText className="h-10 w-10 text-red-400" />
+                <p className="text-xs font-medium truncate text-center w-full text-foreground">{doc.title}</p>
+                <ExternalLink className="h-3.5 w-3.5 text-muted-foreground absolute top-2 left-2" />
+              </a>
+            );
+          return (
+            <div key={doc.id}
+              className="group relative aspect-square rounded-lg border border-border bg-muted/30 overflow-hidden cursor-pointer hover:shadow-md transition-all"
+              onClick={() => setLightbox({ src, title: doc.title })}>
+              <img src={src} alt={doc.title} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <Eye className="text-white h-8 w-8" />
+              </div>
+              <div className="absolute bottom-0 left-0 right-0 bg-black/60 p-2">
+                <p className="text-white text-xs font-medium truncate text-center">{doc.title}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {lightbox && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80" onClick={() => setLightbox(null)}>
+          <div className="relative max-w-4xl w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <button className="absolute top-2 right-2 bg-black/50 hover:bg-black/70 rounded-full p-2 text-white" onClick={() => setLightbox(null)}>
+              <X className="h-5 w-5" />
+            </button>
+            <img src={lightbox.src} alt={lightbox.title} className="max-h-[85vh] w-full object-contain rounded-lg" />
+            <p className="text-white text-center mt-2 font-medium">{lightbox.title}</p>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
 export default function DriverFolders({ driver }: Props) {
   const [activeTab, setActiveTab] = useState<FolderTab>('events');
 
@@ -701,6 +786,7 @@ export default function DriverFolders({ driver }: Props) {
     { id: 'complaints', label: 'תלונות נוהל 6', icon: MessageSquareWarning },
     { id: 'transfers', label: 'העברות', icon: ArrowLeftRight },
     { id: 'family', label: 'בני משפחה', icon: Users },
+    { id: 'documents', label: 'מסמכים', icon: FileText },
   ];
 
   return (
@@ -735,6 +821,7 @@ export default function DriverFolders({ driver }: Props) {
         {activeTab === 'complaints' && <ComplaintsTab driver={driver} />}
         {activeTab === 'transfers' && <TransfersTab driver={driver} />}
         {activeTab === 'family' && <FamilyTab driver={driver} />}
+        {activeTab === 'documents' && <DocumentsTab driver={driver} />}
       </CardContent>
     </Card>
   );

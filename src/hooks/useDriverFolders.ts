@@ -43,6 +43,7 @@ export function useDriverFamilyMembers(driverId: string) {
   return useQuery<DriverFamilyMember[]>({
     queryKey: ['driver-family-members', driverId],
     enabled: !!driverId,
+    staleTime: 1000 * 60 * 5,
     queryFn: async () => {
       const { data, error } = await (supabase as any)
         .from('driver_family_members')
@@ -84,6 +85,7 @@ export function useDriverIncidents(driverId: string, type?: DriverIncidentType) 
   return useQuery<DriverIncident[]>({
     queryKey: ['driver-incidents', driverId, type ?? 'all'],
     enabled: !!driverId,
+    staleTime: 1000 * 60 * 5,
     queryFn: async () => {
       let q = (supabase as any)
         .from('driver_incidents')

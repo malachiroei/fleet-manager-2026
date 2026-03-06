@@ -84,10 +84,11 @@ function DriverCard({
         <CardContent className="p-0">
           <div className="flex items-stretch">
             {/* LEFT — vehicle */}
-            <div className="flex flex-col justify-center gap-1.5 px-5 py-4 min-w-[200px] border-r border-border bg-muted/20">
+            <div className="flex flex-col justify-center gap-2 px-5 py-4 min-w-[220px] border-r border-border bg-muted/20">
+              <p className="text-xs text-muted-foreground mb-0.5">רכב משויך</p>
               {assignedVehicles.length > 0 ? (
                 assignedVehicles.map((v) => (
-                  <div key={v.id} className="flex items-center gap-2 text-sm font-semibold text-primary">
+                  <div key={v.id} className="flex items-center gap-2 rounded-xl bg-primary/10 border border-primary/20 text-primary px-3 py-2 text-sm font-semibold">
                     <Car className="h-4 w-4 shrink-0" />
                     <span>{v.manufacturer} {v.model}</span>
                     <span className="text-xs font-normal text-muted-foreground">({v.plate_number})</span>

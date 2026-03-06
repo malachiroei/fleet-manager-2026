@@ -110,10 +110,7 @@ export default function DriverDetailPage() {
   const { data: activeAssignments } = useActiveDriverVehicleAssignments();
   const [selectedImage, setSelectedImage] = useState<{ src: string; title: string } | null>(null);
 
-  const assignedVehicles = (activeAssignments ?? [])
-    .filter((assignment) => assignment.driver_id === id)
-    .map((assignment) => assignment.vehicle)
-    .filter((vehicle): vehicle is NonNullable<(typeof activeAssignments)[number]['vehicle']> => !!vehicle);
+  // assignedVehicles no longer used in hero (shown in list card instead)
 
   if (isLoading) {
     return (
@@ -245,34 +242,9 @@ export default function DriverDetailPage() {
                 </div>
               </div>
 
-              {/* Divider */}
-              <div className="w-px bg-border" />
-
-              {/* LEFT: vehicle */}
-              <div className="flex flex-col justify-center gap-2 min-w-[200px]">
-                <p className="text-sm font-semibold text-muted-foreground mb-1">רכב משויך</p>
-                {assignedVehicles.length > 0 ? (
-                  assignedVehicles.map((v) => (
-                    <Link
-                      key={v.id}
-                      to={`/vehicles/${v.id}`}
-                      className="flex items-center gap-2 rounded-xl bg-primary/10 border border-primary/20 text-primary px-4 py-2.5 text-base font-semibold hover:bg-primary/20 transition-colors"
-                    >
-                      <Car className="h-5 w-5 shrink-0" />
-                      <span>{v.manufacturer} {v.model}</span>
-                      <span className="text-sm font-normal text-muted-foreground">({v.plate_number})</span>
-                    </Link>
-                  ))
-                ) : (
-                  <span className="text-base text-muted-foreground">אין רכב משויך</span>
-                )}
-              </div>
             </div>
           </CardContent>
         </Card>
-
-        {/* ── Folders (always visible) ────────────────────── */}
-        <DriverFolders driver={driver} />
 
         <>
 
@@ -408,6 +380,8 @@ export default function DriverDetailPage() {
               </div>
             </div>
 
+            {/* ── Folders ───────────────────────────────────────── */}
+            <DriverFolders driver={driver} />
         </>
       </main>
 
