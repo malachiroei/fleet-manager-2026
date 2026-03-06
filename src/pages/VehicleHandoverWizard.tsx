@@ -1,8 +1,9 @@
-import { useState, useRef, useCallback, RefObject } from 'react';
+import { useState, useRef, useCallback, useEffect, RefObject } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useVehicles } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
 import { useCreateHandover, sendHandoverNotificationEmail, generateReceptionPDF, generateProcedurePDF, generateHealthDeclarationPDF } from '@/hooks/useHandovers';
+import { useOrgSettings, parsePolicyClauses, parseHealthItems } from '@/hooks/useOrgSettings';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import SignaturePad, { SignaturePadRef } from '@/components/SignaturePad';
@@ -262,7 +263,7 @@ function Step1({
 // Step 2 — Usage Procedure
 // ─────────────────────────────────────────────
 function Step2({
-  procedureRead, setProcedureRead, sigRef, onSign, vehicleLabel, driverName, date, containerRef,
+  procedureRead, setProcedureRead, sigRef, onSign, vehicleLabel, driverName, date, containerRef, clauses,
 }: {
   procedureRead: boolean;
   setProcedureRead: (v: boolean) => void;
@@ -272,6 +273,7 @@ function Step2({
   driverName: string;
   date: string;
   containerRef?: RefObject<HTMLDivElement>;
+  clauses: Array<{ id: number; text: string }>;
 }) {
   return (
     <div ref={containerRef} className="bg-white text-slate-900 rounded-2xl p-6 shadow-xl">
@@ -284,7 +286,7 @@ function Step2({
       />
 
       <div className="space-y-1 mb-6">
-        {PROCEDURE_CLAUSES.map(clause => (
+        {clauses.map(clause => (
           <div key={clause.id} className="flex gap-3 py-2 border-b border-slate-100 last:border-0">
             <span className="text-xs font-bold text-slate-400 mt-0.5 w-6 shrink-0 text-left">{clause.id}.</span>
             <p className="text-sm text-slate-700 leading-relaxed">{clause.text}</p>
@@ -305,7 +307,7 @@ function Step2({
           className="border-slate-400 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
         />
         <label htmlFor="proc-read" className="text-sm font-medium text-slate-700 cursor-pointer select-none">
-          קראתי את כל 21 הסעיפים ומסכים/ה לתנאים
+          קראתי את כל {clauses.length} הסעיפים ומסכים/ה לתנאים
         </label>
       </div>
 
@@ -577,6 +579,7 @@ export default function VehicleHandoverWizard() {
   const { data: vehicles } = useVehicles();
   const { data: drivers  } = useDrivers();
   const { user } = useAuth();
+  const { data: orgSettings } = useOrgSettings();
 
   const vehicleId  = searchParams.get('vehicleId')  ?? '';
   const driverId   = searchParams.get('driverId')   ?? '';
@@ -619,6 +622,19 @@ export default function VehicleHandoverWizard() {
   const [healthItems, setHealthItems] = useState<HealthDeclaration[]>(INITIAL_HEALTH);
   const [healthNotes, setHealthNotes] = useState('');
   const [sig3OK, setSig3OK] = useState(false);
+
+  // Derive effective clauses / health items from org settings, fall back to static defaults
+  const parsedClauses = parsePolicyClauses(orgSettings?.vehicle_policy_text);
+  const activeClauses = parsedClauses.length > 0 ? parsedClauses : PROCEDURE_CLAUSES;
+
+  useEffect(() => {
+    if (!orgSettings?.health_statement_text) return;
+    const parsed = parseHealthItems(orgSettings.health_statement_text);
+    if (parsed.length > 0) {
+      setHealthItems(prev => prev.every(p => !p.checked) ? parsed : prev);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgSettings?.health_statement_text]);
 
   const [licenseNumber, setLicenseNumber] = useState('');
   const [licenseExpiry, setLicenseExpiry] = useState('');
@@ -685,7 +701,7 @@ export default function VehicleHandoverWizard() {
     const [pdf1Blob, pdf2Blob, pdf3Blob] = await Promise.all([
       generateReceptionPDF({ vehicleLabel, driverName, date: today, accessories, signatureDataUrl: sig1DataUrl })
         .catch((e) => { console.error('[Wizard] PDF1 failed:', e); return null; }),
-      generateProcedurePDF({ vehicleLabel, driverName, date: today, clauses: PROCEDURE_CLAUSES, signatureDataUrl: sig2DataUrl })
+      generateProcedurePDF({ vehicleLabel, driverName, date: today, clauses: activeClauses, signatureDataUrl: sig2DataUrl })
         .catch((e) => { console.error('[Wizard] PDF2 failed:', e); return null; }),
       generateHealthDeclarationPDF({ vehicleLabel, driverName, date: today, healthItems, notes: healthNotes, signatureDataUrl: sig3DataUrl })
         .catch((e) => { console.error('[Wizard] PDF3 failed:', e); return null; }),
@@ -819,6 +835,7 @@ export default function VehicleHandoverWizard() {
             vehicleLabel={vehicleLabel}
             driverName={driverName}
             date={today}
+            clauses={activeClauses}
           />
         )}
         {step === 2 && (

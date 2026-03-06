@@ -14,6 +14,7 @@ import {
   Calculator,
   Droplet,
   Settings,
+  Building2,
   LogOut,
   ChevronRight
 } from 'lucide-react';
@@ -166,6 +167,20 @@ export function Sidebar() {
           >
             <Settings className="h-5 w-5" />
             {t('common.settings')}
+          </Button>
+        </Link>
+        <Link to="/admin/org-settings" className="block">
+          <Button
+            variant="ghost"
+            className={cn(
+              'w-full justify-start gap-3 transition-all duration-300',
+              location.pathname === '/admin/org-settings'
+                ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-400/40 shadow-[0_0_20px_rgba(0,255,255,0.3)]'
+                : 'text-white/70 hover:bg-cyan-500/10 hover:text-white hover:shadow-[0_0_20px_rgba(0,255,255,0.3)]'
+            )}
+          >
+            <Building2 className="h-5 w-5" />
+            הגדרות ארגון
           </Button>
         </Link>
         <Button
