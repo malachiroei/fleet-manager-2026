@@ -81,6 +81,28 @@ function FileCard({ title, src, onClick }: { title: string; src: string; onClick
   );
 }
 
+function InfoRow({ label, value, dir }: { label: string; value: string; dir?: 'ltr' }) {
+  return (
+    <div className="flex items-center justify-between py-1.5 border-b border-border/30 last:border-0">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="text-sm font-medium text-foreground" dir={dir}>{value}</span>
+    </div>
+  );
+}
+
+function CompInfoRow({ label, date }: { label: string; date: string }) {
+  const d = new Date(date);
+  const today = new Date();
+  const daysLeft = Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  const color = daysLeft < 0 ? 'text-red-400' : daysLeft <= 30 ? 'text-amber-400' : 'text-emerald-400';
+  return (
+    <div className="flex items-center justify-between py-1.5 border-b border-border/30 last:border-0">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className={`text-sm font-medium ${color}`}>{d.toLocaleDateString('he-IL')}</span>
+    </div>
+  );
+}
+
 export default function DriverDetailPage() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
@@ -222,208 +244,217 @@ export default function DriverDetailPage() {
       </div>
 
       <main className="container py-6 space-y-4">
-        {/* Driver Folders */}
+        {/* Folders view */}
         {isDriverFolders && <DriverFolders driver={driver} />}
 
-        {/* Contact Info */}
-        {!isDriverFolders && <Card>
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent/10">
-                <User className="h-5 w-5 text-accent" />
-              </div>
-              <CardTitle>פרטי קשר</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {driver.phone && (
-              <div className="flex items-center gap-3">
-                <Phone className="h-4 w-4 text-muted-foreground" />
-                <span dir="ltr">{driver.phone}</span>
-              </div>
-            )}
-            {driver.email && (
-              <div className="flex items-center gap-3">
-                <Mail className="h-4 w-4 text-muted-foreground" />
-                <span dir="ltr">{driver.email}</span>
-              </div>
-            )}
-            {driver.address && (
-              <div className="flex items-center gap-3">
-                <MapPin className="h-4 w-4 text-muted-foreground" />
-                <span>{driver.address}</span>
-              </div>
-            )}
-            {!driver.phone && !driver.email && !driver.address && (
-              <p className="text-muted-foreground">לא הוזנו פרטי קשר</p>
-            )}
-          </CardContent>
-        </Card>}
-
-        {/* Professional */}
-        {!isDriverFolders && (driver.job_title || driver.department) && (
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                  <Briefcase className="h-5 w-5 text-primary" />
-                </div>
-                <CardTitle>מידע מקצועי</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-4">
-              {driver.job_title && <div><p className="text-sm text-muted-foreground">תפקיד</p><p className="font-medium">{driver.job_title}</p></div>}
-              {driver.department && <div><p className="text-sm text-muted-foreground">מחלקה</p><p className="font-medium">{driver.department}</p></div>}
-            </CardContent>
-          </Card>
-        )}
-
-        {/* License & Compliance */}
-        {!isDriverFolders && <Card>
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10">
-                <CreditCard className="h-5 w-5 text-amber-600" />
-              </div>
-              <CardTitle>רישיון ותאימות</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-              <div>
-                <p className="font-medium">רישיון נהיגה</p>
-                <p className="text-sm text-muted-foreground">
-                  {new Date(driver.license_expiry).toLocaleDateString('he-IL')}
-                </p>
-              </div>
-              <StatusBadge status={license.status} daysLeft={license.daysLeft} />
-            </div>
-            {driver.license_number && (
-              <div className="text-sm"><span className="text-muted-foreground">מספר רישיון: </span>{driver.license_number}</div>
-            )}
-            {driver.health_declaration_date && (
-              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                <div>
-                  <p className="font-medium">הצהרת בריאות</p>
-                  <p className="text-sm text-muted-foreground">{new Date(driver.health_declaration_date).toLocaleDateString('he-IL')}</p>
-                </div>
-              </div>
-            )}
-            {driver.safety_training_date && (
-              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                <div>
-                  <p className="font-medium">הדרכת בטיחות</p>
-                  <p className="text-sm text-muted-foreground">{new Date(driver.safety_training_date).toLocaleDateString('he-IL')}</p>
-                </div>
-              </div>
-            )}
-            {driver.regulation_585b_date && (
-              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                <div>
-                  <p className="font-medium">תקנה 585ב'</p>
-                  <p className="text-sm text-muted-foreground">{new Date(driver.regulation_585b_date).toLocaleDateString('he-IL')}</p>
-                </div>
-              </div>
-            )}
-            {driver.birth_date && (
-              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                <div>
-                  <p className="font-medium">תאריך לידה</p>
-                  <p className="text-sm text-muted-foreground">{new Date(driver.birth_date).toLocaleDateString('he-IL')}</p>
-                </div>
-              </div>
-            )}
-            {driver.family_permit_date && (
-              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                <div>
-                  <p className="font-medium">היתר בני משפחה</p>
-                  <p className="text-sm text-muted-foreground">{new Date(driver.family_permit_date).toLocaleDateString('he-IL')}</p>
-                </div>
-              </div>
-            )}
-            {driver.driving_permit && (
-              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                <div>
-                  <p className="font-medium">היתר נהיגה</p>
-                  <p className="text-sm text-muted-foreground">{driver.driving_permit}</p>
-                </div>
-              </div>
-            )}
-            {driver.is_field_person && (
-              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                <div>
-                  <p className="font-medium">איש שטח</p>
-                  <p className="text-sm text-muted-foreground">כן</p>
-                </div>
-              </div>
-            )}
-            {driver.practical_driving_test_date && (
-              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                <div>
-                  <p className="font-medium">מבחן מעשי בנהיגה</p>
-                  <p className="text-sm text-muted-foreground">{new Date(driver.practical_driving_test_date).toLocaleDateString('he-IL')}</p>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>}
-
-        {/* Scanned Documents */}
-        {!isDriverFolders && allDocuments.length > 0 && (
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/10">
-                  <FileText className="h-5 w-5 text-blue-600" />
-                </div>
-                <CardTitle>מסמכים סרוקים</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {allDocuments.map((doc) => (
-                <FileCard
-                  key={doc.id}
-                  title={doc.title}
-                  src={getDocumentUrl(doc.file_url)!}
-                  onClick={() => setSelectedImage({ src: getDocumentUrl(doc.file_url)!, title: doc.title })}
-                />
-              ))}
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Assigned Vehicles */}
-        {!isDriverFolders && <Card>
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-500/10">
-                <Car className="h-5 w-5 text-green-600" />
-              </div>
-              <CardTitle>רכבים מוקצים</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {assignedVehicles.length > 0 ? (
-              <div className="space-y-2">
-                {assignedVehicles.map((vehicle) => (
-                  <Link
-                    key={vehicle.id}
-                    to={`/vehicles/${vehicle.id}`}
-                    className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg hover:bg-muted transition-colors"
-                  >
-                    <Car className="h-5 w-5 text-primary" />
-                    <div>
-                      <p className="font-medium">{vehicle.manufacturer} {vehicle.model}</p>
-                      <p className="text-sm text-muted-foreground">{vehicle.plate_number}</p>
+        {!isDriverFolders && (
+          <>
+            {/* ── Hero card ─────────────────────────────────────── */}
+            <Card className="overflow-hidden">
+              <div className="h-1.5 bg-gradient-to-l from-primary via-accent/50 to-primary/20" />
+              <CardContent className="p-5">
+                <div className="flex items-start gap-5">
+                  {/* Avatar */}
+                  <div className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl text-xl font-bold text-white shadow-lg ${
+                    license.status === 'expired' ? 'bg-red-600' : license.status === 'warning' ? 'bg-amber-600' : 'bg-emerald-600'
+                  }`}>
+                    {driver.full_name.trim().slice(0, 2)}
+                  </div>
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-2xl font-bold text-foreground">{driver.full_name}</h2>
+                      <StatusBadge status={license.status} daysLeft={license.daysLeft} />
+                      {!driver.is_active && (
+                        <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs text-muted-foreground border border-border">לא פעיל</span>
+                      )}
                     </div>
-                  </Link>
-                ))}
+                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-muted-foreground">
+                      <span>ת.ז. {driver.id_number}</span>
+                      {driver.driver_code && <span>קוד: {driver.driver_code}</span>}
+                      {driver.employee_number && <span>מ. עובד: {driver.employee_number}</span>}
+                      {driver.job_title && <span>{driver.job_title}</span>}
+                      {driver.department && <span>{driver.department}</span>}
+                    </div>
+                    {/* Assigned vehicles chips */}
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {assignedVehicles.length > 0 ? (
+                        assignedVehicles.map((v) => (
+                          <Link
+                            key={v.id}
+                            to={`/vehicles/${v.id}`}
+                            className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary px-3 py-1 text-xs hover:bg-primary/20 transition-colors"
+                          >
+                            <Car className="h-3 w-3" />
+                            {v.manufacturer} {v.model} · {v.plate_number}
+                          </Link>
+                        ))
+                      ) : (
+                        <span className="text-xs text-muted-foreground">אין רכב משויך</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* ── Two-column grid ───────────────────────────────── */}
+            <div className="grid gap-4 md:grid-cols-2">
+              {/* Left column */}
+              <div className="space-y-4">
+
+                {/* Personal details */}
+                <Card>
+                  <CardHeader className="pb-2 pt-4 px-4">
+                    <div className="flex items-center gap-2">
+                      <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-sky-500/10">
+                        <User className="h-4 w-4 text-sky-400" />
+                      </div>
+                      <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">פרטים אישיים</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4 pt-0">
+                    <InfoRow label="ת.ז." value={driver.id_number} />
+                    {driver.birth_date && (
+                      <InfoRow label="תאריך לידה" value={new Date(driver.birth_date).toLocaleDateString('he-IL')} />
+                    )}
+                    {driver.city && <InfoRow label="עיר" value={driver.city} />}
+                    {driver.address && <InfoRow label="כתובת" value={driver.address} />}
+                    {driver.note1 && <InfoRow label="הערה 1" value={driver.note1} />}
+                    {driver.note2 && <InfoRow label="הערה 2" value={driver.note2} />}
+                    {driver.rating && <InfoRow label="דירוג" value={driver.rating} />}
+                  </CardContent>
+                </Card>
+
+                {/* Contact */}
+                <Card>
+                  <CardHeader className="pb-2 pt-4 px-4">
+                    <div className="flex items-center gap-2">
+                      <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-cyan-500/10">
+                        <Phone className="h-4 w-4 text-cyan-400" />
+                      </div>
+                      <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">פרטי קשר</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4 pt-0">
+                    {driver.phone && <InfoRow label="טלפון" value={driver.phone} dir="ltr" />}
+                    {driver.email && <InfoRow label="מייל" value={driver.email} dir="ltr" />}
+                    {!driver.phone && !driver.email && (
+                      <p className="text-sm text-muted-foreground py-1">לא הוזנו פרטי קשר</p>
+                    )}
+                  </CardContent>
+                </Card>
+
               </div>
-            ) : (
-              <p className="text-muted-foreground">אין רכבים מוקצים</p>
+
+              {/* Right column */}
+              <div className="space-y-4">
+
+                {/* Employment */}
+                <Card>
+                  <CardHeader className="pb-2 pt-4 px-4">
+                    <div className="flex items-center gap-2">
+                      <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-purple-500/10">
+                        <Briefcase className="h-4 w-4 text-purple-400" />
+                      </div>
+                      <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">פרטי העסקה</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4 pt-0">
+                    {driver.employee_number && <InfoRow label="מ. עובד" value={driver.employee_number} />}
+                    {driver.driver_code && <InfoRow label="קוד נהג" value={driver.driver_code} />}
+                    {driver.job_title && <InfoRow label="תפקיד" value={driver.job_title} />}
+                    {driver.department && <InfoRow label="מחלקה" value={driver.department} />}
+                    {driver.division && <InfoRow label="מחוז" value={driver.division} />}
+                    {driver.area && <InfoRow label="אזור" value={driver.area} />}
+                    {driver.group_name && <InfoRow label="קבוצה" value={driver.group_name} />}
+                    {driver.group_code && <InfoRow label="קוד קבוצה" value={driver.group_code} />}
+                    {driver.eligibility && <InfoRow label="כשירות" value={driver.eligibility} />}
+                    {driver.work_start_date && (
+                      <InfoRow label="ת. תחילת עבודה" value={new Date(driver.work_start_date).toLocaleDateString('he-IL')} />
+                    )}
+                    {!driver.employee_number && !driver.job_title && !driver.department && (
+                      <p className="text-sm text-muted-foreground py-1">לא הוזנו פרטי העסקה</p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* License & Compliance */}
+                <Card>
+                  <CardHeader className="pb-2 pt-4 px-4">
+                    <div className="flex items-center gap-2">
+                      <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-amber-500/10">
+                        <CreditCard className="h-4 w-4 text-amber-400" />
+                      </div>
+                      <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">רישיונות ותאימות</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4 pt-0">
+                    {/* License — main row with status badge */}
+                    <div className="flex items-center justify-between py-1.5 border-b border-border/30">
+                      <div>
+                        <p className="text-sm font-medium">רישיון נהיגה</p>
+                        {driver.license_number && (
+                          <p className="text-xs text-muted-foreground">מס' {driver.license_number}</p>
+                        )}
+                      </div>
+                      <div className="text-left space-y-0.5">
+                        <StatusBadge status={license.status} daysLeft={license.daysLeft} />
+                        <p className="text-xs text-muted-foreground">{new Date(driver.license_expiry).toLocaleDateString('he-IL')}</p>
+                      </div>
+                    </div>
+                    {driver.health_declaration_date && (
+                      <CompInfoRow label="הצהרת בריאות" date={driver.health_declaration_date} />
+                    )}
+                    {driver.safety_training_date && (
+                      <CompInfoRow label="הדרכת בטיחות" date={driver.safety_training_date} />
+                    )}
+                    {driver.regulation_585b_date && (
+                      <CompInfoRow label="תקנה 585ב'" date={driver.regulation_585b_date} />
+                    )}
+                    {driver.practical_driving_test_date && (
+                      <CompInfoRow label="מבחן מעשי" date={driver.practical_driving_test_date} />
+                    )}
+                    {driver.family_permit_date && (
+                      <CompInfoRow label="היתר בני משפחה" date={driver.family_permit_date} />
+                    )}
+                    {driver.driving_permit && (
+                      <InfoRow label="היתר נהיגה" value={driver.driving_permit} />
+                    )}
+                    {driver.is_field_person && (
+                      <InfoRow label="איש שטח" value="כן" />
+                    )}
+                  </CardContent>
+                </Card>
+
+              </div>
+            </div>
+
+            {/* ── Scanned Documents ─────────────────────────────── */}
+            {allDocuments.length > 0 && (
+              <Card>
+                <CardHeader className="pb-2 pt-4 px-4">
+                  <div className="flex items-center gap-2">
+                    <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-blue-500/10">
+                      <FileText className="h-4 w-4 text-blue-400" />
+                    </div>
+                    <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">מסמכים סרוקים</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="px-4 pb-4 pt-0 grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {allDocuments.map((doc) => (
+                    <FileCard
+                      key={doc.id}
+                      title={doc.title}
+                      src={getDocumentUrl(doc.file_url)!}
+                      onClick={() => setSelectedImage({ src: getDocumentUrl(doc.file_url)!, title: doc.title })}
+                    />
+                  ))}
+                </CardContent>
+              </Card>
             )}
-          </CardContent>
-        </Card>}
+          </>
+        )}
       </main>
 
       <Dialog open={!!selectedImage} onOpenChange={(open) => !open && setSelectedImage(null)}>

@@ -51,6 +51,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react-swc": "^4.2.3",
-    "lovable-tagger": "^1.1.13"
+    "lovable-tagger": "^1.1.13",
+    "supabase": "^2.76.17"
   }
 }

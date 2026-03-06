@@ -135,7 +135,8 @@ function IncidentsTab({
     );
   };
 
-  const label = isAccident ? 'תאונה' : 'אירוע';
+  const labelSingle = isAccident ? 'תאונה' : 'אירוע';
+  const labelPlural = isAccident ? 'תאונות' : 'אירועים';
 
   if (isLoading) return <p className="text-muted-foreground text-sm p-4">טוען...</p>;
 
@@ -143,12 +144,11 @@ function IncidentsTab({
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          {incidents.length} {label}
-          {incidents.length !== 1 ? 'ות' : ''}
+          {incidents.length} {labelPlural}
         </p>
         <Button size="sm" variant="outline" onClick={() => setShowForm(!showForm)}>
           <Plus className="h-3.5 w-3.5 ml-1" />
-          הוסף {label}
+          הוסף {labelSingle}
         </Button>
       </div>
 
@@ -157,7 +157,7 @@ function IncidentsTab({
         <Card className="border-dashed border-primary/40 bg-primary/5">
           <CardContent className="p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium">{label} חדש/ה</p>
+              <p className="text-sm font-medium">{labelSingle} חדש/ה</p>
               <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setShowForm(false)}>
                 <X className="h-4 w-4" />
               </Button>
@@ -253,7 +253,7 @@ function IncidentsTab({
       {incidents.length === 0 && !showForm && (
         <div className="text-center py-8 text-muted-foreground text-sm">
           <AlertTriangle className="h-8 w-8 mx-auto mb-2 opacity-30" />
-          אין {label}ות רשומות
+          אין {labelPlural} רשומות
         </div>
       )}
 

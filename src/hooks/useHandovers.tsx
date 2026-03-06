@@ -498,6 +498,7 @@ export function useCreateHandover() {
 export function useHandoverHistory() {
   return useQuery({
     queryKey: ['handover-history'],
+    staleTime: 1000 * 60 * 5,
     queryFn: async () => {
       const { data: handoversData, error: handoversError } = await supabase
         .from('vehicle_handovers')
