@@ -8,10 +8,25 @@ export interface OrgSettings {
   admin_email: string;
   health_statement_text: string;
   vehicle_policy_text: string;
+  health_statement_pdf_url: string | null;
+  vehicle_policy_pdf_url: string | null;
   updated_at: string;
 }
 
 const QUERY_KEY = ['org-settings'] as const;
+const BUCKET = 'vehicle-documents';
+
+/** Upload a PDF template and return its public URL */
+export async function uploadTemplatePdf(file: File, slotName: 'health' | 'policy'): Promise<string> {
+  const ext = file.name.split('.').pop() ?? 'pdf';
+  const path = `org-templates/${slotName}_${Date.now()}.${ext}`;
+  const { error } = await supabase.storage
+    .from(BUCKET)
+    .upload(path, file, { upsert: true, contentType: file.type || 'application/pdf' });
+  if (error) throw error;
+  const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+  return data.publicUrl;
+}
 
 export function useOrgSettings() {
   return useQuery<OrgSettings | null>({

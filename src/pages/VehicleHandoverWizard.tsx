@@ -1,9 +1,10 @@
-import { useState, useRef, useCallback, useEffect, RefObject } from 'react';
+import React, { useState, useRef, useCallback, useEffect, RefObject } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useVehicles } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
 import { useCreateHandover, sendHandoverNotificationEmail, generateReceptionPDF, generateProcedurePDF, generateHealthDeclarationPDF } from '@/hooks/useHandovers';
 import { useOrgSettings, parsePolicyClauses, parseHealthItems } from '@/hooks/useOrgSettings';
+import { useOrgDocuments } from '@/hooks/useOrgDocuments';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import SignaturePad, { SignaturePadRef } from '@/components/SignaturePad';
@@ -263,7 +264,7 @@ function Step1({
 // Step 2 — Usage Procedure
 // ─────────────────────────────────────────────
 function Step2({
-  procedureRead, setProcedureRead, sigRef, onSign, vehicleLabel, driverName, date, containerRef, clauses,
+  procedureRead, setProcedureRead, sigRef, onSign, vehicleLabel, driverName, date, containerRef, clauses, pdfTemplateUrl,
 }: {
   procedureRead: boolean;
   setProcedureRead: (v: boolean) => void;
@@ -274,6 +275,7 @@ function Step2({
   date: string;
   containerRef?: RefObject<HTMLDivElement>;
   clauses: Array<{ id: number; text: string }>;
+  pdfTemplateUrl?: string | null;
 }) {
   return (
     <div ref={containerRef} className="bg-white text-slate-900 rounded-2xl p-6 shadow-xl">
@@ -285,14 +287,26 @@ function Step2({
         driverName={driverName}
       />
 
-      <div className="space-y-1 mb-6">
-        {clauses.map(clause => (
-          <div key={clause.id} className="flex gap-3 py-2 border-b border-slate-100 last:border-0">
-            <span className="text-xs font-bold text-slate-400 mt-0.5 w-6 shrink-0 text-left">{clause.id}.</span>
-            <p className="text-sm text-slate-700 leading-relaxed">{clause.text}</p>
-          </div>
-        ))}
-      </div>
+      {pdfTemplateUrl ? (
+        <div className="mb-6">
+          <iframe
+            src={pdfTemplateUrl}
+            className="w-full rounded-lg border border-slate-200"
+            style={{ minHeight: '420px' }}
+            title="נוהל שימוש ברכב"
+          />
+          <p className="text-xs text-slate-500 mt-2 text-center">גלול לקרוא את כל הנוהל לפני אישור</p>
+        </div>
+      ) : (
+        <div className="space-y-1 mb-6">
+          {clauses.map(clause => (
+            <div key={clause.id} className="flex gap-3 py-2 border-b border-slate-100 last:border-0">
+              <span className="text-xs font-bold text-slate-400 mt-0.5 w-6 shrink-0 text-left">{clause.id}.</span>
+              <p className="text-sm text-slate-700 leading-relaxed">{clause.text}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800 mb-4 flex gap-2">
         <Shield className="h-4 w-4 mt-0.5 shrink-0" />
@@ -320,7 +334,7 @@ function Step2({
 // Step 3 — Health Declaration
 // ─────────────────────────────────────────────
 function Step3({
-  healthItems, setHealthItems, notes, setNotes, sigRef, onSign, vehicleLabel, driverName, date, containerRef,
+  healthItems, setHealthItems, notes, setNotes, sigRef, onSign, vehicleLabel, driverName, date, containerRef, pdfTemplateUrl,
 }: {
   healthItems: HealthDeclaration[];
   setHealthItems: (h: HealthDeclaration[]) => void;
@@ -332,6 +346,7 @@ function Step3({
   driverName: string;
   date: string;
   containerRef?: RefObject<HTMLDivElement>;
+  pdfTemplateUrl?: string | null;
 }) {
   const toggle = (id: string) =>
     setHealthItems(healthItems.map(h => h.id === id ? { ...h, checked: !h.checked } : h));
@@ -354,44 +369,58 @@ function Step3({
         אני הח"מ מצהיר/ה כי מצב בריאותי מאפשר נהיגה בטוחה, וכי הפרטים הבאים נכונים:
       </p>
 
-      {/* Quick-select button */}
-      <div className="flex justify-end mb-2">
-        <button
-          type="button"
-          onClick={toggleAll}
-          className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
-            allChecked
-              ? 'bg-emerald-100 border-emerald-400 text-emerald-700 hover:bg-emerald-200'
-              : 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700'
-          }`}
-        >
-          {allChecked ? '✔ כל הסעיפים אושרו' : 'אני מצהיר כי כל הסעיפים תקינים'}
-        </button>
-      </div>
-
-      <div className="space-y-3 mb-6">
-        {healthItems.map((item, i) => (
-          <div
-            key={item.id}
-            onClick={() => toggle(item.id)}
-            className={`flex gap-3 p-3 rounded-lg border cursor-pointer transition-colors select-none ${
-              item.checked
-                ? 'bg-emerald-50 border-emerald-300'
-                : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
-            }`}
-          >
-            <div className="mt-0.5 shrink-0">
-              {item.checked
-                ? <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                : <div className="h-5 w-5 rounded-full border-2 border-slate-300" />
-              }
-            </div>
-            <p className="text-sm text-slate-700 leading-relaxed">
-              <span className="font-bold text-slate-400 ml-1">{i + 1}.</span> {item.text}
-            </p>
+      {pdfTemplateUrl ? (
+        <div className="mb-6">
+          <iframe
+            src={pdfTemplateUrl}
+            className="w-full rounded-lg border border-slate-200"
+            style={{ minHeight: '420px' }}
+            title="הצהרת בריאות"
+          />
+          <p className="text-xs text-slate-500 mt-2 text-center">קרא את ההצהרה ולאחר מכן חתום למטה</p>
+        </div>
+      ) : (
+        <>
+          {/* Quick-select button */}
+          <div className="flex justify-end mb-2">
+            <button
+              type="button"
+              onClick={toggleAll}
+              className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
+                allChecked
+                  ? 'bg-emerald-100 border-emerald-400 text-emerald-700 hover:bg-emerald-200'
+                  : 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700'
+              }`}
+            >
+              {allChecked ? '✔ כל הסעיפים אושרו' : 'אני מצהיר כי כל הסעיפים תקינים'}
+            </button>
           </div>
-        ))}
-      </div>
+
+          <div className="space-y-3 mb-6">
+            {healthItems.map((item, i) => (
+              <div
+                key={item.id}
+                onClick={() => toggle(item.id)}
+                className={`flex gap-3 p-3 rounded-lg border cursor-pointer transition-colors select-none ${
+                  item.checked
+                    ? 'bg-emerald-50 border-emerald-300'
+                    : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <div className="mt-0.5 shrink-0">
+                  {item.checked
+                    ? <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                    : <div className="h-5 w-5 rounded-full border-2 border-slate-300" />
+                  }
+                </div>
+                <p className="text-sm text-slate-700 leading-relaxed">
+                  <span className="font-bold text-slate-400 ml-1">{i + 1}.</span> {item.text}
+                </p>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 text-xs text-rose-800 mb-4">
         <Heart className="inline h-3.5 w-3.5 ml-1" />
@@ -522,26 +551,76 @@ function Step4({
 }
 
 // ─────────────────────────────────────────────
+// Step Doc — Extra org document step
+// ─────────────────────────────────────────────
+function StepDoc({ title, description, fileUrl, confirmed, onConfirm }: {
+  title: string;
+  description: string;
+  fileUrl: string | null;
+  confirmed: boolean;
+  onConfirm: (v: boolean) => void;
+}) {
+  return (
+    <div className="bg-white text-slate-900 rounded-2xl p-6 shadow-xl">
+      <div className="mb-4">
+        <h2 className="text-xl font-bold text-slate-800 mb-1">{title}</h2>
+        {description && <p className="text-sm text-slate-500">{description}</p>}
+      </div>
+      {fileUrl ? (
+        <div className="mb-6">
+          <iframe
+            src={fileUrl}
+            className="w-full rounded-lg border border-slate-200"
+            style={{ minHeight: '420px' }}
+            title={title}
+          />
+          <p className="text-xs text-slate-500 mt-2 text-center">גלול לקרוא לפני אישור</p>
+        </div>
+      ) : (
+        <div className="bg-slate-50 border border-slate-200 rounded-lg p-5 mb-6 text-center text-slate-400">
+          <FileText className="h-8 w-8 mx-auto mb-2 opacity-40" />
+          <p className="text-sm">אין קובץ מצורף — קרא את הכותרת וההסבר ואשר למטה</p>
+        </div>
+      )}
+      <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+        <Checkbox
+          id={`doc-confirm-${title}`}
+          checked={confirmed}
+          onCheckedChange={(v) => onConfirm(!!v)}
+          className="border-blue-400 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+        />
+        <label htmlFor={`doc-confirm-${title}`} className="text-sm font-medium text-blue-800 cursor-pointer select-none">
+          קראתי ומאשר/ת את תוכן המסמך
+        </label>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // Progress Bar
 // ─────────────────────────────────────────────
-const STEPS = [
+const BASE_STEPS = [
   { icon: Car,      label: 'קבלת רכב'    },
   { icon: FileText, label: 'נוהל שימוש'  },
   { icon: Heart,    label: 'הצהרת בריאות' },
   { icon: Camera,   label: 'רישיון נהיגה' },
 ];
 
-function ProgressBar({ current }: { current: number }) {
+// Keep STEPS alias for backward compat
+const STEPS = BASE_STEPS;
+
+function ProgressBar({ current, steps = STEPS }: { current: number; steps?: typeof STEPS }) {
   return (
     <div className="mb-6">
       <div className="flex items-center gap-0">
-        {STEPS.map((step, i) => {
+        {steps.map((step, i) => {
           const Icon = step.icon;
           const done    = i < current;
           const active  = i === current;
           return (
             <div key={i} className="flex items-center flex-1">
-              <div className={`flex flex-col items-center flex-1 ${i === STEPS.length - 1 ? '' : ''}`}>
+              <div className={`flex flex-col items-center flex-1 ${i === steps.length - 1 ? '' : ''}`}>
                 <div className={`h-10 w-10 rounded-full flex items-center justify-center border-2 transition-all ${
                   done   ? 'bg-cyan-500 border-cyan-500 text-white' :
                   active ? 'bg-[#020617] border-cyan-400 text-cyan-400 shadow-[0_0_14px_rgba(34,211,238,0.5)]' :
@@ -553,7 +632,7 @@ function ProgressBar({ current }: { current: number }) {
                   done ? 'text-cyan-400' : active ? 'text-white' : 'text-white/30'
                 }`}>{step.label}</span>
               </div>
-              {i < STEPS.length - 1 && (
+              {i < steps.length - 1 && (
                 <div className={`h-0.5 flex-1 mx-2 mt-[-14px] transition-all rounded-full ${done ? 'bg-cyan-500' : 'bg-white/10'}`} />
               )}
             </div>
@@ -563,7 +642,7 @@ function ProgressBar({ current }: { current: number }) {
       <div className="mt-3 h-1 bg-white/10 rounded-full overflow-hidden">
         <div
           className="h-full bg-gradient-to-r from-cyan-500 to-cyan-300 rounded-full transition-all duration-500"
-          style={{ width: `${((current) / (STEPS.length - 1)) * 100}%` }}
+          style={{ width: `${((current) / (steps.length - 1)) * 100}%` }}
         />
       </div>
     </div>
@@ -580,6 +659,7 @@ export default function VehicleHandoverWizard() {
   const { data: drivers  } = useDrivers();
   const { user } = useAuth();
   const { data: orgSettings } = useOrgSettings();
+  const { data: extraDocs } = useOrgDocuments(); // docs with include_in_handover=true
 
   const vehicleId  = searchParams.get('vehicleId')  ?? '';
   const driverId   = searchParams.get('driverId')   ?? '';
@@ -642,14 +722,33 @@ export default function VehicleHandoverWizard() {
   const [licenseFront,  setLicenseFront]  = useState<File | null>(null);
   const [licenseBack,   setLicenseBack]   = useState<File | null>(null);
 
+  // ── PDF template URLs (from org settings) ──
+  const healthPdfUrl  = (orgSettings as any)?.health_statement_pdf_url as string | null ?? null;
+  const policyPdfUrl  = (orgSettings as any)?.vehicle_policy_pdf_url  as string | null ?? null;
+
+  // ── Dynamic extra doc steps from org_documents ──
+  const [docConfirms, setDocConfirms] = useState<boolean[]>([]);
+  useEffect(() => {
+    if (extraDocs) setDocConfirms(extraDocs.map(() => false));
+  }, [extraDocs?.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Build full wizard steps array
+  const wizardSteps = [
+    ...BASE_STEPS,
+    ...(extraDocs ?? []).map(d => ({ icon: FileText, label: d.title.slice(0, 8) })),
+  ];
+
   // ── Validation per step ──
   const canAdvance = useCallback(() => {
     if (step === 0) return sig1OK;
     if (step === 1) return sig2OK && procedureRead;
-    if (step === 2) return sig3OK && healthItems.every(h => h.checked);
+    if (step === 2) return sig3OK && (healthPdfUrl ? true : healthItems.every(h => h.checked));
     if (step === 3) return !!licenseNumber && !!licenseExpiry && !!licenseFront && !!licenseBack;
+    // extra org document steps
+    const docIdx = step - 4;
+    if (docIdx >= 0 && docIdx < (extraDocs?.length ?? 0)) return docConfirms[docIdx] === true;
     return false;
-  }, [step, sig1OK, sig2OK, procedureRead, sig3OK, healthItems, licenseNumber, licenseExpiry, licenseFront, licenseBack]);
+  }, [step, sig1OK, sig2OK, procedureRead, sig3OK, healthItems, healthPdfUrl, licenseNumber, licenseExpiry, licenseFront, licenseBack, docConfirms, extraDocs]);
 
   // ── Upload helper — always targets the public vehicle-documents bucket ──
   const uploadFileToStorage = async (file: File, path: string): Promise<string | null> => {
@@ -805,14 +904,14 @@ export default function VehicleHandoverWizard() {
           </div>
           <div className="mr-auto">
             <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold bg-cyan-500/20 text-cyan-300 border-cyan-400/30">
-              שלב {step + 1} מתוך {STEPS.length}
+              שלב {step + 1} מתוך {wizardSteps.length}
             </span>
           </div>
         </div>
       </header>
 
       <main className="container py-6 pb-32 max-w-3xl mx-auto">
-        <ProgressBar current={step} />
+        <ProgressBar current={step} steps={wizardSteps} />
 
         {/* Steps */}
         {step === 0 && (
@@ -836,6 +935,7 @@ export default function VehicleHandoverWizard() {
             driverName={driverName}
             date={today}
             clauses={activeClauses}
+            pdfTemplateUrl={policyPdfUrl}
           />
         )}
         {step === 2 && (
@@ -849,6 +949,7 @@ export default function VehicleHandoverWizard() {
             vehicleLabel={vehicleLabel}
             driverName={driverName}
             date={today}
+            pdfTemplateUrl={healthPdfUrl}
           />
         )}
         {step === 3 && (
@@ -862,6 +963,17 @@ export default function VehicleHandoverWizard() {
             date={today}
           />
         )}
+        {step >= 4 && (extraDocs ?? []).map((doc, idx) => step === idx + 4 ? (
+          <React.Fragment key={doc.id}>
+            <StepDoc
+              title={doc.title}
+              description={doc.description}
+              fileUrl={doc.file_url}
+              confirmed={docConfirms[idx] ?? false}
+              onConfirm={(v) => setDocConfirms(prev => { const next = [...prev]; next[idx] = v; return next; })}
+            />
+          </React.Fragment>
+        ) : null)}
       </main>
 
       {/* Fixed bottom navigation — raised 56 px to clear the test-build banner */}
@@ -885,7 +997,8 @@ export default function VehicleHandoverWizard() {
             <p className="text-xs text-amber-400/80">
               {step === 0 && 'נדרשת חתימה להמשך'}
               {step === 1 && (!procedureRead ? 'סמן קריאה ואישור להמשך' : 'נדרשת חתימה להמשך')}
-              {step === 2 && (!healthItems.every(h => h.checked) ? 'סמן את כל סעיפי הבריאות' : 'נדרשת חתימה להמשך')}
+              {step === 2 && (healthPdfUrl ? 'נדרשת חתימה להמשך' : (!healthItems.every(h => h.checked) ? 'סמן את כל סעיפי הבריאות' : 'נדרשת חתימה להמשך'))}
+              {step >= 4 && 'יש לאשר קריאת המסמך להמשך'}
               {step === 3 && (
                 !licenseFront ? 'חסר צילום צד א׳' :
                 !licenseBack  ? 'חסר צילום צד ב׳' :
@@ -895,7 +1008,7 @@ export default function VehicleHandoverWizard() {
             </p>
           )}
 
-          {step < STEPS.length - 1 ? (
+          {step < wizardSteps.length - 1 ? (
             <Button
               onClick={async () => {
                 // Step-specific validation toasts before advancing
@@ -903,7 +1016,7 @@ export default function VehicleHandoverWizard() {
                   toast.error('יש לאשר את קריאת הסעיפים בטרם המעבר');
                   return;
                 }
-                if (step === 2 && !healthItems.every(h => h.checked)) {
+                if (step === 2 && !healthPdfUrl && !healthItems.every(h => h.checked)) {
                   toast.error('עליך לאשר את כל סעיפי הבריאות כדי להמשיך');
                   return;
                 }

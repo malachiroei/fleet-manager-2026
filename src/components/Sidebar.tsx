@@ -19,12 +19,14 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { useLabel } from '@/hooks/useUiLabels';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
 
 interface NavItem {
   title: string;
   titleKey: string;
+  uiKey?: string;
   href: string;
   icon: React.ElementType;
   disabled?: boolean;
@@ -40,33 +42,34 @@ export function Sidebar() {
   const location = useLocation();
   const { signOut } = useAuth();
   const { t } = useTranslation();
+  const label = useLabel();
 
   const navigationGroups: NavGroup[] = [
     {
       title: t('navigation.vehicles'),
       titleKey: 'navigation.vehicles',
       items: [
-        { title: t('navigation.fleetManagement'), titleKey: 'navigation.fleetManagement', href: '/vehicles', icon: Car },
-        { title: t('navigation.vehicleDelivery'), titleKey: 'navigation.vehicleDelivery', href: '/handover/delivery', icon: Truck },
-        { title: t('navigation.exceptionAlerts'), titleKey: 'navigation.exceptionAlerts', href: '/compliance', icon: AlertTriangle },
+        { title: t('navigation.fleetManagement'), titleKey: 'navigation.fleetManagement', uiKey: 'nav.fleet_management', href: '/vehicles', icon: Car },
+        { title: t('navigation.vehicleDelivery'), titleKey: 'navigation.vehicleDelivery', uiKey: 'nav.vehicle_delivery', href: '/handover/delivery', icon: Truck },
+        { title: t('navigation.exceptionAlerts'), titleKey: 'navigation.exceptionAlerts', uiKey: 'nav.compliance', href: '/compliance', icon: AlertTriangle },
       ],
     },
     {
       title: t('navigation.operational'),
       titleKey: 'navigation.operational',
       items: [
-        { title: t('navigation.drivers'), titleKey: 'navigation.drivers', href: '/drivers', icon: Car },
-        { title: t('navigation.mileageUpdate'), titleKey: 'navigation.mileageUpdate', href: '/vehicles/odometer', icon: Gauge },
-        { title: 'הפקת דוחות', titleKey: 'navigation.reportGeneration', href: '/reports', icon: BarChart3 },
+        { title: t('navigation.drivers'), titleKey: 'navigation.drivers', uiKey: 'nav.drivers', href: '/drivers', icon: Car },
+        { title: t('navigation.mileageUpdate'), titleKey: 'navigation.mileageUpdate', uiKey: 'nav.mileage_update', href: '/vehicles/odometer', icon: Gauge },
+        { title: 'הפקת דוחות', titleKey: 'navigation.reportGeneration', uiKey: 'nav.reports', href: '/reports', icon: BarChart3 },
       ],
     },
     {
       title: t('navigation.events'),
       titleKey: 'navigation.events',
       items: [
-        { title: t('navigation.accidents'), titleKey: 'navigation.accidents', href: '/maintenance/add', icon: AlertCircle },
-        { title: t('navigation.parkingReports'), titleKey: 'navigation.parkingReports', href: '/reports/scan', icon: MapPin },
-        { title: t('navigation.procedure6Complaints'), titleKey: 'navigation.procedure6Complaints', href: '/procedure6-complaints', icon: AlertTriangle },
+        { title: t('navigation.accidents'), titleKey: 'navigation.accidents', uiKey: 'nav.accidents', href: '/maintenance/add', icon: AlertCircle },
+        { title: t('navigation.parkingReports'), titleKey: 'navigation.parkingReports', uiKey: 'nav.parking', href: '/reports/scan', icon: MapPin },
+        { title: t('navigation.procedure6Complaints'), titleKey: 'navigation.procedure6Complaints', uiKey: 'nav.complaints', href: '/procedure6-complaints', icon: AlertTriangle },
       ],
     },
     {
@@ -130,7 +133,7 @@ export function Sidebar() {
                         className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium cursor-not-allowed opacity-40 text-white/50"
                       >
                         <item.icon className="h-5 w-5" />
-                        {item.title}
+                        {item.uiKey ? label(item.uiKey, item.title) : item.title}
                       </div>
                     );
                   }
@@ -147,7 +150,7 @@ export function Sidebar() {
                       )}
                     >
                       <item.icon className="h-5 w-5" />
-                      {item.title}
+                      {item.uiKey ? label(item.uiKey, item.title) : item.title}
                       {isActive && <ChevronRight className="ml-auto h-4 w-4 text-cyan-400" />}
                     </Link>
                   );
@@ -180,7 +183,7 @@ export function Sidebar() {
             )}
           >
             <Building2 className="h-5 w-5" />
-            הגדרות ארגון
+            {label('nav.org_settings', 'הגדרות ארגון')}
           </Button>
         </Link>
         <Button
