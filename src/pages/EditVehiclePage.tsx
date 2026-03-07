@@ -169,7 +169,7 @@ export default function EditVehiclePage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <Label htmlFor="plate_number">מספר רישוי *</Label>
                   <Input id="plate_number" name="plate_number" defaultValue={vehicle.plate_number} required dir="ltr" />
@@ -231,7 +231,7 @@ export default function EditVehiclePage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div><Label htmlFor="test_expiry">תוקף טסט *</Label><Input id="test_expiry" name="test_expiry" type="date" defaultValue={vehicle.test_expiry} required /></div>
                 <div><Label htmlFor="insurance_expiry">תוקף ביטוח *</Label><Input id="insurance_expiry" name="insurance_expiry" type="date" defaultValue={vehicle.insurance_expiry} required /></div>
                 <div><Label htmlFor="next_maintenance_km">ק"מ לטיפול הבא</Label><Input id="next_maintenance_km" name="next_maintenance_km" type="number" defaultValue={vehicle.next_maintenance_km || ''} dir="ltr" /></div>
@@ -275,7 +275,7 @@ export default function EditVehiclePage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="manufacturer_code">סמל יצרן</Label>
                   <Input 

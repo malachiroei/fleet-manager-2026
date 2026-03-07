@@ -28,24 +28,24 @@ export function AppLayout({ children }: AppLayoutProps) {
   );
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#020617]">
+    <div className="flex min-h-[100dvh] overflow-x-hidden bg-[#020617]">
       {/* Desktop Sidebar */}
       {!isMobile && <Sidebar />}
 
       {/* Main Content Area */}
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-[100dvh] flex-1 flex-col overflow-hidden">
         {/* Mobile Header */}
         {isMobile && (
-          <header className="flex h-16 items-center border-b border-white/10 bg-[#0d1b2e] px-4 justify-between">
+          <header className="flex h-16 items-center justify-between border-b border-white/10 bg-[#0d1b2e] px-3 sm:px-4">
             <div className="flex items-center gap-3">
               <MobileNav />
-              <div className="flex items-center gap-3 ml-4">
+              <div className="ml-2 flex items-center gap-2 sm:ml-4 sm:gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600">
                   <Car className="h-5 w-5 text-white" />
                 </div>
                 <div>
                   <h1 className="font-bold text-base leading-tight">{t('navigation.fleetManager')}</h1>
-                  <p className="text-xs text-cyan-400/60">{t('navigation.proDashboard')}</p>
+                  <p className="hidden text-xs text-cyan-400/60 sm:block">{t('navigation.proDashboard')}</p>
                 </div>
               </div>
             </div>

@@ -279,7 +279,7 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
       <div
         className={`
           fixed bottom-[13.25rem] left-5 z-50
-          w-[22rem] sm:w-[26rem]
+          w-[calc(100vw-2.5rem)] max-w-[22rem] sm:w-[26rem]
           flex flex-col
           rounded-2xl border border-white/10
           bg-[#0d1b2e]

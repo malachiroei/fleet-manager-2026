@@ -1,7 +1,18 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { VehicleHandover } from '@/types/fleet';
+import { jsPDF } from 'jspdf';
 import hebrewFontUrl from '@/assets/fonts/NotoSansHebrew.ttf?url';
+import carPngUrl from '@/assets/car.png';
+import carPdfUrl from '@/assets/car-pdf.jpg';
+import {
+  DAMAGE_SIDES,
+  DAMAGE_SIDE_LABELS,
+  DAMAGE_TYPE_LABELS,
+  hasAnyDamage,
+  summarizeDamageReport,
+  type VehicleDamageReport,
+} from '@/lib/vehicleDamage';
 
 export type AssignmentMode = 'permanent' | 'replacement';
 
@@ -74,12 +85,112 @@ function arrayBufferToBase64(buffer: ArrayBuffer) {
 }
 
 let cachedHebrewFontBase64: string | null = null;
+let cachedPdfCarImage: { dataUrl: string; format: 'PNG' | 'JPEG' } | null = null;
 
-async function createPdfBlob(lines: string[], photos: Array<{ key: string; url: string | null }>, signatureUrl: string | null) {
-  const [{ jsPDF }, fontResponse] = await Promise.all([
-    import('jspdf'),
-    fetch(hebrewFontUrl),
-  ]);
+async function getPdfCarImage() {
+  if (cachedPdfCarImage) {
+    return cachedPdfCarImage;
+  }
+
+  const candidates = [
+    carPdfUrl,
+    carPngUrl,
+    '/car.png',
+    typeof window !== 'undefined' ? `${window.location.origin}/car.png` : null,
+  ].filter(Boolean) as string[];
+
+  for (const source of candidates) {
+    const loaded = await imageUrlToDataUrl(source);
+    if (loaded) {
+      cachedPdfCarImage = loaded;
+      return loaded;
+    }
+  }
+
+  return null;
+}
+
+async function drawDamageDiagramInPdf(
+  doc: any,
+  pageWidth: number,
+  rightX: number,
+  startY: number,
+  damageReport: VehicleDamageReport,
+) {
+  const hasDamage = DAMAGE_SIDES.some((side) => damageReport[side]?.length > 0);
+  if (!hasDamage) {
+    return startY;
+  }
+
+  const panelX = 40;
+  const panelY = startY + 8;
+  const panelW = pageWidth - 80;
+  const panelH = 208;
+
+  doc.setDrawColor(40, 80, 120);
+  doc.setFillColor(245, 250, 255);
+  doc.roundedRect(panelX, panelY, panelW, panelH, 10, 10, 'FD');
+
+  doc.setFontSize(12);
+  doc.text('סימון נזקים לפי צד ברכב', rightX - 12, panelY + 18, { align: 'right' });
+
+  const cx = panelX + panelW / 2;
+  const carY = panelY + 44;
+  const carW = 220;
+  const carH = 124;
+
+  const markSide = (x: number, y: number, w: number, h: number, side: keyof VehicleDamageReport, label: string) => {
+    const marked = (damageReport[side] ?? []).length > 0;
+    doc.setDrawColor(marked ? 220 : 120, marked ? 38 : 120, marked ? 38 : 160);
+    if (marked) {
+      doc.setFillColor(255, 232, 232);
+      doc.roundedRect(x, y, w, h, 6, 6, 'FD');
+    } else {
+      doc.roundedRect(x, y, w, h, 6, 6, 'S');
+    }
+    doc.setFontSize(9);
+    doc.text(label, x + w / 2, y + h / 2 + 3, { align: 'center' });
+  };
+
+  const carImage = await getPdfCarImage();
+  if (carImage) {
+    doc.addImage(carImage.dataUrl, carImage.format, cx - carW / 2, carY, carW, carH, undefined, 'MEDIUM');
+  } else {
+    // Fallback: keep a basic shape if image loading fails.
+    doc.setDrawColor(90, 110, 140);
+    doc.setFillColor(214, 224, 238);
+    doc.roundedRect(cx - 40, carY + 8, 80, 108, 20, 20, 'FD');
+    doc.setFillColor(120, 140, 166);
+    doc.roundedRect(cx - 26, carY + 22, 52, 22, 6, 6, 'F');
+    doc.roundedRect(cx - 26, carY + 82, 52, 22, 6, 6, 'F');
+  }
+
+  markSide(cx - carW / 2 - 52, carY + 38, 44, 42, 'front', 'קדימה');
+  markSide(cx + carW / 2 + 8, carY + 38, 44, 42, 'back', 'אחורה');
+  markSide(cx - 32, carY - 22, 64, 18, 'right', 'ימין');
+  markSide(cx - 32, carY + carH + 6, 64, 18, 'left', 'שמאל');
+
+  // Damage legend text
+  let textY = panelY + panelH - 18;
+  doc.setFontSize(9);
+  for (const side of DAMAGE_SIDES) {
+    const types = damageReport[side] ?? [];
+    if (!types.length) continue;
+    const line = `${DAMAGE_SIDE_LABELS[side]}: ${types.map((type) => DAMAGE_TYPE_LABELS[type]).join(', ')}`;
+    doc.text(line, rightX - 12, textY, { align: 'right' });
+    textY -= 12;
+  }
+
+  return panelY + panelH + 10;
+}
+
+async function createPdfBlob(
+  lines: string[],
+  photos: Array<{ key: string; url: string | null }>,
+  signatureUrl: string | null,
+  damageReport?: VehicleDamageReport,
+) {
+  const fontResponse = await fetch(hebrewFontUrl);
 
   if (!fontResponse.ok) {
     throw new Error(`Failed loading Hebrew font (${fontResponse.status})`);
@@ -113,6 +224,10 @@ async function createPdfBlob(lines: string[], photos: Array<{ key: string; url: 
   for (const line of lines) {
     doc.text(line, rightX, currentY, { align: 'right' });
     currentY += 18;
+  }
+
+  if (damageReport && hasAnyDamage(damageReport)) {
+    currentY = await drawDamageDiagramInPdf(doc, pageWidth, rightX, currentY, damageReport);
   }
 
   const photoEntries = photos.filter((photo) => !!photo.url) as Array<{ key: string; url: string }>;
@@ -210,8 +325,6 @@ async function buildWizardPdfDoc(
   driverName: string,
   date: string,
 ) {
-  const { jsPDF } = await import('jspdf');
-
   if (!cachedHebrewFontBase64) {
     const fontResponse = await fetch(hebrewFontUrl);
     if (!fontResponse.ok) throw new Error(`Font fetch failed: ${fontResponse.status}`);
@@ -406,6 +519,76 @@ export async function generateHealthDeclarationPDF({
   return doc.output('blob');
 }
 
+export async function generateReplacementDeliveryApprovalPDF({
+  vehicleLabel,
+  driverName,
+  date,
+  signatureDataUrl,
+}: {
+  vehicleLabel: string;
+  driverName: string;
+  date: string;
+  signatureDataUrl: string | null;
+}): Promise<Blob> {
+  const { doc, pageWidth, rightX, y: startY } = await buildWizardPdfDoc(
+    'אישור מסירת רכב חליפי',
+    vehicleLabel,
+    driverName,
+    date,
+  );
+
+  let y = startY;
+  const clauses = [
+    'הריני מאשר/ת שקיבלתי רכב חליפי תקין ובדקתי את הרכב לפני יציאה לנסיעה.',
+    'הוסבר לי כי האחריות לשלמות הרכב החליפי ולדיווח על כל תקלה או נזק היא עלי.',
+    'ידוע לי כי השימוש ברכב החליפי כפוף לנהלי החברה ולכללי הבטיחות.',
+  ];
+
+  doc.setFontSize(10);
+  doc.text('אני הח"מ מאשר/ת את הסעיפים הבאים:', rightX, y, { align: 'right' });
+  y += 18;
+
+  doc.setFontSize(9);
+  for (const clause of clauses) {
+    const split = doc.splitTextToSize(`• ${clause}`, 460) as string[];
+    doc.text(split, rightX, y, { align: 'right' });
+    y += split.length * 13 + 4;
+  }
+
+  y += 10;
+  addSignatureToPdf(doc as any, signatureDataUrl, y, pageWidth, rightX, 'חתימת העובד — אישור מסירת רכב חליפי:');
+  return doc.output('blob');
+}
+
+export async function uploadPdfAttachmentToArchive({
+  vehicleId,
+  blob,
+  fileName,
+}: {
+  vehicleId: string;
+  blob: Blob;
+  fileName: string;
+}): Promise<string> {
+  const path = `documents/${vehicleId}/${Date.now()}_${fileName}`;
+  const { error } = await supabase.storage
+    .from(HANDOVER_ARCHIVE_BUCKET)
+    .upload(path, blob, {
+      contentType: 'application/pdf',
+      upsert: true,
+    });
+
+  if (error) {
+    throw new Error(`storage upload failed: ${getSupabaseErrorMessage(error)}`);
+  }
+
+  const { data } = supabase.storage.from(HANDOVER_ARCHIVE_BUCKET).getPublicUrl(path);
+  if (!data?.publicUrl) {
+    throw new Error('failed to build public URL for uploaded PDF');
+  }
+
+  return data.publicUrl;
+}
+
 interface ArchivedHandoverResult {
   reportUrl: string;
   handover: {
@@ -582,6 +765,7 @@ interface ArchiveHandoverInput {
   odometerReading: number;
   fuelLevel: number;
   notes: string | null;
+  damageReport?: VehicleDamageReport;
   photoUrls: {
     front: string | null;
     back: string | null;
@@ -594,6 +778,8 @@ interface ArchiveHandoverInput {
 }
 
 export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Promise<ArchivedHandoverResult> {
+  const hasDamage = input.damageReport ? hasAnyDamage(input.damageReport) : false;
+  const damageSummary = input.damageReport ? summarizeDamageReport(input.damageReport) : 'ללא נזקים מסומנים';
   const timestamp = new Date().toISOString();
   const formBlob = await createPdfBlob([
     `מספר טופס: ${input.handoverId}`,
@@ -603,6 +789,7 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
     `נהג: ${input.driverLabel}`,
     `קילומטראז': ${input.odometerReading.toLocaleString('he-IL')}`,
     `דלק: ${input.fuelLevel}/8`,
+    `דיווח נזקים: ${hasDamage ? damageSummary : 'ללא נזקים'}`,
     `הערות: ${input.notes || 'ללא'}`,
     `זמן ביצוע: ${new Date(timestamp).toLocaleString('he-IL')}`,
   ], [
@@ -610,7 +797,7 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
     { key: 'back', url: input.photoUrls.back },
     { key: 'right', url: input.photoUrls.right },
     { key: 'left', url: input.photoUrls.left },
-  ], input.signatureUrl);
+  ], input.signatureUrl, input.damageReport);
   const fileName = `handover-forms/${input.vehicleId}/${Date.now()}_${input.handoverType}.pdf`;
 
   const { error: uploadError } = await supabase.storage
@@ -658,6 +845,8 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
         assignmentMode: input.assignmentMode ?? 'permanent',
         photoUrls: input.photoUrls,
         signatureUrl: input.signatureUrl,
+        damageReport: input.damageReport ?? null,
+        damageSummary,
       },
     });
 
@@ -710,6 +899,73 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
         message: getSupabaseErrorMessage(driverDocError),
       });
       throw new Error(`driver_documents insert failed: ${getSupabaseErrorMessage(driverDocError)}`);
+    }
+  }
+
+  if (hasDamage && input.damageReport) {
+    const location = DAMAGE_SIDES
+      .filter((side) => input.damageReport?.[side]?.length)
+      .map((side) => DAMAGE_SIDE_LABELS[side])
+      .join(', ');
+
+    const photoUrls = [
+      input.photoUrls.front,
+      input.photoUrls.back,
+      input.photoUrls.right,
+      input.photoUrls.left,
+    ].filter(Boolean) as string[];
+
+    const description = `דיווח נזק בעת ${input.handoverType === 'delivery' ? 'מסירה' : 'החזרה'}${input.assignmentMode === 'replacement' ? ' (רכב חליפי)' : ''}`;
+    const notes = `מקור דיווח: טופס ${input.handoverId}`;
+
+    const { error: vehicleIncidentError } = await (supabase as any)
+      .from('vehicle_incidents')
+      .insert({
+        vehicle_id: input.vehicleId,
+        incident_type: 'accident',
+        incident_date: timestamp,
+        description,
+        location: location || null,
+        driver_id: input.driverId,
+        damage_desc: damageSummary,
+        photo_urls: photoUrls.length ? photoUrls : null,
+        police_report_no: null,
+        insurance_claim: null,
+        status: 'open',
+        notes,
+      });
+
+    if (vehicleIncidentError) {
+      console.warn('[archiveHandoverSubmission] vehicle_incidents insert failed', {
+        handoverId: input.handoverId,
+        message: getSupabaseErrorMessage(vehicleIncidentError),
+      });
+    }
+
+    if (input.driverId) {
+      const { error: driverIncidentError } = await (supabase as any)
+        .from('driver_incidents')
+        .insert({
+          driver_id: input.driverId,
+          vehicle_id: input.vehicleId,
+          incident_type: 'accident',
+          incident_date: timestamp,
+          description,
+          location: location || null,
+          damage_desc: damageSummary,
+          photo_urls: photoUrls.length ? photoUrls : null,
+          police_report_no: null,
+          insurance_claim: null,
+          status: 'open',
+          notes,
+        });
+
+      if (driverIncidentError) {
+        console.warn('[archiveHandoverSubmission] driver_incidents insert failed', {
+          handoverId: input.handoverId,
+          message: getSupabaseErrorMessage(driverIncidentError),
+        });
+      }
     }
   }
 
@@ -777,6 +1033,7 @@ interface SendHandoverEmailInput {
   odometerReading: number;
   fuelLevel: number;
   notes: string | null;
+  damageSummary?: string;
   reportUrl: string;
   /** Extra files to attach alongside the PDF (wizard documents). */
   additionalAttachments?: { filename: string; url: string }[];
@@ -784,21 +1041,70 @@ interface SendHandoverEmailInput {
 
 export async function sendHandoverNotificationEmail(input: SendHandoverEmailInput) {
   const toEmail = localStorage.getItem('handover_notification_email') || 'malachiroei@gmail.com';
-
-  const { error } = await supabase.functions.invoke('send-handover-notification', {
-    body: {
-      to: toEmail,
-      subject: `${input.handoverType === 'delivery' ? 'מסירת רכב' : 'החזרת רכב'} - ${input.vehicleLabel}`,
-      payload: {
-        ...input,
-        recordUrl: buildHandoverRecordUrl(input.vehicleId, input.handoverId),
-        sentAt: new Date().toISOString(),
-        additionalAttachments: input.additionalAttachments ?? [],
-      },
+  const body = {
+    to: toEmail,
+    subject: `${input.handoverType === 'delivery' ? 'מסירת רכב' : 'החזרת רכב'} - ${input.vehicleLabel}`,
+    payload: {
+      ...input,
+      recordUrl: buildHandoverRecordUrl(input.vehicleId, input.handoverId),
+      sentAt: new Date().toISOString(),
+      damageSummary: input.damageSummary ?? null,
+      additionalAttachments: input.additionalAttachments ?? [],
     },
-  });
+  };
 
-  if (error) throw error;
+  const { error, data } = await supabase.functions.invoke('send-handover-notification', { body });
+
+  if (!error && !(data as any)?.error) {
+    return;
+  }
+
+  // Some SDK versions may surface generic non-2xx errors even when the function is reachable.
+  // Retry once via direct HTTPS call to capture a concrete response and avoid false negatives.
+  try {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+    const endpoint = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/send-handover-notification`;
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${text || 'response body is empty'}`);
+    }
+
+    if (text) {
+      const parsed = JSON.parse(text);
+      if (parsed?.error) {
+        throw new Error(String(parsed.error));
+      }
+    }
+
+    return;
+  } catch (fallbackError) {
+    const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+    if (error) {
+      const details = (() => {
+        try {
+          return JSON.stringify((error as any)?.context ?? {}, null, 0);
+        } catch {
+          return '';
+        }
+      })();
+      throw new Error(`שליחת מייל נכשלה: ${error.message}${details ? ` | ${details}` : ''} | fallback: ${fallbackMessage}`);
+    }
+    if ((data as any)?.error) {
+      throw new Error(`שליחת מייל נכשלה: ${(data as any).error} | fallback: ${fallbackMessage}`);
+    }
+    throw new Error(`שליחת מייל נכשלה: ${fallbackMessage}`);
+  }
 }
 
 export function useLatestHandover(vehicleId: string) {

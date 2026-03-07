@@ -240,7 +240,7 @@ export default function AddDriverPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <Label htmlFor="full_name">שם מלא *</Label>
                   <Input
@@ -307,7 +307,7 @@ export default function AddDriverPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="job_title">תפקיד</Label>
                   <Input
@@ -340,7 +340,7 @@ export default function AddDriverPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="license_number">מספר רישיון נהיגה</Label>
                   <Input

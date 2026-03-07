@@ -96,7 +96,7 @@ export default function EditDriverPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <Label htmlFor="full_name">שם מלא *</Label>
                   <Input id="full_name" name="full_name" defaultValue={driver.full_name} required />
@@ -131,7 +131,7 @@ export default function EditDriverPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="job_title">תפקיד</Label>
                   <Input id="job_title" name="job_title" defaultValue={driver.job_title || ''} />
@@ -154,7 +154,7 @@ export default function EditDriverPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="license_number">מספר רישיון נהיגה</Label>
                   <Input id="license_number" name="license_number" defaultValue={driver.license_number || ''} dir="ltr" />

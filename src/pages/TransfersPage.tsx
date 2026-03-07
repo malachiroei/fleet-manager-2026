@@ -72,7 +72,7 @@ export default function TransfersPage() {
   const returnCount = handovers.filter((h) => h.handover_type === 'return').length;
 
   return (
-    <div className="min-h-screen p-6 space-y-6" dir="rtl">
+    <div className="min-h-screen p-4 sm:p-6 space-y-5 sm:space-y-6" dir="rtl">
       {/* Header */}
       <div className="flex items-center gap-4">
         <Link to="/vehicles">
@@ -119,7 +119,7 @@ export default function TransfersPage() {
 
       {/* Filters bar */}
       <div className="flex flex-wrap gap-3 items-center">
-        <div className="relative flex-1 min-w-[180px] max-w-xs">
+        <div className="relative w-full sm:flex-1 sm:min-w-[180px] sm:max-w-xs">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <Input
             value={search}

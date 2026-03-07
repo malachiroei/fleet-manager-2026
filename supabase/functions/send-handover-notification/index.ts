@@ -19,6 +19,7 @@ interface NotificationRequest {
     odometerReading: number;
     fuelLevel: number;
     notes: string | null;
+    damageSummary?: string | null;
     recordUrl?: string;
     reportUrl: string;
     sentAt: string;
@@ -47,12 +48,14 @@ function delay(ms: number) {
 // ── Build the full attachments array ─────────────────────────────────────────
 async function buildAttachments(
   payload: NotificationRequest['payload'],
-  pdfBase64: string
+  pdfBase64?: string | null
 ): Promise<{ filename: string; content: string }[]> {
-  // 1. Main delivery form PDF
-  const list: { filename: string; content: string }[] = [
-    { filename: 'טופס_מסירת_רכב.pdf', content: pdfBase64 },
-  ];
+  const list: { filename: string; content: string }[] = [];
+
+  // 1. Main delivery form PDF (optional fallback)
+  if (pdfBase64) {
+    list.push({ filename: 'טופס_מסירת_רכב.pdf', content: pdfBase64 });
+  }
 
   // 2. Any additional wizard attachments (signatures + license photos)
   for (const att of payload.additionalAttachments ?? []) {
@@ -149,30 +152,29 @@ serve(async (req) => {
 
     await delay(2000);
 
-    const pdfResponse = await fetch(persistedPdfUrl);
-    if (!pdfResponse.ok) {
-      return new Response(
-        JSON.stringify({ error: `PDF copy failed: unable to fetch file from storage (${pdfResponse.status})` }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    let pdfContentBase64: string | null = null;
+    try {
+      const pdfResponse = await fetch(persistedPdfUrl);
+      if (!pdfResponse.ok) {
+        console.warn('[send-handover-notification] PDF fetch failed, sending without PDF attachment', {
+          status: pdfResponse.status,
+          url: persistedPdfUrl,
+        });
+      } else {
+        const contentType = pdfResponse.headers.get('content-type') || '';
+        if (!contentType.toLowerCase().includes('application/pdf')) {
+          console.warn('[send-handover-notification] Unexpected PDF content-type, sending without PDF attachment', {
+            contentType,
+            url: persistedPdfUrl,
+          });
+        } else {
+          const pdfBytes = new Uint8Array(await pdfResponse.arrayBuffer());
+          pdfContentBase64 = toBase64(pdfBytes);
         }
-      );
+      }
+    } catch (pdfError) {
+      console.warn('[send-handover-notification] PDF fetch threw error, sending without PDF attachment', pdfError);
     }
-
-    const contentType = pdfResponse.headers.get('content-type') || '';
-    if (!contentType.toLowerCase().includes('application/pdf')) {
-      return new Response(
-        JSON.stringify({ error: `PDF copy failed: unexpected content-type (${contentType || 'unknown'})` }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
-    }
-
-    const pdfBytes = new Uint8Array(await pdfResponse.arrayBuffer());
-    const pdfContentBase64 = toBase64(pdfBytes);
 
     const appBaseUrl = 'https://fleet-manager-2026.vercel.app';
     const recordUrl = payload.recordUrl || (payload.vehicleId && payload.handoverId
@@ -187,6 +189,7 @@ serve(async (req) => {
         <p><strong>נהג:</strong> ${payload.driverLabel}</p>
         <p><strong>קילומטראז':</strong> ${payload.odometerReading.toLocaleString('en-US')}</p>
         <p><strong>רמת דלק:</strong> ${payload.fuelLevel}/8</p>
+        <p><strong>דיווח נזקים:</strong> ${payload.damageSummary || 'ללא נזקים מסומנים'}</p>
         <p><strong>הערות:</strong> ${payload.notes || 'ללא'}</p>
         <p><strong>קישור לרישום המסירה:</strong> <a href="${recordUrl}" target="_blank">צפייה ברישום</a></p>
         <p><strong>טופס חתום/ארכיון:</strong> <a href="${persistedPdfUrl}" target="_blank">View Form</a></p>

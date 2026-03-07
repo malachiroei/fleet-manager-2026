@@ -11,7 +11,7 @@ function fmtDate(d: string | null): string {
   return `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}/${dt.getFullYear()}`;
 }
 
-function VehicleCard({ vehicle }: { vehicle: any }) {
+function VehicleCard({ vehicle }: { vehicle: any; key?: string }) {
   return (
     <div className="audi-premium-card p-4 md:p-8">
       <div className="mb-2 text-lg md:text-2xl font-black neon-title uppercase">
@@ -73,12 +73,12 @@ export default function VehicleListPage() {
 
   return (
     <div className="min-h-screen bg-[#020617] p-4 md:p-8 text-white relative overflow-hidden">
-      <div className="absolute top-[-200px] left-1/2 -translate-x-1/2 w-[800px] h-[800px] bg-cyan-500/10 blur-[150px] pointer-events-none" />
+      <div className="absolute top-[-180px] left-1/2 -translate-x-1/2 w-[120vw] max-w-[800px] h-[120vw] max-h-[800px] bg-cyan-500/10 blur-[150px] pointer-events-none" />
       <div className="relative z-10 space-y-6 md:space-y-10">
-        <div className="flex justify-between items-center gap-3">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
           <h1 className="text-2xl md:text-4xl font-black neon-title">ניהול צי רכבים</h1>
-          <Link to="/vehicles/add">
-            <Button className="bg-cyan-600 hover:bg-cyan-500 font-bold px-4 md:px-8 py-2 md:py-6 text-sm md:text-lg shadow-[0_0_20px_rgba(6,182,212,0.4)]">הוסף רכב</Button>
+          <Link to="/vehicles/add" className="w-full sm:w-auto">
+            <Button className="w-full sm:w-auto bg-cyan-600 hover:bg-cyan-500 font-bold px-4 md:px-8 py-2 md:py-6 text-sm md:text-lg shadow-[0_0_20px_rgba(6,182,212,0.4)]">הוסף רכב</Button>
           </Link>
         </div>
         <div className="relative max-w-xl">

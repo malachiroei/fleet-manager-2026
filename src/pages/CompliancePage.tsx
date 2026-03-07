@@ -41,7 +41,7 @@ export default function CompliancePage() {
 
       <main className="container py-6 space-y-6">
         {/* Summary */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card className="border-destructive/50 bg-destructive/5">
             <CardContent className="p-4 text-center">
               <div className="text-3xl font-bold text-destructive">{expiredAlerts.length}</div>

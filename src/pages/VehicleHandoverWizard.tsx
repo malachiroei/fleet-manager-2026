@@ -183,7 +183,7 @@ function Step1({
     setAccessories(accessories.map(a => ({ ...a, checked: !allChecked })));
 
   return (
-    <div ref={containerRef} className="bg-white text-slate-900 rounded-2xl p-6 shadow-xl">
+    <div ref={containerRef} className="bg-white text-slate-900 rounded-2xl p-4 sm:p-6 shadow-xl">
       <OfficialDocHeader
         title="טופס קבלת רכב"
         subtitle="יש לסמן ✓ על כל פריט המצוי ברכב ולחתום בתחתית הטופס"
@@ -278,7 +278,7 @@ function Step2({
   pdfTemplateUrl?: string | null;
 }) {
   return (
-    <div ref={containerRef} className="bg-white text-slate-900 rounded-2xl p-6 shadow-xl">
+    <div ref={containerRef} className="bg-white text-slate-900 rounded-2xl p-4 sm:p-6 shadow-xl">
       <OfficialDocHeader
         title="נוהל שימוש ברכב חברה"
         subtitle="נוהל מס׳ 04-05-001 — קרא בעיון ואשר חתימה בתחתית"
@@ -356,7 +356,7 @@ function Step3({
     setHealthItems(healthItems.map(h => ({ ...h, checked: !allChecked })));
 
   return (
-    <div ref={containerRef} className="bg-white text-slate-900 rounded-2xl p-6 shadow-xl">
+    <div ref={containerRef} className="bg-white text-slate-900 rounded-2xl p-4 sm:p-6 shadow-xl">
       <OfficialDocHeader
         title="הצהרת בריאות לנהג"
         subtitle="יש לסמן ✓ על כל סעיף ולחתום. ידוע כי מסירת פרטים כוזבים מהווה עבירה."
@@ -465,7 +465,7 @@ function Step4({
   const makePrev = (file: File | null) => file ? URL.createObjectURL(file) : null;
 
   return (
-    <div className="bg-white text-slate-900 rounded-2xl p-6 shadow-xl">
+    <div className="bg-white text-slate-900 rounded-2xl p-4 sm:p-6 shadow-xl">
       <OfficialDocHeader
         title="צילום רישיון נהיגה"
         subtitle="יש לצלם את שני צדי הרישיון ולמלא את הפרטים"
@@ -474,7 +474,7 @@ function Step4({
       />
 
       {/* Photo upload */}
-      <div className="grid grid-cols-2 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         {([
           { label: 'צד א׳ — תמונה ופרטים', side: 'front', file: licenseFront, setFile: setLicenseFront },
           { label: 'צד ב׳ — דרגות ותוקף',  side: 'back',  file: licenseBack,  setFile: setLicenseBack },
@@ -510,7 +510,7 @@ function Step4({
 
       {/* Fields — dark panel for legibility */}
       <div className="bg-slate-900 rounded-xl p-4">
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <Label className="text-slate-300 text-sm font-semibold">מספר רישיון *</Label>
             <Input

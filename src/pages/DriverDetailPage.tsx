@@ -143,7 +143,7 @@ export default function DriverDetailPage() {
           </div>
         </header>
         <main className="container py-6">
-          <Card><CardContent className="p-8 text-center">
+          <Card><CardContent className="p-4 sm:p-8 text-center">
             <User className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
             <p className="text-muted-foreground">הנהג המבוקש לא נמצא במערכת</p>
             <Link to="/drivers"><Button className="mt-4">חזור לרשימת הנהגים</Button></Link>
@@ -352,7 +352,7 @@ export default function DriverDetailPage() {
       </main>
 
       <Dialog open={!!selectedImage} onOpenChange={(open) => !open && setSelectedImage(null)}>
-        <DialogContent className="max-w-4xl p-0 overflow-hidden bg-transparent border-none shadow-none text-white">
+        <DialogContent className="w-[95vw] max-w-4xl p-0 overflow-hidden bg-transparent border-none shadow-none text-white">
           <div className="relative w-full h-full flex flex-col items-center justify-center">
             <div className="absolute top-0 right-0 p-4 z-50">
               <button

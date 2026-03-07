@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent } from './ui/card';
-import { MapPin, Truck, AlertCircle } from 'lucide-react';
+import { MapPin, Truck, AlertCircle, Repeat } from 'lucide-react';
 
 export function QuickActions() {
   const { t } = useTranslation();
@@ -18,6 +18,12 @@ export function QuickActions() {
       href: '/handover/delivery',
       icon: Truck,
       color: 'bg-blue-500',
+    },
+    {
+      title: 'רכב חליפי',
+      href: '/handover/replacement',
+      icon: Repeat,
+      color: 'bg-cyan-600',
     },
     {
       title: t('navigation.accidents'),

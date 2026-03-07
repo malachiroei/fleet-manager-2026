@@ -33,6 +33,8 @@ import {
 } from 'lucide-react';
 import type { ComplianceStatus } from '@/types/fleet';
 import { VehicleFolders } from '@/components/VehicleFolders';
+import VehicleDamageSnapshot from '@/components/VehicleDamageSnapshot';
+import { parseDamageSummaryLine } from '@/lib/vehicleDamage';
 
 function StatusBadge({ status, daysLeft }: { status: ComplianceStatus; daysLeft?: number }) {
   const config = {
@@ -71,6 +73,7 @@ function HandoverHistoryList({ handovers }: { handovers: any[] }) {
         const date = new Date(h.handover_date);
         const dateStr = date.toLocaleDateString('he-IL');
         const timeStr = date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+        const damageSummary = parseDamageSummaryLine(h.notes);
         return (
           <div id={`handover-${h.id}`} key={h.id} className="rounded-lg border border-border overflow-hidden">
             {/* Compact row */}
@@ -122,6 +125,7 @@ function HandoverHistoryList({ handovers }: { handovers: any[] }) {
                   </div>
                 )}
                 {h.notes && <p className="text-sm text-muted-foreground">{h.notes}</p>}
+                {damageSummary && <VehicleDamageSnapshot summary={damageSummary} />}
                 {h.pdf_url && (
                   <a
                     href={h.pdf_url}
@@ -232,7 +236,7 @@ export default function VehicleDetailPage() {
         </header>
         <main className="container py-6">
           <Card>
-            <CardContent className="p-8 text-center">
+            <CardContent className="p-4 sm:p-8 text-center">
               <Car className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
               <p className="text-muted-foreground">הרכב המבוקש לא נמצא במערכת</p>
               <Link to="/vehicles">
@@ -388,7 +392,7 @@ export default function VehicleDetailPage() {
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <p className="text-sm text-muted-foreground">יצרן</p>
                 <p className="font-medium">{vehicle.manufacturer}</p>
@@ -476,7 +480,7 @@ export default function VehicleDetailPage() {
                 </div>
               </div>
             )}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* A - שנת מס */}
               <div>
                 <p className="text-sm text-muted-foreground">שנת מס</p>
@@ -647,7 +651,7 @@ export default function VehicleDetailPage() {
                 <CardTitle>טיפול הבא</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-4">
+            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {vehicle.next_maintenance_date && (
                 <div>
                   <p className="text-sm text-muted-foreground">תאריך</p>
@@ -708,7 +712,7 @@ export default function VehicleDetailPage() {
                 <CardTitle>בעלות</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-4">
+            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {vehicle.ownership_type && (
                 <div>
                   <p className="text-sm text-muted-foreground">סוג בעלות</p>

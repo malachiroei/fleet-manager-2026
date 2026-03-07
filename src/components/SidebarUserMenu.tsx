@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
-  Moon, Sun, LogOut, Building2, Globe, ChevronRight, X, User
+  Moon, Sun, LogOut, Building2, Globe, ChevronRight, ChevronLeft, X, User
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/useTheme';
@@ -36,13 +36,14 @@ export function SidebarUserMenu() {
   const initials = name.slice(0, 2).toUpperCase();
 
   const isRtl = i18n.dir() === 'rtl';
+  const CaretIcon = isRtl ? ChevronLeft : ChevronRight;
   const toggleLang = () => {
     const next = i18n.language === 'he' ? 'en' : 'he';
     i18n.changeLanguage(next);
   };
 
   return (
-    <div className="relative">
+    <div dir={isRtl ? 'rtl' : 'ltr'} className="relative">
       {/* Floating panel */}
       {open && (
         <div
@@ -56,14 +57,14 @@ export function SidebarUserMenu() {
             'border-white/10',
             '.light & border-slate-100'
           )}>
-            <div className="flex items-center gap-3 min-w-0">
+            <div className={cn('flex items-center gap-3 min-w-0', isRtl && 'flex-row-reverse')}>
               <div className={cn(
                 'flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold',
                 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/30',
               )}>
                 {initials}
               </div>
-              <div className="min-w-0">
+              <div className={cn('min-w-0', isRtl ? 'text-right' : 'text-left')}>
                 <p className="text-sm font-semibold truncate text-white sidebar-user-name">{name}</p>
                 <p className="text-[11px] truncate text-white/50 sidebar-user-email">{email}</p>
               </div>
@@ -78,18 +79,21 @@ export function SidebarUserMenu() {
           </div>
 
           {/* Menu items */}
-          <div className="py-2">
+          <div className={cn('py-2', isRtl ? 'text-right' : 'text-left')}>
             {/* Dark/Light mode */}
             <button
               onClick={toggleTheme}
-              className="sidebar-menu-item w-full flex items-center justify-between gap-3 px-4 py-2.5 text-sm transition-colors"
+              className={cn(
+                'sidebar-menu-item w-full flex items-center justify-between gap-3 px-4 py-2.5 text-sm transition-colors',
+                isRtl ? 'flex-row-reverse text-right' : 'text-left'
+              )}
             >
-              <div className="flex items-center gap-3">
+              <div className={cn('flex min-w-0 flex-1 items-center gap-3', isRtl ? 'flex-row-reverse justify-end text-right' : 'text-left')}>
                 {theme === 'dark'
                   ? <Moon className="h-4 w-4 text-cyan-300" />
                   : <Sun className="h-4 w-4 text-amber-400" />
                 }
-                <span className="sidebar-menu-label">
+                <span className={cn('sidebar-menu-label', isRtl ? 'text-right' : 'text-left')}>
                   {theme === 'dark' ? 'מצב כהה' : 'מצב בהיר'}
                 </span>
               </div>
@@ -108,13 +112,16 @@ export function SidebarUserMenu() {
             {/* Language toggle */}
             <button
               onClick={toggleLang}
-              className="sidebar-menu-item w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors"
+              className={cn(
+                'sidebar-menu-item w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors',
+                isRtl ? 'flex-row-reverse text-right' : 'text-left'
+              )}
             >
               <Globe className="h-4 w-4 text-cyan-300 sidebar-menu-icon" />
-              <span className="sidebar-menu-label flex-1 text-start">
+              <span className={cn('sidebar-menu-label flex-1', isRtl ? 'text-right' : 'text-left')}>
                 {i18n.language === 'he' ? 'שפה: עברית' : 'Language: English'}
               </span>
-              <ChevronRight className="h-3.5 w-3.5 opacity-40 sidebar-menu-caret" />
+              <CaretIcon className="h-3.5 w-3.5 opacity-40 sidebar-menu-caret" />
             </button>
 
             <div className="my-1.5 mx-3 h-px bg-white/8 sidebar-divider" />
@@ -123,11 +130,14 @@ export function SidebarUserMenu() {
             <Link
               to="/admin/org-settings"
               onClick={() => setOpen(false)}
-              className="sidebar-menu-item w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors"
+              className={cn(
+                'sidebar-menu-item w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors',
+                isRtl ? 'flex-row-reverse text-right' : 'text-left'
+              )}
             >
               <Building2 className="h-4 w-4 text-cyan-300 sidebar-menu-icon" />
-              <span className="sidebar-menu-label flex-1">הגדרות ארגון</span>
-              <ChevronRight className="h-3.5 w-3.5 opacity-40 sidebar-menu-caret" />
+              <span className={cn('sidebar-menu-label flex-1', isRtl ? 'text-right' : 'text-left')}>הגדרות ארגון</span>
+              <CaretIcon className="h-3.5 w-3.5 opacity-40 sidebar-menu-caret" />
             </Link>
 
             <div className="my-1.5 mx-3 h-px bg-white/8 sidebar-divider" />
@@ -135,10 +145,13 @@ export function SidebarUserMenu() {
             {/* Logout */}
             <button
               onClick={() => { setOpen(false); signOut(); }}
-              className="sidebar-logout-btn w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors"
+              className={cn(
+                'sidebar-logout-btn w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors',
+                isRtl ? 'flex-row-reverse text-right' : 'text-left'
+              )}
             >
               <LogOut className="h-4 w-4 text-red-400" />
-              <span>התנתקות</span>
+              <span className={cn('flex-1', isRtl ? 'text-right' : 'text-left')}>התנתקות</span>
             </button>
           </div>
         </div>
@@ -150,6 +163,7 @@ export function SidebarUserMenu() {
         onClick={() => setOpen((p) => !p)}
         className={cn(
           'sidebar-trigger-btn w-full flex items-center gap-3 rounded-xl px-3 py-2.5 transition-all duration-200',
+          isRtl ? 'flex-row-reverse text-right' : 'text-left',
           open
             ? 'bg-cyan-500/20 border border-cyan-400/40'
             : 'hover:bg-white/8 border border-transparent'
@@ -165,7 +179,7 @@ export function SidebarUserMenu() {
           <p className="text-sm font-semibold leading-tight truncate text-white sidebar-trigger-name">{name}</p>
           <p className="text-[10px] truncate text-white/45 sidebar-trigger-email">{email}</p>
         </div>
-        <ChevronRight className={cn(
+        <CaretIcon className={cn(
           'h-4 w-4 text-white/40 transition-transform',
           open && 'rotate-[270deg]'
         )} />

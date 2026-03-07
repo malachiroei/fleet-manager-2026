@@ -14,7 +14,8 @@ import {
   Calculator,
   Droplet,
   ArrowLeftRight,
-  ChevronRight
+  ChevronRight,
+  ChevronLeft
 } from 'lucide-react';
 import { useLabel, useIsVisible } from '@/hooks/useUiLabels';
 import { Button } from './ui/button';
@@ -38,9 +39,10 @@ interface NavGroup {
 
 export function Sidebar() {
   const location = useLocation();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const label = useLabel();
   const isVis = useIsVisible();
+  const isRtl = i18n.dir() === 'rtl';
 
   const navigationGroups: NavGroup[] = [
     {
@@ -50,6 +52,7 @@ export function Sidebar() {
         { title: t('navigation.fleetManagement'), titleKey: 'navigation.fleetManagement', uiKey: 'nav.fleet_management', href: '/vehicles', icon: Car },
         { title: 'העברות', titleKey: 'navigation.transfers', uiKey: 'nav.transfers', href: '/vehicles/transfers', icon: ArrowLeftRight },
         { title: t('navigation.vehicleDelivery'), titleKey: 'navigation.vehicleDelivery', uiKey: 'nav.vehicle_delivery', href: '/handover/delivery', icon: Truck },
+        { title: 'רכב חליפי', titleKey: 'navigation.replacementVehicle', href: '/handover/replacement', icon: Truck },
         { title: t('navigation.exceptionAlerts'), titleKey: 'navigation.exceptionAlerts', uiKey: 'nav.compliance', href: '/compliance', icon: AlertTriangle },
       ],
     },
@@ -82,14 +85,14 @@ export function Sidebar() {
   ];
 
   return (
-    <div className="glass flex h-full w-64 flex-col text-white">
+    <div dir={isRtl ? 'rtl' : 'ltr'} className="glass flex h-full w-64 flex-col text-white">
       {/* Logo/Header */}
       <div className="flex h-16 items-center border-b border-white/10 px-6">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-cyan-400/40 bg-cyan-500/15 shadow-[0_0_14px_rgba(0,255,255,0.2)]">
             <Car className="h-5 w-5 text-cyan-300" />
           </div>
-          <div>
+          <div className={cn(isRtl ? 'text-right' : 'text-left')}>
             <h1 className="font-bold text-base leading-tight text-white">{t('navigation.fleetManager')}</h1>
             <p className="text-xs text-cyan-400/60">{t('navigation.proDashboard')}</p>
           </div>
@@ -104,7 +107,8 @@ export function Sidebar() {
             <Button
               variant="ghost"
               className={cn(
-                'w-full justify-start gap-3 rounded-xl px-4 py-2 text-sm font-medium transition-all duration-300',
+                'w-full gap-3 rounded-xl px-4 py-2 text-sm font-medium transition-all duration-300',
+                isRtl ? 'flex-row-reverse justify-end text-right' : 'justify-start text-left',
                 location.pathname === '/'
                   ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-400/40 shadow-[0_0_20px_rgba(0,255,255,0.3)]'
                   : 'text-white/70 hover:bg-cyan-500/10 hover:text-white hover:shadow-[0_0_20px_rgba(0,255,255,0.3)]'
@@ -120,19 +124,23 @@ export function Sidebar() {
             if (visibleItems.length === 0) return null;
             return (
             <div key={group.titleKey}>
-              <h3 className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-cyan-400/60">
+              <h3 className={cn('mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-cyan-400/60', isRtl ? 'text-right' : 'text-left')}>
                 {group.title}
               </h3>
               <div className="space-y-1">
                 {visibleItems.map((item) => {
                   const isActive = location.pathname === item.href || 
                                    location.pathname.startsWith(item.href + '/');
+                  const ActiveChevron = isRtl ? ChevronLeft : ChevronRight;
                   
                   if (item.disabled) {
                     return (
                       <div
                         key={item.href}
-                        className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium cursor-not-allowed opacity-40 text-white/50"
+                        className={cn(
+                          'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium cursor-not-allowed opacity-40 text-white/50',
+                          isRtl ? 'flex-row-reverse text-right' : 'text-left'
+                        )}
                       >
                         <item.icon className="h-5 w-5" />
                         {item.uiKey ? label(item.uiKey, item.title) : item.title}
@@ -146,6 +154,7 @@ export function Sidebar() {
                       to={item.href}
                       className={cn(
                         'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-300',
+                        isRtl ? 'flex-row-reverse text-right' : 'text-left',
                         isActive
                           ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-400/40 shadow-[0_0_20px_rgba(0,255,255,0.3)]'
                           : 'text-white/70 hover:bg-cyan-500/10 hover:text-white hover:shadow-[0_0_20px_rgba(0,255,255,0.3)]'
@@ -153,7 +162,7 @@ export function Sidebar() {
                     >
                       <item.icon className="h-5 w-5" />
                       {item.uiKey ? label(item.uiKey, item.title) : item.title}
-                      {isActive && <ChevronRight className="ml-auto h-4 w-4 text-cyan-400" />}
+                      {isActive && <ActiveChevron className={cn('h-4 w-4 text-cyan-400', isRtl ? 'mr-auto' : 'ml-auto')} />}
                     </Link>
                   );
                 })}
