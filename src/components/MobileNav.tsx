@@ -11,6 +11,7 @@ import {
   MapPin,
   Gauge,
   BarChart3,
+  FileText,
   Calculator,
   Droplet,
   Settings,
@@ -77,6 +78,7 @@ export function MobileNav() {
       titleKey: 'navigation.operational',
       items: [
         { title: t('navigation.drivers'), titleKey: 'navigation.drivers', href: '/drivers', icon: Car },
+        { title: 'טפסים', titleKey: 'navigation.forms', href: '/forms', icon: FileText },
         { title: t('navigation.mileageUpdate'), titleKey: 'navigation.mileageUpdate', href: '/vehicles/odometer', icon: Gauge },
         { title: 'הפקת דוחות', titleKey: 'navigation.reportGeneration', href: '/reports', icon: BarChart3 },
       ],

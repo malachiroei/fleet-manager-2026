@@ -1,5 +1,29 @@
 @import "tailwindcss";
 
+/* Global guard: hide any injected Lovable watermark/badge widgets. */
+#lovable-badge,
+.lovable-badge,
+[data-lovable-badge],
+[class*="lovable-badge"],
+[id*="lovable-badge"],
+[class*="lovable-widget"],
+[id*="lovable-widget"],
+iframe[src*="lovable"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Forms page hardening: prevent pseudo-element icon injection near file labels. */
+.forms-clean .forms-file-name::before,
+.forms-clean .forms-file-name::after,
+.forms-clean [data-clean-file-row]::before,
+.forms-clean [data-clean-file-row]::after {
+  content: none !important;
+  background-image: none !important;
+}
+
 @theme {
   --color-fleet-blue: #22d3ee;
   --color-fleet-dark: #020617;

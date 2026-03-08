@@ -28,6 +28,7 @@ import OrgSettingsPage from "./pages/OrgSettingsPage";
 import NotFound from "./pages/NotFound";
 import ScanReportPage from "./pages/ScanReportPage";
 import ReportsPage from "./pages/ReportsPage";
+import FormsPage from "./pages/FormsPage";
 import VehicleHandoverWizard from './pages/VehicleHandoverWizard';
 import TransfersPage from './pages/TransfersPage';
 import { ThemeProvider } from '@/hooks/useTheme';
@@ -95,6 +96,7 @@ function AppRoutes() {
       <Route path="/admin/org-settings" element={<ProtectedRoute><OrgSettingsPage /></ProtectedRoute>} />
       <Route path="/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
       <Route path="/reports/scan" element={<ProtectedRoute><ScanReportPage /></ProtectedRoute>} />
+      <Route path="/forms" element={<ProtectedRoute><FormsPage /></ProtectedRoute>} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );

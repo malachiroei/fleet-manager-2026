@@ -382,12 +382,21 @@ export async function generateReceptionPDF({
   date,
   accessories,
   signatureDataUrl,
+  declarationText,
+  manualFields,
 }: {
   vehicleLabel: string;
   driverName: string;
   date: string;
   accessories: Array<{ name: string; maxPrice: string; checked: boolean; notes: string }>;
   signatureDataUrl: string | null;
+  declarationText?: string;
+  manualFields?: {
+    idNumber?: string;
+    phone?: string;
+    address?: string;
+    ignitionCode?: string;
+  };
 }): Promise<Blob> {
   const { doc, pageWidth, rightX, y: startY } = await buildWizardPdfDoc(
     'טופס קבלת רכב',
@@ -398,8 +407,16 @@ export async function generateReceptionPDF({
   let y = startY;
 
   doc.setFontSize(10);
-  doc.text('אני הח"מ מאשר/ת כי קיבלתי את הרכב הנ"ל וכי הפריטים הבאים נמסרו לי:', rightX, y, { align: 'right' });
-  y += 18;
+  if (declarationText?.trim()) {
+    const declarationLines = declarationText
+      .split('\n')
+      .flatMap((line) => doc.splitTextToSize(line || ' ', 460) as string[]);
+    doc.text(declarationLines, rightX, y, { align: 'right' });
+    y += declarationLines.length * 12 + 12;
+  } else {
+    doc.text('אני הח"מ מאשר/ת כי קיבלתי את הרכב הנ"ל וכי הפריטים הבאים נמסרו לי:', rightX, y, { align: 'right' });
+    y += 18;
+  }
 
   doc.setFontSize(9);
   for (const acc of accessories) {
@@ -411,7 +428,24 @@ export async function generateReceptionPDF({
   }
 
   y += 12;
-  addSignatureToPdf(doc as any, signatureDataUrl, y, pageWidth, rightX, 'חתימת הנהג — אישור קבלת הרכב והאביזרים:');
+  doc.setFontSize(10);
+  doc.text('3. שדות מילוי ידני:', rightX, y, { align: 'right' });
+  y += 16;
+
+  const footerLines = [
+    `מספר ת"ז: ${manualFields?.idNumber || 'לא הוזן'}`,
+    `טלפון נייד: ${manualFields?.phone || 'לא הוזן'}`,
+    `כתובת: ${manualFields?.address || 'לא הוזנה'}`,
+    `קוד קודנית: ${manualFields?.ignitionCode || 'לא הוזן'}`,
+  ];
+  doc.setFontSize(9);
+  for (const line of footerLines) {
+    doc.text(line, rightX, y, { align: 'right' });
+    y += 14;
+  }
+
+  y += 12;
+  addSignatureToPdf(doc as any, signatureDataUrl, y, pageWidth, rightX, '4. חתימת הנהג — אישור קבלת הרכב והאביזרים:');
   return doc.output('blob');
 }
 
@@ -898,7 +932,8 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
         error: driverDocError,
         message: getSupabaseErrorMessage(driverDocError),
       });
-      throw new Error(`driver_documents insert failed: ${getSupabaseErrorMessage(driverDocError)}`);
+      // Non-blocking: handover archive is already saved in vehicle_documents.
+      // Keep flow successful and allow follow-up DB fixes without blocking drivers.
     }
   }
 

@@ -1,18 +1,19 @@
-import React, { useState, useRef, useCallback, useEffect, RefObject } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo, RefObject } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useVehicles } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
 import { useCreateHandover, sendHandoverNotificationEmail, generateReceptionPDF, generateProcedurePDF, generateHealthDeclarationPDF } from '@/hooks/useHandovers';
 import { useOrgSettings, parsePolicyClauses, parseHealthItems } from '@/hooks/useOrgSettings';
-import { useOrgDocuments } from '@/hooks/useOrgDocuments';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
+import { buildFormsAutoFillContext } from '@/lib/formsAutofill';
 import SignaturePad, { SignaturePadRef } from '@/components/SignaturePad';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
+import { HANDOVER_ACCESSORY_CEILINGS, formatCeilingPrice } from '@/lib/accessoryCeilings';
 // Badge no longer needed — replaced with plain span
 import { toast } from 'sonner';
 import {
@@ -68,21 +69,62 @@ interface WizardState {
   licenseBack: File | null;
 }
 
+interface ReceptionManualFields {
+  idNumber: string;
+  employeeNumber: string;
+  phone: string;
+  address: string;
+  ignitionCode: string;
+}
+
+const idNumberRegex = /^\d{9}$/;
+const phoneRegex = /^0\d{8,9}$/;
+const ignitionCodeRegex = /^\d{4,6}$/;
+
+function extractCommitmentSection(text?: string): string[] {
+  if (!text?.trim()) {
+    return [
+      'הנני מתחייב להשתמש ברכב אך ורק לשם מילוי תפקידי ולנהוג לפי חוקי התעבורה והנחיות החברה.',
+      'ידוע לי כי אחריותי המלאה חלה על שימוש תקין ברכב ועל החזרתו בשלמות.',
+    ];
+  }
+
+  const lines = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !line.includes('______'));
+
+  const startIdx = lines.findIndex((line) => line.includes('התחייבות והצהרת הנהג'));
+  if (startIdx === -1) {
+    return lines.filter((line) => !line.includes('פרטי הנהג והרכב') && !line.includes('טבלת אישור אביזרים'));
+  }
+
+  const sliced = lines.slice(startIdx + 1);
+  const endIdx = sliced.findIndex((line) => line.includes('שדות מילוי') || line.includes('חתימה דיגיטלית'));
+  const section = endIdx >= 0 ? sliced.slice(0, endIdx) : sliced;
+
+  return section.filter(
+    (line) => !line.includes('פרטי הנהג והרכב') && !line.includes('טבלת אישור אביזרים') && !line.startsWith('['),
+  );
+}
+
+function joinHebrewList(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? '';
+  if (items.length === 2) return `${items[0]} ו${items[1]}`;
+  return `${items.slice(0, -1).join(', ')} ו${items[items.length - 1]}`;
+}
+
 // ─────────────────────────────────────────────
 // Static data
 // ─────────────────────────────────────────────
-const INITIAL_ACCESSORIES: AccessoryItem[] = [
-  { id: 'spare_wheel',    name: 'גלגל רזרבי',             maxPrice: '₪800',  checked: false, notes: '' },
-  { id: 'jack',           name: 'מגבה',                   maxPrice: '₪150',  checked: false, notes: '' },
-  { id: 'wheel_wrench',   name: 'מפתח גלגל',              maxPrice: '₪80',   checked: false, notes: '' },
-  { id: 'warning_tri',    name: 'משולש אזהרה',            maxPrice: '₪60',   checked: false, notes: '' },
-  { id: 'toolkit',        name: 'סט כלים',                maxPrice: '₪120',  checked: false, notes: '' },
-  { id: 'first_aid',      name: 'ערכת עזרה ראשונה',       maxPrice: '₪200',  checked: false, notes: '' },
-  { id: 'fire_ext',       name: 'מטף כיבוי אש',           maxPrice: '₪250',  checked: false, notes: '' },
-  { id: 'fuel_card',      name: 'כרטיס דלק',              maxPrice: '—',     checked: false, notes: '' },
-  { id: 'manual',         name: 'ספר הוראות הפעלה',       maxPrice: '₪100',  checked: false, notes: '' },
-  { id: 'reflective',     name: 'אפוד זוהר',              maxPrice: '₪50',   checked: false, notes: '' },
-];
+const INITIAL_ACCESSORIES: AccessoryItem[] = HANDOVER_ACCESSORY_CEILINGS.map((item) => ({
+  id: item.id,
+  name: item.name,
+  maxPrice: formatCeilingPrice(item.maxPriceNis),
+  checked: false,
+  notes: '',
+}));
 
 const PROCEDURE_CLAUSES: ProcedureClause[] = [
   { id: 1,  text: 'הרכב ישמש לצרכי עבודה בלבד, לנסיעות מוסמכות על-פי תפקיד המחזיק.' },
@@ -161,7 +203,19 @@ function SignatureBlock({ sigRef, label, onSign }: {
 // Step 1 — Vehicle Reception
 // ─────────────────────────────────────────────
 function Step1({
-  accessories, setAccessories, sigRef, onSign, vehicleLabel, driverName, date, containerRef,
+  accessories,
+  setAccessories,
+  sigRef,
+  onSign,
+  vehicleLabel,
+  driverName,
+  date,
+  deliveryDateTime,
+  declarationText,
+  manualFields,
+  onManualFieldChange,
+  canSign,
+  containerRef,
 }: {
   accessories: AccessoryItem[];
   setAccessories: (a: AccessoryItem[]) => void;
@@ -170,6 +224,11 @@ function Step1({
   vehicleLabel: string;
   driverName: string;
   date: string;
+  deliveryDateTime: string;
+  declarationText?: string;
+  manualFields: ReceptionManualFields;
+  onManualFieldChange: (field: keyof ReceptionManualFields, value: string) => void;
+  canSign: boolean;
   containerRef?: RefObject<HTMLDivElement>;
 }) {
   const toggle = (id: string) =>
@@ -181,9 +240,11 @@ function Step1({
   const allChecked = accessories.every(a => a.checked);
   const toggleAll  = () =>
     setAccessories(accessories.map(a => ({ ...a, checked: !allChecked })));
+  const commitmentLines = extractCommitmentSection(declarationText);
+  const requiredAsterisk = <span className="text-red-600">*</span>;
 
   return (
-    <div ref={containerRef} className="bg-white text-slate-900 rounded-2xl p-4 sm:p-6 shadow-xl">
+    <div ref={containerRef} className="bg-white text-slate-900 rounded-2xl p-4 pb-32 sm:p-6 shadow-xl max-h-[calc(100vh-220px)] overflow-y-auto">
       <OfficialDocHeader
         title="טופס קבלת רכב"
         subtitle="יש לסמן ✓ על כל פריט המצוי ברכב ולחתום בתחתית הטופס"
@@ -192,26 +253,19 @@ function Step1({
         driverName={driverName}
       />
 
-      <p className="text-sm text-slate-600 mb-3">
-        אני הח"מ מאשר/ת כי קיבלתי את הרכב הנ"ל וכי הפריטים הבאים נמסרו לי:
-      </p>
-
-      {/* Quick-select button */}
-      <div className="flex justify-end mb-2">
-        <button
-          type="button"
-          onClick={toggleAll}
-          className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
-            allChecked
-              ? 'bg-emerald-100 border-emerald-400 text-emerald-700 hover:bg-emerald-200'
-              : 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700'
-          }`}
-        >
-          {allChecked ? '✔ הכל סומן כתקין' : '✔ סמן הכל כתקין'}
-        </button>
+      <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+        <h3 className="text-sm font-bold text-slate-800 mb-2">1. התחייבות והצהרת הנהג</h3>
+        <div className="space-y-1">
+          {commitmentLines.map((line, idx) => (
+            <p key={`${idx}-${line.slice(0, 20)}`} className="text-sm text-slate-700 leading-6">
+              {line}
+            </p>
+          ))}
+        </div>
       </div>
 
       {/* Accessories table */}
+      <h3 className="text-sm font-bold text-slate-800 mb-2">2. טבלת אישור אביזרים</h3>
       <div className="border border-slate-200 rounded-lg overflow-hidden mb-4">
         <table className="w-full text-sm">
           <thead className="bg-slate-100">
@@ -250,12 +304,101 @@ function Step1({
         </table>
       </div>
 
+      {/* Quick-select button */}
+      <div className="flex justify-end mb-2">
+        <button
+          type="button"
+          onClick={toggleAll}
+          className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
+            allChecked
+              ? 'bg-emerald-100 border-emerald-400 text-emerald-700 hover:bg-emerald-200'
+              : 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700'
+          }`}
+        >
+          {allChecked ? '✔ הכל סומן כתקין' : '✔ סמן הכל כתקין'}
+        </button>
+      </div>
+
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 mb-4">
         <AlertTriangle className="inline h-3.5 w-3.5 ml-1" />
         פריטים שסומנו כנמסרו — אחריות החזרתם בשלמות חלה על הנהג. אובדן או נזק יחויב לפי מחיר התקרה.
       </div>
 
-      <SignatureBlock sigRef={sigRef} label="חתימת הנהג — אישור קבלת הרכב והאביזרים:" onSign={onSign} />
+      <div className="mb-2 rounded-lg border border-slate-200 bg-slate-50 p-4 pb-24 space-y-3">
+        <h3 className="text-sm font-bold text-slate-800">3. שדות מילוי נדרשים</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label htmlFor="receipt-full-name">שם מלא</Label>
+            <Input id="receipt-full-name" value={driverName} readOnly className="bg-slate-100" />
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="receipt-id-number">מספר תעודת זהות {requiredAsterisk}</Label>
+            <Input
+              id="receipt-id-number"
+              value={manualFields.idNumber}
+              onChange={(e) => onManualFieldChange('idNumber', e.target.value)}
+              placeholder="9 ספרות"
+              inputMode="numeric"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="receipt-employee-number">מספר עובד {requiredAsterisk}</Label>
+            <Input
+              id="receipt-employee-number"
+              value={manualFields.employeeNumber}
+              onChange={(e) => onManualFieldChange('employeeNumber', e.target.value)}
+              placeholder="מספר עובד"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="receipt-phone">טלפון נייד {requiredAsterisk}</Label>
+            <Input
+              id="receipt-phone"
+              value={manualFields.phone}
+              onChange={(e) => onManualFieldChange('phone', e.target.value)}
+              placeholder="05X..."
+              inputMode="tel"
+            />
+          </div>
+
+          <div className="space-y-1 sm:col-span-2">
+            <Label htmlFor="receipt-address">כתובת העובד (עיר ורחוב) {requiredAsterisk}</Label>
+            <Input
+              id="receipt-address"
+              value={manualFields.address}
+              onChange={(e) => onManualFieldChange('address', e.target.value)}
+              placeholder="עיר ורחוב"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="receipt-ignition-code">קוד קודנית {requiredAsterisk}</Label>
+            <Input
+              id="receipt-ignition-code"
+              value={manualFields.ignitionCode}
+              onChange={(e) => onManualFieldChange('ignitionCode', e.target.value)}
+              placeholder="4-6 ספרות"
+              inputMode="numeric"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="receipt-delivery-time">תאריך ושעת מסירה</Label>
+            <Input id="receipt-delivery-time" value={deliveryDateTime} readOnly className="bg-slate-100" />
+          </div>
+        </div>
+      </div>
+
+      {canSign ? (
+        <SignatureBlock sigRef={sigRef} label="4. חתימת הנהג — אישור קבלת הרכב והאביזרים:" onSign={onSign} />
+      ) : (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          יש למלא את כל שדות החובה ולסמן את כל האביזרים לפני החתימה.
+        </div>
+      )}
     </div>
   );
 }
@@ -278,7 +421,7 @@ function Step2({
   pdfTemplateUrl?: string | null;
 }) {
   return (
-    <div ref={containerRef} className="bg-white text-slate-900 rounded-2xl p-4 sm:p-6 shadow-xl">
+    <div ref={containerRef} className="bg-white text-slate-900 rounded-2xl p-4 pb-32 sm:p-6 shadow-xl">
       <OfficialDocHeader
         title="נוהל שימוש ברכב חברה"
         subtitle="נוהל מס׳ 04-05-001 — קרא בעיון ואשר חתימה בתחתית"
@@ -356,7 +499,7 @@ function Step3({
     setHealthItems(healthItems.map(h => ({ ...h, checked: !allChecked })));
 
   return (
-    <div ref={containerRef} className="bg-white text-slate-900 rounded-2xl p-4 sm:p-6 shadow-xl">
+    <div ref={containerRef} className="bg-white text-slate-900 rounded-2xl p-4 pb-32 sm:p-6 shadow-xl">
       <OfficialDocHeader
         title="הצהרת בריאות לנהג"
         subtitle="יש לסמן ✓ על כל סעיף ולחתום. ידוע כי מסירת פרטים כוזבים מהווה עבירה."
@@ -381,21 +524,6 @@ function Step3({
         </div>
       ) : (
         <>
-          {/* Quick-select button */}
-          <div className="flex justify-end mb-2">
-            <button
-              type="button"
-              onClick={toggleAll}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
-                allChecked
-                  ? 'bg-emerald-100 border-emerald-400 text-emerald-700 hover:bg-emerald-200'
-                  : 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700'
-              }`}
-            >
-              {allChecked ? '✔ כל הסעיפים אושרו' : 'אני מצהיר כי כל הסעיפים תקינים'}
-            </button>
-          </div>
-
           <div className="space-y-3 mb-6">
             {healthItems.map((item, i) => (
               <div
@@ -418,6 +546,21 @@ function Step3({
                 </p>
               </div>
             ))}
+          </div>
+
+          {/* Quick-select button moved below checklist */}
+          <div className="flex justify-end mb-4">
+            <button
+              type="button"
+              onClick={toggleAll}
+              className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
+                allChecked
+                  ? 'bg-emerald-100 border-emerald-400 text-emerald-700 hover:bg-emerald-200'
+                  : 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700'
+              }`}
+            >
+              {allChecked ? '✔ כל הסעיפים אושרו' : 'אני מצהיר כי כל הסעיפים תקינים'}
+            </button>
           </div>
         </>
       )}
@@ -453,6 +596,7 @@ function Step4({
   licenseClass, setLicenseClass,
   licenseFront, setLicenseFront,
   licenseBack, setLicenseBack,
+  skipLicenseStep,
   driverName, date,
 }: {
   licenseNumber: string; setLicenseNumber: (v: string) => void;
@@ -460,12 +604,13 @@ function Step4({
   licenseClass: string; setLicenseClass: (v: string) => void;
   licenseFront: File | null; setLicenseFront: (f: File | null) => void;
   licenseBack: File | null; setLicenseBack: (f: File | null) => void;
+  skipLicenseStep: boolean;
   driverName: string; date: string;
 }) {
   const makePrev = (file: File | null) => file ? URL.createObjectURL(file) : null;
 
   return (
-    <div className="bg-white text-slate-900 rounded-2xl p-4 sm:p-6 shadow-xl">
+    <div className="bg-white text-slate-900 rounded-2xl p-4 pb-32 sm:p-6 shadow-xl">
       <OfficialDocHeader
         title="צילום רישיון נהיגה"
         subtitle="יש לצלם את שני צדי הרישיון ולמלא את הפרטים"
@@ -510,6 +655,11 @@ function Step4({
 
       {/* Fields — dark panel for legibility */}
       <div className="bg-slate-900 rounded-xl p-4">
+        {skipLicenseStep && (
+          <div className="mb-3 rounded-lg border border-amber-400/60 bg-amber-500/20 px-3 py-2 text-sm font-semibold text-amber-100">
+            שלב צילום הרישיון סומן כדילוג.
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <Label className="text-slate-300 text-sm font-semibold">מספר רישיון *</Label>
@@ -518,7 +668,7 @@ function Step4({
               onChange={(e) => setLicenseNumber(e.target.value)}
               placeholder="00000000"
               dir="ltr"
-              className="mt-1 border-slate-700 bg-slate-900 text-white placeholder:text-slate-500 focus:border-cyan-400"
+              className="mt-1 border-slate-700 bg-slate-900 text-slate-50 font-semibold placeholder:text-slate-400 focus:border-cyan-400"
             />
           </div>
           <div>
@@ -527,7 +677,7 @@ function Step4({
               type="date"
               value={licenseExpiry}
               onChange={(e) => setLicenseExpiry(e.target.value)}
-              className="mt-1 border-slate-700 bg-slate-900 text-white focus:border-cyan-400"
+              className="mt-1 border-slate-700 bg-slate-900 text-slate-50 font-semibold focus:border-cyan-400"
             />
           </div>
           <div>
@@ -537,7 +687,7 @@ function Step4({
               onChange={(e) => setLicenseClass(e.target.value)}
               placeholder="B, C1..."
               dir="ltr"
-              className="mt-1 border-slate-700 bg-slate-900 text-white placeholder:text-slate-500 focus:border-cyan-400"
+              className="mt-1 border-slate-700 bg-slate-900 text-slate-50 font-semibold placeholder:text-slate-400 focus:border-cyan-400"
             />
           </div>
         </div>
@@ -546,53 +696,6 @@ function Step4({
       <p className="text-xs text-slate-400 mt-4 text-center">
         התמונות ישמרו מוצפנות ב-Storage המאובטח של המערכת ויצורפו לתיק הנהג.
       </p>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────
-// Step Doc — Extra org document step
-// ─────────────────────────────────────────────
-function StepDoc({ title, description, fileUrl, confirmed, onConfirm }: {
-  title: string;
-  description: string;
-  fileUrl: string | null;
-  confirmed: boolean;
-  onConfirm: (v: boolean) => void;
-}) {
-  return (
-    <div className="bg-white text-slate-900 rounded-2xl p-6 shadow-xl">
-      <div className="mb-4">
-        <h2 className="text-xl font-bold text-slate-800 mb-1">{title}</h2>
-        {description && <p className="text-sm text-slate-500">{description}</p>}
-      </div>
-      {fileUrl ? (
-        <div className="mb-6">
-          <iframe
-            src={fileUrl}
-            className="w-full rounded-lg border border-slate-200"
-            style={{ minHeight: '420px' }}
-            title={title}
-          />
-          <p className="text-xs text-slate-500 mt-2 text-center">גלול לקרוא לפני אישור</p>
-        </div>
-      ) : (
-        <div className="bg-slate-50 border border-slate-200 rounded-lg p-5 mb-6 text-center text-slate-400">
-          <FileText className="h-8 w-8 mx-auto mb-2 opacity-40" />
-          <p className="text-sm">אין קובץ מצורף — קרא את הכותרת וההסבר ואשר למטה</p>
-        </div>
-      )}
-      <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-        <Checkbox
-          id={`doc-confirm-${title}`}
-          checked={confirmed}
-          onCheckedChange={(v) => onConfirm(!!v)}
-          className="border-blue-400 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
-        />
-        <label htmlFor={`doc-confirm-${title}`} className="text-sm font-medium text-blue-800 cursor-pointer select-none">
-          קראתי ומאשר/ת את תוכן המסמך
-        </label>
-      </div>
     </div>
   );
 }
@@ -659,25 +762,38 @@ export default function VehicleHandoverWizard() {
   const { data: drivers  } = useDrivers();
   const { user } = useAuth();
   const { data: orgSettings } = useOrgSettings();
-  const { data: extraDocs } = useOrgDocuments(); // docs with include_in_handover=true
 
   const vehicleId  = searchParams.get('vehicleId')  ?? '';
   const driverId   = searchParams.get('driverId')   ?? '';
+  const handoverTypeParam = searchParams.get('handoverType') ?? searchParams.get('type') ?? 'delivery';
+  const handoverType = handoverTypeParam === 'return' ? 'return' : 'delivery';
   const reportUrl  = decodeURIComponent(searchParams.get('reportUrl')  ?? '');
   const handoverId = decodeURIComponent(searchParams.get('handoverId') ?? '');
 
   const vehicle = vehicles?.find(v => v.id === vehicleId);
   const driver  = drivers?.find(d => d.id === driverId);
+  const driverExt = (driver ?? {}) as any;
 
   const vehicleLabel = vehicle
     ? `${vehicle.manufacturer} ${vehicle.model} (${vehicle.plate_number})`
     : vehicleId;
-  const driverName = driver?.full_name ?? driverId;
+  const autoFillContext = buildFormsAutoFillContext({ user, driver, vehicle });
+  const driverName = autoFillContext.employee_name || driverId;
   const today = new Date().toLocaleDateString('he-IL');
+  const deliveryDateTime = new Date().toLocaleString('he-IL');
+
+  const [manualFields, setManualFields] = useState<ReceptionManualFields>({
+    idNumber: '',
+    employeeNumber: '',
+    phone: '',
+    address: '',
+    ignitionCode: '',
+  });
 
   // Step state
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [skipLicenseStep, setSkipLicenseStep] = useState(false);
 
   // Sig refs
   const sig1Ref = useRef<SignaturePadRef>(null);
@@ -722,33 +838,80 @@ export default function VehicleHandoverWizard() {
   const [licenseFront,  setLicenseFront]  = useState<File | null>(null);
   const [licenseBack,   setLicenseBack]   = useState<File | null>(null);
 
+  useEffect(() => {
+    setManualFields({
+      idNumber: driver?.id_number ?? '',
+      employeeNumber: String(driverExt.employee_number ?? ''),
+      phone: driver?.phone ?? '',
+      address: String(driverExt.address ?? ''),
+      ignitionCode: vehicle?.ignition_code ?? '',
+    });
+  }, [driver?.id, driver?.id_number, driver?.phone, driverExt.employee_number, driverExt.address, vehicle?.id, vehicle?.ignition_code]);
+
+  useEffect(() => {
+    setLicenseExpiry((prev) => prev || (driver?.license_expiry ?? ''));
+  }, [driver?.id, driver?.license_expiry]);
+
   // ── PDF template URLs (from org settings) ──
   const healthPdfUrl  = (orgSettings as any)?.health_statement_pdf_url as string | null ?? null;
   const policyPdfUrl  = (orgSettings as any)?.vehicle_policy_pdf_url  as string | null ?? null;
 
-  // ── Dynamic extra doc steps from org_documents ──
-  const [docConfirms, setDocConfirms] = useState<boolean[]>([]);
+  const receptionDeclarationText = '';
+
+  const requiredStep1FieldsMissing = useMemo(() => {
+    const missing: Array<{ key: keyof ReceptionManualFields; label: string }> = [];
+    if (!manualFields.idNumber.trim()) missing.push({ key: 'idNumber', label: 'מספר תעודת זהות' });
+    if (!manualFields.employeeNumber.trim()) missing.push({ key: 'employeeNumber', label: 'מספר עובד' });
+    if (!manualFields.address.trim()) missing.push({ key: 'address', label: 'כתובת' });
+    if (!manualFields.phone.trim()) missing.push({ key: 'phone', label: 'טלפון' });
+    if (!manualFields.ignitionCode.trim()) missing.push({ key: 'ignitionCode', label: 'קוד קודנית' });
+    return missing;
+  }, [manualFields.address, manualFields.employeeNumber, manualFields.idNumber, manualFields.ignitionCode, manualFields.phone]);
+
+  const requiredStep1FieldsInvalid = useMemo(() => {
+    const invalid: string[] = [];
+    if (manualFields.idNumber.trim() && !idNumberRegex.test(manualFields.idNumber.trim())) invalid.push('מספר ת"ז בן 9 ספרות');
+    if (manualFields.phone.trim() && !phoneRegex.test(manualFields.phone.trim())) invalid.push('טלפון תקין');
+    if (manualFields.ignitionCode.trim() && !ignitionCodeRegex.test(manualFields.ignitionCode.trim())) {
+      invalid.push('קוד קודנית בן 4-6 ספרות');
+    }
+    return invalid;
+  }, [manualFields.idNumber, manualFields.ignitionCode, manualFields.phone]);
+
+  const manualFieldsValid = useMemo(() => {
+    const requiredFields: Array<keyof ReceptionManualFields> = ['idNumber', 'employeeNumber', 'phone', 'address', 'ignitionCode'];
+    for (const field of requiredFields) {
+      const value = (manualFields[field] ?? '').trim();
+      if (!value) return false;
+      if (field === 'idNumber' && !idNumberRegex.test(value)) return false;
+      if (field === 'phone' && !phoneRegex.test(value)) return false;
+      if (field === 'address' && value.length < 5) return false;
+      if (field === 'ignitionCode' && !ignitionCodeRegex.test(value)) return false;
+    }
+    return true;
+  }, [manualFields]);
+
+  const allAccessoriesChecked = useMemo(() => accessories.every((a) => a.checked), [accessories]);
+  const canSignReception = manualFieldsValid && allAccessoriesChecked;
+  const step1MissingRequiredCount = requiredStep1FieldsMissing.length;
+
   useEffect(() => {
-    if (extraDocs) setDocConfirms(extraDocs.map(() => false));
-  }, [extraDocs?.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!canSignReception && sig1OK) {
+      setSig1OK(false);
+    }
+  }, [canSignReception, sig1OK]);
 
   // Build full wizard steps array
-  const wizardSteps = [
-    ...BASE_STEPS,
-    ...(extraDocs ?? []).map(d => ({ icon: FileText, label: d.title.slice(0, 8) })),
-  ];
+  const wizardSteps = BASE_STEPS;
 
   // ── Validation per step ──
   const canAdvance = useCallback(() => {
-    if (step === 0) return sig1OK;
+    if (step === 0) return sig1OK && allAccessoriesChecked && manualFieldsValid;
     if (step === 1) return sig2OK && procedureRead;
     if (step === 2) return sig3OK && (healthPdfUrl ? true : healthItems.every(h => h.checked));
-    if (step === 3) return !!licenseNumber && !!licenseExpiry && !!licenseFront && !!licenseBack;
-    // extra org document steps
-    const docIdx = step - 4;
-    if (docIdx >= 0 && docIdx < (extraDocs?.length ?? 0)) return docConfirms[docIdx] === true;
+    if (step === 3) return skipLicenseStep ? true : (!!licenseNumber && !!licenseExpiry && !!licenseFront && !!licenseBack);
     return false;
-  }, [step, sig1OK, sig2OK, procedureRead, sig3OK, healthItems, healthPdfUrl, licenseNumber, licenseExpiry, licenseFront, licenseBack, docConfirms, extraDocs]);
+  }, [step, sig1OK, allAccessoriesChecked, manualFieldsValid, sig2OK, procedureRead, sig3OK, healthItems, healthPdfUrl, licenseNumber, licenseExpiry, licenseFront, licenseBack, skipLicenseStep]);
 
   // ── Upload helper — always targets the public vehicle-documents bucket ──
   const uploadFileToStorage = async (file: File, path: string): Promise<string | null> => {
@@ -798,7 +961,15 @@ export default function VehicleHandoverWizard() {
     const folder = `documents/${vehicleId || 'unknown'}/${ts}`;
 
     const [pdf1Blob, pdf2Blob, pdf3Blob] = await Promise.all([
-      generateReceptionPDF({ vehicleLabel, driverName, date: today, accessories, signatureDataUrl: sig1DataUrl })
+      generateReceptionPDF({
+        vehicleLabel,
+        driverName,
+        date: today,
+        accessories,
+        signatureDataUrl: sig1DataUrl,
+        declarationText: extractCommitmentSection(receptionDeclarationText).join('\n'),
+        manualFields,
+      })
         .catch((e) => { console.error('[Wizard] PDF1 failed:', e); return null; }),
       generateProcedurePDF({ vehicleLabel, driverName, date: today, clauses: activeClauses, signatureDataUrl: sig2DataUrl })
         .catch((e) => { console.error('[Wizard] PDF2 failed:', e); return null; }),
@@ -812,8 +983,8 @@ export default function VehicleHandoverWizard() {
       pdf1Blob ? uploadBlobToStorage(pdf1Blob, `${folder}/reception_${ts}.pdf`)  : Promise.resolve(null),
       pdf2Blob ? uploadBlobToStorage(pdf2Blob, `${folder}/procedure_${ts}.pdf`)  : Promise.resolve(null),
       pdf3Blob ? uploadBlobToStorage(pdf3Blob, `${folder}/health_${ts}.pdf`)     : Promise.resolve(null),
-      licenseFront ? uploadFileToStorage(licenseFront, `${folder}/license_front_${ts}.jpg`) : Promise.resolve(null),
-      licenseBack  ? uploadFileToStorage(licenseBack,  `${folder}/license_back_${ts}.jpg`)  : Promise.resolve(null),
+      !skipLicenseStep && licenseFront ? uploadFileToStorage(licenseFront, `${folder}/license_front_${ts}.jpg`) : Promise.resolve(null),
+      !skipLicenseStep && licenseBack  ? uploadFileToStorage(licenseBack,  `${folder}/license_back_${ts}.jpg`)  : Promise.resolve(null),
     ]);
     console.log('[Wizard] Upload URLs:', { sig1Url, sig2Url, sig3Url, frontUrl, backUrl });
 
@@ -826,7 +997,8 @@ export default function VehicleHandoverWizard() {
       backUrl  && { filename: 'רישיון_אחורי.jpg',    url: backUrl  },
     ].filter(Boolean) as { filename: string; url: string }[];
 
-    const failedCount = 5 - allAttachments.length;
+    const expectedAttachments = skipLicenseStep ? 3 : 5;
+    const failedCount = expectedAttachments - allAttachments.length;
     console.log(`[Wizard] ${allAttachments.length} attachments ready, ${failedCount} failed`);
 
     // ── Step 4: Send email — ALWAYS, regardless of upload failures ────────────
@@ -834,7 +1006,7 @@ export default function VehicleHandoverWizard() {
       await sendHandoverNotificationEmail({
         handoverId,
         vehicleId,
-        handoverType:    'delivery',
+        handoverType,
         assignmentMode:  'permanent',
         vehicleLabel,
         driverLabel:     driverName,
@@ -847,7 +1019,7 @@ export default function VehicleHandoverWizard() {
       console.log('[Wizard] Email sent OK');
       toast.success(
         failedCount > 0
-          ? `המייל נשלח עם ${allAttachments.length} מתוך 5 קבצים`
+          ? `המייל נשלח עם ${allAttachments.length} מתוך ${expectedAttachments} קבצים`
           : 'כל המסמכים נחתמו ונשלח מייל בהצלחה!',
       );
     } catch (emailErr) {
@@ -872,12 +1044,24 @@ export default function VehicleHandoverWizard() {
 
       if (driverId) {
         const { error: updateErr } = await supabase.from('drivers').update({
+          id_number:         manualFields.idNumber.trim() || undefined,
+          employee_number:   manualFields.employeeNumber.trim() || undefined,
+          phone:             manualFields.phone.trim() || undefined,
+          address:           manualFields.address.trim() || undefined,
           license_number:    licenseNumber || undefined,
           license_expiry:    licenseExpiry || undefined,
           license_front_url: frontUrl      || undefined,
           license_back_url:  backUrl       || undefined,
         }).eq('id', driverId);
         if (updateErr) console.error('[Wizard] drivers update error:', updateErr.message);
+      }
+
+      if (vehicleId && !(vehicle?.ignition_code ?? '').trim() && manualFields.ignitionCode.trim()) {
+        const { error: vehicleUpdateErr } = await supabase
+          .from('vehicles')
+          .update({ ignition_code: manualFields.ignitionCode.trim() })
+          .eq('id', vehicleId);
+        if (vehicleUpdateErr) console.error('[Wizard] vehicles update error:', vehicleUpdateErr.message);
       }
     } catch (dbErr) {
       console.error('[Wizard] DB persist error (non-blocking):', dbErr);
@@ -899,7 +1083,7 @@ export default function VehicleHandoverWizard() {
             </Button>
           </Link>
           <div>
-            <h1 className="font-bold text-lg leading-tight">אשף מסירת רכב</h1>
+            <h1 className="font-bold text-lg leading-tight">{handoverType === 'return' ? 'אשף החזרת רכב' : 'אשף מסירת רכב'}</h1>
             <p className="text-xs text-cyan-400/70">{vehicleLabel}</p>
           </div>
           <div className="mr-auto">
@@ -923,6 +1107,13 @@ export default function VehicleHandoverWizard() {
             vehicleLabel={vehicleLabel}
             driverName={driverName}
             date={today}
+            deliveryDateTime={deliveryDateTime}
+            declarationText={receptionDeclarationText}
+            manualFields={manualFields}
+            onManualFieldChange={(field, value) => {
+              setManualFields((prev) => ({ ...prev, [field]: value }));
+            }}
+            canSign={canSignReception}
           />
         )}
         {step === 1 && (
@@ -959,97 +1150,132 @@ export default function VehicleHandoverWizard() {
             licenseClass={licenseClass}   setLicenseClass={setLicenseClass}
             licenseFront={licenseFront}   setLicenseFront={setLicenseFront}
             licenseBack={licenseBack}     setLicenseBack={setLicenseBack}
+            skipLicenseStep={skipLicenseStep}
             driverName={driverName}
             date={today}
           />
         )}
-        {step >= 4 && (extraDocs ?? []).map((doc, idx) => step === idx + 4 ? (
-          <React.Fragment key={doc.id}>
-            <StepDoc
-              title={doc.title}
-              description={doc.description}
-              fileUrl={doc.file_url}
-              confirmed={docConfirms[idx] ?? false}
-              onConfirm={(v) => setDocConfirms(prev => { const next = [...prev]; next[idx] = v; return next; })}
-            />
-          </React.Fragment>
-        ) : null)}
       </main>
 
-      {/* Fixed bottom navigation — raised 56 px to clear the test-build banner */}
-      <div className="fixed bottom-14 left-0 right-0 bg-[#020617]/95 backdrop-blur-sm border-t border-white/10 py-4 z-20">
-        <div className="container max-w-3xl mx-auto flex items-center gap-3">
+      {/* Floating navigation controls (outside form card) */}
+      <div className="fixed bottom-6 left-0 right-0 z-30 pointer-events-none">
+        <div className="container max-w-5xl mx-auto relative min-h-[64px]">
           {step > 0 && (
-            <Button
-              variant="ghost"
-              className="gap-2 text-white/70 hover:text-white"
-              onClick={() => setStep(s => s - 1)}
-              disabled={submitting}
-            >
-              <ArrowRight className="h-4 w-4" />
-              הקודם
-            </Button>
+            <div className="absolute right-4 bottom-0 pointer-events-auto">
+              <Button
+                variant="ghost"
+                className="gap-2 text-white/70 hover:text-white"
+                onClick={() => setStep(s => s - 1)}
+                disabled={submitting}
+              >
+                <ArrowRight className="h-4 w-4" />
+                הקודם
+              </Button>
+            </div>
           )}
 
-          <div className="flex-1" />
-
           {!canAdvance() && (
-            <p className="text-xs text-amber-400/80">
-              {step === 0 && 'נדרשת חתימה להמשך'}
+            <p className="pointer-events-none absolute left-1/2 -translate-x-1/2 -top-6 whitespace-nowrap text-xs text-amber-400/90">
+              {step === 0 && (!allAccessoriesChecked
+                ? 'יש לסמן את כל האביזרים בטבלה'
+                : step1MissingRequiredCount > 0
+                  ? `יש להשלים ${step1MissingRequiredCount} שדות חובה`
+                  : !manualFieldsValid
+                    ? 'יש להשלים שדות בפורמט תקין'
+                  : 'נדרשת חתימה להמשך')}
               {step === 1 && (!procedureRead ? 'סמן קריאה ואישור להמשך' : 'נדרשת חתימה להמשך')}
               {step === 2 && (healthPdfUrl ? 'נדרשת חתימה להמשך' : (!healthItems.every(h => h.checked) ? 'סמן את כל סעיפי הבריאות' : 'נדרשת חתימה להמשך'))}
-              {step >= 4 && 'יש לאשר קריאת המסמך להמשך'}
               {step === 3 && (
-                !licenseFront ? 'חסר צילום צד א׳' :
-                !licenseBack  ? 'חסר צילום צד ב׳' :
-                !licenseNumber ? 'חסר מספר רישיון' :
-                'חסר תוקף רישיון'
+                skipLicenseStep
+                  ? (!licenseNumber ? 'חסר מספר רישיון' : 'חסר תוקף רישיון')
+                  : (!licenseFront ? 'חסר צילום צד א׳' :
+                    !licenseBack  ? 'חסר צילום צד ב׳' :
+                    !licenseNumber ? 'חסר מספר רישיון' :
+                    'חסר תוקף רישיון')
               )}
             </p>
           )}
 
           {step < wizardSteps.length - 1 ? (
-            <Button
-              onClick={async () => {
-                // Step-specific validation toasts before advancing
-                if (step === 1 && !procedureRead) {
-                  toast.error('יש לאשר את קריאת הסעיפים בטרם המעבר');
-                  return;
-                }
-                if (step === 2 && !healthPdfUrl && !healthItems.every(h => h.checked)) {
-                  toast.error('עליך לאשר את כל סעיפי הבריאות כדי להמשיך');
-                  return;
-                }
-                if (!canAdvance()) return;
-                // Capture raw signature dataUrl from ref before the step unmounts
-                if (step === 0) setSig1DataUrl(sig1Ref.current?.getDataUrl() ?? null);
-                if (step === 1) setSig2DataUrl(sig2Ref.current?.getDataUrl() ?? null);
-                if (step === 2) setSig3DataUrl(sig3Ref.current?.getDataUrl() ?? null);
-                setStep(s => s + 1);
-              }}
-              disabled={step !== 1 && step !== 2 && !canAdvance()}
-              className="gap-2 bg-cyan-500 hover:bg-cyan-400 text-[#020617] font-bold px-6"
-            >
-              הבא
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
+            <div className="absolute left-4 bottom-0 pointer-events-auto">
+              <Button
+                onClick={async () => {
+                  // Step-specific validation toasts before advancing
+                  if (step === 0) {
+                    if (requiredStep1FieldsMissing.length > 0) {
+                      const labels = requiredStep1FieldsMissing.map((item) => item.label);
+                      toast.error(`נא למלא ${joinHebrewList(labels)}`);
+                      return;
+                    }
+                    if (!allAccessoriesChecked) {
+                      toast.error('יש לסמן את כל האביזרים בטבלת הקבלה לפני המשך');
+                      return;
+                    }
+                    if (requiredStep1FieldsInvalid.length > 0) {
+                      toast.error(`נא להזין ${joinHebrewList(requiredStep1FieldsInvalid)}`);
+                      return;
+                    }
+                    if (!manualFieldsValid) {
+                      toast.error('יש להשלים מספר תעודת זהות, מספר עובד, כתובת, טלפון תקין וקוד קודנית תקין לפני המשך');
+                      return;
+                    }
+                  }
+                  if (step === 1 && !procedureRead) {
+                    toast.error('יש לאשר את קריאת הסעיפים בטרם המעבר');
+                    return;
+                  }
+                  if (step === 2 && !healthPdfUrl && !healthItems.every(h => h.checked)) {
+                    toast.error('עליך לאשר את כל סעיפי הבריאות כדי להמשיך');
+                    return;
+                  }
+                  if (!canAdvance()) return;
+                  // Capture raw signature dataUrl from ref before the step unmounts
+                  if (step === 0) setSig1DataUrl(sig1Ref.current?.getDataUrl() ?? null);
+                  if (step === 1) setSig2DataUrl(sig2Ref.current?.getDataUrl() ?? null);
+                  if (step === 2) setSig3DataUrl(sig3Ref.current?.getDataUrl() ?? null);
+                  setStep(s => s + 1);
+                }}
+                disabled={submitting || ((step !== 0 && step !== 1 && step !== 2) && !canAdvance())}
+                className="gap-2 bg-cyan-500 hover:bg-cyan-400 text-[#020617] font-bold px-6"
+              >
+                {step === 0 && step1MissingRequiredCount > 0
+                  ? `חסרים ${step1MissingRequiredCount} שדות למילוי`
+                  : 'הבא'}
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+            </div>
           ) : (
-            <Button
-              disabled={submitting}
-              onClick={() => {
-                if (!licenseFront) { toast.error('נא לצלם את צד א׳ של הרישיון'); return; }
-                if (!licenseBack)  { toast.error('נא לצלם את צד ב׳ של הרישיון'); return; }
-                if (!licenseNumber) { toast.error('נא להזין מספר רישיון'); return; }
-                if (!licenseExpiry) { toast.error('נא להזין תוקף רישיון'); return; }
-                handleFinish();
-              }}
-              className="gap-2 bg-emerald-500 hover:bg-emerald-400 text-white font-bold px-8"
-            >
-              {submitting
-                ? <><Loader2 className="h-4 w-4 animate-spin" /> שומר...</>
-                : <><CheckCircle2 className="h-4 w-4" /> סיים וחתום</>
-              }
-            </Button>
+            <div className="absolute left-1/2 -translate-x-1/2 bottom-0 pointer-events-auto flex items-center justify-center gap-3">
+              {step === 3 && (
+                <Button
+                  variant="outline"
+                  disabled={submitting}
+                  onClick={() => {
+                    setSkipLicenseStep(true);
+                    toast.info('שלב צילום הרישיון סומן כדילוג. ניתן לסיים ללא העלאת תמונות.');
+                  }}
+                  className="gap-2 border-amber-300 text-amber-200 hover:text-amber-100"
+                >
+                  דלג על שלב זה
+                </Button>
+              )}
+              <Button
+                disabled={submitting}
+                onClick={() => {
+                  if (!skipLicenseStep && !licenseNumber) { toast.error('נא להזין מספר רישיון'); return; }
+                  if (!skipLicenseStep && !licenseExpiry) { toast.error('נא להזין תוקף רישיון'); return; }
+                  if (!skipLicenseStep && !licenseFront) { toast.error('נא לצלם את צד א׳ של הרישיון או לדלג על שלב זה'); return; }
+                  if (!skipLicenseStep && !licenseBack)  { toast.error('נא לצלם את צד ב׳ של הרישיון או לדלג על שלב זה'); return; }
+                  handleFinish();
+                }}
+                className="gap-2 bg-emerald-500 hover:bg-emerald-400 text-white font-bold px-8"
+              >
+                {submitting
+                  ? <><Loader2 className="h-4 w-4 animate-spin" /> שומר...</>
+                  : <><CheckCircle2 className="h-4 w-4" /> סיים וחתום</>
+                }
+              </Button>
+            </div>
           )}
         </div>
       </div>

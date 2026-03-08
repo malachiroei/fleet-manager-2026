@@ -64,6 +64,20 @@ This project is built with:
 
 Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
 
+## TEST deploy workflow (Vercel)
+
+Use this command for test deployments only:
+
+```sh
+npm run deploy:test
+```
+
+Safety checks in this command:
+
+- Requires current branch to be `test-branch`.
+- Requires linked Vercel project to be `manager-2026-test`.
+- Refuses to deploy if either check fails.
+
 ## Can I connect a custom domain to my Lovable project?
 
 Yes, you can!

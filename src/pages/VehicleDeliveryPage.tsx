@@ -7,9 +7,6 @@ import {
   uploadHandoverPhoto,
   uploadSignature,
   archiveHandoverSubmission,
-  sendHandoverNotificationEmail,
-  generateReplacementDeliveryApprovalPDF,
-  uploadPdfAttachmentToArchive,
   type AssignmentMode,
 } from '@/hooks/useHandovers';
 import { useAuth } from '@/hooks/useAuth';
@@ -24,7 +21,7 @@ import SignaturePad, { SignaturePadRef } from '@/components/SignaturePad';
 import FuelLevelSelector from '@/components/FuelLevelSelector';
 import PhotoUpload from '@/components/PhotoUpload';
 import VehicleDamage3DSelector from '@/components/VehicleDamage3DSelector';
-import { ArrowRight, Loader2, Truck, Camera } from 'lucide-react';
+import { ArrowRight, ArrowLeft, Loader2, Truck, Camera } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   cloneEmptyDamageReport,
@@ -216,68 +213,14 @@ export default function VehicleDeliveryPage() {
 
       toast.success(assignmentMode === 'replacement' ? 'מסירת רכב חליפי נרשמה בהצלחה' : 'מסירת רכב נרשמה בהצלחה');
 
-      if (assignmentMode === 'permanent') {
-        // For permanent handovers — skip email here, the Wizard will send it
-        // after collecting all 5 signed documents.
-        navigate(
-          `/handover/wizard?vehicleId=${selectedVehicle}&driverId=${selectedDriver}` +
-          `&handoverId=${encodeURIComponent(handover.id)}` +
-          `&reportUrl=${encodeURIComponent(reportUrl)}`
-        );
-      } else {
-        // For non-permanent handovers — send email immediately
-        const additionalAttachments: Array<{ filename: string; url: string }> = [];
-
-        if (assignmentMode === 'replacement') {
-          const approvalSignatureDataUrl = replacementApprovalSignatureRef.current?.getDataUrl() ?? null;
-          try {
-            const approvalBlob = await generateReplacementDeliveryApprovalPDF({
-              vehicleLabel: `${selectedVehicleData?.manufacturer ?? ''} ${selectedVehicleData?.model ?? ''} (${selectedVehicleData?.plate_number ?? ''})`.trim(),
-              driverName: selectedDriverData?.full_name ?? 'לא ידוע',
-              date: new Date().toLocaleDateString('he-IL'),
-              signatureDataUrl: approvalSignatureDataUrl,
-            });
-
-            const approvalUrl = await uploadPdfAttachmentToArchive({
-              vehicleId: selectedVehicle,
-              blob: approvalBlob,
-              fileName: 'replacement_delivery_acknowledgement.pdf',
-            });
-
-            additionalAttachments.push({
-              filename: 'אישור_מסירת_רכב_חליפי.pdf',
-              url: approvalUrl,
-            });
-          } catch (approvalError) {
-            console.error('Replacement approval PDF error:', approvalError);
-            const msg = approvalError instanceof Error ? approvalError.message : 'שגיאה לא ידועה';
-            toast.error(`נכשלה יצירת הצהרת רכב חליפי: ${msg}`);
-            return;
-          }
-        }
-
-        try {
-          await sendHandoverNotificationEmail({
-            handoverId: handover.id,
-            vehicleId: selectedVehicle,
-            handoverType: 'delivery',
-            assignmentMode,
-            vehicleLabel: `${selectedVehicleData?.manufacturer ?? ''} ${selectedVehicleData?.model ?? ''} (${selectedVehicleData?.plate_number ?? ''})`.trim(),
-            driverLabel: selectedDriverData?.full_name ?? 'לא ידוע',
-            odometerReading: parseInt(odometer),
-            fuelLevel,
-            notes: mergedNotes || null,
-            damageSummary,
-            reportUrl,
-            additionalAttachments,
-          });
-        } catch (emailError) {
-          console.error('Email notification error:', emailError);
-          const msg = emailError instanceof Error ? emailError.message : 'שגיאה לא ידועה';
-          toast.warning(`הטופס נשמר, אך שליחת המייל נכשלה: ${msg}`);
-        }
-        navigate('/');
-      }
+      // Always continue to the wizard. Final email/send is executed only at
+      // the wizard completion step ("סיים וחתום").
+      navigate(
+        `/handover/wizard?vehicleId=${selectedVehicle}&driverId=${selectedDriver}` +
+        `&handoverId=${encodeURIComponent(handover.id)}` +
+        `&reportUrl=${encodeURIComponent(reportUrl)}` +
+        `&mode=${assignmentMode}`
+      );
     } catch (error) {
       console.error('Error creating handover:', error);
       toast.error(`שגיאה ברישום מסירת הרכב: ${getErrorMessage(error)}`);
@@ -454,11 +397,11 @@ export default function VehicleDeliveryPage() {
           </Card>
 
           {/* Submit */}
-          <div className="fixed bottom-12 left-0 right-0 p-4 bg-[#020617]/95 backdrop-blur-sm border-t border-white/10">
-            <div className="container">
+          <div className="fixed bottom-12 left-0 right-0 p-4">
+            <div className="container flex justify-center">
               <Button 
                 type="submit" 
-                className="w-full rounded-2xl border border-cyan-200/45 bg-[linear-gradient(180deg,rgba(56,189,248,0.65)_0%,rgba(59,130,246,0.55)_48%,rgba(14,116,144,0.85)_100%)] py-6 text-base font-bold text-white shadow-[0_14px_28px_rgba(14,165,233,0.34)] hover:translate-y-[-1px] hover:brightness-110" 
+                className="gap-2 min-w-[280px] rounded-2xl bg-cyan-500 px-8 py-6 text-base font-bold text-[#020617] shadow-[0_14px_28px_rgba(14,165,233,0.34)] hover:bg-cyan-400" 
                 size="lg"
                 disabled={
                   isSubmitting ||
@@ -470,7 +413,8 @@ export default function VehicleDeliveryPage() {
                 }
               >
                 {isSubmitting && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
-                {assignmentMode === 'replacement' ? 'אשר מסירת רכב חליפי' : 'אשר מסירת רכב'}
+                המשך לחתימה על טפסים
+                <ArrowLeft className="h-4 w-4" />
               </Button>
             </div>
           </div>

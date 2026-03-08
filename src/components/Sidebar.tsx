@@ -11,6 +11,7 @@ import {
   MapPin,
   Gauge,
   BarChart3,
+  FileText,
   Calculator,
   Droplet,
   ArrowLeftRight,
@@ -61,6 +62,7 @@ export function Sidebar() {
       titleKey: 'navigation.operational',
       items: [
         { title: t('navigation.drivers'), titleKey: 'navigation.drivers', uiKey: 'nav.drivers', href: '/drivers', icon: Car },
+        { title: 'טפסים', titleKey: 'navigation.forms', uiKey: 'nav.forms', href: '/forms', icon: FileText },
         { title: t('navigation.mileageUpdate'), titleKey: 'navigation.mileageUpdate', uiKey: 'nav.mileage_update', href: '/vehicles/odometer', icon: Gauge },
         { title: 'הפקת דוחות', titleKey: 'navigation.reportGeneration', uiKey: 'nav.reports', href: '/reports', icon: BarChart3 },
       ],
@@ -120,7 +122,10 @@ export function Sidebar() {
           </Link>
 
           {navigationGroups.map((group) => {
-            const visibleItems = group.items.filter(item => !item.uiKey || isVis(item.uiKey));
+            const visibleItems = group.items.filter((item) => {
+              if (item.uiKey === 'nav.forms') return true;
+              return !item.uiKey || isVis(item.uiKey);
+            });
             if (visibleItems.length === 0) return null;
             return (
             <div key={group.titleKey}>

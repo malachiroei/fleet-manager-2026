@@ -2,12 +2,21 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { uploadOrgPdf } from './useUiLabels';
 
+interface OrgDocumentHookOptions {
+  storageFolder?: string;
+}
+
 export interface OrgDocument {
   id: string;
   title: string;
   description: string;
+  category?: 'תפעול' | 'בטיחות' | 'מסמכים אישיים' | string;
   file_url: string | null;
+  json_schema?: Record<string, any> | null;
+  autofill_fields?: string[] | null;
   include_in_handover: boolean;
+  include_in_delivery?: boolean;
+  include_in_return?: boolean;
   is_standalone: boolean;
   requires_signature: boolean;
   sort_order: number;
@@ -49,7 +58,7 @@ export function useOrgDocumentsAdmin() {
   });
 }
 
-export function useCreateOrgDocument() {
+export function useCreateOrgDocument(options?: OrgDocumentHookOptions) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (
@@ -57,7 +66,7 @@ export function useCreateOrgDocument() {
     ) => {
       let file_url = payload.file_url;
       if (payload.file) {
-        file_url = await uploadOrgPdf(payload.file, `doc_${Date.now()}`);
+        file_url = await uploadOrgPdf(payload.file, `doc_${Date.now()}`, options?.storageFolder);
       }
       const { file: _f, ...rest } = payload as any;
       const { error } = await (supabase as any)
@@ -71,7 +80,7 @@ export function useCreateOrgDocument() {
   });
 }
 
-export function useUpdateOrgDocument() {
+export function useUpdateOrgDocument(options?: OrgDocumentHookOptions) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({
@@ -81,7 +90,7 @@ export function useUpdateOrgDocument() {
     }: Partial<OrgDocument> & { id: string; file?: File }) => {
       let file_url = updates.file_url;
       if (file) {
-        file_url = await uploadOrgPdf(file, `doc_${id}`);
+        file_url = await uploadOrgPdf(file, `doc_${id}`, options?.storageFolder);
       }
       const { error } = await (supabase as any)
         .from('org_documents')

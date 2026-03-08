@@ -23,6 +23,7 @@ export const DEFAULT_UI_LABELS: Omit<UiLabel, 'id' | 'updated_at'>[] = [
   { key: 'nav.vehicle_delivery', default_label: 'מסירת רכב',        custom_label: '', is_visible: true, group_name: 'רכבים' },
   { key: 'nav.compliance',       default_label: 'התראות חריגה',      custom_label: '', is_visible: true, group_name: 'רכבים' },
   { key: 'nav.drivers',          default_label: 'נהגים',             custom_label: '', is_visible: true, group_name: 'תפעולי' },
+  { key: 'nav.forms',            default_label: 'טפסים',             custom_label: '', is_visible: true, group_name: 'תפעולי' },
   { key: 'nav.mileage_update',   default_label: 'עדכון קילומטראז',  custom_label: '', is_visible: true, group_name: 'תפעולי' },
   { key: 'nav.reports',          default_label: 'הפקת דוחות',       custom_label: '', is_visible: true, group_name: 'תפעולי' },
   { key: 'nav.accidents',        default_label: 'תאונות',            custom_label: '', is_visible: true, group_name: 'אירועים' },
@@ -115,9 +116,10 @@ export function useUpdateUiLabels() {
 export async function uploadOrgPdf(
   file: File,
   slotName: 'health' | 'policy' | string,
+  folder = 'org-templates',
 ): Promise<string> {
   const ext = file.name.split('.').pop() ?? 'pdf';
-  const path = `org-templates/${slotName}_${Date.now()}.${ext}`;
+  const path = `${folder}/${slotName}_${Date.now()}.${ext}`;
   const { error } = await supabase.storage
     .from(BUCKET)
     .upload(path, file, { upsert: true, contentType: file.type || 'application/pdf' });
