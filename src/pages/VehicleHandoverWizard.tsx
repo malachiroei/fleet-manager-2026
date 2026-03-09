@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { HANDOVER_ACCESSORY_CEILINGS, formatCeilingPrice } from '@/lib/accessoryCeilings';
+// Badge no longer needed — replaced with plain span
 import { toast } from 'sonner';
 import {
   ArrowRight,
@@ -52,6 +53,24 @@ interface HealthDeclaration {
 interface ProcedureClause {
   id: number;
   text: string;
+}
+
+interface WizardState {
+  // Step 1 – Vehicle Reception
+  accessories: AccessoryItem[];
+  sig1DataUrl: string | null;
+  // Step 2 – Procedure
+  procedureRead: boolean;
+  sig2DataUrl: string | null;
+  // Step 3 – Health
+  healthItems: HealthDeclaration[];
+  sig3DataUrl: string | null;
+  // Step 4 – License
+  licenseNumber: string;
+  licenseExpiry: string;
+  licenseClass: string;
+  licenseFront: File | null;
+  licenseBack: File | null;
 }
 
 interface ReceptionManualFields {
@@ -216,8 +235,15 @@ function Step1({
   canSign: boolean;
   containerRef?: RefObject<HTMLDivElement>;
 }) {
+  const toggle = (id: string) =>
+    setAccessories(accessories.map(a => a.id === id ? { ...a, checked: !a.checked } : a));
+
   const setNotes = (id: string, notes: string) =>
     setAccessories(accessories.map(a => a.id === id ? { ...a, notes } : a));
+
+  const markMissing = (id: string) => {
+    setAccessories(accessories.map(item => item.id === id ? { ...item, missing: !item.missing, checked: item.missing ? false : item.checked } : item));
+  };
 
   const showAccessoriesWarning = accessories.some(item => !item.checked && !item.missing);
 
@@ -268,14 +294,14 @@ function Step1({
                 <td className="px-3 py-2 text-center">
                   <Checkbox
                     checked={item.checked && !item.missing}
-                    onCheckedChange={(checked) => setAccessories(accessories.map(a => a.id === item.id ? { ...a, checked: !!checked, missing: false } : a))}
+                    onCheckedChange={() => setAccessories(accessories.map(a => a.id === item.id ? { ...a, checked: true, missing: false } : a))}
                     className="border-slate-400 data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
                   />
                 </td>
                 <td className="px-3 py-2 text-center">
                   <Checkbox
                     checked={item.missing}
-                    onCheckedChange={(checked) => setAccessories(accessories.map(a => a.id === item.id ? { ...a, missing: !!checked, checked: false } : a))}
+                    onCheckedChange={() => setAccessories(accessories.map(a => a.id === item.id ? { ...a, missing: true, checked: false } : a))}
                     className="border-slate-400 data-[state=checked]:bg-red-500 data-[state=checked]:border-red-500"
                   />
                 </td>
@@ -296,7 +322,27 @@ function Step1({
           </tbody>
         </table>
       </div>
-      
+      {/* כפתור הוספת טפסים אחרי הטבלה */}
+      {/* כפתור הוספת טפסים כ-FAB draggable */}
+      <div
+        style={{ position: 'fixed', bottom: 100, left: 40, zIndex: 1000, cursor: 'grab' }}
+        draggable
+        onDragStart={e => {
+          e.dataTransfer.setData('text/plain', '');
+          e.currentTarget.style.opacity = '0.5';
+        }}
+        onDragEnd={e => {
+          const x = e.clientX;
+          const y = e.clientY;
+          e.currentTarget.style.left = x + 'px';
+          e.currentTarget.style.top = y + 'px';
+          e.currentTarget.style.opacity = '1';
+        }}
+      >
+        <Button type="button" onClick={() => setShowAddDocument(true)} variant="outline" size="sm">
+          <Plus className="w-4 h-4 mr-1" /> הוספת טפסים
+        </Button>
+      </div>
       {/* פס צהוב אחרי הטבלה בלבד */}
       {showAccessoriesWarning && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 text-xs text-yellow-800 text-center mt-2">
@@ -305,6 +351,7 @@ function Step1({
       )}
 
       {/* Quick-select button */}
+      {/* Quick-select button and yellow row after table */}
       <div className="flex justify-end mt-2">
         <button
           type="button"
@@ -317,6 +364,11 @@ function Step1({
         >
           {allChecked ? '✔ הכל סומן כתקין' : '✔ סמן הכל כתקין'}
         </button>
+      </div>
+
+      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 mb-4">
+        <AlertTriangle className="inline h-3.5 w-3.5 ml-1" />
+        פריטים שסומנו כנמסרו — אחריות החזרתם בשלמות חלה על הנהג. אובדן או נזק יחויב לפי מחיר התקרה.
       </div>
 
       <div className="mb-2 rounded-lg border border-slate-200 bg-slate-50 p-4 pb-24 space-y-3">
@@ -793,6 +845,8 @@ export default function VehicleHandoverWizard() {
   const sig2Ref = useRef<SignaturePadRef>(null);
   const sig3Ref = useRef<SignaturePadRef>(null);
 
+
+
   // Wizard state
   const [accessories, setAccessories] = useState<AccessoryItem[]>(INITIAL_ACCESSORIES);
   const [sig1OK, setSig1OK] = useState(false);
@@ -928,7 +982,7 @@ export default function VehicleHandoverWizard() {
     return true;
   }, [manualFields]);
 
-  const allAccessoriesChecked = useMemo(() => accessories.every((a) => a.checked || a.missing), [accessories]);
+  const allAccessoriesChecked = useMemo(() => accessories.every((a) => a.checked), [accessories]);
   const canSignReception = manualFieldsValid && allAccessoriesChecked;
   const step1MissingRequiredCount = requiredStep1FieldsMissing.length;
 
@@ -1122,7 +1176,7 @@ export default function VehicleHandoverWizard() {
       {/* Top bar */}
       <header className="sticky top-0 z-20 bg-[#0d1b2e]/95 backdrop-blur-sm border-b border-white/10">
         <div className="container py-3 flex items-center gap-3">
-          <Link to={vehicleId ? `/vehicles/${vehicle.id}` : '/vehicles'}>
+          <Link to={vehicleId ? `/vehicles/${vehicleId}` : '/vehicles'}>
             <Button variant="ghost" size="icon" className="text-white/70 hover:text-white">
               <ArrowRight className="h-5 w-5" />
             </Button>
@@ -1142,29 +1196,14 @@ export default function VehicleHandoverWizard() {
       <main className="container py-6 pb-32 max-w-3xl mx-auto">
         <ProgressBar current={step} steps={wizardSteps} />
 
-        <div
-          className="fixed z-40"
-          style={{ bottom: '6rem', right: '1.5rem', cursor: 'grab' }}
-          draggable
-          onDragStart={(e) => {
-            e.dataTransfer.setData('text/plain', '');
-            e.currentTarget.style.opacity = '0.5';
-          }}
-          onDragEnd={(e) => {
-            e.currentTarget.style.left = `${e.clientX}px`;
-            e.currentTarget.style.top = `${e.clientY}px`;
-            e.currentTarget.style.bottom = 'auto';
-            e.currentTarget.style.right = 'auto';
-            e.currentTarget.style.opacity = '1';
-          }}
-        >
+        <div className="fixed bottom-24 right-4 z-40 sm:right-6">
           <Button
             type="button"
             onClick={() => setFormsPickerOpen((prev) => !prev)}
             className="gap-2 rounded-full bg-cyan-500 px-4 text-[#020617] shadow-[0_10px_25px_rgba(14,165,233,0.38)] hover:bg-cyan-400"
           >
             <Plus className="h-4 w-4" />
-            הוספת טפסים
+            טפסים למסירה ({selectedDeliveryFormIds.length})
           </Button>
         </div>
 
@@ -1295,7 +1334,7 @@ export default function VehicleHandoverWizard() {
           {!canAdvance() && (
             <p className="pointer-events-none absolute left-1/2 -translate-x-1/2 -top-6 whitespace-nowrap text-xs text-amber-400/90">
               {step === 0 && (step1MissingRequiredCount > 0
-                ? `חסרים ${step1MissingRequiredCount} שדות למילוי`
+                ? `יש להשלים ${step1MissingRequiredCount} שדות חובה`
                 : !manualFieldsValid
                   ? 'יש להשלים שדות בפורמט תקין'
                 : 'נדרשת חתימה להמשך')}
