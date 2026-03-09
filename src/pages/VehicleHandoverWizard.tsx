@@ -322,27 +322,7 @@ function Step1({
           </tbody>
         </table>
       </div>
-      {/* כפתור הוספת טפסים אחרי הטבלה */}
-      {/* כפתור הוספת טפסים כ-FAB draggable */}
-      <div
-        style={{ position: 'fixed', bottom: 100, left: 40, zIndex: 1000, cursor: 'grab' }}
-        draggable
-        onDragStart={e => {
-          e.dataTransfer.setData('text/plain', '');
-          e.currentTarget.style.opacity = '0.5';
-        }}
-        onDragEnd={e => {
-          const x = e.clientX;
-          const y = e.clientY;
-          e.currentTarget.style.left = x + 'px';
-          e.currentTarget.style.top = y + 'px';
-          e.currentTarget.style.opacity = '1';
-        }}
-      >
-        <Button type="button" onClick={() => setShowAddDocument(true)} variant="outline" size="sm">
-          <Plus className="w-4 h-4 mr-1" /> הוספת טפסים
-        </Button>
-      </div>
+      {/* כפתור הוספת טפסים הוסר כאן - נשאר רק הכפתור הראשי הדרגביל */}
       {/* פס צהוב אחרי הטבלה בלבד */}
       {showAccessoriesWarning && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 text-xs text-yellow-800 text-center mt-2">
@@ -1196,14 +1176,24 @@ export default function VehicleHandoverWizard() {
       <main className="container py-6 pb-32 max-w-3xl mx-auto">
         <ProgressBar current={step} steps={wizardSteps} />
 
-        <div className="fixed bottom-24 right-4 z-40 sm:right-6">
-          <Button
-            type="button"
-            onClick={() => setFormsPickerOpen((prev) => !prev)}
-            className="gap-2 rounded-full bg-cyan-500 px-4 text-[#020617] shadow-[0_10px_25px_rgba(14,165,233,0.38)] hover:bg-cyan-400"
-          >
-            <Plus className="h-4 w-4" />
-            טפסים למסירה ({selectedDeliveryFormIds.length})
+        {/* כפתור הוספת טפסים כ-FAB draggable */}
+        <div
+          style={{ position: 'fixed', bottom: 100, left: 40, zIndex: 1000, cursor: 'grab' }}
+          draggable
+          onDragStart={e => {
+            e.dataTransfer.setData('text/plain', '');
+            e.currentTarget.style.opacity = '0.5';
+          }}
+          onDragEnd={e => {
+            const x = e.clientX;
+            const y = e.clientY;
+            e.currentTarget.style.left = x + 'px';
+            e.currentTarget.style.top = y + 'px';
+            e.currentTarget.style.opacity = '1';
+          }}
+        >
+          <Button type="button" onClick={() => setFormsPickerOpen((prev) => !prev)} variant="outline" size="sm">
+            <Plus className="w-4 h-4 mr-1" /> הוספת טפסים
           </Button>
         </div>
 
