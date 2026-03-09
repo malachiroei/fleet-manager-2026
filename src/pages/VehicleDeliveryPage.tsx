@@ -1,5 +1,5 @@
-import { useState, useRef, type FormEvent } from 'react';
-import { useNavigate, Link, useSearchParams } from 'react-router-dom';
+import { useEffect, useState, useRef, type FormEvent } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useVehicles, fetchActiveDriverAssignments } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
 import {
@@ -10,6 +10,7 @@ import {
   type AssignmentMode,
 } from '@/hooks/useHandovers';
 import { useAuth } from '@/hooks/useAuth';
+import { useOrgDocuments } from '@/hooks/useOrgDocuments';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -45,6 +46,7 @@ export default function VehicleDeliveryPage() {
   const [searchParams] = useSearchParams();
   const { data: vehicles } = useVehicles();
   const { data: drivers } = useDrivers();
+  const { data: orgDocuments } = useOrgDocuments();
   const createHandover = useCreateHandover();
   const { user } = useAuth();
   const signatureRef = useRef<SignaturePadRef>(null);
@@ -62,6 +64,7 @@ export default function VehicleDeliveryPage() {
   const [replacementApprovalChecked, setReplacementApprovalChecked] = useState(false);
   const [hasReplacementApprovalSignature, setHasReplacementApprovalSignature] = useState(false);
   const [damageReport, setDamageReport] = useState(cloneEmptyDamageReport());
+  const [selectedDeliveryFormIds, setSelectedDeliveryFormIds] = useState<string[]>([]);
   
   // Photo states
   const [photoFront, setPhotoFront] = useState<File | null>(null);
@@ -75,6 +78,29 @@ export default function VehicleDeliveryPage() {
   const futuristicCardClass = 'rounded-2xl border border-cyan-400/25 bg-gradient-to-b from-[#0d233b] to-[#08182d] shadow-[0_12px_32px_rgba(0,0,0,0.38)]';
   const fieldClass = 'h-11 rounded-xl border-cyan-300/25 bg-[#061325]/80 text-white placeholder:text-cyan-100/45 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.08)] focus-visible:ring-cyan-300/45';
   const labelClass = 'mb-1.5 block text-xs font-semibold tracking-wide text-cyan-100/80';
+
+  const availableDeliveryForms = (orgDocuments ?? []).filter((doc) => doc.is_active);
+
+  useEffect(() => {
+    if (availableDeliveryForms.length === 0) return;
+    setSelectedDeliveryFormIds((current) => {
+      if (current.length > 0) {
+        const existing = new Set(availableDeliveryForms.map((doc) => doc.id));
+        return current.filter((id) => existing.has(id));
+      }
+      const defaults = availableDeliveryForms
+        .filter((doc) => Boolean(doc.include_in_delivery))
+        .map((doc) => doc.id);
+      return defaults.length > 0 ? defaults : availableDeliveryForms.map((doc) => doc.id);
+    });
+  }, [availableDeliveryForms]);
+
+  const toggleDeliveryForm = (formId: string, checked: boolean) => {
+    setSelectedDeliveryFormIds((current) => {
+      if (checked) return Array.from(new Set([...current, formId]));
+      return current.filter((id) => id !== formId);
+    });
+  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -215,12 +241,14 @@ export default function VehicleDeliveryPage() {
 
       // Always continue to the wizard. Final email/send is executed only at
       // the wizard completion step ("סיים וחתום").
-      navigate(
+      const wizardUrl =
         `/handover/wizard?vehicleId=${selectedVehicle}&driverId=${selectedDriver}` +
         `&handoverId=${encodeURIComponent(handover.id)}` +
         `&reportUrl=${encodeURIComponent(reportUrl)}` +
-        `&mode=${assignmentMode}`
-      );
+        `&mode=${assignmentMode}` +
+        `&selectedForms=${encodeURIComponent(selectedDeliveryFormIds.join(','))}`;
+
+      window.location.assign(wizardUrl);
     } catch (error) {
       console.error('Error creating handover:', error);
       toast.error(`שגיאה ברישום מסירת הרכב: ${getErrorMessage(error)}`);
@@ -234,12 +262,27 @@ export default function VehicleDeliveryPage() {
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
           <div className="flex items-center gap-3">
-            <Link to="/">
-              <Button variant="ghost" size="icon">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                if (window.history.length > 1) {
+                  window.history.back();
+                  return;
+                }
+                window.location.assign('/');
+              }}
+              aria-label="חזרה"
+            >
                 <ArrowRight className="h-5 w-5" />
+            </Button>
+            <h1 className="font-bold text-xl">מסירת רכב קבוע</h1>
+            <div className="mr-auto">
+              <Button type="button" variant="outline" size="sm" onClick={() => window.location.assign('/')}>
+                יציאה
               </Button>
-            </Link>
-            <h1 className="font-bold text-xl">{assignmentMode === 'replacement' ? 'מסירת רכב חליפי' : 'מסירת רכב'}</h1>
+            </div>
           </div>
         </div>
       </header>
@@ -269,15 +312,6 @@ export default function VehicleDeliveryPage() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-
-              <div>
-                <Label className={labelClass}>סוג מסירה</Label>
-                <div className="rounded-xl border border-cyan-300/25 bg-[#061325]/70 px-3 py-2.5 text-sm text-cyan-50/90">
-                  {assignmentMode === 'replacement'
-                    ? 'מסירת רכב חליפי (ללא שיוך קבוע)'
-                    : 'מסירה קבועה (משייכת נהג לרכב)'}
-                </div>
               </div>
 
               <div>
@@ -314,6 +348,28 @@ export default function VehicleDeliveryPage() {
               </div>
 
               <FuelLevelSelector value={fuelLevel} onChange={setFuelLevel} />
+            </CardContent>
+          </Card>
+
+          <Card className={futuristicCardClass}>
+            <CardHeader>
+              <CardTitle className="text-lg">בחירת טפסים למסירה זו</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {availableDeliveryForms.length === 0 ? (
+                <p className="text-sm text-cyan-100/70">לא נמצאו טפסים שסומנו להצגה במסירה במרכז הטפסים.</p>
+              ) : (
+                availableDeliveryForms.map((form) => (
+                  <label key={form.id} className="flex items-center gap-2 rounded-lg border border-cyan-300/20 bg-[#061325]/50 px-3 py-2 text-sm text-cyan-50/95">
+                    <Checkbox
+                      checked={selectedDeliveryFormIds.includes(form.id)}
+                      onCheckedChange={(checked) => toggleDeliveryForm(form.id, checked === true)}
+                    />
+                    <span>{form.title}</span>
+                  </label>
+                ))
+              )}
+              <p className="text-xs text-cyan-100/65">ניתן לשנות שוב את הבחירה גם בתוך אשף המסירה.</p>
             </CardContent>
           </Card>
 

@@ -9,7 +9,7 @@ type VehicleLike = {
   plate_number?: string | null;
 };
 
-export type FormsCategory = 'תפעול' | 'בטיחות' | 'מסמכים אישיים';
+export type FormsCategory = string;
 
 export interface FormsAutoFillContext {
   employee_name: string;

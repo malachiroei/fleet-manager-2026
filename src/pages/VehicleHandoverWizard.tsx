@@ -4,6 +4,7 @@ import { useVehicles } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
 import { useCreateHandover, sendHandoverNotificationEmail, generateReceptionPDF, generateProcedurePDF, generateHealthDeclarationPDF } from '@/hooks/useHandovers';
 import { useOrgSettings, parsePolicyClauses, parseHealthItems } from '@/hooks/useOrgSettings';
+import { useOrgDocuments } from '@/hooks/useOrgDocuments';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { buildFormsAutoFillContext } from '@/lib/formsAutofill';
@@ -22,11 +23,13 @@ import {
   CheckCircle2,
   Car,
   FileText,
+  Plus,
   Heart,
   Camera,
   Loader2,
   Shield,
   AlertTriangle,
+  X,
 } from 'lucide-react';
 
 // ─────────────────────────────────────────────
@@ -38,6 +41,7 @@ interface AccessoryItem {
   maxPrice: string;
   checked: boolean;
   notes: string;
+  missing?: boolean;
 }
 
 interface HealthDeclaration {
@@ -237,9 +241,16 @@ function Step1({
   const setNotes = (id: string, notes: string) =>
     setAccessories(accessories.map(a => a.id === id ? { ...a, notes } : a));
 
-  const allChecked = accessories.every(a => a.checked);
+  const markMissing = (id: string) => {
+    setAccessories(accessories.map(item => item.id === id ? { ...item, missing: !item.missing, checked: item.missing ? false : item.checked } : item));
+  };
+
+  const showAccessoriesWarning = accessories.some(item => !item.checked && !item.missing);
+
+  // נחשב תקין אם האביזר מסומן ב-✓ או ✗
+  const allChecked = accessories.every(a => a.checked || a.missing);
   const toggleAll  = () =>
-    setAccessories(accessories.map(a => ({ ...a, checked: !allChecked })));
+    setAccessories(accessories.map(a => ({ ...a, checked: !allChecked && !a.missing })));
   const commitmentLines = extractCommitmentSection(declarationText);
   const requiredAsterisk = <span className="text-red-600">*</span>;
 
@@ -271,6 +282,7 @@ function Step1({
           <thead className="bg-slate-100">
             <tr>
               <th className="px-3 py-2.5 font-semibold text-slate-700 w-9 text-center">✓</th>
+              <th className="px-3 py-2.5 font-semibold text-slate-700 w-9 text-center">✗</th>
               <th className="text-right px-3 py-2.5 font-semibold text-slate-700">פריט</th>
               <th className="text-right px-3 py-2.5 font-semibold text-slate-700 w-24">תקרה</th>
               <th className="text-right px-3 py-2.5 font-semibold text-slate-700 w-40">הערות</th>
@@ -281,9 +293,16 @@ function Step1({
               <tr key={item.id} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
                 <td className="px-3 py-2 text-center">
                   <Checkbox
-                    checked={item.checked}
-                    onCheckedChange={() => toggle(item.id)}
+                    checked={item.checked && !item.missing}
+                    onCheckedChange={() => setAccessories(accessories.map(a => a.id === item.id ? { ...a, checked: true, missing: false } : a))}
                     className="border-slate-400 data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
+                  />
+                </td>
+                <td className="px-3 py-2 text-center">
+                  <Checkbox
+                    checked={item.missing}
+                    onCheckedChange={() => setAccessories(accessories.map(a => a.id === item.id ? { ...a, missing: true, checked: false } : a))}
+                    className="border-slate-400 data-[state=checked]:bg-red-500 data-[state=checked]:border-red-500"
                   />
                 </td>
                 <td className="px-3 py-2 font-medium text-slate-800">{item.name}</td>
@@ -303,9 +322,37 @@ function Step1({
           </tbody>
         </table>
       </div>
+      {/* כפתור הוספת טפסים אחרי הטבלה */}
+      {/* כפתור הוספת טפסים כ-FAB draggable */}
+      <div
+        style={{ position: 'fixed', bottom: 100, left: 40, zIndex: 1000, cursor: 'grab' }}
+        draggable
+        onDragStart={e => {
+          e.dataTransfer.setData('text/plain', '');
+          e.currentTarget.style.opacity = '0.5';
+        }}
+        onDragEnd={e => {
+          const x = e.clientX;
+          const y = e.clientY;
+          e.currentTarget.style.left = x + 'px';
+          e.currentTarget.style.top = y + 'px';
+          e.currentTarget.style.opacity = '1';
+        }}
+      >
+        <Button type="button" onClick={() => setShowAddDocument(true)} variant="outline" size="sm">
+          <Plus className="w-4 h-4 mr-1" /> הוספת טפסים
+        </Button>
+      </div>
+      {/* פס צהוב אחרי הטבלה בלבד */}
+      {showAccessoriesWarning && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 text-xs text-yellow-800 text-center mt-2">
+          יש לסמן את כל האביזרים בטבלה (✓ או ✗) לפני המשך
+        </div>
+      )}
 
       {/* Quick-select button */}
-      <div className="flex justify-end mb-2">
+      {/* Quick-select button and yellow row after table */}
+      <div className="flex justify-end mt-2">
         <button
           type="button"
           onClick={toggleAll}
@@ -392,12 +439,8 @@ function Step1({
         </div>
       </div>
 
-      {canSign ? (
+      {canSign && (
         <SignatureBlock sigRef={sigRef} label="4. חתימת הנהג — אישור קבלת הרכב והאביזרים:" onSign={onSign} />
-      ) : (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-          יש למלא את כל שדות החובה ולסמן את כל האביזרים לפני החתימה.
-        </div>
       )}
     </div>
   );
@@ -762,11 +805,13 @@ export default function VehicleHandoverWizard() {
   const { data: drivers  } = useDrivers();
   const { user } = useAuth();
   const { data: orgSettings } = useOrgSettings();
+  const { data: orgDocuments } = useOrgDocuments();
 
   const vehicleId  = searchParams.get('vehicleId')  ?? '';
   const driverId   = searchParams.get('driverId')   ?? '';
   const handoverTypeParam = searchParams.get('handoverType') ?? searchParams.get('type') ?? 'delivery';
   const handoverType = handoverTypeParam === 'return' ? 'return' : 'delivery';
+  const selectedFormsParam = searchParams.get('selectedForms') ?? '';
   const reportUrl  = decodeURIComponent(searchParams.get('reportUrl')  ?? '');
   const handoverId = decodeURIComponent(searchParams.get('handoverId') ?? '');
 
@@ -818,6 +863,8 @@ export default function VehicleHandoverWizard() {
   const [healthItems, setHealthItems] = useState<HealthDeclaration[]>(INITIAL_HEALTH);
   const [healthNotes, setHealthNotes] = useState('');
   const [sig3OK, setSig3OK] = useState(false);
+  const [selectedDeliveryFormIds, setSelectedDeliveryFormIds] = useState<string[]>([]);
+  const [formsPickerOpen, setFormsPickerOpen] = useState(false);
 
   // Derive effective clauses / health items from org settings, fall back to static defaults
   const parsedClauses = parsePolicyClauses(orgSettings?.vehicle_policy_text);
@@ -838,6 +885,36 @@ export default function VehicleHandoverWizard() {
   const [licenseFront,  setLicenseFront]  = useState<File | null>(null);
   const [licenseBack,   setLicenseBack]   = useState<File | null>(null);
 
+  const availableDeliveryForms = useMemo(
+    () => (orgDocuments ?? []).filter((doc) => doc.is_active),
+    [orgDocuments],
+  );
+  const selectedFormsInitializedRef = useRef(false);
+
+  useEffect(() => {
+    const defaultIds = availableDeliveryForms
+      .filter((doc) => Boolean(doc.include_in_delivery))
+      .map((doc) => doc.id);
+    const fallbackIds = availableDeliveryForms.map((doc) => doc.id);
+    if (fallbackIds.length === 0) return;
+
+    const fromQuery = selectedFormsParam
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    const allowed = new Set(fallbackIds);
+    const baseline = defaultIds.length > 0 ? defaultIds : fallbackIds;
+    if (!selectedFormsInitializedRef.current) {
+      const effective = (fromQuery.length > 0 ? fromQuery : baseline).filter((id) => allowed.has(id));
+      setSelectedDeliveryFormIds(effective.length > 0 ? effective : baseline);
+      selectedFormsInitializedRef.current = true;
+      return;
+    }
+
+    setSelectedDeliveryFormIds((prev) => prev.filter((id) => allowed.has(id)));
+  }, [availableDeliveryForms, selectedFormsParam]);
+
   useEffect(() => {
     setManualFields({
       idNumber: driver?.id_number ?? '',
@@ -856,7 +933,21 @@ export default function VehicleHandoverWizard() {
   const healthPdfUrl  = (orgSettings as any)?.health_statement_pdf_url as string | null ?? null;
   const policyPdfUrl  = (orgSettings as any)?.vehicle_policy_pdf_url  as string | null ?? null;
 
-  const receptionDeclarationText = '';
+  const selectedDeliveryForms = useMemo(() => {
+    const selectedSet = new Set(selectedDeliveryFormIds);
+    return availableDeliveryForms.filter((doc) => selectedSet.has(doc.id));
+  }, [availableDeliveryForms, selectedDeliveryFormIds]);
+
+  const receptionFormDoc = useMemo(() => {
+    const inSelection = selectedDeliveryForms.find((doc) => doc.title.includes('טופס קבלת רכב'));
+    if (inSelection) return inSelection;
+    return availableDeliveryForms.find((doc) => doc.title.includes('טופס קבלת רכב')) ?? null;
+  }, [selectedDeliveryForms, availableDeliveryForms]);
+
+  const receptionDeclarationText =
+    String((receptionFormDoc?.json_schema as any)?.template_content ?? '').trim() ||
+    String(receptionFormDoc?.description ?? '').trim() ||
+    '';
 
   const requiredStep1FieldsMissing = useMemo(() => {
     const missing: Array<{ key: keyof ReceptionManualFields; label: string }> = [];
@@ -989,12 +1080,20 @@ export default function VehicleHandoverWizard() {
     console.log('[Wizard] Upload URLs:', { sig1Url, sig2Url, sig3Url, frontUrl, backUrl });
 
     // ── Step 3: Build attachment list — include only successful uploads ────────
+    const selectedCenterFormAttachments: { filename: string; url: string }[] = selectedDeliveryForms
+      .filter((doc) => Boolean(doc.file_url))
+      .map((doc) => ({
+        filename: `${doc.title}.pdf`,
+        url: doc.file_url as string,
+      }));
+
     const allAttachments: { filename: string; url: string }[] = [
       sig1Url  && { filename: 'טופס_קבלת_רכב.pdf',  url: sig1Url  },
       sig2Url  && { filename: 'נוהל_שימוש_ברכב.pdf', url: sig2Url  },
       sig3Url  && { filename: 'הצהרת_בריאות.pdf',    url: sig3Url  },
       frontUrl && { filename: 'רישיון_קדמי.jpg',     url: frontUrl },
       backUrl  && { filename: 'רישיון_אחורי.jpg',    url: backUrl  },
+      ...selectedCenterFormAttachments,
     ].filter(Boolean) as { filename: string; url: string }[];
 
     const expectedAttachments = skipLicenseStep ? 3 : 5;
@@ -1097,6 +1196,64 @@ export default function VehicleHandoverWizard() {
       <main className="container py-6 pb-32 max-w-3xl mx-auto">
         <ProgressBar current={step} steps={wizardSteps} />
 
+        <div className="fixed bottom-24 right-4 z-40 sm:right-6">
+          <Button
+            type="button"
+            onClick={() => setFormsPickerOpen((prev) => !prev)}
+            className="gap-2 rounded-full bg-cyan-500 px-4 text-[#020617] shadow-[0_10px_25px_rgba(14,165,233,0.38)] hover:bg-cyan-400"
+          >
+            <Plus className="h-4 w-4" />
+            טפסים למסירה ({selectedDeliveryFormIds.length})
+          </Button>
+        </div>
+
+        {formsPickerOpen && (
+          <div className="fixed inset-x-4 bottom-24 z-40 max-h-[58vh] overflow-y-auto rounded-2xl border border-cyan-300/30 bg-[#08182d]/95 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.45)] sm:left-auto sm:right-6 sm:w-[520px]" dir="rtl">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-cyan-100">טפסים למסירה זו</h3>
+              <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => setFormsPickerOpen(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <p className="mb-3 text-xs text-cyan-200/70">ניתן להוסיף/להסיר גם תוך כדי המסירה.</p>
+
+            <div className="space-y-2">
+              {availableDeliveryForms.length === 0 ? (
+                <p className="text-xs text-cyan-100/70">לא נמצאו טפסים פעילים במרכז הטפסים.</p>
+              ) : (
+                availableDeliveryForms.map((doc) => {
+                  const selected = selectedDeliveryFormIds.includes(doc.id);
+                  return (
+                    <label key={doc.id} className="flex items-center gap-2 rounded-lg border border-cyan-400/15 bg-[#061325]/70 px-3 py-2 text-sm">
+                      <Checkbox
+                        checked={selected}
+                        onCheckedChange={(checked) => {
+                          const isChecked = checked === true;
+                          setSelectedDeliveryFormIds((current) => {
+                            if (isChecked) return Array.from(new Set([...current, doc.id]));
+                            return current.filter((id) => id !== doc.id);
+                          });
+                        }}
+                      />
+                      <span className="text-cyan-50">{doc.title}</span>
+                      {doc.file_url && (
+                        <button
+                          type="button"
+                          className="mr-auto text-xs text-cyan-300 hover:text-cyan-200"
+                          onClick={() => window.open(doc.file_url as string, '_blank', 'noopener,noreferrer')}
+                        >
+                          פתיחה
+                        </button>
+                      )}
+                    </label>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Steps */}
         {step === 0 && (
           <Step1
@@ -1176,13 +1333,11 @@ export default function VehicleHandoverWizard() {
 
           {!canAdvance() && (
             <p className="pointer-events-none absolute left-1/2 -translate-x-1/2 -top-6 whitespace-nowrap text-xs text-amber-400/90">
-              {step === 0 && (!allAccessoriesChecked
-                ? 'יש לסמן את כל האביזרים בטבלה'
-                : step1MissingRequiredCount > 0
-                  ? `יש להשלים ${step1MissingRequiredCount} שדות חובה`
-                  : !manualFieldsValid
-                    ? 'יש להשלים שדות בפורמט תקין'
-                  : 'נדרשת חתימה להמשך')}
+              {step === 0 && (step1MissingRequiredCount > 0
+                ? `יש להשלים ${step1MissingRequiredCount} שדות חובה`
+                : !manualFieldsValid
+                  ? 'יש להשלים שדות בפורמט תקין'
+                : 'נדרשת חתימה להמשך')}
               {step === 1 && (!procedureRead ? 'סמן קריאה ואישור להמשך' : 'נדרשת חתימה להמשך')}
               {step === 2 && (healthPdfUrl ? 'נדרשת חתימה להמשך' : (!healthItems.every(h => h.checked) ? 'סמן את כל סעיפי הבריאות' : 'נדרשת חתימה להמשך'))}
               {step === 3 && (

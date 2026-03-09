@@ -1,7 +1,7 @@
-import { useMemo, useRef, useState } from 'react';
+import { type DragEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Download, FileText, Loader2, Pencil, Plus, Trash2, Upload } from 'lucide-react';
+import { ArrowRightLeft, Download, FileText, FolderCog, GripVertical, Loader2, Pencil, Plus, Trash2, Upload } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
@@ -10,6 +10,7 @@ import { useOrgSettings } from '@/hooks/useOrgSettings';
 import { useDrivers } from '@/hooks/useDrivers';
 import { useVehicles } from '@/hooks/useVehicles';
 import { supabase } from '@/integrations/supabase/client';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -46,12 +47,25 @@ function FormCardSkeleton() {
   );
 }
 
-const FORM_CATEGORIES: FormsCategory[] = ['תפעול', 'בטיחות', 'מסמכים אישיים'];
+const DEFAULT_FORM_FOLDERS: FormsCategory[] = ['תפעול', 'בטיחות', 'מסמכים אישיים'];
 type CategoryFilter = FormsCategory | 'הכל';
 const FORMS_MANAGER_EMAIL_ALLOWLIST = ['malachiroei@gmail.com'];
 const ALLOWED_FORM_EXTENSIONS = ['pdf', 'doc', 'docx'];
 type TemplateMode = 'file' | 'generated';
 const DELETE_FORMS_PASSWORD = '2101';
+const FORMS_CUSTOM_FOLDERS_STORAGE_KEY = 'forms-custom-folders-v1';
+
+const isDefaultFolder = (folder: string) => DEFAULT_FORM_FOLDERS.includes(folder);
+const getPersistedCategory = (folder: string): FormsCategory => (isDefaultFolder(folder) ? folder : DEFAULT_FORM_FOLDERS[0]);
+const withCustomFolderInSchema = (schema: Record<string, any> | null | undefined, folder: string) => {
+  const nextSchema = schema && typeof schema === 'object' ? { ...schema } : {};
+  if (isDefaultFolder(folder)) {
+    delete (nextSchema as any).custom_folder;
+  } else {
+    (nextSchema as any).custom_folder = folder;
+  }
+  return Object.keys(nextSchema).length > 0 ? nextSchema : null;
+};
 
 const STANDARD_INPUT_FOOTER_TEXT = [
   'פרטים אישיים ואישור (לפני חתימה):',
@@ -158,12 +172,53 @@ export default function FormsPage() {
   const [formToDelete, setFormToDelete] = useState<(OrgDocument & { category: FormsCategory }) | null>(null);
   const [deletePassword, setDeletePassword] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [folderManagerOpen, setFolderManagerOpen] = useState(false);
+  const [folderToRename, setFolderToRename] = useState<FormsCategory>('תפעול');
+  const [renamedFolderValue, setRenamedFolderValue] = useState('');
+  const [folderToMoveAll, setFolderToMoveAll] = useState<FormsCategory>('תפעול');
+  const [folderMoveTarget, setFolderMoveTarget] = useState('');
+  const [newFolderValue, setNewFolderValue] = useState('');
+  const [folderManagerPassword, setFolderManagerPassword] = useState('');
+  const [movePassword, setMovePassword] = useState('');
+  const [folderOpsUnlocked, setFolderOpsUnlocked] = useState(false);
+  const [customFolders, setCustomFolders] = useState<FormsCategory[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = window.localStorage.getItem(FORMS_CUSTOM_FOLDERS_STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .map((item) => String(item).trim())
+        .filter((item): item is FormsCategory => Boolean(item));
+    } catch {
+      return [];
+    }
+  });
+  const [renamingFolder, setRenamingFolder] = useState(false);
+  const [movingFolder, setMovingFolder] = useState(false);
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false);
+  const [formToMove, setFormToMove] = useState<(OrgDocument & { category: FormsCategory }) | null>(null);
+  const [moveTargetFolder, setMoveTargetFolder] = useState<FormsCategory>('תפעול');
+  const [movingForm, setMovingForm] = useState(false);
+  const [draggedForm, setDraggedForm] = useState<{
+    id: string;
+    title: string;
+    category: FormsCategory;
+    jsonSchema?: Record<string, any> | null;
+  } | null>(null);
+  const [dragOverFolder, setDragOverFolder] = useState<FormsCategory | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(FORMS_CUSTOM_FOLDERS_STORAGE_KEY, JSON.stringify(customFolders));
+  }, [customFolders]);
 
   const resetForm = () => {
     setTitle('');
     setDescription('');
-    setCategory('תפעול');
+    setCategory(DEFAULT_FORM_FOLDERS[0]);
     setEditingForm(null);
     setFile(null);
     setTemplateMode('file');
@@ -283,7 +338,7 @@ export default function FormsPage() {
     includeHandover?: boolean;
   }) => {
     const fileUrl = await uploadGeneratedDocumentPdf(args.formTitle, args.content);
-    const jsonSchema = {
+    const baseJsonSchema = {
       template_mode: 'generated',
       template_content: args.content,
       template_header: {
@@ -293,6 +348,8 @@ export default function FormsPage() {
       input_footer: STANDARD_INPUT_FOOTER_TEXT,
       validation: STANDARD_INPUT_VALIDATION_SCHEMA,
     };
+    const persistedCategory = getPersistedCategory(args.formCategory);
+    const jsonSchema = withCustomFolderInSchema(baseJsonSchema, args.formCategory);
 
     const delivery = args.includeDelivery ?? includeInDelivery;
     const ret = args.includeReturn ?? includeInReturn;
@@ -303,7 +360,7 @@ export default function FormsPage() {
         id: args.existing.id,
         title: args.formTitle,
         description: args.formDescription,
-        category: args.formCategory,
+        category: persistedCategory,
         file_url: fileUrl,
         json_schema: jsonSchema,
         include_in_handover: effectiveIncludeInHandover,
@@ -316,7 +373,7 @@ export default function FormsPage() {
     await createForm.mutateAsync({
       title: args.formTitle,
       description: args.formDescription,
-      category: args.formCategory,
+      category: persistedCategory,
       file_url: fileUrl,
       json_schema: jsonSchema,
       autofill_fields: ['employee_name', 'id_number', 'vehicle_number', 'date'],
@@ -639,10 +696,23 @@ ${STANDARD_INPUT_FOOTER_TEXT}
     () =>
       (forms ?? []).map((form) => ({
         ...form,
-        category: (form.category as FormsCategory | undefined) ?? 'תפעול',
+        dbCategory: (form.category as FormsCategory | undefined) ?? DEFAULT_FORM_FOLDERS[0],
+        category:
+          (form.json_schema as any)?.custom_folder ??
+          (form.category as FormsCategory | undefined) ??
+          DEFAULT_FORM_FOLDERS[0],
       })),
     [forms],
   );
+
+  const folderOptions = useMemo(() => {
+    const fromForms = formsWithCategory
+      .map((form) => form.category)
+      .filter((value): value is FormsCategory => Boolean(value && String(value).trim()));
+
+    const merged = Array.from(new Set([...customFolders, ...fromForms]));
+    return merged.length > 0 ? merged : [...DEFAULT_FORM_FOLDERS];
+  }, [formsWithCategory, customFolders]);
 
   const filteredForms = useMemo(() => {
     if (activeCategory === 'הכל') return formsWithCategory;
@@ -650,14 +720,34 @@ ${STANDARD_INPUT_FOOTER_TEXT}
   }, [activeCategory, formsWithCategory]);
 
   const groupedForms = useMemo(() => {
-    return FORM_CATEGORIES.map((cat) => ({
+    return folderOptions.map((cat) => ({
       category: cat,
       items: filteredForms.filter((form) => form.category === cat),
     })).filter((group) => group.items.length > 0);
-  }, [filteredForms]);
+  }, [filteredForms, folderOptions]);
 
-  const openFormFile = (url: string) => {
-    window.open(url, '_blank', 'noopener,noreferrer');
+  const openFormFile = async (url: string) => {
+    try {
+      const parsedUrl = new URL(url, window.location.origin);
+      const isSameOrigin = parsedUrl.origin === window.location.origin;
+
+      // For same-origin files (e.g. /forms-files/*.pdf), verify file exists before opening.
+      if (isSameOrigin) {
+        const response = await fetch(parsedUrl.toString(), {
+          method: 'HEAD',
+          cache: 'no-store',
+        });
+
+        if (!response.ok) {
+          toast.error('הטופס אינו זמין כרגע או לא קיים במערכת');
+          return;
+        }
+      }
+
+      window.open(parsedUrl.toString(), '_blank', 'noopener,noreferrer');
+    } catch {
+      toast.error('לא ניתן לפתוח את הטופס המבוקש');
+    }
   };
 
   const handleSave = async () => {
@@ -707,11 +797,13 @@ ${STANDARD_INPUT_FOOTER_TEXT}
 
       if (editingForm) {
         const effectiveIncludeInHandover = includeInHandover || includeInDelivery || includeInReturn;
+        const nextJsonSchema = withCustomFolderInSchema((editingForm.json_schema as any) ?? null, category);
         await updateForm.mutateAsync({
           id: editingForm.id,
           title: title.trim(),
           description: description.trim(),
-          category,
+          category: getPersistedCategory(category),
+          json_schema: nextJsonSchema,
           include_in_handover: effectiveIncludeInHandover,
           include_in_delivery: includeInDelivery,
           include_in_return: includeInReturn,
@@ -720,12 +812,13 @@ ${STANDARD_INPUT_FOOTER_TEXT}
         toast.success('הטופס עודכן בהצלחה');
       } else {
         const effectiveIncludeInHandover = includeInHandover || includeInDelivery || includeInReturn;
+        const nextJsonSchema = withCustomFolderInSchema(null, category);
         await createForm.mutateAsync({
           title: title.trim(),
           description: description.trim(),
-          category,
+          category: getPersistedCategory(category),
           file_url: null,
-          json_schema: null,
+          json_schema: nextJsonSchema,
           autofill_fields: ['employee_name', 'id_number', 'vehicle_number', 'date'],
           include_in_handover: effectiveIncludeInHandover,
           include_in_delivery: includeInDelivery,
@@ -804,6 +897,337 @@ ${STANDARD_INPUT_FOOTER_TEXT}
     setDeleteDialogOpen(true);
   };
 
+  const openMoveDialog = (form: OrgDocument & { category: FormsCategory }) => {
+    setFormToMove(form);
+    setMoveTargetFolder(form.category);
+    setMovePassword('');
+    setMoveDialogOpen(true);
+  };
+
+  const ensureFolderOpsAuthorized = (passwordInput?: string) => {
+    if (folderOpsUnlocked) return true;
+    if ((passwordInput ?? '').trim() === DELETE_FORMS_PASSWORD) {
+      setFolderOpsUnlocked(true);
+      toast.success('סיסמת מנהל אומתה בהצלחה');
+      return true;
+    }
+    toast.error('סיסמת מנהל נדרשת לפעולה זו');
+    return false;
+  };
+
+  const handleVerifyFolderOpsPassword = (passwordInput: string) => {
+    void ensureFolderOpsAuthorized(passwordInput);
+  };
+
+  const handleCreateFolder = () => {
+    if (!ensureFolderOpsAuthorized(folderManagerPassword)) {
+      return;
+    }
+
+    const nextFolder = newFolderValue.trim();
+    if (!nextFolder) {
+      toast.error('יש להזין שם תיקייה חדשה');
+      return;
+    }
+
+    if (folderOptions.includes(nextFolder)) {
+      toast.error('תיקייה בשם זה כבר קיימת');
+      return;
+    }
+
+    setCustomFolders((prev) => [...prev, nextFolder]);
+    setActiveCategory(nextFolder);
+    setCategory(nextFolder);
+    setMoveTargetFolder(nextFolder);
+    setFolderToRename(nextFolder);
+    setRenamedFolderValue(nextFolder);
+    setNewFolderValue('');
+    toast.success(`התיקייה "${nextFolder}" נוצרה בהצלחה`);
+  };
+
+  const handleRenameFolder = async () => {
+    if (!ensureFolderOpsAuthorized(folderManagerPassword)) {
+      return;
+    }
+
+    const nextName = renamedFolderValue.trim();
+    if (!folderToRename) {
+      toast.error('יש לבחור תיקייה לעריכה');
+      return;
+    }
+    if (!nextName) {
+      toast.error('יש להזין שם תיקייה חדש');
+      return;
+    }
+    if (nextName === folderToRename) {
+      toast.error('שם התיקייה החדש זהה לשם הקיים');
+      return;
+    }
+
+    setRenamingFolder(true);
+    try {
+      const docsInFolder = formsWithCategory.filter((doc) => doc.category === folderToRename);
+
+      for (const doc of docsInFolder) {
+        const nextSchema = withCustomFolderInSchema((doc.json_schema as any) ?? null, nextName);
+        const { error } = await (supabase as any)
+          .from('org_documents')
+          .update({
+            category: getPersistedCategory(nextName),
+            json_schema: nextSchema,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', doc.id)
+          .eq('is_active', true);
+
+        if (error) throw error;
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ['org-documents'] });
+      setCustomFolders((prev) => {
+        const updated = prev
+          .filter((item) => item !== folderToRename)
+          .map((item) => (item === folderToRename ? nextName : item));
+        if (!isDefaultFolder(nextName)) {
+          updated.push(nextName);
+        }
+        return Array.from(new Set(updated));
+      });
+      setActiveCategory((current) => (current === folderToRename ? nextName : current));
+      if (category === folderToRename) {
+        setCategory(nextName);
+      }
+      toast.success(`שם התיקייה עודכן ל-${nextName}`);
+      setFolderManagerOpen(false);
+      setRenamedFolderValue('');
+    } catch (error: any) {
+      toast.error(`עדכון תיקייה נכשל: ${error?.message ?? 'שגיאה לא צפויה'}`);
+    } finally {
+      setRenamingFolder(false);
+    }
+  };
+
+  const handleMoveEntireFolder = async () => {
+    if (!ensureFolderOpsAuthorized(folderManagerPassword)) {
+      return;
+    }
+
+    const sourceFolder = folderToMoveAll.trim();
+    const targetFolder = folderMoveTarget.trim();
+
+    if (!sourceFolder) {
+      toast.error('יש לבחור תיקיית מקור');
+      return;
+    }
+
+    if (!targetFolder) {
+      toast.error('יש להזין/לבחור תיקיית יעד');
+      return;
+    }
+
+    if (sourceFolder === targetFolder) {
+      toast.error('תיקיית המקור והיעד זהות');
+      return;
+    }
+
+    const docsInSource = formsWithCategory.filter((doc) => doc.category === sourceFolder);
+    if (docsInSource.length === 0) {
+      toast.error('אין מסמכים להעברה בתיקיית המקור');
+      return;
+    }
+
+    setMovingFolder(true);
+    try {
+      for (const doc of docsInSource) {
+        const { error } = await (supabase as any)
+          .from('org_documents')
+          .update({
+            category: getPersistedCategory(targetFolder),
+            json_schema: withCustomFolderInSchema((doc.json_schema as any) ?? null, targetFolder),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', doc.id)
+          .eq('is_active', true);
+
+        if (error) throw error;
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ['org-documents'] });
+
+      setCustomFolders((prev) => {
+        const next = prev.filter((item) => item !== sourceFolder);
+        if (!isDefaultFolder(targetFolder)) {
+          next.push(targetFolder);
+        }
+        return Array.from(new Set(next));
+      });
+
+      if (activeCategory === sourceFolder) {
+        setActiveCategory(targetFolder);
+      }
+
+      setFolderToRename(targetFolder);
+      setRenamedFolderValue(targetFolder);
+      setFolderToMoveAll(targetFolder);
+      setFolderMoveTarget('');
+      toast.success(`כל המסמכים הועברו מ-${sourceFolder} ל-${targetFolder}`);
+    } catch (error: any) {
+      toast.error(`העברת תיקייה נכשלה: ${error?.message ?? 'שגיאה לא צפויה'}`);
+    } finally {
+      setMovingFolder(false);
+    }
+  };
+
+  const moveFormToFolder = async (params: {
+    formId: string;
+    fromFolder: FormsCategory;
+    nextFolder: FormsCategory;
+    formTitle?: string;
+    jsonSchema?: Record<string, any> | null;
+    closeDialog?: boolean;
+  }) => {
+    const { formId, fromFolder, nextFolder, formTitle, jsonSchema, closeDialog } = params;
+    const targetFolder = nextFolder.trim();
+
+    if (!folderOpsUnlocked) {
+      toast.error('יש לאמת סיסמת מנהל לפני העברה בין תיקיות');
+      return false;
+    }
+
+    if (!targetFolder) {
+      toast.error('יש לבחור תיקיית יעד');
+      return false;
+    }
+
+    if (targetFolder === fromFolder) {
+      toast.error('הטופס כבר נמצא בתיקייה שנבחרה');
+      return false;
+    }
+
+    try {
+      const { error } = await (supabase as any)
+        .from('org_documents')
+        .update({
+          category: getPersistedCategory(targetFolder),
+          json_schema: withCustomFolderInSchema((jsonSchema as any) ?? null, targetFolder),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', formId)
+        .eq('is_active', true);
+
+      if (error) throw error;
+
+      await queryClient.invalidateQueries({ queryKey: ['org-documents'] });
+      if (activeCategory !== 'הכל' && activeCategory === fromFolder) {
+        setActiveCategory('הכל');
+      }
+
+      toast.success(formTitle ? `הטופס "${formTitle}" הועבר ל-${targetFolder}` : 'הטופס הועבר לתיקייה בהצלחה');
+
+      if (closeDialog) {
+        setMoveDialogOpen(false);
+        setFormToMove(null);
+      }
+
+      return true;
+    } catch (error: any) {
+      toast.error(`העברת טופס נכשלה: ${error?.message ?? 'שגיאה לא צפויה'}`);
+      return false;
+    }
+  };
+
+  const handleMoveFormToFolder = async () => {
+    if (!formToMove) {
+      toast.error('לא נבחר טופס להעברה');
+      return;
+    }
+
+    if (!ensureFolderOpsAuthorized(movePassword)) {
+      return;
+    }
+
+    setMovingForm(true);
+    try {
+      await moveFormToFolder({
+        formId: formToMove.id,
+        fromFolder: formToMove.category,
+        nextFolder: moveTargetFolder,
+        formTitle: formToMove.title,
+        jsonSchema: (formToMove.json_schema as any) ?? null,
+        closeDialog: true,
+      });
+    } finally {
+      setMovingForm(false);
+    }
+  };
+
+  const handleDropOnFolder = async (targetFolder: FormsCategory) => {
+    if (!draggedForm) return;
+
+    if (!folderOpsUnlocked) {
+      toast.error('יש לאמת סיסמת מנהל בחלון עריכת תיקיות/העברה לפני גרירה בין תיקיות');
+      setDragOverFolder(null);
+      setDraggedForm(null);
+      return;
+    }
+
+    await moveFormToFolder({
+      formId: draggedForm.id,
+      fromFolder: draggedForm.category,
+      nextFolder: targetFolder,
+      formTitle: draggedForm.title,
+      jsonSchema: draggedForm.jsonSchema,
+    });
+
+    setDragOverFolder(null);
+    setDraggedForm(null);
+  };
+
+  const handleDropFromEvent = async (event: DragEvent, targetFolder: FormsCategory) => {
+    event.preventDefault();
+    const raw = event.dataTransfer.getData('application/x-org-document');
+
+    let payload: {
+      id: string;
+      title: string;
+      category: FormsCategory;
+      jsonSchema?: Record<string, any> | null;
+    } | null = null;
+    if (raw) {
+      try {
+        payload = JSON.parse(raw);
+      } catch {
+        payload = null;
+      }
+    }
+
+    if (!payload && draggedForm) {
+      payload = draggedForm;
+    }
+
+    if (!payload) {
+      setDragOverFolder(null);
+      setDraggedForm(null);
+      return;
+    }
+
+    setDraggedForm(payload);
+    await handleDropOnFolder(targetFolder);
+  };
+
+  const handleDragStartForm = (event: DragEvent, form: OrgDocument & { category: FormsCategory }) => {
+    const payload = {
+      id: form.id,
+      title: form.title,
+      category: form.category,
+      jsonSchema: (form.json_schema as any) ?? null,
+    };
+    setDraggedForm(payload);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', form.id);
+    event.dataTransfer.setData('application/x-org-document', JSON.stringify(payload));
+  };
+
   const handleDeleteForm = async () => {
     if (!formToDelete) {
       toast.error('לא נבחר טופס למחיקה');
@@ -865,27 +1289,67 @@ ${STANDARD_INPUT_FOOTER_TEXT}
               {syncingBuiltin ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               סנכרון מסמכי מערכת
             </Button>
-            <Button className="w-full sm:w-auto gap-2" onClick={openCreateDialog}>
-              <Plus className="h-4 w-4" />
-              הוסף טופס חדש
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto gap-2"
+              onClick={() => {
+                const firstFolder = folderOptions[0] ?? DEFAULT_FORM_FOLDERS[0];
+                setFolderToRename(firstFolder);
+                setRenamedFolderValue(firstFolder);
+                setFolderToMoveAll(firstFolder);
+                setFolderMoveTarget('');
+                setFolderManagerOpen(true);
+              }}
+            >
+              <FolderCog className="h-4 w-4" />
+              עריכת תיקיות
             </Button>
           </div>
         )}
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {(['הכל', ...FORM_CATEGORIES] as CategoryFilter[]).map((cat) => (
+        {(['הכל', ...folderOptions] as CategoryFilter[]).map((cat) => (
+          (() => {
+            const isDropFolder = cat !== 'הכל' && canManageForms;
+            const isDragOver = isDropFolder && dragOverFolder === cat;
+
+            return (
           <Button
             key={cat}
             type="button"
             variant={activeCategory === cat ? 'default' : 'outline'}
             size="sm"
             onClick={() => setActiveCategory(cat)}
+            className={cn(
+              isDropFolder && 'transition-all',
+              isDragOver && 'border-cyan-300 bg-cyan-500/20 text-cyan-100 shadow-[0_0_0_2px_rgba(34,211,238,0.35)]'
+            )}
+            onDragOver={(event) => {
+              if (!isDropFolder) return;
+              event.preventDefault();
+              setDragOverFolder(cat as FormsCategory);
+            }}
+            onDragLeave={() => {
+              if (dragOverFolder === cat) {
+                setDragOverFolder(null);
+              }
+            }}
+            onDrop={(event) => {
+              if (!isDropFolder) return;
+              void handleDropFromEvent(event, cat as FormsCategory);
+            }}
           >
             {cat}
           </Button>
+            );
+          })()
         ))}
       </div>
+
+      {canManageForms && (
+        <p className="text-xs text-muted-foreground">טיפ: ניתן לגרור כרטיס טופס ולשחרר על תיקייה למעלה כדי להעביר אותו.</p>
+      )}
 
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -896,12 +1360,32 @@ ${STANDARD_INPUT_FOOTER_TEXT}
       ) : (
         <div className="space-y-6">
           {groupedForms.map((group) => (
-            <section key={group.category} className="space-y-3">
-              <div className="flex items-center gap-2">
+            <section
+              key={group.category}
+              className={cn('space-y-3 rounded-xl p-1 transition-colors', dragOverFolder === group.category && 'bg-cyan-500/10 ring-1 ring-cyan-300/40')}
+              onDragOver={(event) => {
+                if (!canManageForms) return;
+                event.preventDefault();
+                setDragOverFolder(group.category);
+              }}
+              onDragLeave={() => {
+                if (dragOverFolder === group.category) {
+                  setDragOverFolder(null);
+                }
+              }}
+              onDrop={(event) => {
+                if (!canManageForms) return;
+                void handleDropFromEvent(event, group.category);
+              }}
+            >
+              <div className={cn('flex items-center gap-2 rounded-md px-2 py-1', dragOverFolder === group.category && 'bg-cyan-500/15')}>
                 <h2 className="text-lg font-semibold">{group.category}</h2>
                 <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
                   {group.items.length}
                 </span>
+                {canManageForms && (
+                  <span className="mr-auto text-xs text-muted-foreground">גררי לכאן לשיוך לתיקייה</span>
+                )}
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {group.items.map((form) => {
@@ -910,11 +1394,35 @@ ${STANDARD_INPUT_FOOTER_TEXT}
                   const hasPdf = Boolean(form.file_url);
 
                   return (
-                    <Card key={form.id} className="h-full">
+                    <Card
+                      key={form.id}
+                      className={cn('h-full', canManageForms && 'cursor-grab active:cursor-grabbing', draggedForm?.id === form.id && 'opacity-70')}
+                      draggable={canManageForms}
+                      onDragStart={(event) => {
+                        if (!canManageForms) return;
+                        handleDragStartForm(event, form as OrgDocument & { category: FormsCategory });
+                      }}
+                      onDragEnd={() => {
+                        setDraggedForm(null);
+                        setDragOverFolder(null);
+                      }}
+                    >
                       <CardHeader>
                         <CardTitle className="text-lg flex items-center gap-2">
                           <FileText className="h-4 w-4" />
                           <span className="truncate forms-file-name">{form.title}</span>
+                          {canManageForms && (
+                            <button
+                              type="button"
+                              draggable
+                              onDragStart={(event) => handleDragStartForm(event, form as OrgDocument & { category: FormsCategory })}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                              aria-label="גרירת טופס לתיקייה"
+                              title="גרירה לתיקייה"
+                            >
+                              <GripVertical className="h-4 w-4" />
+                            </button>
+                          )}
                           {canManageForms && (
                             <button
                               type="button"
@@ -923,6 +1431,19 @@ ${STANDARD_INPUT_FOOTER_TEXT}
                               onClick={() => openContentEditor(form as OrgDocument & { category: FormsCategory })}
                             >
                               <Pencil className="h-4 w-4" />
+                            </button>
+                          )}
+                          {canManageForms && (
+                            <button
+                              type="button"
+                              draggable
+                              className="ml-2 inline-flex h-7 w-7 items-center justify-center rounded-md bg-cyan-600 text-white hover:bg-cyan-700 transition-colors"
+                              aria-label="הוספת טפסים"
+                              title="הוספת טפסים"
+                              onClick={openCreateDialog}
+                            >
+                              <Plus className="h-4 w-4" />
+                              <span className="ml-1">הוספת טפסים</span>
                             </button>
                           )}
                         </CardTitle>
@@ -950,7 +1471,10 @@ ${STANDARD_INPUT_FOOTER_TEXT}
                           
                           variant="outline"
                           disabled={!hasPdf}
-                          onClick={() => hasPdf && openFormFile(form.file_url as string)}
+                          onClick={() => {
+                            if (!hasPdf) return;
+                            void openFormFile(form.file_url as string);
+                          }}
                         >
                           <Download className="h-4 w-4" />
                           {hasPdf ? 'צפייה/הורדה' : 'קובץ לא זמין'}
@@ -964,6 +1488,17 @@ ${STANDARD_INPUT_FOOTER_TEXT}
                           >
                             <Pencil className="h-4 w-4" />
                             עריכת תוכן מסמך
+                          </Button>
+                        )}
+                        {canManageForms && (
+                          <Button
+                            type="button"
+                            className="w-full gap-2"
+                            variant="outline"
+                            onClick={() => openMoveDialog(form as OrgDocument & { category: FormsCategory })}
+                          >
+                            <ArrowRightLeft className="h-4 w-4" />
+                            העברה בין תיקיות
                           </Button>
                         )}
                         {canManageForms && (
@@ -1078,10 +1613,15 @@ ${STANDARD_INPUT_FOOTER_TEXT}
                 onChange={(e) => setCategory(e.target.value as FormsCategory)}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               >
-                {FORM_CATEGORIES.map((cat) => (
+                {folderOptions.map((cat) => (
                   <option key={cat} value={cat}>{cat}</option>
                 ))}
               </select>
+              <Input
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                placeholder="או הזן שם תיקייה חדשה"
+              />
             </div>
 
             <div className="space-y-2 rounded-md border border-border p-3">
@@ -1219,6 +1759,215 @@ ${STANDARD_INPUT_FOOTER_TEXT}
             >
               {(createForm.isPending || updateForm.isPending) ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               שמור תוכן
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={folderManagerOpen}
+        onOpenChange={(next) => {
+          setFolderManagerOpen(next);
+          if (!next) {
+            setRenamedFolderValue('');
+            setFolderManagerPassword('');
+            setFolderMoveTarget('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md" dir="rtl">
+          <DialogHeader>
+            <DialogTitle>עריכת תיקיית מסמכים</DialogTitle>
+            <DialogDescription>
+              שינוי שם תיקייה יעדכן את כל הטפסים שבתוכה לשם החדש.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="space-y-2 rounded-md border border-border p-3">
+              <Label htmlFor="folder-manager-password">סיסמת מנהל</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="folder-manager-password"
+                  type="password"
+                  value={folderManagerPassword}
+                  onChange={(e) => setFolderManagerPassword(e.target.value)}
+                  placeholder="נדרשת ליצירה/שינוי שם תיקייה"
+                  autoComplete="off"
+                />
+                <Button type="button" variant="secondary" onClick={() => handleVerifyFolderOpsPassword(folderManagerPassword)}>
+                  אימות
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                סטטוס: {folderOpsUnlocked ? 'מאומת' : 'לא מאומת'}
+              </p>
+            </div>
+
+            <div className="space-y-2 rounded-md border border-border p-3">
+              <Label htmlFor="new-folder-name">יצירת תיקייה חדשה</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="new-folder-name"
+                  value={newFolderValue}
+                  onChange={(e) => setNewFolderValue(e.target.value)}
+                  placeholder="לדוגמה: נהגים חדשים"
+                />
+                <Button type="button" variant="secondary" onClick={handleCreateFolder}>
+                  צור
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="folder-to-rename">תיקייה לעריכה</Label>
+              <select
+                id="folder-to-rename"
+                value={folderToRename}
+                onChange={(e) => {
+                  setFolderToRename(e.target.value);
+                  setRenamedFolderValue(e.target.value);
+                }}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                {folderOptions.map((folder) => (
+                  <option key={folder} value={folder}>{folder}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="renamed-folder">שם חדש</Label>
+              <Input
+                id="renamed-folder"
+                value={renamedFolderValue}
+                onChange={(e) => setRenamedFolderValue(e.target.value)}
+                placeholder="שם תיקייה חדש"
+              />
+            </div>
+
+            <div className="space-y-2 rounded-md border border-border p-3">
+              <Label className="text-sm font-medium">העברת תיקייה</Label>
+              <p className="text-xs text-muted-foreground">מעביר את כל המסמכים מתיקיית מקור לתיקיית יעד.</p>
+
+              <div className="space-y-2">
+                <Label htmlFor="folder-to-move-all">תיקיית מקור</Label>
+                <select
+                  id="folder-to-move-all"
+                  value={folderToMoveAll}
+                  onChange={(e) => setFolderToMoveAll(e.target.value)}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  {folderOptions.map((folder) => (
+                    <option key={`move-all-${folder}`} value={folder}>{folder}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="folder-move-target">תיקיית יעד</Label>
+                <select
+                  id="folder-move-target"
+                  value={folderMoveTarget}
+                  onChange={(e) => setFolderMoveTarget(e.target.value)}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">בחר יעד</option>
+                  {folderOptions
+                    .filter((folder) => folder !== folderToMoveAll)
+                    .map((folder) => (
+                      <option key={`move-target-${folder}`} value={folder}>{folder}</option>
+                    ))}
+                </select>
+                <Input
+                  value={folderMoveTarget}
+                  onChange={(e) => setFolderMoveTarget(e.target.value)}
+                  placeholder="או הזן שם תיקיית יעד חדשה"
+                />
+              </div>
+
+              <Button type="button" variant="secondary" className="w-full" onClick={handleMoveEntireFolder} disabled={movingFolder}>
+                {movingFolder ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                העבר את כל התיקייה
+              </Button>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="ghost" onClick={() => setFolderManagerOpen(false)}>
+              ביטול
+            </Button>
+            <Button type="button" onClick={handleRenameFolder} disabled={renamingFolder} className="gap-2">
+              {renamingFolder ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              שמור שינוי תיקייה
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={moveDialogOpen}
+        onOpenChange={(next) => {
+          setMoveDialogOpen(next);
+          if (!next) {
+            setFormToMove(null);
+            setMovePassword('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md" dir="rtl">
+          <DialogHeader>
+            <DialogTitle>העברת טופס בין תיקיות</DialogTitle>
+            <DialogDescription>
+              בחרי תיקיית יעד עבור הטופס: {formToMove?.title ?? ''}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <Label htmlFor="move-password">סיסמת מנהל</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="move-password"
+                type="password"
+                value={movePassword}
+                onChange={(e) => setMovePassword(e.target.value)}
+                placeholder="נדרשת להעברה בין תיקיות"
+                autoComplete="off"
+              />
+              <Button type="button" variant="secondary" onClick={() => handleVerifyFolderOpsPassword(movePassword)}>
+                אימות
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              סטטוס: {folderOpsUnlocked ? 'מאומת' : 'לא מאומת'}
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="move-target-folder">תיקיית יעד</Label>
+            <select
+              id="move-target-folder"
+              value={moveTargetFolder}
+              onChange={(e) => setMoveTargetFolder(e.target.value)}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              {folderOptions.map((folder) => (
+                <option key={folder} value={folder}>{folder}</option>
+              ))}
+            </select>
+            <Input
+              value={moveTargetFolder}
+              onChange={(e) => setMoveTargetFolder(e.target.value)}
+              placeholder="או הזן תיקיית יעד חדשה"
+            />
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="ghost" onClick={() => setMoveDialogOpen(false)}>
+              ביטול
+            </Button>
+            <Button type="button" onClick={handleMoveFormToFolder} disabled={movingForm} className="gap-2">
+              {movingForm ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              העבר טופס
             </Button>
           </DialogFooter>
         </DialogContent>
