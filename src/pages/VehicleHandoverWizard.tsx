@@ -267,8 +267,8 @@ function Step1({
       <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
         <h3 className="text-sm font-bold text-slate-800 mb-2">1. התחייבות והצהרת הנהג</h3>
         <div className="space-y-1">
-          {commitmentLines.map((line, idx) => (
-            <p key={`${idx}-${line.slice(0, 20)}`} className="text-sm text-slate-700 leading-6">
+          {commitmentLines.map((line) => (
+            <p key={line.slice(0, 32)} className="text-sm text-slate-700 leading-6">
               {line}
             </p>
           ))}
@@ -727,10 +727,7 @@ function Step4({
 // Progress Bar
 // ─────────────────────────────────────────────
 const BASE_STEPS = [
-  { icon: Car,      label: 'קבלת רכב'    },
-  { icon: FileText, label: 'נוהל שימוש'  },
-  { icon: Heart,    label: 'הצהרת בריאות' },
-  { icon: Camera,   label: 'רישיון נהיגה' },
+  { icon: Car, label: 'טופס קבלת רכב' },
 ];
 
 // Keep STEPS alias for backward compat
@@ -744,8 +741,10 @@ function ProgressBar({ current, steps = STEPS }: { current: number; steps?: type
           const Icon = step.icon;
           const done    = i < current;
           const active  = i === current;
+          // Prefer label as key if unique, fallback to index only if necessary
+          const key = step.label || i;
           return (
-            <div key={i} className="flex items-center flex-1">
+            <div key={key} className="flex items-center flex-1">
               <div className={`flex flex-col items-center flex-1 ${i === steps.length - 1 ? '' : ''}`}>
                 <div className={`h-10 w-10 rounded-full flex items-center justify-center border-2 transition-all ${
                   done   ? 'bg-cyan-500 border-cyan-500 text-white' :
@@ -865,29 +864,39 @@ export default function VehicleHandoverWizard() {
   const [licenseFront,  setLicenseFront]  = useState<File | null>(null);
   const [licenseBack,   setLicenseBack]   = useState<File | null>(null);
 
+  // All active forms (for backward compatibility)
   const availableDeliveryForms = useMemo(
     () => (orgDocuments ?? []).filter((doc) => doc.is_active),
     [orgDocuments],
   );
+
+
+  // All forms except 'טופס קבלת רכב' for the picker
+  const formsPickerForms = useMemo(
+    () => availableDeliveryForms.filter(
+      (doc) => doc.title !== 'טופס קבלת רכב'
+    ),
+    [availableDeliveryForms],
+  );
   const selectedFormsInitializedRef = useRef(false);
 
   useEffect(() => {
-    const defaultIds = availableDeliveryForms
-      .filter((doc) => Boolean(doc.include_in_delivery))
-      .map((doc) => doc.id);
-    const fallbackIds = availableDeliveryForms.map((doc) => doc.id);
-    if (fallbackIds.length === 0) return;
+    // Set selectedDeliveryFormIds only if there is a query param, otherwise start empty
+    if (availableDeliveryForms.length === 0) return;
 
     const fromQuery = selectedFormsParam
       .split(',')
       .map((item) => item.trim())
       .filter(Boolean);
 
-    const allowed = new Set(fallbackIds);
-    const baseline = defaultIds.length > 0 ? defaultIds : fallbackIds;
+    const allowed = new Set(availableDeliveryForms.map((doc) => doc.id));
     if (!selectedFormsInitializedRef.current) {
-      const effective = (fromQuery.length > 0 ? fromQuery : baseline).filter((id) => allowed.has(id));
-      setSelectedDeliveryFormIds(effective.length > 0 ? effective : baseline);
+      // Always start empty unless there is a query param
+      let effective: string[] = [];
+      if (fromQuery.length > 0) {
+        effective = fromQuery.filter((id) => allowed.has(id));
+      }
+      setSelectedDeliveryFormIds(effective);
       selectedFormsInitializedRef.current = true;
       return;
     }
@@ -962,9 +971,11 @@ export default function VehicleHandoverWizard() {
     return true;
   }, [manualFields]);
 
-  const allAccessoriesChecked = useMemo(() => accessories.every((a) => a.checked), [accessories]);
+  // Allow both checked (✓) and missing (✗) as valid selections
+  const allAccessoriesChecked = useMemo(() => accessories.every((a) => a.checked || a.missing), [accessories]);
   const canSignReception = manualFieldsValid && allAccessoriesChecked;
-  const step1MissingRequiredCount = requiredStep1FieldsMissing.length;
+  // Count missing required fields: accessories and manual fields
+  const step1MissingRequiredCount = requiredStep1FieldsMissing.length + accessories.filter(a => !a.checked && !a.missing).length;
 
   useEffect(() => {
     if (!canSignReception && sig1OK) {
@@ -973,16 +984,32 @@ export default function VehicleHandoverWizard() {
   }, [canSignReception, sig1OK]);
 
   // Build full wizard steps array
-  const wizardSteps = BASE_STEPS;
+  // Build full wizard steps array, including dynamic forms
+  // Always build steps from selected forms (order preserved), plus required steps
+  const wizardSteps = useMemo(() => {
+    // Always start with required 'טופס קבלת רכב'
+    const steps = [...BASE_STEPS];
+    // Add only selected forms except 'טופס קבלת רכב'
+    const dynamicSteps = selectedDeliveryFormIds
+      .map(id => {
+        const doc = availableDeliveryForms.find(f => f.id === id && f.title !== 'טופס קבלת רכב');
+        return doc ? { icon: FileText, label: doc.title } : null;
+      })
+      .filter(Boolean);
+    return steps.concat(dynamicSteps);
+  }, [selectedDeliveryFormIds, availableDeliveryForms]);
 
+  // ── Validation per step ──
   // ── Validation per step ──
   const canAdvance = useCallback(() => {
     if (step === 0) return sig1OK && allAccessoriesChecked && manualFieldsValid;
     if (step === 1) return sig2OK && procedureRead;
     if (step === 2) return sig3OK && (healthPdfUrl ? true : healthItems.every(h => h.checked));
     if (step === 3) return skipLicenseStep ? true : (!!licenseNumber && !!licenseExpiry && !!licenseFront && !!licenseBack);
+    // Dynamic forms: allow advance if step is a dynamic form (after base steps)
+    if (step > 3 && step < wizardSteps.length) return true;
     return false;
-  }, [step, sig1OK, allAccessoriesChecked, manualFieldsValid, sig2OK, procedureRead, sig3OK, healthItems, healthPdfUrl, licenseNumber, licenseExpiry, licenseFront, licenseBack, skipLicenseStep]);
+  }, [step, sig1OK, allAccessoriesChecked, manualFieldsValid, sig2OK, procedureRead, sig3OK, healthItems, healthPdfUrl, licenseNumber, licenseExpiry, licenseFront, licenseBack, skipLicenseStep, wizardSteps]);
 
   // ── Upload helper — always targets the public vehicle-documents bucket ──
   const uploadFileToStorage = async (file: File, path: string): Promise<string | null> => {
@@ -1150,7 +1177,114 @@ export default function VehicleHandoverWizard() {
     navigate(vehicleId ? `/vehicles/${vehicleId}` : '/vehicles');
   };
 
-  // ── Render ──
+  // ── Memoized input handler for manual fields ──
+  const onManualFieldChange = useCallback((field: keyof ReceptionManualFields, value: string) => {
+    setManualFields((prev) => ({ ...prev, [field]: value }));
+  }, []);
+
+  // ── Memoized step content renderer ──
+  const RenderStepContent = useMemo(() => {
+    return function RenderStepContent({ stepIdx }: { stepIdx: number }) {
+      // Always first step: טופס קבלת רכב
+      if (stepIdx === 0) {
+        return (
+          <Step1
+            accessories={accessories}
+            setAccessories={setAccessories}
+            sigRef={sig1Ref}
+            onSign={setSig1OK}
+            vehicleLabel={vehicleLabel}
+            driverName={driverName}
+            date={today}
+            deliveryDateTime={deliveryDateTime}
+            declarationText={receptionDeclarationText}
+            manualFields={manualFields}
+            onManualFieldChange={onManualFieldChange}
+            canSign={canSignReception}
+          />
+        );
+      }
+      // Dynamic steps: find doc by id
+      const dynamicStepIdx = stepIdx - 1;
+      const docId = selectedDeliveryFormIds[dynamicStepIdx];
+      const doc = availableDeliveryForms.find(f => f.id === docId);
+      if (!doc) return null;
+
+      // Map template/component by doc.template_name or doc.title
+      if (doc.template_name === 'health' || doc.title.includes('בריאות')) {
+        return (
+          <Step3
+            healthItems={healthItems}
+            setHealthItems={setHealthItems}
+            notes={healthNotes}
+            setNotes={setHealthNotes}
+            sigRef={sig3Ref}
+            onSign={setSig3OK}
+            vehicleLabel={vehicleLabel}
+            driverName={driverName}
+            date={today}
+            pdfTemplateUrl={doc.file_url}
+          />
+        );
+      }
+      if (doc.template_name === 'procedure' || doc.title.includes('נוהל')) {
+        return (
+          <Step2
+            procedureRead={procedureRead}
+            setProcedureRead={setProcedureRead}
+            sigRef={sig2Ref}
+            onSign={setSig2OK}
+            vehicleLabel={vehicleLabel}
+            driverName={driverName}
+            date={today}
+            clauses={activeClauses}
+            pdfTemplateUrl={doc.file_url}
+          />
+        );
+      }
+      if (doc.template_name === 'license' || doc.title.includes('רישיון')) {
+        return (
+          <Step4
+            licenseNumber={licenseNumber} setLicenseNumber={setLicenseNumber}
+            licenseExpiry={licenseExpiry} setLicenseExpiry={setLicenseExpiry}
+            licenseClass={licenseClass}   setLicenseClass={setLicenseClass}
+            licenseFront={licenseFront}   setLicenseFront={setLicenseFront}
+            licenseBack={licenseBack}     setLicenseBack={setLicenseBack}
+            skipLicenseStep={skipLicenseStep}
+            driverName={driverName}
+            date={today}
+          />
+        );
+      }
+      // Default: show PDF with checkbox
+      return (
+        <div className="bg-white text-slate-900 rounded-2xl p-4 pb-32 sm:p-6 shadow-xl">
+          <h2 className="text-xl font-bold mb-4">{doc.title}</h2>
+          {doc.file_url ? (
+            <iframe
+              src={doc.file_url}
+              className="w-full rounded-lg border border-slate-200"
+              style={{ minHeight: '420px' }}
+              title={doc.title}
+            />
+          ) : (
+            <p className="text-sm text-slate-500">לא נמצא קובץ PDF עבור טופס זה.</p>
+          )}
+          <div className="flex items-center gap-3 mt-4">
+            <Checkbox
+              checked={!!doc.approved}
+              onCheckedChange={() => {/* handle approval state if needed */}}
+              className="border-slate-400 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+            />
+            <span className="text-sm font-medium text-slate-700 cursor-pointer select-none">
+              קראתי והבנתי את הטופס
+            </span>
+          </div>
+        </div>
+      );
+    };
+  }, [accessories, setAccessories, sig1Ref, setSig1OK, vehicleLabel, driverName, today, deliveryDateTime, receptionDeclarationText, manualFields, onManualFieldChange, canSignReception, selectedDeliveryFormIds, availableDeliveryForms, healthItems, setHealthItems, healthNotes, setHealthNotes, sig3Ref, setSig3OK, procedureRead, setProcedureRead, sig2Ref, setSig2OK, activeClauses, licenseNumber, setLicenseNumber, licenseExpiry, setLicenseExpiry, licenseClass, setLicenseClass, licenseFront, setLicenseFront, licenseBack, setLicenseBack, skipLicenseStep]);
+
   return (
     <div className="min-h-screen bg-[#020617] text-white">
       {/* Top bar */}
@@ -1209,10 +1343,10 @@ export default function VehicleHandoverWizard() {
             <p className="mb-3 text-xs text-cyan-200/70">ניתן להוסיף/להסיר גם תוך כדי המסירה.</p>
 
             <div className="space-y-2">
-              {availableDeliveryForms.length === 0 ? (
+              {formsPickerForms.length === 0 ? (
                 <p className="text-xs text-cyan-100/70">לא נמצאו טפסים פעילים במרכז הטפסים.</p>
               ) : (
-                availableDeliveryForms.map((doc) => {
+                formsPickerForms.map((doc) => {
                   const selected = selectedDeliveryFormIds.includes(doc.id);
                   return (
                     <label key={doc.id} className="flex items-center gap-2 rounded-lg border border-cyan-400/15 bg-[#061325]/70 px-3 py-2 text-sm">
@@ -1221,8 +1355,10 @@ export default function VehicleHandoverWizard() {
                         onCheckedChange={(checked) => {
                           const isChecked = checked === true;
                           setSelectedDeliveryFormIds((current) => {
-                            if (isChecked) return Array.from(new Set([...current, doc.id]));
-                            return current.filter((id) => id !== doc.id);
+                            // Push new form if not already present, preserve order
+                            if (isChecked && !current.includes(doc.id)) return [...current, doc.id];
+                            if (!isChecked) return current.filter((id) => id !== doc.id);
+                            return current;
                           });
                         }}
                       />
@@ -1244,64 +1380,8 @@ export default function VehicleHandoverWizard() {
           </div>
         )}
 
-        {/* Steps */}
-        {step === 0 && (
-          <Step1
-            accessories={accessories}
-            setAccessories={setAccessories}
-            sigRef={sig1Ref}
-            onSign={setSig1OK}
-            vehicleLabel={vehicleLabel}
-            driverName={driverName}
-            date={today}
-            deliveryDateTime={deliveryDateTime}
-            declarationText={receptionDeclarationText}
-            manualFields={manualFields}
-            onManualFieldChange={(field, value) => {
-              setManualFields((prev) => ({ ...prev, [field]: value }));
-            }}
-            canSign={canSignReception}
-          />
-        )}
-        {step === 1 && (
-          <Step2
-            procedureRead={procedureRead}
-            setProcedureRead={setProcedureRead}
-            sigRef={sig2Ref}
-            onSign={setSig2OK}
-            vehicleLabel={vehicleLabel}
-            driverName={driverName}
-            date={today}
-            clauses={activeClauses}
-            pdfTemplateUrl={policyPdfUrl}
-          />
-        )}
-        {step === 2 && (
-          <Step3
-            healthItems={healthItems}
-            setHealthItems={setHealthItems}
-            notes={healthNotes}
-            setNotes={setHealthNotes}
-            sigRef={sig3Ref}
-            onSign={setSig3OK}
-            vehicleLabel={vehicleLabel}
-            driverName={driverName}
-            date={today}
-            pdfTemplateUrl={healthPdfUrl}
-          />
-        )}
-        {step === 3 && (
-          <Step4
-            licenseNumber={licenseNumber} setLicenseNumber={setLicenseNumber}
-            licenseExpiry={licenseExpiry} setLicenseExpiry={setLicenseExpiry}
-            licenseClass={licenseClass}   setLicenseClass={setLicenseClass}
-            licenseFront={licenseFront}   setLicenseFront={setLicenseFront}
-            licenseBack={licenseBack}     setLicenseBack={setLicenseBack}
-            skipLicenseStep={skipLicenseStep}
-            driverName={driverName}
-            date={today}
-          />
-        )}
+        {/* Render the current step by mapping */}
+        <RenderStepContent stepIdx={step} />
       </main>
 
       {/* Floating navigation controls (outside form card) */}
