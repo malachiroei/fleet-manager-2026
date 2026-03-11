@@ -1,14 +1,16 @@
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useDriver } from '@/hooks/useDrivers';
-import { useVehicles } from '@/hooks/useVehicles';
+import DriverFolders from '@/components/DriverFolders';
+import { useDriverDocuments } from '@/hooks/useDriverDocuments';
+import { useActiveDriverVehicleAssignments } from '@/hooks/useVehicles';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogClose, DialogTitle } from '@/components/ui/dialog';
 import {
-  ArrowRight, User, CreditCard, Phone, Mail, MapPin, Briefcase, Car, Edit, Shield, FileText, X, Eye
+  ArrowRight, User, CreditCard, Phone, Briefcase, Car, Edit, FileText, X, Eye, ExternalLink
 } from 'lucide-react';
 import type { ComplianceStatus, DriverDocument } from '@/types/fleet';
 
@@ -47,7 +49,22 @@ function getDocumentUrl(path: string | null): string | undefined {
   return path.replace('/src/assets/documents', 'http://localhost:3000/assets/documents');
 }
 
-function DocumentThumbnail({ title, src, onClick }: { title: string; src: string; onClick: () => void }) {
+function FileCard({ title, src, onClick }: { title: string; src: string; onClick: () => void }) {
+  const isPdf = /\.pdf(\?|$)/i.test(src) || src.includes('/pdf') || src.includes('content-type=application%2Fpdf');
+  if (isPdf) {
+    return (
+      <a
+        href={src}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="group relative aspect-square rounded-lg border border-border bg-muted/30 overflow-hidden cursor-pointer hover:shadow-md transition-all flex flex-col items-center justify-center gap-2 p-3 no-underline"
+      >
+        <FileText className="h-10 w-10 text-red-400" />
+        <p className="text-xs font-medium truncate text-center w-full text-foreground">{title}</p>
+        <ExternalLink className="h-3.5 w-3.5 text-muted-foreground absolute top-2 left-2" />
+      </a>
+    );
+  }
   return (
     <div
       className="group relative aspect-square rounded-lg border border-border bg-muted/30 overflow-hidden cursor-pointer hover:shadow-md transition-all"
@@ -64,17 +81,40 @@ function DocumentThumbnail({ title, src, onClick }: { title: string; src: string
   );
 }
 
+function InfoRow({ label, value, dir }: { label: string; value: string; dir?: 'ltr' }) {
+  return (
+    <div className="flex items-center justify-between py-2 border-b border-border/30 last:border-0">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="text-base font-medium text-foreground" dir={dir}>{value}</span>
+    </div>
+  );
+}
+
+function CompInfoRow({ label, date }: { label: string; date: string }) {
+  const d = new Date(date);
+  const today = new Date();
+  const daysLeft = Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  const color = daysLeft < 0 ? 'text-red-400' : daysLeft <= 30 ? 'text-amber-400' : 'text-emerald-400';
+  return (
+    <div className="flex items-center justify-between py-2 border-b border-border/30 last:border-0">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className={`text-base font-semibold ${color}`}>{d.toLocaleDateString('he-IL')}</span>
+    </div>
+  );
+}
+
 export default function DriverDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data: driver, isLoading } = useDriver(id || '');
-  const { data: vehicles } = useVehicles();
+  const { data: dbDocuments } = useDriverDocuments(id || '');
+  const { data: activeAssignments } = useActiveDriverVehicleAssignments();
   const [selectedImage, setSelectedImage] = useState<{ src: string; title: string } | null>(null);
 
-  const assignedVehicle = vehicles?.find(v => v.assigned_driver_id === id);
+  // assignedVehicles no longer used in hero (shown in list card instead)
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-[#020617] text-white">
         <header className="bg-card border-b border-border sticky top-0 z-10">
           <div className="container py-4">
             <div className="flex items-center gap-3">
@@ -93,7 +133,7 @@ export default function DriverDetailPage() {
 
   if (!driver) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-[#020617] text-white">
         <header className="bg-card border-b border-border sticky top-0 z-10">
           <div className="container py-4">
             <div className="flex items-center gap-3">
@@ -103,7 +143,7 @@ export default function DriverDetailPage() {
           </div>
         </header>
         <main className="container py-6">
-          <Card><CardContent className="p-8 text-center">
+          <Card><CardContent className="p-4 sm:p-8 text-center">
             <User className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
             <p className="text-muted-foreground">הנהג המבוקש לא נמצא במערכת</p>
             <Link to="/drivers"><Button className="mt-4">חזור לרשימת הנהגים</Button></Link>
@@ -115,14 +155,14 @@ export default function DriverDetailPage() {
 
   const license = calculateStatusWithDays(driver.license_expiry);
 
-  // Combine header-level legacy docs with the dynamic array
-  const allDocuments: DriverDocument[] = [
-    ...(driver.documents || []),
-  ];
+  // Documents from driver_documents table (wizard + manually uploaded)
+  const dbDocs: DriverDocument[] = dbDocuments ?? [];
+  const dbUrls = new Set(dbDocs.map(d => d.file_url));
 
-  // ALWAYS check and add legacy fields if they exist (backward compatibility AND mixed mode)
-  if (driver.license_front_url) {
-    allDocuments.push({
+  // Legacy fields — only add if not already covered by a DB doc (avoids duplicates)
+  const legacyDocs: DriverDocument[] = [];
+  if (driver.license_front_url && !dbUrls.has(driver.license_front_url)) {
+    legacyDocs.push({
       id: 'legacy-front',
       driver_id: driver.id,
       title: 'רישיון נהיגה (קדמי)',
@@ -130,8 +170,8 @@ export default function DriverDetailPage() {
       created_at: new Date().toISOString()
     });
   }
-  if (driver.license_back_url) {
-    allDocuments.push({
+  if (driver.license_back_url && !dbUrls.has(driver.license_back_url)) {
+    legacyDocs.push({
       id: 'legacy-back',
       driver_id: driver.id,
       title: 'רישיון נהיגה (אחורי)',
@@ -139,8 +179,8 @@ export default function DriverDetailPage() {
       created_at: new Date().toISOString()
     });
   }
-  if (driver.health_declaration_url) {
-    allDocuments.push({
+  if (driver.health_declaration_url && !dbUrls.has(driver.health_declaration_url)) {
+    legacyDocs.push({
       id: 'legacy-health',
       driver_id: driver.id,
       title: 'הצהרת בריאות',
@@ -149,15 +189,18 @@ export default function DriverDetailPage() {
     });
   }
 
+  const allDocuments: DriverDocument[] = [...dbDocs, ...legacyDocs];
+  void allDocuments; // available for future use (e.g. document folder)
+
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-[#020617] text-white">
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Link to="/drivers"><Button variant="ghost" size="icon"><ArrowRight className="h-5 w-5" /></Button></Link>
               <div>
-                <h1 className="font-bold text-xl">{driver.full_name}</h1>
+                <h1 className="font-bold text-xl text-foreground">{driver.full_name}</h1>
                 <p className="text-sm text-muted-foreground">ת.ז. {driver.id_number}</p>
               </div>
             </div>
@@ -168,163 +211,148 @@ export default function DriverDetailPage() {
         </div>
       </header>
 
-      <main className="container py-6 space-y-4">
-        {/* Contact Info */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent/10">
-                <User className="h-5 w-5 text-accent" />
-              </div>
-              <CardTitle>פרטי קשר</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {driver.phone && (
-              <div className="flex items-center gap-3">
-                <Phone className="h-4 w-4 text-muted-foreground" />
-                <span dir="ltr">{driver.phone}</span>
-              </div>
-            )}
-            {driver.email && (
-              <div className="flex items-center gap-3">
-                <Mail className="h-4 w-4 text-muted-foreground" />
-                <span dir="ltr">{driver.email}</span>
-              </div>
-            )}
-            {driver.address && (
-              <div className="flex items-center gap-3">
-                <MapPin className="h-4 w-4 text-muted-foreground" />
-                <span>{driver.address}</span>
-              </div>
-            )}
-            {!driver.phone && !driver.email && !driver.address && (
-              <p className="text-muted-foreground">לא הוזנו פרטי קשר</p>
-            )}
-          </CardContent>
-        </Card>
+      <main className="container py-6 space-y-5">
+        <>
 
-        {/* Professional */}
-        {(driver.job_title || driver.department) && (
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                  <Briefcase className="h-5 w-5 text-primary" />
-                </div>
-                <CardTitle>מידע מקצועי</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-4">
-              {driver.job_title && <div><p className="text-sm text-muted-foreground">תפקיד</p><p className="font-medium">{driver.job_title}</p></div>}
-              {driver.department && <div><p className="text-sm text-muted-foreground">מחלקה</p><p className="font-medium">{driver.department}</p></div>}
-            </CardContent>
-          </Card>
-        )}
+            {/* ── Two-column grid ───────────────────────────────── */}
+            <div className="grid gap-4 md:grid-cols-2">
+              {/* Left column */}
+              <div className="space-y-4">
 
-        {/* License & Compliance */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10">
-                <CreditCard className="h-5 w-5 text-amber-600" />
-              </div>
-              <CardTitle>רישיון ותאימות</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-              <div>
-                <p className="font-medium">רישיון נהיגה</p>
-                <p className="text-sm text-muted-foreground">
-                  {new Date(driver.license_expiry).toLocaleDateString('he-IL')}
-                </p>
-              </div>
-              <StatusBadge status={license.status} daysLeft={license.daysLeft} />
-            </div>
-            {driver.license_number && (
-              <div className="text-sm"><span className="text-muted-foreground">מספר רישיון: </span>{driver.license_number}</div>
-            )}
-            {driver.health_declaration_date && (
-              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                <div>
-                  <p className="font-medium">הצהרת בריאות</p>
-                  <p className="text-sm text-muted-foreground">{new Date(driver.health_declaration_date).toLocaleDateString('he-IL')}</p>
-                </div>
-              </div>
-            )}
-            {driver.safety_training_date && (
-              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                <div>
-                  <p className="font-medium">הדרכת בטיחות</p>
-                  <p className="text-sm text-muted-foreground">{new Date(driver.safety_training_date).toLocaleDateString('he-IL')}</p>
-                </div>
-              </div>
-            )}
-            {driver.regulation_585b_date && (
-              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                <div>
-                  <p className="font-medium">תקנה 585ב'</p>
-                  <p className="text-sm text-muted-foreground">{new Date(driver.regulation_585b_date).toLocaleDateString('he-IL')}</p>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                {/* Personal details */}
+                <Card>
+                  <CardHeader className="pb-2 pt-4 px-4">
+                    <div className="flex items-center gap-2">
+                      <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-sky-500/10">
+                        <User className="h-4 w-4 text-sky-400" />
+                      </div>
+                      <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">פרטים אישיים</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4 pt-0">
+                    <InfoRow label="ת.ז." value={driver.id_number} />
+                    {driver.birth_date && (
+                      <InfoRow label="תאריך לידה" value={new Date(driver.birth_date).toLocaleDateString('he-IL')} />
+                    )}
+                    {driver.city && <InfoRow label="עיר" value={driver.city} />}
+                    {driver.address && <InfoRow label="כתובת" value={driver.address} />}
+                    {driver.note1 && <InfoRow label="הערה 1" value={driver.note1} />}
+                    {driver.note2 && <InfoRow label="הערה 2" value={driver.note2} />}
+                    {driver.rating && <InfoRow label="דירוג" value={driver.rating} />}
+                  </CardContent>
+                </Card>
 
-        {/* Scanned Documents */}
-        {/* Scanned Documents */}
-        {allDocuments.length > 0 && (
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/10">
-                  <FileText className="h-5 w-5 text-blue-600" />
-                </div>
-                <CardTitle>מסמכים סרוקים</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {allDocuments.map((doc) => (
-                <DocumentThumbnail
-                  key={doc.id}
-                  title={doc.title}
-                  src={getDocumentUrl(doc.file_url)!}
-                  onClick={() => setSelectedImage({ src: getDocumentUrl(doc.file_url)!, title: doc.title })}
-                />
-              ))}
-            </CardContent>
-          </Card>
-        )}
+                {/* Contact */}
+                <Card>
+                  <CardHeader className="pb-2 pt-4 px-4">
+                    <div className="flex items-center gap-2">
+                      <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-cyan-500/10">
+                        <Phone className="h-4 w-4 text-cyan-400" />
+                      </div>
+                      <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">פרטי קשר</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4 pt-0">
+                    {driver.phone && <InfoRow label="טלפון" value={driver.phone} dir="ltr" />}
+                    {driver.email && <InfoRow label="מייל" value={driver.email} dir="ltr" />}
+                    {!driver.phone && !driver.email && (
+                      <p className="text-sm text-muted-foreground py-1">לא הוזנו פרטי קשר</p>
+                    )}
+                  </CardContent>
+                </Card>
 
-        {/* Assigned Vehicle */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-500/10">
-                <Car className="h-5 w-5 text-green-600" />
               </div>
-              <CardTitle>רכב מוקצה</CardTitle>
+
+              {/* Right column */}
+              <div className="space-y-4">
+
+                {/* Employment */}
+                <Card>
+                  <CardHeader className="pb-2 pt-4 px-4">
+                    <div className="flex items-center gap-2">
+                      <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-purple-500/10">
+                        <Briefcase className="h-4 w-4 text-purple-400" />
+                      </div>
+                      <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">פרטי העסקה</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4 pt-0">
+                    {driver.employee_number && <InfoRow label="מ. עובד" value={driver.employee_number} />}
+                    {driver.driver_code && <InfoRow label="קוד נהג" value={driver.driver_code} />}
+                    {driver.job_title && <InfoRow label="תפקיד" value={driver.job_title} />}
+                    {driver.department && <InfoRow label="מחלקה" value={driver.department} />}
+                    {driver.division && <InfoRow label="מחוז" value={driver.division} />}
+                    {driver.area && <InfoRow label="אזור" value={driver.area} />}
+                    {driver.group_name && <InfoRow label="קבוצה" value={driver.group_name} />}
+                    {driver.group_code && <InfoRow label="קוד קבוצה" value={driver.group_code} />}
+                    {driver.eligibility && <InfoRow label="כשירות" value={driver.eligibility} />}
+                    {driver.work_start_date && (
+                      <InfoRow label="ת. תחילת עבודה" value={new Date(driver.work_start_date).toLocaleDateString('he-IL')} />
+                    )}
+                    {!driver.employee_number && !driver.job_title && !driver.department && (
+                      <p className="text-sm text-muted-foreground py-1">לא הוזנו פרטי העסקה</p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* License & Compliance */}
+                <Card>
+                  <CardHeader className="pb-2 pt-4 px-4">
+                    <div className="flex items-center gap-2">
+                      <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-amber-500/10">
+                        <CreditCard className="h-4 w-4 text-amber-400" />
+                      </div>
+                      <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">רישיונות ותאימות</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4 pt-0">
+                    {/* License — main row with status badge */}
+                    <div className="flex items-center justify-between py-2 border-b border-border/30">
+                      <div>
+                        <p className="text-base font-semibold">רישיון נהיגה</p>
+                        {driver.license_number && (
+                          <p className="text-sm text-muted-foreground">מס' {driver.license_number}</p>
+                        )}
+                      </div>
+                      <div className="text-left space-y-0.5">
+                        <StatusBadge status={license.status} daysLeft={license.daysLeft} />
+                        <p className="text-sm text-muted-foreground">{new Date(driver.license_expiry).toLocaleDateString('he-IL')}</p>
+                      </div>
+                    </div>
+                    {driver.health_declaration_date && (
+                      <CompInfoRow label="הצהרת בריאות" date={driver.health_declaration_date} />
+                    )}
+                    {driver.safety_training_date && (
+                      <CompInfoRow label="הדרכת בטיחות" date={driver.safety_training_date} />
+                    )}
+                    {driver.regulation_585b_date && (
+                      <CompInfoRow label="תקנה 585ב'" date={driver.regulation_585b_date} />
+                    )}
+                    {driver.practical_driving_test_date && (
+                      <CompInfoRow label="מבחן מעשי" date={driver.practical_driving_test_date} />
+                    )}
+                    {driver.family_permit_date && (
+                      <CompInfoRow label="היתר בני משפחה" date={driver.family_permit_date} />
+                    )}
+                    {driver.driving_permit && (
+                      <InfoRow label="היתר נהיגה" value={driver.driving_permit} />
+                    )}
+                    {driver.is_field_person && (
+                      <InfoRow label="איש שטח" value="כן" />
+                    )}
+                  </CardContent>
+                </Card>
+
+              </div>
             </div>
-          </CardHeader>
-          <CardContent>
-            {assignedVehicle ? (
-              <Link to={`/vehicles/${assignedVehicle.id}`} className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg hover:bg-muted transition-colors">
-                <Car className="h-5 w-5 text-primary" />
-                <div>
-                  <p className="font-medium">{assignedVehicle.manufacturer} {assignedVehicle.model}</p>
-                  <p className="text-sm text-muted-foreground">{assignedVehicle.plate_number}</p>
-                </div>
-              </Link>
-            ) : (
-              <p className="text-muted-foreground">אין רכב מוקצה</p>
-            )}
-          </CardContent>
-        </Card>
+
+            {/* ── Folders ───────────────────────────────────────── */}
+            <DriverFolders driver={driver} />
+        </>
       </main>
 
       <Dialog open={!!selectedImage} onOpenChange={(open) => !open && setSelectedImage(null)}>
-        <DialogContent className="max-w-4xl p-0 overflow-hidden bg-transparent border-none shadow-none text-white">
+        <DialogContent className="w-[95vw] max-w-4xl p-0 overflow-hidden bg-transparent border-none shadow-none text-white">
           <div className="relative w-full h-full flex flex-col items-center justify-center">
             <div className="absolute top-0 right-0 p-4 z-50">
               <button

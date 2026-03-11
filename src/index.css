@@ -1,47 +1,700 @@
 @import "tailwindcss";
 
+/* Global guard: hide any injected Lovable watermark/badge widgets. */
+#lovable-badge,
+.lovable-badge,
+[data-lovable-badge],
+[class*="lovable-badge"],
+[id*="lovable-badge"],
+[class*="lovable-widget"],
+[id*="lovable-widget"],
+iframe[src*="lovable"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Forms page hardening: prevent pseudo-element icon injection near file labels. */
+.forms-clean .forms-file-name::before,
+.forms-clean .forms-file-name::after,
+.forms-clean [data-clean-file-row]::before,
+.forms-clean [data-clean-file-row]::after {
+  content: none !important;
+  background-image: none !important;
+}
+
 @theme {
-  --color-fleet-blue: #2563eb;
-  --color-fleet-dark: #1e293b;
+  --color-fleet-blue: #22d3ee;
+  --color-fleet-dark: #020617;
 }
 
 @layer base {
+  :root {
+    /* ── Audi Dark Theme ── */
+    --background: 222 84% 2%;
+    --foreground: 210 40% 98%;
+    --card: 215 50% 7%;
+    --card-foreground: 210 40% 98%;
+    --popover: 215 50% 7%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 191 97% 53%;
+    --primary-foreground: 222 84% 5%;
+    --secondary: 217 33% 14%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 14%;
+    --muted-foreground: 215 20% 60%;
+    --accent: 217 33% 14%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 191 50% 20%;
+    --input: 191 50% 20%;
+    --ring: 191 97% 53%;
+    --radius: 0.75rem;
+  }
+
   body {
-    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-    color: #0f172a; /* טקסט כהה מאוד לקריאות מקסימלית */
+    background-color: #020617;
+    background-image:
+      radial-gradient(ellipse at top right, rgba(34, 211, 238, 0.08) 0%, transparent 55%),
+      radial-gradient(ellipse at bottom left, rgba(14, 116, 144, 0.06) 0%, transparent 50%);
+    background-attachment: fixed;
+    color: #ffffff;
     font-family: 'Heebo', sans-serif;
+    margin: 0;
     min-height: 100vh;
   }
+
+  /* ── Global typography ── */
+  h1, h2, h3, h4, h5, h6 {
+    color: #ffffff;
+  }
+
+  p, span, label, li, td, th {
+    color: inherit;
+  }
+
+  /* ── Global inputs ── */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  textarea,
+  select {
+    background-color: rgba(15, 23, 42, 0.85) !important;
+    border: 1px solid rgba(34, 211, 238, 0.3) !important;
+    color: #ffffff !important;
+    border-radius: 8px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):focus,
+  textarea:focus,
+  select:focus {
+    border-color: rgba(34, 211, 238, 0.7) !important;
+    box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.12) !important;
+    outline: none;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: rgba(148, 163, 184, 0.6) !important;
+  }
 }
 
+/* ── Global component overrides ── */
 @layer components {
-  /* כרטיסיות תלת-ממדיות עם אפקט זכוכית בהירה */
-  .stats-card {
-    background: rgba(255, 255, 255, 0.7);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.8);
-    box-shadow: 20px 20px 60px #d1d5db, 
-                -20px -20px 60px #ffffff;
-    border-radius: 24px;
-    transition: all 0.3s ease;
-  }
 
-  .stats-card:hover {
-    transform: translateY(-5px) scale(1.01);
-    box-shadow: 10px 10px 30px #cbd5e1;
-  }
-
-  /* כותרות וטקסט - חובה כהה */
-  h1, h2, h3, p, span {
-    color: #0f172a !important; 
+  /* Generic button → glass style */
+  button:not([class*="glass-button"]):not([data-no-theme]) {
+    background: rgba(34, 211, 238, 0.1);
+    border: 1px solid rgba(34, 211, 238, 0.35);
+    color: #ffffff;
     font-weight: 600;
+    border-radius: 8px;
+    transition: background 0.25s, box-shadow 0.25s, border-color 0.25s;
+    cursor: pointer;
   }
 
-  /* הפס הירוק בתחתית */
-  .production-bar {
-    background: #22c55e;
-    color: white !important;
-    font-weight: 800;
-    text-transform: uppercase;
+  button:not([class*="glass-button"]):not([data-no-theme]):hover {
+    background: rgba(34, 211, 238, 0.2);
+    border-color: rgba(34, 211, 238, 0.65);
+    box-shadow: 0 0 14px rgba(34, 211, 238, 0.25);
+  }
+
+  /* Destructive / danger buttons keep red */
+  button[class*="destructive"],
+  button[data-variant="destructive"] {
+    background: rgba(239, 68, 68, 0.15) !important;
+    border-color: rgba(239, 68, 68, 0.5) !important;
+  }
+
+  button[class*="destructive"]:hover,
+  button[data-variant="destructive"]:hover {
+    background: rgba(239, 68, 68, 0.28) !important;
+    box-shadow: 0 0 14px rgba(239, 68, 68, 0.25) !important;
+  }
+
+  /* Cards → glass effect */
+  [class*="bg-card"],
+  .card,
+  [data-slot="card"] {
+    background: rgba(15, 23, 42, 0.75) !important;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(34, 211, 238, 0.18) !important;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
+  }
+
+  /* ── Radix UI Popover / Select / Dialog portals ── */
+  [data-radix-select-content],
+  [data-radix-popper-content-wrapper],
+  [role="listbox"],
+  [role="dialog"],
+  [data-radix-dialog-content] {
+    background: #0c1a2e !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border: 1px solid rgba(34, 211, 238, 0.3) !important;
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.9) !important;
+    color: #ffffff !important;
   }
 }
+
+/* ── Vehicle Card Audi-style classes (scoped, do NOT affect global layout) ── */
+@layer components {
+  .audi-premium-card {
+    background: linear-gradient(165deg, rgba(15, 23, 42, 0.95) 0%, rgba(2, 6, 23, 1) 100%);
+    backdrop-filter: blur(25px);
+    border: 1px solid rgba(34, 211, 238, 0.3);
+    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.9);
+    border-radius: 28px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .neon-title {
+    color: #ffffff !important;
+    text-shadow: 0 0 15px rgba(34, 211, 238, 0.8);
+    font-weight: 900;
+  }
+
+  .neon-plate-text {
+    color: #22d3ee !important;
+    text-shadow: 0 0 20px rgba(34, 211, 238, 0.8), 0 0 40px rgba(34, 211, 238, 0.4);
+  }
+
+  .white-data {
+    color: #ffffff !important;
+    font-weight: 800;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  }
+
+  .data-label-glow {
+    color: #22d3ee !important;
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .glass-button {
+    background: rgba(34, 211, 238, 0.15) !important;
+    border: 1px solid rgba(34, 211, 238, 0.5) !important;
+    color: #ffffff !important;
+    font-weight: 700;
+    font-size: 1rem !important;
+    transition: all 0.3s ease;
+    border-radius: 8px;
+    padding: 12px 8px;
+  }
+
+  .glass-button:hover {
+    background: rgba(34, 211, 238, 0.25) !important;
+    box-shadow: 0 0 16px rgba(34, 211, 238, 0.35);
+  }
+
+  .glass {
+    background: rgba(15, 23, 42, 0.7);
+    backdrop-filter: blur(25px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
+    border-radius: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+}
+
+/* ── Light Mode overrides ────────────────────────────────────── */
+:root.light {
+  --background: 210 20% 96%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 11%;
+  --primary: 191 80% 40%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 210 20% 90%;
+  --secondary-foreground: 222 47% 20%;
+  --muted: 210 20% 90%;
+  --muted-foreground: 215 20% 45%;
+  --accent: 210 20% 90%;
+  --accent-foreground: 222 47% 11%;
+  --destructive: 0 84% 55%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 210 20% 82%;
+  --input: 210 20% 82%;
+  --ring: 191 80% 40%;
+}
+
+.light body {
+  background-color: #f8fafc !important;
+  background-image: none !important;
+  color: #0f172a !important;
+}
+
+.light h1, .light h2, .light h3, .light h4, .light h5, .light h6 {
+  color: #0f172a !important;
+}
+
+/* Main layout shells */
+.light .bg-\[\#020617\],
+.light .bg-\[\#0d1b2e\],
+.light .bg-\[\#091423\] {
+  background-color: #f8fafc !important;
+}
+
+/* Sidebar */
+.light [class*="sidebar"],
+.light aside {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+/* Header bars */
+.light header {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+/* Cards — Radix/shadcn cards */
+.light [data-slot="card"],
+.light .card,
+.light [class*="bg-card"] {
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.04) !important;
+  border-radius: 1rem !important;
+}
+
+/* ── Audi premium card overrides for Light Mode ──────────────── */
+.light .audi-premium-card {
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.04) !important;
+  border-radius: 1.5rem !important;
+}
+.light .audi-premium-card::before,
+.light .audi-premium-card::after {
+  display: none !important;
+}
+
+/* neon-title → clean dark heading */
+.light .neon-title {
+  color: #0f172a !important;
+  text-shadow: none !important;
+}
+
+/* neon-plate-text → deep navy, no glow */
+.light .neon-plate-text {
+  color: #1e3a5f !important;
+  text-shadow: none !important;
+}
+
+/* white-data → slate-900, no shadow */
+.light .white-data {
+  color: #0f172a !important;
+  text-shadow: none !important;
+}
+
+/* data-label-glow → muted slate-blue, no glow */
+.light .data-label-glow {
+  color: #475569 !important;
+  text-shadow: none !important;
+}
+
+/* glass-button → clean bordered button */
+.light .glass-button {
+  background: #f1f5f9 !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+  text-shadow: none !important;
+  box-shadow: none !important;
+}
+.light .glass-button:hover {
+  background: #e2e8f0 !important;
+  border-color: #94a3b8 !important;
+  box-shadow: none !important;
+}
+
+/* glass panel → white card */
+.light .glass {
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.04) !important;
+}
+
+/* General text — all white variants → slate-900 */
+.light .text-white,
+.light .text-white\/90,
+.light .text-white\/80,
+.light .text-white\/70,
+.light .text-white\/60,
+.light .text-white\/50 {
+  color: #0f172a !important;
+}
+.light .text-white\/40,
+.light .text-white\/30,
+.light .text-white\/20,
+.light .text-white\/15,
+.light .text-white\/10 {
+  color: #94a3b8 !important;
+}
+.light .text-slate-700,
+.light .text-slate-800,
+.light .text-slate-900 {
+  color: #0f172a !important;
+}
+.light .text-slate-500,
+.light .text-slate-400 {
+  color: #64748b !important;
+}
+.light .text-slate-300,
+.light .text-slate-200 {
+  color: #94a3b8 !important;
+}
+
+/* Inputs */
+.light input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+.light textarea,
+.light select {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+.light input::placeholder,
+.light textarea::placeholder {
+  color: rgba(100,116,139,0.7) !important;
+}
+
+/* Muted backgrounds */
+.light .bg-white\/5,
+.light .bg-white\/8,
+.light .bg-white\/10 {
+  background-color: rgba(0,0,0,0.04) !important;
+}
+.light .border-white\/10 {
+  border-color: #e2e8f0 !important;
+}
+
+/* Cyan accents stay */
+.light .text-cyan-400 { color: #0891b2 !important; }
+.light .text-cyan-300 { color: #06b6d4 !important; }
+.light .border-cyan-400\/30 { border-color: rgba(8,145,178,0.3) !important; }
+
+/* AI Chat panel in light mode */
+.light .bg-\[\#0d1b2e\]\/95 { background-color: rgba(255,255,255,0.97) !important; }
+.light .bg-\[\#091423\] { background-color: #f8fafc !important; }
+
+/* AI FAB — keep blue gradient even in light mode */
+.light button.rounded-full[class*="from-cyan-"] {
+  background: linear-gradient(135deg, #06b6d4 0%, #2563eb 100%) !important;
+  border: none !important;
+  box-shadow: 0 4px 14px rgba(6,182,212,0.45) !important;
+  color: #ffffff !important;
+}
+.light button.rounded-full[class*="from-cyan-"]:hover {
+  background: linear-gradient(135deg, #22d3ee 0%, #3b82f6 100%) !important;
+  box-shadow: 0 6px 20px rgba(6,182,212,0.55) !important;
+}
+
+/* Muted section backgrounds */
+.light .bg-slate-800,
+.light .bg-slate-900,
+.light .bg-slate-950 {
+  background-color: #f1f5f9 !important;
+}
+.light .bg-slate-700 {
+  background-color: #e2e8f0 !important;
+}
+
+/* ── Final alignment — page-level containers ──────────────────── */
+
+/* Full-page wrappers (e.g. min-h-screen bg-[#020617] text-white) */
+.light [class*="min-h-screen"][class*="bg-\["] {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+.light .min-h-screen {
+  background-color: #f8fafc;
+}
+
+/* Any remaining dark hardcoded backgrounds */
+.light .bg-\[\#020617\] { background-color: #f8fafc !important; }
+.light .bg-\[\#0d1b2e\] { background-color: #f8fafc !important; }
+.light .bg-\[\#091423\] { background-color: #f8fafc !important; }
+.light .bg-\[\#0c1a2e\] { background-color: #f8fafc !important; }
+.light .bg-\[\#0f172a\] { background-color: #f1f5f9 !important; }
+
+/* Tables */
+.light table { color: #0f172a !important; }
+.light thead, .light th {
+  background-color: #f1f5f9 !important;
+  color: #475569 !important;
+  border-color: #e2e8f0 !important;
+}
+.light td, .light tr {
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+.light tbody tr:hover {
+  background-color: #f8fafc !important;
+}
+
+/* Badges / status chips with dark bg */
+.light .bg-green-500\/20  { background-color: #dcfce7 !important; }
+.light .bg-red-500\/20    { background-color: #fee2e2 !important; }
+.light .bg-yellow-500\/20 { background-color: #fef9c3 !important; }
+.light .bg-blue-500\/20   { background-color: #dbeafe !important; }
+.light .bg-cyan-500\/20,
+.light .bg-cyan-400\/20   { background-color: #cffafe !important; }
+
+/* Dividers / separators */
+.light hr,
+.light [class*="border-white"],
+.light [class*="border-slate-700"],
+.light [class*="border-slate-800"] {
+  border-color: #e2e8f0 !important;
+}
+
+/* Shadcn popover / select dropdowns */
+.light [data-radix-select-content],
+.light [data-radix-popper-content-wrapper],
+.light [role="listbox"],
+.light [role="dialog"],
+.light [data-radix-dialog-content] {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.1) !important;
+  color: #0f172a !important;
+}
+
+/* Generic glass/dark button override in light mode
+   — exclusions: rounded-full FAB, brand-colored buttons, icon-only buttons */
+.light button:not([class*="glass-button"])
+         :not([data-no-theme])
+         :not(.rounded-full)
+         :not([class*="bg-cyan"])
+         :not([class*="bg-blue"])
+         :not([class*="bg-green"])
+         :not([class*="bg-red"])
+         :not([class*="bg-yellow"])
+         :not([class*="bg-emerald"])
+         :not([class*="bg-rose"])
+         :not([class*="from-cyan"])
+         :not([class*="from-blue"]) {
+  background: rgba(15,23,42,0.05) !important;
+  border: 1px solid #e2e8f0 !important;
+  color: #0f172a !important;
+  box-shadow: none !important;
+}
+.light button:not([class*="glass-button"])
+         :not([data-no-theme])
+         :not(.rounded-full)
+         :not([class*="bg-cyan"])
+         :not([class*="bg-blue"])
+         :not([class*="bg-green"])
+         :not([class*="bg-red"])
+         :not([class*="bg-yellow"])
+         :not([class*="bg-emerald"])
+         :not([class*="bg-rose"])
+         :not([class*="from-cyan"])
+         :not([class*="from-blue"]):hover {
+  background: rgba(15,23,42,0.09) !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: none !important;
+}
+
+/* Branded action buttons stay their true color in light mode */
+.light button[class*="bg-cyan"],
+.light button[class*="bg-blue"],
+.light button[class*="bg-green"],
+.light button[class*="bg-emerald"],
+.light button[class*="bg-red"],
+.light button[class*="bg-rose"],
+.light button[class*="from-cyan"],
+.light button[class*="from-blue"] {
+  color: #ffffff !important;
+}
+
+/* Nav / sidebar links — keep them legible */
+.light nav a, .light [class*="NavLink"], .light [class*="navlink"] {
+  color: #334155 !important;
+}
+.light nav a:hover, .light nav a[class*="active"] {
+  color: #0f172a !important;
+  background-color: #f1f5f9 !important;
+}
+
+/* Form labels */
+.light label { color: #374151 !important; }
+
+/* border-white/5 and /3 → slate-100 */
+.light .border-white\/5  { border-color: #f1f5f9 !important; }
+.light .border-white\/3  { border-color: #f8fafc !important; }
+
+/* ══════════════════════════════════════════════════════════════
+   LIGHT MODE — SIDEBAR
+══════════════════════════════════════════════════════════════ */
+
+/* Sidebar shell */
+.light .glass {
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 2px 0 16px rgba(0,0,0,0.05) !important;
+}
+
+/* Sidebar header logo area */
+.light aside .border-white\/10,
+.light [class*="sidebar"] .border-white\/10 { border-color: #e2e8f0 !important; }
+
+/* Sidebar group headers */
+.light .text-cyan-400\/60 { color: #94a3b8 !important; }
+
+/* Sidebar nav links — default state */
+.light nav a.text-white\/70,
+.light nav a[class*="text-white"] { color: #475569 !important; }
+.light nav a:hover { color: #0f172a !important; background-color: #f1f5f9 !important; box-shadow: none !important; }
+
+/* Active nav link */
+.light nav a[class*="bg-cyan-500\/20"] {
+  background-color: #e0f2fe !important;
+  color: #0369a1 !important;
+  border-color: #7dd3fc !important;
+  box-shadow: none !important;
+}
+
+/* Disabled nav items */
+.light nav div[class*="text-white\/50"] { color: #94a3b8 !important; }
+
+/* Home button ghost variant */
+.light button[class*="text-white\/70"] { color: #475569 !important; }
+.light button[class*="text-white\/70"]:hover { color: #0f172a !important; background-color: #f1f5f9 !important; box-shadow: none !important; }
+.light button[class*="bg-cyan-500\/20"] {
+  background-color: #e0f2fe !important;
+  color: #0369a1 !important;
+  border-color: #7dd3fc !important;
+  box-shadow: none !important;
+}
+
+/* ChevronRight icon in active link */
+.light .text-cyan-400 { color: #0891b2 !important; }
+
+/* Sidebar footer divider */
+.light .border-white\/10 { border-color: #e2e8f0 !important; }
+
+/* ══════════════════════════════════════════════════════════════
+   LIGHT MODE — SIDEBAR USER MENU (floating panel)
+══════════════════════════════════════════════════════════════ */
+
+/* floating panel shell */
+.light .sidebar-user-panel,
+.light [class*="SidebarUserMenu"] > div:first-child,
+.light div[style*="minWidth: 220"] {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.12) !important;
+}
+
+/* Panel header */
+.light .sidebar-user-name    { color: #0f172a !important; }
+.light .sidebar-user-email   { color: #64748b !important; }
+.light .sidebar-close-btn    { color: #94a3b8 !important; }
+.light .sidebar-close-btn:hover { color: #475569 !important; }
+
+/* Menu rows */
+.light .sidebar-menu-item { color: #334155 !important; background: transparent !important; border: none !important; box-shadow: none !important; }
+.light .sidebar-menu-item:hover { background-color: #f1f5f9 !important; color: #0f172a !important; }
+.light .sidebar-menu-label   { color: #334155 !important; }
+.light .sidebar-menu-icon    { color: #0891b2 !important; }
+.light .sidebar-menu-caret   { color: #94a3b8 !important; }
+.light .sidebar-divider      { background-color: #e2e8f0 !important; }
+.light .sidebar-logout-btn   { color: #dc2626 !important; background: transparent !important; border: none !important; box-shadow: none !important; }
+.light .sidebar-logout-btn:hover { background-color: #fee2e2 !important; }
+
+/* Trigger button in light mode */
+.light .sidebar-trigger-btn { border-color: transparent !important; background: transparent !important; box-shadow: none !important; }
+.light .sidebar-trigger-btn:hover { background-color: #f1f5f9 !important; }
+.light .sidebar-trigger-name  { color: #0f172a !important; }
+.light .sidebar-trigger-email { color: #64748b !important; }
+
+/* bg-white/8 inside dark components → light equivalent */
+.light .bg-white\/8  { background-color: #f1f5f9 !important; }
+.light .bg-white\/20 { background-color: #e2e8f0 !important; }
+
+/* ══════════════════════════════════════════════════════════════
+   LIGHT MODE — VEHICLE CARDS (action button row)
+══════════════════════════════════════════════════════════════ */
+
+/* Glass-button stays readable in light */
+.light .glass-button {
+  background: #f1f5f9 !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #1e40af !important;
+  font-weight: 600 !important;
+  text-shadow: none !important;
+  box-shadow: none !important;
+}
+.light .glass-button:hover {
+  background: #dbeafe !important;
+  border-color: #93c5fd !important;
+  color: #1e3a8a !important;
+  box-shadow: none !important;
+}
+
+/* neon-plate-text → deep navy legible */
+.light .neon-plate-text {
+  color: #1e3a5f !important;
+  text-shadow: none !important;
+  font-weight: 900 !important;
+}
+
+/* white-data → slate-900 */
+.light .white-data  { color: #0f172a !important; text-shadow: none !important; }
+
+/* data-label-glow → slate-500 */
+.light .data-label-glow { color: #0891b2 !important; text-shadow: none !important; letter-spacing: 0.03em !important; }
+
+/* ══════════════════════════════════════════════════════════════
+   LIGHT MODE — GENERAL BODY / CONTAINERS
+══════════════════════════════════════════════════════════════ */
+
+/* AppLayout main area */
+.light main { background-color: #f8fafc !important; }
+
+/* Page background gradient override */
+.light body {
+  background-color: #f8fafc !important;
+  background-image: none !important;
+  color: #0f172a !important;
+}
+
+/* Muted text e.g. CardDescription */
+.light .text-muted-foreground { color: #64748b !important; }
+.light [data-slot="card-description"] { color: #64748b !important; }

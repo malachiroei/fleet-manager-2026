@@ -1,19 +1,77 @@
- import { useState } from 'react';
+ import { useState, useEffect } from 'react';
  import { Link } from 'react-router-dom';
  import { Button } from '@/components/ui/button';
  import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/integrations/supabase/client';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import PricingDataUploader from '@/components/PricingDataUploader';
 import FleetDataImporter from '@/components/FleetDataImporter';
-import { ArrowRight, Settings, Shield } from 'lucide-react';
+import { ArrowRight, Settings, Shield, Mail, Loader2, Monitor, Moon, Sun } from 'lucide-react';
+import { useTheme } from '@/hooks/useTheme';
 import { toast } from 'sonner';
  
 export default function AdminSettingsPage() {
+    const { theme, setTheme } = useTheme();
     const lastPricingUpload = localStorage.getItem('last_pricing_upload');
     const lastVehicleUpload = localStorage.getItem('last_vehicle_upload');
     const lastDriverUpload = localStorage.getItem('last_driver_upload');
+
+    // ── notification_emails — stored in system_settings table ─────────────────
+    const [notificationEmailsRaw, setNotificationEmailsRaw] = useState('malachiroei@gmail.com');
+    const [isSavingEmails, setIsSavingEmails] = useState(false);
+    const [isLoadingEmails, setIsLoadingEmails] = useState(true);
+
+    useEffect(() => {
+      (async () => {
+        try {
+          const { data, error } = await (supabase as any)
+            .from('system_settings')
+            .select('value')
+            .eq('key', 'notification_emails')
+            .maybeSingle();
+          if (error) throw error;
+          const arr: string[] = Array.isArray(data?.value) ? data.value : [];
+          if (arr.length > 0) setNotificationEmailsRaw(arr.join(', '));
+        } catch {
+          // fallback to localStorage value if table not yet migrated
+          const saved = localStorage.getItem('handover_notification_email');
+          if (saved) setNotificationEmailsRaw(saved);
+        } finally {
+          setIsLoadingEmails(false);
+        }
+      })();
+    }, []);
+
+    const saveNotificationEmails = async () => {
+      const emails = notificationEmailsRaw
+        .split(/[\n,]+/)
+        .map((e) => e.trim())
+        .filter((e) => e.length > 0 && e.includes('@'));
+
+      if (emails.length === 0) {
+        toast.error('נא להזין לפחות כתובת מייל תקינה אחת');
+        return;
+      }
+
+      setIsSavingEmails(true);
+      try {
+        const { error } = await (supabase as any)
+          .from('system_settings')
+          .upsert({ key: 'notification_emails', value: emails }, { onConflict: 'key' });
+        if (error) throw error;
+        setNotificationEmailsRaw(emails.join(', '));
+        toast.success(`נשמרו ${emails.length} כתובות מייל להתראות`);
+      } catch (err) {
+        console.error(err);
+        toast.error('שמירה נכשלה — ודא שהמיגרציה system_settings הופעלה');
+      } finally {
+        setIsSavingEmails(false);
+      }
+    };
+
+    // ── legacy single-email field (kept for test-email button) ────────────────
     const [notificationEmail, setNotificationEmail] = useState(
       localStorage.getItem('handover_notification_email') || 'malachiroei@gmail.com'
     );
@@ -22,16 +80,6 @@ export default function AdminSettingsPage() {
     const formatDate = (iso: string | null) => {
       if (!iso) return 'לא בוצעה';
       return new Date(iso).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-    };
-
-    const saveNotificationEmail = () => {
-      if (!notificationEmail.trim() || !notificationEmail.includes('@')) {
-        toast.error('נא להזין כתובת מייל תקינה');
-        return;
-      }
-
-      localStorage.setItem('handover_notification_email', notificationEmail.trim());
-      toast.success('מייל ההתראות נשמר בהצלחה');
     };
 
     const sendTestEmail = async () => {
@@ -134,7 +182,7 @@ export default function AdminSettingsPage() {
     };
  
    return (
-     <div className="min-h-screen bg-background">
+     <div className="min-h-screen bg-[#020617] text-white">
        <header className="bg-card border-b border-border sticky top-0 z-10">
          <div className="container py-4">
            <div className="flex items-center gap-3">
@@ -158,29 +206,101 @@ export default function AdminSettingsPage() {
           {/* Fleet Data Importer */}
           <FleetDataImporter />
 
-          {/* Notification Settings */}
+          {/* Notification Emails — system_settings */}
           <Card>
             <CardHeader>
-              <CardTitle>הגדרת מייל לעדכוני מסירה/החזרה</CardTitle>
-              <CardDescription>
-                לכל שליחת טופס מסירה או החזרה יישלח עדכון למייל זה
-              </CardDescription>
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-500/10">
+                  <Mail className="h-5 w-5 text-cyan-400" />
+                </div>
+                <div>
+                  <CardTitle>כתובות מייל לקבלת התראות</CardTitle>
+                  <CardDescription>
+                    כל הכתובות ברשימה יקבלו עותק של הודעות מסירת רכב, החזרה ואשף המסירה הדיגיטלי.
+                    הפרד בין כתובות בפסיק או שורה חדשה.
+                  </CardDescription>
+                </div>
+              </div>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Input
-                type="email"
-                value={notificationEmail}
-                onChange={(e) => setNotificationEmail(e.target.value)}
-                placeholder="example@mail.com"
-                dir="ltr"
-              />
-              <div className="flex flex-wrap gap-2">
-                <Button onClick={saveNotificationEmail}>שמור מייל התראות</Button>
-                <Button variant="outline" onClick={sendTestEmail} disabled={isSendingTestEmail}>
-                  {isSendingTestEmail ? 'שולח...' : 'בדיקת שליחה'}
-                </Button>
-                <Button variant="outline" onClick={runPrintTest}>בדיקת הדפסה</Button>
+              {isLoadingEmails ? (
+                <div className="flex items-center gap-2 text-muted-foreground text-sm py-4">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  טוען הגדרות...
+                </div>
+              ) : (
+                <>
+                  <Textarea
+                    value={notificationEmailsRaw}
+                    onChange={(e) => setNotificationEmailsRaw(e.target.value)}
+                    placeholder={"admin@company.com, fleet@company.com"}
+                    dir="ltr"
+                    rows={3}
+                    className="font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    כתובות תקינות זוהו:{' '}
+                    <strong>
+                      {notificationEmailsRaw
+                        .split(/[\n,]+/)
+                        .map((e) => e.trim())
+                        .filter((e) => e.includes('@')).length}
+                    </strong>
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={saveNotificationEmails} disabled={isSavingEmails}>
+                      {isSavingEmails ? <><Loader2 className="h-4 w-4 animate-spin ml-2" />שומר...</> : 'שמור רשימת מיילים'}
+                    </Button>
+                    <Button variant="outline" onClick={sendTestEmail} disabled={isSendingTestEmail}>
+                      {isSendingTestEmail ? 'שולח...' : 'בדיקת שליחה'}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Display Settings */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-500/10">
+                  <Monitor className="h-5 w-5 text-purple-400" />
+                </div>
+                <div>
+                  <CardTitle>הגדרות תצוגה</CardTitle>
+                  <CardDescription>בחר בין מצב כהה (קיימי) למצב בהיר. הבחירה נשמרת בקשיית הדפדפן.</CardDescription>
+                </div>
               </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setTheme('dark')}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
+                    theme === 'dark'
+                      ? 'border-cyan-400 bg-cyan-500/15 text-cyan-300'
+                      : 'border-border bg-secondary/50 text-muted-foreground hover:border-cyan-400/50'
+                  }`}
+                >
+                  <Moon className="h-4 w-4" />
+                  מצב כהה
+                </button>
+                <button
+                  onClick={() => setTheme('light')}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
+                    theme === 'light'
+                      ? 'border-amber-400 bg-amber-500/15 text-amber-400'
+                      : 'border-border bg-secondary/50 text-muted-foreground hover:border-amber-400/50'
+                  }`}
+                >
+                  <Sun className="h-4 w-4" />
+                  מצב בהיר
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-3">
+                מצב פעיל כעת: <strong>{theme === 'dark' ? 'כהה 🌙' : 'בהיר ☀️'}</strong>
+              </p>
             </CardContent>
           </Card>
 
@@ -211,6 +331,9 @@ export default function AdminSettingsPage() {
                   <span className="text-muted-foreground">טעינת נהגים אחרונה:</span>
                   <span className="font-medium">{formatDate(lastDriverUpload)}</span>
                 </div>
+              </div>
+              <div className="pt-3 border-t border-border mt-3">
+                <Button variant="outline" size="sm" onClick={runPrintTest}>בדיקת הדפסה</Button>
               </div>
             </CardContent>
           </Card>

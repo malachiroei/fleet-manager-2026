@@ -18,7 +18,7 @@ export default function EditDriverPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-[#020617] text-white">
         <header className="bg-card border-b border-border sticky top-0 z-10">
           <div className="container py-4"><div className="flex items-center gap-3">
             <Link to="/drivers"><Button variant="ghost" size="icon"><ArrowRight className="h-5 w-5" /></Button></Link>
@@ -34,7 +34,7 @@ export default function EditDriverPage() {
 
   if (!driver) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-[#020617] text-white">
         <header className="bg-card border-b border-border sticky top-0 z-10">
           <div className="container py-4"><div className="flex items-center gap-3">
             <Link to="/drivers"><Button variant="ghost" size="icon"><ArrowRight className="h-5 w-5" /></Button></Link>
@@ -74,7 +74,7 @@ export default function EditDriverPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-[#020617] text-white">
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
           <div className="flex items-center gap-3">
@@ -96,7 +96,7 @@ export default function EditDriverPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <Label htmlFor="full_name">שם מלא *</Label>
                   <Input id="full_name" name="full_name" defaultValue={driver.full_name} required />
@@ -131,7 +131,7 @@ export default function EditDriverPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="job_title">תפקיד</Label>
                   <Input id="job_title" name="job_title" defaultValue={driver.job_title || ''} />
@@ -154,7 +154,7 @@ export default function EditDriverPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="license_number">מספר רישיון נהיגה</Label>
                   <Input id="license_number" name="license_number" defaultValue={driver.license_number || ''} dir="ltr" />

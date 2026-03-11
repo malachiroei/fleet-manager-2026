@@ -27,7 +27,7 @@ export default function ScanReportPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background p-6 flex flex-col items-center gap-6">
+    <div className="min-h-screen bg-[#020617] text-white p-6 flex flex-col items-center gap-6">
       <div className="w-full flex justify-between items-center">
         <h2 className="text-xl font-bold">סריקת דוח</h2>
         <Link to="/"><Button variant="ghost">ביטול</Button></Link>
@@ -44,8 +44,8 @@ export default function ScanReportPage() {
             className="hidden"
           />
           <label htmlFor="camera-input" className="cursor-pointer">
-            <div className="w-40 h-40 rounded-full bg-orange-100 flex items-center justify-center border-4 border-dashed border-orange-500 hover:bg-orange-200 transition-colors">
-              {isScanning ? <Loader2 className="h-16 w-16 text-orange-600 animate-spin" /> : <Camera className="h-16 w-16 text-orange-600" />}
+            <div className="w-40 h-40 rounded-full bg-cyan-500/10 flex items-center justify-center border-4 border-dashed border-cyan-500 hover:bg-cyan-500/20 transition-colors">
+              {isScanning ? <Loader2 className="h-16 w-16 text-cyan-400 animate-spin" /> : <Camera className="h-16 w-16 text-cyan-400" />}
             </div>
           </label>
           <p className="font-medium text-lg">{isScanning ? "מנתח נתונים..." : "לחץ לצילום הדו\"ח"}</p>

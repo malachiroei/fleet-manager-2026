@@ -2,8 +2,11 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useDrivers, useDeleteDriver } from '@/hooks/useDrivers';
-import { useVehicles, useAssignDriverToVehicle } from '@/hooks/useVehicles';
-import { useHandoverHistory, buildHandoverRecordUrl, type HandoverHistoryItem } from '@/hooks/useHandovers';
+import {
+  useActiveDriverVehicleAssignments,
+  type ActiveDriverVehicleAssignment,
+} from '@/hooks/useVehicles';
+
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -11,13 +14,6 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,17 +25,16 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
-  ArrowRight,
   Plus,
   Search,
   User,
   Trash2,
   Edit,
-  Eye,
+  Car,
   Phone,
   Mail
 } from 'lucide-react';
-import type { Driver, DriverSummary, Vehicle, ComplianceStatus } from '@/types/fleet';
+import type { DriverSummary, ComplianceStatus } from '@/types/fleet';
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -63,157 +58,109 @@ function StatusBadge({ status }: { status: ComplianceStatus }) {
   return <Badge className={className}>{label}</Badge>;
 }
 
-function DriverCard({ driver, onDelete, canEdit, vehicles, onAssignVehicle, isAssigning, handoverHistory }: {
+function DriverCard({
+  driver,
+  onDelete,
+  canEdit,
+  driverActiveAssignments,
+}: {
   driver: DriverSummary;
   onDelete: () => void;
   canEdit: boolean;
-  vehicles: Vehicle[];
-  onAssignVehicle: (driverId: string, vehicleId: string | null) => void;
-  isAssigning: boolean;
-  handoverHistory: HandoverHistoryItem[];
+  driverActiveAssignments: ActiveDriverVehicleAssignment[];
 }) {
-  const calculateStatus = (expiryDate: string): ComplianceStatus => {
-    const today = new Date();
-    const expiry = new Date(expiryDate);
-    const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  const today = new Date();
+  const expiry = new Date(driver.license_expiry);
+  const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  const licenseStatus: ComplianceStatus = diffDays < 0 ? 'expired' : diffDays <= 30 ? 'warning' : 'valid';
 
-    if (diffDays < 0) return 'expired';
-    if (diffDays <= 30) return 'warning';
-    return 'valid';
-  };
-
-  const licenseStatus = calculateStatus(driver.license_expiry);
-  const assignedVehicle = vehicles.find((vehicle) => vehicle.assigned_driver_id === driver.id) ?? null;
-  const assignableVehicles = vehicles.filter(
-    (vehicle) => vehicle.assigned_driver_id === null || vehicle.assigned_driver_id === driver.id
-  );
-  const recentHandovers = handoverHistory.slice(0, 3);
+  const assignedVehicles = driverActiveAssignments
+    .map((a) => a.vehicle)
+    .filter((v): v is NonNullable<ActiveDriverVehicleAssignment['vehicle']> => !!v);
 
   return (
-    <Card className="card-hover">
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/10">
-              <User className="h-6 w-6 text-accent" />
-            </div>
-            <div>
-              <h3 className="font-semibold">{driver.full_name}</h3>
-              <p className="text-sm text-muted-foreground">ת.ז. {driver.id_number}</p>
-              <p className="text-sm mt-1">
-                <span className="text-muted-foreground">רכב משויך:</span>{' '}
-                <span>{assignedVehicle ? `${assignedVehicle.manufacturer} ${assignedVehicle.model} (${assignedVehicle.plate_number})` : 'לא משויך'}</span>
-              </p>
-            </div>
-          </div>
-          <StatusBadge status={licenseStatus} />
-        </div>
-
-        <div className="mt-4 space-y-2 text-sm">
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground">רישיון:</span>
-            <span>{new Date(driver.license_expiry).toLocaleDateString('he-IL')}</span>
-          </div>
-          {driver.phone && (
-            <div className="flex items-center gap-2">
-              <Phone className="h-4 w-4 text-muted-foreground" />
-              <span dir="ltr">{driver.phone}</span>
-            </div>
-          )}
-          {driver.email && (
-            <div className="flex items-center gap-2">
-              <Mail className="h-4 w-4 text-muted-foreground" />
-              <span dir="ltr" className="text-xs">{driver.email}</span>
-            </div>
-          )}
-          {canEdit && (
-            <div>
-              <Select
-                value={assignedVehicle?.id ?? '__none__'}
-                onValueChange={(value) => onAssignVehicle(driver.id, value === '__none__' ? null : value)}
-                disabled={isAssigning}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="בחר רכב" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">ללא רכב משויך</SelectItem>
-                  {assignableVehicles.map((vehicle) => (
-                    <SelectItem key={vehicle.id} value={vehicle.id}>
-                      {vehicle.manufacturer} {vehicle.model} ({vehicle.plate_number})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-        </div>
-
-        <div className="mt-4 border-t border-border pt-3 space-y-2">
-          <p className="text-sm font-semibold">היסטוריית מסירות</p>
-          {recentHandovers.length === 0 ? (
-            <p className="text-xs text-muted-foreground">אין נתוני מסירה/החזרה</p>
-          ) : (
-            <div className="space-y-2">
-              {recentHandovers.map((handover) => {
-                const formUrl = handover.form_url || buildHandoverRecordUrl(handover.vehicle_id, handover.id);
-                return (
-                  <div key={handover.id} className="rounded-md border border-border p-2.5">
-                    <div className="flex items-center justify-between gap-2 text-xs">
-                      <span className="text-muted-foreground">{new Date(handover.handover_date).toLocaleDateString('he-IL')} {new Date(handover.handover_date).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</span>
-                      <span>{handover.vehicle_label}</span>
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <Button asChild size="sm" variant="outline" className="h-7 px-2 text-xs">
-                        <a href={formUrl} target="_blank" rel="noopener noreferrer">View Form</a>
-                      </Button>
-                      {handover.photo_urls.length > 0 && (
-                        <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs">
-                          <a href={handover.photo_urls[0]} target="_blank" rel="noopener noreferrer">
-                            תמונות ({handover.photo_urls.length})
-                          </a>
-                        </Button>
-                      )}
-                    </div>
+    <Link to={`/drivers/${driver.id}`} className="block group">
+      <Card className="card-hover border border-border hover:border-primary/40 transition-all cursor-pointer">
+        <CardContent className="p-0">
+          <div className="flex flex-col xl:flex-row xl:items-stretch">
+            {/* RIGHT — driver info */}
+            <div className="flex flex-1 flex-col gap-4 px-4 py-4 sm:px-5 xl:justify-between">
+              <div className="flex items-start gap-3 sm:items-center sm:gap-4">
+                <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-sm font-bold text-white shadow-md sm:h-12 sm:w-12 sm:text-base ${
+                  licenseStatus === 'expired' ? 'bg-red-600' : licenseStatus === 'warning' ? 'bg-amber-600' : 'bg-emerald-600'
+                }`}>
+                  {driver.full_name.trim().slice(0, 2)}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="truncate text-base font-bold text-foreground sm:text-lg">{driver.full_name}</h3>
+                  <p className="text-xs text-muted-foreground sm:text-sm">ת.ז. {driver.id_number}</p>
+                  <div className="mt-1 flex flex-wrap gap-2 sm:gap-x-4 sm:gap-y-0.5">
+                    {driver.phone && (
+                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground sm:text-sm" dir="ltr">
+                        <Phone className="h-3.5 w-3.5" />
+                        {driver.phone}
+                      </span>
+                    )}
+                    {driver.email && (
+                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground sm:text-sm" dir="ltr">
+                        <Mail className="h-3.5 w-3.5" />
+                        <span className="truncate max-w-[180px] sm:max-w-[260px]">{driver.email}</span>
+                      </span>
+                    )}
+                    <span className="text-xs text-muted-foreground sm:text-sm">
+                      רישיון: {new Date(driver.license_expiry).toLocaleDateString('he-IL')}
+                    </span>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+                </div>
+              </div>
 
-        <div className="mt-4 flex gap-2">
-          <Link to={`/drivers/${driver.id}`} className="flex-1">
-            <Button variant="outline" size="sm" className="w-full gap-1">
-              <Eye className="h-4 w-4" />
-              צפייה
-            </Button>
-          </Link>
-          {canEdit && (
-            <>
-              <Link to={`/drivers/${driver.id}/edit`}>
-                <Button variant="outline" size="sm">
-                  <Edit className="h-4 w-4" />
-                </Button>
-              </Link>
-              <Button variant="outline" size="sm" onClick={onDelete}>
-                <Trash2 className="h-4 w-4 text-destructive" />
-              </Button>
-            </>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+              <div className="flex flex-wrap items-center gap-2 shrink-0" onClick={(e) => e.preventDefault()}>
+                <StatusBadge status={licenseStatus} />
+                {canEdit && (
+                  <div className="flex gap-1">
+                    <Link to={`/drivers/${driver.id}/edit`} onClick={(e) => e.stopPropagation()}>
+                      <Button variant="ghost" size="icon" className="h-8 w-8">
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    </Link>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(); }}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* LEFT — vehicle */}
+            <div className="flex w-full flex-col justify-center gap-2 border-t border-border bg-muted/20 px-4 py-4 sm:px-5 xl:w-auto xl:min-w-[220px] xl:border-l xl:border-t-0">
+              <p className="text-xs text-muted-foreground mb-0.5">רכב משויך</p>
+              {assignedVehicles.length > 0 ? (
+                assignedVehicles.map((v) => (
+                  <div key={v.id} className="flex items-center gap-2 rounded-xl bg-primary/10 border border-primary/20 text-primary px-3 py-2 text-sm font-semibold">
+                    <Car className="h-4 w-4 shrink-0" />
+                    <span className="truncate">{v.manufacturer} {v.model}</span>
+                    <span className="text-xs font-normal text-muted-foreground shrink-0">({v.plate_number})</span>
+                  </div>
+                ))
+              ) : (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Car className="h-4 w-4" />
+                  <span>אין רכב משויך</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
   );
 }
 
 export default function DriverListPage() {
   const { data: drivers, isLoading, isError, error, refetch } = useDrivers();
-  const { data: vehicles } = useVehicles();
-  const { data: handoverHistory } = useHandoverHistory();
+  const { data: activeAssignments } = useActiveDriverVehicleAssignments();
   const deleteDriver = useDeleteDriver();
-  const assignDriver = useAssignDriverToVehicle();
-  const { isManager, user } = useAuth();
+  const { isManager } = useAuth();
   const { t } = useTranslation();
   const [search, setSearch] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -226,36 +173,16 @@ export default function DriverListPage() {
     d.phone?.includes(search)
   );
 
-  const handleAssignVehicle = (driverId: string, vehicleId: string | null) => {
-    if (vehicleId) {
-      assignDriver.mutate({
-        vehicleId,
-        driverId,
-        assignedBy: user?.id ?? null,
-      });
-      return;
-    }
-
-    const currentVehicle = (vehicles ?? []).find((vehicle) => vehicle.assigned_driver_id === driverId);
-    if (!currentVehicle) return;
-
-    assignDriver.mutate({
-      vehicleId: currentVehicle.id,
-      driverId: null,
-      assignedBy: user?.id ?? null,
-    });
-  };
-
   return (
-    <div className="container py-6 space-y-6">
+    <div className="container space-y-5 py-4 sm:space-y-6 sm:py-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+        <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">{t('drivers.title')}</h1>
-          <p className="text-slate-500 mt-1">{t('drivers.subtitle')}</p>
+          <h1 className="text-2xl md:text-3xl font-bold text-white">{t('drivers.title')}</h1>
+          <p className="text-muted-foreground mt-1 text-sm">{t('drivers.subtitle')}</p>
         </div>
-        <Link to="/drivers/add">
-          <Button>
+        <Link to="/drivers/add" className="w-full shrink-0 sm:w-auto">
+          <Button size="sm" className="w-full sm:w-auto">
             <Plus className="h-4 w-4 mr-2" />
             {t('drivers.addDriver')}
           </Button>
@@ -263,7 +190,7 @@ export default function DriverListPage() {
       </div>
 
       {/* Search */}
-      <div className="relative max-w-md">
+      <div className="relative w-full max-w-md">
         <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
           placeholder={t('drivers.searchPlaceholder')}
@@ -310,10 +237,7 @@ export default function DriverListPage() {
                 driver={driver}
                 onDelete={() => setDeleteId(driver.id)}
                 canEdit={isManager}
-                vehicles={vehicles ?? []}
-                onAssignVehicle={handleAssignVehicle}
-                isAssigning={assignDriver.isPending}
-                handoverHistory={(handoverHistory ?? []).filter((handover) => handover.driver_id === driver.id)}
+                driverActiveAssignments={(activeAssignments ?? []).filter((assignment) => assignment.driver_id === driver.id)}
               />
             ))}
           </div>

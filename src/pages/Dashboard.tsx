@@ -17,6 +17,7 @@ import {
   Plus,
   ChevronLeft,
   Truck,
+  Repeat,
   Gauge,
   ExternalLink,
   Settings
@@ -144,6 +145,11 @@ export default function Dashboard() {
       title: t('navigation.vehicleDelivery'),
       href: '/handover/delivery',
       icon: Truck,
+    },
+    {
+      title: 'רכב חליפי',
+      href: '/handover/replacement',
+      icon: Repeat,
     },
   ];
 

@@ -48,10 +48,10 @@ export default function ReportsPage() {
   );
 
   return (
-    <div className="container py-6 space-y-6">
+    <div className="container py-4 sm:py-6 space-y-5 sm:space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-slate-900">הפקת דוחות</h1>
-        <p className="text-slate-500 mt-1">סיכום נהגים פעילים ותוקף רישיונות נהיגה</p>
+        <h1 className="text-2xl sm:text-3xl font-bold text-white">הפקת דוחות</h1>
+        <p className="text-muted-foreground mt-1">סיכום נהגים פעילים ותוקף רישיונות נהיגה</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -105,6 +105,7 @@ export default function ReportsPage() {
               <AlertDescription>{error instanceof Error ? error.message : 'אירעה שגיאה בלתי צפויה.'}</AlertDescription>
             </Alert>
           ) : (
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -131,6 +132,7 @@ export default function ReportsPage() {
                 )}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>

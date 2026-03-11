@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useVehicle, useUpdateVehicle } from '@/hooks/useVehicles';
+import { useVehicle, useUpdateVehicle, useAssignDriverToVehicle, useActiveDriverVehicleAssignments } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
 import { useAuth } from '@/hooks/useAuth';
 import { usePricingLookup } from '@/hooks/usePricingData';
-import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,7 +19,9 @@ export default function EditVehiclePage() {
   const navigate = useNavigate();
   const { data: vehicle, isLoading } = useVehicle(id || '');
   const { data: drivers } = useDrivers();
+  const { data: activeAssignments } = useActiveDriverVehicleAssignments();
   const updateVehicle = useUpdateVehicle();
+  const assignDriverToVehicle = useAssignDriverToVehicle();
   const { user } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isActive, setIsActive] = useState<boolean | null>(null);
@@ -56,11 +57,12 @@ export default function EditVehiclePage() {
 
   // Initialize state from vehicle data
   const activeValue = isActive ?? vehicle?.is_active ?? true;
-  const driverValue = assignedDriverId ?? vehicle?.assigned_driver_id ?? '';
+  const currentActiveDriverId = (activeAssignments ?? []).find((assignment) => assignment.vehicle_id === vehicle?.id)?.driver_id ?? '';
+  const driverValue = assignedDriverId ?? currentActiveDriverId;
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-[#020617] text-white">
         <header className="bg-card border-b border-border sticky top-0 z-10">
           <div className="container py-4"><div className="flex items-center gap-3">
             <Link to="/vehicles"><Button variant="ghost" size="icon"><ArrowRight className="h-5 w-5" /></Button></Link>
@@ -74,7 +76,7 @@ export default function EditVehiclePage() {
 
   if (!vehicle) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-[#020617] text-white">
         <header className="bg-card border-b border-border sticky top-0 z-10">
           <div className="container py-4"><div className="flex items-center gap-3">
             <Link to="/vehicles"><Button variant="ghost" size="icon"><ArrowRight className="h-5 w-5" /></Button></Link>
@@ -91,30 +93,7 @@ export default function EditVehiclePage() {
     try {
       const formData = new FormData(e.currentTarget);
       const newDriverId = driverValue || null;
-      const oldDriverId = vehicle.assigned_driver_id;
-
-      // Log assignment change if driver changed
-      if (newDriverId !== oldDriverId) {
-        // Close previous assignment
-        if (oldDriverId) {
-          await supabase
-            .from('driver_vehicle_assignments')
-            .update({ unassigned_at: new Date().toISOString() })
-            .eq('vehicle_id', vehicle.id)
-            .eq('driver_id', oldDriverId)
-            .is('unassigned_at', null);
-        }
-        // Create new assignment record
-        if (newDriverId) {
-          await supabase
-            .from('driver_vehicle_assignments')
-            .insert({
-              vehicle_id: vehicle.id,
-              driver_id: newDriverId,
-              assigned_by: user?.id || null,
-            });
-        }
-      }
+      const oldDriverId = currentActiveDriverId || null;
 
       await updateVehicle.mutateAsync({
         id: vehicle.id,
@@ -126,7 +105,6 @@ export default function EditVehiclePage() {
         color: formData.get('color') as string || null,
         ignition_code: formData.get('ignition_code') as string || null,
         is_active: activeValue,
-        assigned_driver_id: newDriverId,
         test_expiry: formData.get('test_expiry') as string,
         insurance_expiry: formData.get('insurance_expiry') as string,
         next_maintenance_km: formData.get('next_maintenance_km') ? parseInt(formData.get('next_maintenance_km') as string) : null,
@@ -134,6 +112,8 @@ export default function EditVehiclePage() {
         ownership_type: formData.get('ownership_type') as string || null,
         leasing_company_name: formData.get('leasing_company_name') as string || null,
         pickup_date: formData.get('pickup_date') as string || null,
+        purchase_date: formData.get('purchase_date') as string || null,
+        sale_date: formData.get('sale_date') as string || null,
         // Operational costs fields
         tax_value_price: taxValuePrice
           ? parseFloat(taxValuePrice)
@@ -152,6 +132,14 @@ export default function EditVehiclePage() {
           : null
       });
 
+      if (newDriverId !== oldDriverId) {
+        await assignDriverToVehicle.mutateAsync({
+          vehicleId: vehicle.id,
+          driverId: newDriverId,
+          assignedBy: user?.id ?? null,
+        });
+      }
+
       toast.success('הרכב עודכן בהצלחה');
       navigate(`/vehicles/${vehicle.id}`);
     } catch (error) {
@@ -161,7 +149,7 @@ export default function EditVehiclePage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-[#020617] text-white">
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
           <div className="flex items-center gap-3">
@@ -181,7 +169,7 @@ export default function EditVehiclePage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <Label htmlFor="plate_number">מספר רישוי *</Label>
                   <Input id="plate_number" name="plate_number" defaultValue={vehicle.plate_number} required dir="ltr" />
@@ -224,6 +212,14 @@ export default function EditVehiclePage() {
                 <Label htmlFor="pickup_date">תאריך קליטה</Label>
                 <Input id="pickup_date" name="pickup_date" type="date" defaultValue={vehicle.pickup_date || ''} />
               </div>
+              <div>
+                <Label htmlFor="purchase_date">תאריך קניה / תחילת עסקה</Label>
+                <Input id="purchase_date" name="purchase_date" type="date" defaultValue={(vehicle as any).purchase_date || ''} />
+              </div>
+              <div>
+                <Label htmlFor="sale_date">תאריך מכירה / סיום עסקה</Label>
+                <Input id="sale_date" name="sale_date" type="date" defaultValue={(vehicle as any).sale_date || ''} />
+              </div>
             </CardContent>
           </Card>
 
@@ -235,7 +231,7 @@ export default function EditVehiclePage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div><Label htmlFor="test_expiry">תוקף טסט *</Label><Input id="test_expiry" name="test_expiry" type="date" defaultValue={vehicle.test_expiry} required /></div>
                 <div><Label htmlFor="insurance_expiry">תוקף ביטוח *</Label><Input id="insurance_expiry" name="insurance_expiry" type="date" defaultValue={vehicle.insurance_expiry} required /></div>
                 <div><Label htmlFor="next_maintenance_km">ק"מ לטיפול הבא</Label><Input id="next_maintenance_km" name="next_maintenance_km" type="number" defaultValue={vehicle.next_maintenance_km || ''} dir="ltr" /></div>
@@ -279,7 +275,7 @@ export default function EditVehiclePage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="manufacturer_code">סמל יצרן</Label>
                   <Input 

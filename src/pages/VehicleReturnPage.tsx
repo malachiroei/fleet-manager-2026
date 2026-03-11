@@ -1,7 +1,9 @@
-import { useState, useRef } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useVehicles } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
+import { supabase } from '@/integrations/supabase/client';
 import {
   useCreateHandover,
   useLatestHandover,
@@ -21,8 +23,14 @@ import { Badge } from '@/components/ui/badge';
 import SignaturePad, { SignaturePadRef } from '@/components/SignaturePad';
 import FuelLevelSelector from '@/components/FuelLevelSelector';
 import PhotoUpload from '@/components/PhotoUpload';
+import VehicleDamage3DSelector from '@/components/VehicleDamage3DSelector';
 import { ArrowRight, Loader2, RotateCcw, Camera, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  cloneEmptyDamageReport,
+  hasAnyDamage,
+  summarizeDamageReport,
+} from '@/lib/vehicleDamage';
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -37,11 +45,13 @@ function getErrorMessage(error: unknown) {
 
 export default function VehicleReturnPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { data: vehicles } = useVehicles();
   const { data: drivers } = useDrivers();
   const createHandover = useCreateHandover();
   const { user } = useAuth();
   const signatureRef = useRef<SignaturePadRef>(null);
+  const assignmentMode = searchParams.get('mode') === 'replacement' ? 'replacement' : 'permanent';
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState('');
@@ -50,6 +60,7 @@ export default function VehicleReturnPage() {
   const [fuelLevel, setFuelLevel] = useState(4);
   const [notes, setNotes] = useState('');
   const [hasSignature, setHasSignature] = useState(false);
+  const [damageReport, setDamageReport] = useState(cloneEmptyDamageReport());
   
   // Photo states
   const [photoFront, setPhotoFront] = useState<File | null>(null);
@@ -57,10 +68,74 @@ export default function VehicleReturnPage() {
   const [photoRight, setPhotoRight] = useState<File | null>(null);
   const [photoLeft, setPhotoLeft] = useState<File | null>(null);
 
+  const { data: replacementEligibility = [], isLoading: replacementLoading } = useQuery({
+    queryKey: ['replacement-return-eligibility'],
+    enabled: assignmentMode === 'replacement',
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from('vehicle_handovers')
+        .select('vehicle_id, driver_id, handover_type, assignment_mode, handover_date')
+        .order('handover_date', { ascending: false })
+        .limit(1000);
+
+      if (error) throw error;
+
+      const rows = (data ?? []) as Array<{
+        vehicle_id: string;
+        driver_id: string | null;
+        handover_type: 'delivery' | 'return';
+        assignment_mode?: 'permanent' | 'replacement' | null;
+        handover_date: string;
+      }>;
+
+      const latestByVehicle = new Map<string, (typeof rows)[number]>();
+      for (const row of rows) {
+        if (row.assignment_mode !== 'replacement') continue;
+        if (!latestByVehicle.has(row.vehicle_id)) {
+          latestByVehicle.set(row.vehicle_id, row);
+        }
+      }
+
+      return Array.from(latestByVehicle.values()).filter((row) => row.handover_type === 'delivery');
+    },
+  });
+
+  const eligibleVehicleIds = useMemo(
+    () => new Set(replacementEligibility.map((item) => item.vehicle_id)),
+    [replacementEligibility]
+  );
+
+  const vehicleOptions = useMemo(() => {
+    if (assignmentMode !== 'replacement') return vehicles ?? [];
+    return (vehicles ?? []).filter((vehicle) => eligibleVehicleIds.has(vehicle.id));
+  }, [assignmentMode, vehicles, eligibleVehicleIds]);
+
+  const replacementDriverMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const row of replacementEligibility) {
+      if (row.driver_id) map.set(row.vehicle_id, row.driver_id);
+    }
+    return map;
+  }, [replacementEligibility]);
+
+  useEffect(() => {
+    if (assignmentMode !== 'replacement') return;
+    if (!selectedVehicle) {
+      setSelectedDriver('');
+      return;
+    }
+
+    const driverId = replacementDriverMap.get(selectedVehicle) ?? '';
+    setSelectedDriver(driverId);
+  }, [assignmentMode, replacementDriverMap, selectedVehicle]);
+
   const { data: lastHandover } = useLatestHandover(selectedVehicle);
   const selectedVehicleData = vehicles?.find(v => v.id === selectedVehicle);
   const selectedDriverData = drivers?.find(d => d.id === selectedDriver);
   const allPhotosUploaded = photoFront && photoBack && photoRight && photoLeft;
+  const futuristicCardClass = 'rounded-2xl border border-cyan-400/25 bg-gradient-to-b from-[#0d233b] to-[#08182d] shadow-[0_12px_32px_rgba(0,0,0,0.38)]';
+  const fieldClass = 'h-11 rounded-xl border-cyan-300/25 bg-[#061325]/80 text-white placeholder:text-cyan-100/45 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.08)] focus-visible:ring-cyan-300/45';
+  const labelClass = 'mb-1.5 block text-xs font-semibold tracking-wide text-cyan-100/80';
 
   // Calculate differences from delivery
   const odometerDiff = lastHandover && odometer 
@@ -76,6 +151,11 @@ export default function VehicleReturnPage() {
       return;
     }
 
+    if (assignmentMode === 'replacement' && !eligibleVehicleIds.has(selectedVehicle)) {
+      toast.error('ניתן להחזיר רק רכב חליפי שבוצעה עליו מסירה קודם');
+      return;
+    }
+
     if (!allPhotosUploaded) {
       toast.error('נא לצלם את הרכב מכל 4 הזוויות');
       return;
@@ -87,6 +167,13 @@ export default function VehicleReturnPage() {
     }
 
     setIsSubmitting(true);
+    const damageSummary = summarizeDamageReport(damageReport);
+    const mergedNotes = [
+      notes.trim() || null,
+      hasAnyDamage(damageReport) ? `דיווח נזק: ${damageSummary}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n');
 
     try {
       // Upload photos
@@ -123,6 +210,7 @@ export default function VehicleReturnPage() {
         vehicle_id: selectedVehicle,
         driver_id: selectedDriver,
         handover_type: 'return',
+        assignment_mode: assignmentMode as any,
         handover_date: new Date().toISOString(),
         odometer_reading: parseInt(odometer),
         fuel_level: fuelLevel,
@@ -131,7 +219,7 @@ export default function VehicleReturnPage() {
         photo_right_url: rightUrl,
         photo_left_url: leftUrl,
         signature_url: signatureUrl,
-        notes: notes || null,
+        notes: mergedNotes || null,
         created_by: user?.id || null,
       });
 
@@ -146,7 +234,9 @@ export default function VehicleReturnPage() {
           driverLabel: selectedDriverData?.full_name ?? 'לא ידוע',
           odometerReading: parseInt(odometer),
           fuelLevel,
-          notes: notes || null,
+          notes: mergedNotes || null,
+          assignmentMode,
+          damageReport,
           photoUrls: {
             front: frontUrl,
             back: backUrl,
@@ -182,15 +272,18 @@ export default function VehicleReturnPage() {
           driverLabel: selectedDriverData?.full_name ?? 'לא ידוע',
           odometerReading: parseInt(odometer),
           fuelLevel,
-          notes: notes || null,
+          notes: mergedNotes || null,
+          assignmentMode,
+          damageSummary,
           reportUrl,
         });
       } catch (emailError) {
         console.error('Email notification error:', emailError);
-        toast.warning('הטופס נשמר, אך שליחת המייל נכשלה');
+        const msg = emailError instanceof Error ? emailError.message : 'שגיאה לא ידועה';
+        toast.warning(`הטופס נשמר, אך שליחת המייל נכשלה: ${msg}`);
       }
 
-      toast.success('החזרת רכב נרשמה בהצלחה');
+      toast.success(assignmentMode === 'replacement' ? 'החזרת רכב חליפי נרשמה בהצלחה' : 'החזרת רכב נרשמה בהצלחה');
       navigate('/');
     } catch (error) {
       console.error('Error creating handover:', error);
@@ -201,7 +294,7 @@ export default function VehicleReturnPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-[#020617] text-white">
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
           <div className="flex items-center gap-3">
@@ -210,7 +303,7 @@ export default function VehicleReturnPage() {
                 <ArrowRight className="h-5 w-5" />
               </Button>
             </Link>
-            <h1 className="font-bold text-xl">החזרת רכב</h1>
+            <h1 className="font-bold text-xl">{assignmentMode === 'replacement' ? 'החזרת רכב חליפי' : 'החזרת רכב'}</h1>
           </div>
         </div>
       </header>
@@ -218,7 +311,7 @@ export default function VehicleReturnPage() {
       <main className="container py-6 pb-24">
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Vehicle & Driver Selection */}
-          <Card>
+          <Card className={futuristicCardClass}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <RotateCcw className="h-5 w-5 text-primary" />
@@ -227,25 +320,41 @@ export default function VehicleReturnPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <Label>בחר רכב *</Label>
+                <Label className={labelClass}>בחר רכב *</Label>
                 <Select value={selectedVehicle} onValueChange={setSelectedVehicle}>
-                  <SelectTrigger>
+                  <SelectTrigger className={fieldClass}>
                     <SelectValue placeholder="בחר רכב מהרשימה" />
                   </SelectTrigger>
                   <SelectContent className="z-[100000] max-h-72 bg-card border border-border shadow-xl">
-                    {vehicles?.map(v => (
+                    {vehicleOptions.map(v => (
                       <SelectItem key={v.id} value={v.id} className="py-2 leading-snug">
                         {v.manufacturer} {v.model} ({v.plate_number})
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {assignmentMode === 'replacement' && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    מוצגים רק רכבים חליפיים שנמצאים כרגע בסטטוס מסירה פעילה.
+                  </p>
+                )}
               </div>
 
               <div>
-                <Label>בחר נהג *</Label>
-                <Select value={selectedDriver} onValueChange={setSelectedDriver}>
-                  <SelectTrigger>
+                <Label className={labelClass}>סוג החזרה</Label>
+                <div className="rounded-xl border border-cyan-300/25 bg-[#061325]/70 px-3 py-2.5 text-sm text-cyan-50/90">
+                  {assignmentMode === 'replacement' ? 'החזרת רכב חליפי' : 'החזרת רכב קבוע'}
+                </div>
+              </div>
+
+              <div>
+                <Label className={labelClass}>בחר נהג *</Label>
+                <Select
+                  value={selectedDriver}
+                  onValueChange={setSelectedDriver}
+                  disabled={assignmentMode === 'replacement'}
+                >
+                  <SelectTrigger className={fieldClass}>
                     <SelectValue placeholder="בחר נהג מהרשימה" />
                   </SelectTrigger>
                   <SelectContent className="z-[100000] max-h-72 bg-card border border-border shadow-xl">
@@ -256,6 +365,11 @@ export default function VehicleReturnPage() {
                     ))}
                   </SelectContent>
                 </Select>
+                {assignmentMode === 'replacement' && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    הנהג נבחר אוטומטית לפי המסירה החליפית האחרונה של הרכב.
+                  </p>
+                )}
               </div>
 
               {/* Comparison with delivery */}
@@ -266,7 +380,7 @@ export default function VehicleReturnPage() {
                       <AlertTriangle className="h-4 w-4 text-warning" />
                       נתוני מסירה לשוואה
                     </h4>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
                       <div>
                         <span className="text-muted-foreground">ק"מ במסירה:</span>
                         <span className="mr-1 font-medium">{lastHandover.odometer_reading.toLocaleString()}</span>
@@ -280,9 +394,9 @@ export default function VehicleReturnPage() {
                 </Card>
               )}
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="odometer">קילומטראז׳ *</Label>
+                  <Label htmlFor="odometer" className={labelClass}>קילומטראז׳ *</Label>
                   <Input
                     id="odometer"
                     type="number"
@@ -292,6 +406,7 @@ export default function VehicleReturnPage() {
                     placeholder="קריאת מונה"
                     required
                     dir="ltr"
+                    className={fieldClass}
                   />
                   {odometerDiff !== null && odometerDiff > 0 && (
                     <p className="text-xs text-muted-foreground mt-1">
@@ -312,8 +427,17 @@ export default function VehicleReturnPage() {
             </CardContent>
           </Card>
 
+          <Card className={futuristicCardClass}>
+            <CardHeader>
+              <CardTitle className="text-lg">סימון נזקים לפי צד ברכב</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <VehicleDamage3DSelector value={damageReport} onChange={setDamageReport} />
+            </CardContent>
+          </Card>
+
           {/* Photos */}
-          <Card>
+          <Card className={futuristicCardClass}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Camera className="h-5 w-5 text-primary" />
@@ -321,33 +445,17 @@ export default function VehicleReturnPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 gap-4">
-                <PhotoUpload
-                  label="חזית"
-                  onPhotoCapture={setPhotoFront}
-                  required
-                />
-                <PhotoUpload
-                  label="אחור"
-                  onPhotoCapture={setPhotoBack}
-                  required
-                />
-                <PhotoUpload
-                  label="צד ימין"
-                  onPhotoCapture={setPhotoRight}
-                  required
-                />
-                <PhotoUpload
-                  label="צד שמאל"
-                  onPhotoCapture={setPhotoLeft}
-                  required
-                />
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="חזית" onPhotoCapture={setPhotoFront} required /></div>
+                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="אחור" onPhotoCapture={setPhotoBack} required /></div>
+                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="צד ימין" onPhotoCapture={setPhotoRight} required /></div>
+                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="צד שמאל" onPhotoCapture={setPhotoLeft} required /></div>
               </div>
             </CardContent>
           </Card>
 
           {/* Signature */}
-          <Card>
+          <Card className={futuristicCardClass}>
             <CardHeader>
               <CardTitle className="text-lg">חתימת הנהג</CardTitle>
             </CardHeader>
@@ -357,31 +465,42 @@ export default function VehicleReturnPage() {
           </Card>
 
           {/* Notes */}
-          <Card>
+          <Card className={futuristicCardClass}>
             <CardContent className="pt-6">
-              <Label htmlFor="notes">הערות</Label>
+              <Label htmlFor="notes" className={labelClass}>הערות</Label>
               <Textarea
                 id="notes"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="הערות נוספות לגבי מצב הרכב, נזקים חדשים וכו׳..."
                 rows={3}
+                className="rounded-xl border-cyan-300/25 bg-[#061325]/80 text-white placeholder:text-cyan-100/45 focus-visible:ring-cyan-300/45"
               />
             </CardContent>
           </Card>
 
           {/* Submit */}
-          <div className="fixed bottom-12 left-0 right-0 p-4 bg-background border-t border-border">
+          <div className="fixed bottom-12 left-0 right-0 p-4 bg-[#020617]/95 backdrop-blur-sm border-t border-white/10">
             <div className="container">
               <Button 
                 type="submit" 
-                className="w-full" 
+                className="w-full rounded-2xl border border-cyan-200/45 bg-[linear-gradient(180deg,rgba(56,189,248,0.65)_0%,rgba(59,130,246,0.55)_48%,rgba(14,116,144,0.85)_100%)] py-6 text-base font-bold text-white shadow-[0_14px_28px_rgba(14,165,233,0.34)] hover:translate-y-[-1px] hover:brightness-110" 
                 size="lg"
-                disabled={isSubmitting || !selectedVehicle || !selectedDriver || !allPhotosUploaded || !hasSignature}
+                disabled={
+                  isSubmitting ||
+                  !selectedVehicle ||
+                  !selectedDriver ||
+                  !allPhotosUploaded ||
+                  !hasSignature ||
+                  (assignmentMode === 'replacement' && vehicleOptions.length === 0)
+                }
               >
                 {isSubmitting && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
-                אשר החזרת רכב
+                {assignmentMode === 'replacement' ? 'אשר החזרת רכב חליפי' : 'אשר החזרת רכב'}
               </Button>
+              {assignmentMode === 'replacement' && replacementLoading && (
+                <p className="mt-2 text-center text-xs text-muted-foreground">טוען רשימת רכבים חליפיים...</p>
+              )}
             </div>
           </div>
         </form>

@@ -4,7 +4,22 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { Sidebar } from './Sidebar';
 import { MobileNav } from './MobileNav';
 import { LanguageSwitcher } from './LanguageSwitcher';
-import { Car } from 'lucide-react';
+import { AIChatAssistant } from './AIChatAssistant';
+import { useTheme } from '@/hooks/useTheme';
+import { Sun, Moon } from 'lucide-react';
+/** Brand logo – same asset as og:image (public/og-image.png). Identical for prod and manager-2026-test. */
+const appLogo = '/og-image.png';
+
+/**
+ * Fixed box + deep blue so the white car pops; overflow-hidden clips scaled img = zoom on car.
+ * Container h-14 w-20 gives the scaled image room before clip.
+ */
+const logoWrapClassName =
+  'h-14 w-20 shrink-0 bg-[#0a1525] rounded-xl p-1 overflow-hidden flex items-center justify-center';
+
+/** Zoom in on center of asset; transform + scale so the car fills the visible area */
+const logoImgClassName =
+  'h-full w-full object-contain object-center scale-[1.8] transform origin-center';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -13,45 +28,74 @@ interface AppLayoutProps {
 export function AppLayout({ children }: AppLayoutProps) {
   const isMobile = useIsMobile();
   const { t } = useTranslation();
+  const { theme, toggleTheme } = useTheme();
+
+  const ThemeToggle = () => (
+    <button
+      onClick={toggleTheme}
+      title={theme === 'dark' ? 'עבור למצב בהיר' : 'עבור למצב כהה'}
+      className="h-8 w-8 rounded-lg flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+    >
+      {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+    </button>
+  );
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50">
+    <div className="flex min-h-[100dvh] overflow-x-hidden bg-[#020617]">
       {/* Desktop Sidebar */}
       {!isMobile && <Sidebar />}
 
       {/* Main Content Area */}
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-[100dvh] flex-1 flex-col overflow-hidden">
         {/* Mobile Header */}
         {isMobile && (
-          <header className="flex h-16 items-center border-b border-slate-200 bg-white px-4 justify-between">
+          <header className="flex min-h-16 items-center justify-between border-b border-white/10 bg-[#0d1b2e] px-3 py-2 sm:px-4">
             <div className="flex items-center gap-3">
               <MobileNav />
-              <div className="flex items-center gap-3 ml-4">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600">
-                  <Car className="h-5 w-5 text-white" />
+              <div className="ml-2 flex items-center gap-2 sm:ml-4 sm:gap-3">
+                <div className={logoWrapClassName}>
+                  <img src={appLogo} alt="Fleet Manager logo" className={logoImgClassName} />
                 </div>
                 <div>
                   <h1 className="font-bold text-base leading-tight">{t('navigation.fleetManager')}</h1>
-                  <p className="text-xs text-slate-500">{t('navigation.proDashboard')}</p>
+                  <p className="hidden text-xs text-cyan-400/60 sm:block">{t('navigation.proDashboard')}</p>
                 </div>
               </div>
             </div>
-            <LanguageSwitcher />
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
+              <LanguageSwitcher />
+            </div>
           </header>
         )}
 
         {/* Desktop Header with Language Switcher */}
         {!isMobile && (
-          <div className="flex h-16 items-center border-b border-slate-200 bg-white px-6 justify-end">
-            <LanguageSwitcher />
+          <div className="flex min-h-16 items-center border-b border-white/10 bg-[#0d1b2e] px-6 py-2 justify-between">
+            <div className="flex items-center gap-3">
+              <div className={logoWrapClassName}>
+                <img src={appLogo} alt="Fleet Manager logo" className={logoImgClassName} />
+              </div>
+              <div>
+                <h1 className="font-bold text-base leading-tight">{t('navigation.fleetManager')}</h1>
+                <p className="text-xs text-cyan-400/60">{t('navigation.proDashboard')}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
+              <LanguageSwitcher />
+            </div>
           </div>
         )}
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto bg-slate-50">
+        <main className="flex-1 overflow-y-auto bg-transparent">
           {children}
         </main>
       </div>
+
+      {/* AI Chat Assistant — floating button available on all pages */}
+      <AIChatAssistant />
     </div>
   );
 }

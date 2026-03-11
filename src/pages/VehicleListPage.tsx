@@ -1,335 +1,99 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
-import { useVehicles, useDeleteVehicle, useAssignDriverToVehicle } from '@/hooks/useVehicles';
-import { useDrivers } from '@/hooks/useDrivers';
-import { useHandoverHistory, buildHandoverRecordUrl, type HandoverHistoryItem } from '@/hooks/useHandovers';
-import { useAuth } from '@/hooks/useAuth';
+import { useVehicles } from '@/hooks/useVehicles';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { 
-  ArrowRight, 
-  Plus, 
-  Search, 
-  Car,
-  Trash2,
-  Edit,
-  Eye
-} from 'lucide-react';
-import type { Vehicle, ComplianceStatus, DriverSummary } from '@/types/fleet';
+import { Plus, Search } from 'lucide-react';
 
-function getErrorMessage(error: unknown) {
-  if (error instanceof Error) return error.message;
-  if (typeof error === 'object' && error !== null && 'message' in error) {
-    const message = (error as { message?: unknown }).message;
-    return typeof message === 'string' && message.length > 0
-      ? message
-      : 'אירעה שגיאה לא צפויה בעת שליפת הרכבים.';
-  }
-  return 'אירעה שגיאה לא צפויה בעת שליפת הרכבים.';
+function fmtDate(d: string | null): string {
+  if (!d) return '—';
+  const dt = new Date(d);
+  return `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}/${dt.getFullYear()}`;
 }
 
-function StatusBadge({ status }: { status: ComplianceStatus }) {
-  const config = {
-    valid: { label: 'תקין', className: 'status-valid' },
-    warning: { label: 'אזהרה', className: 'status-warning' },
-    expired: { label: 'פג תוקף', className: 'status-expired' }
-  };
-
-  const { label, className } = config[status];
-  return <Badge className={className}>{label}</Badge>;
-}
-
-function VehicleCard({ vehicle, onDelete, canEdit, drivers, onAssignDriver, isAssigning, handoverHistory }: { 
-  vehicle: Vehicle; 
-  onDelete: () => void;
-  canEdit: boolean;
-  drivers: DriverSummary[];
-  onAssignDriver: (vehicleId: string, driverId: string | null) => void;
-  isAssigning: boolean;
-  handoverHistory: HandoverHistoryItem[];
-}) {
-  const calculateStatus = (expiryDate: string): ComplianceStatus => {
-    const today = new Date();
-    const expiry = new Date(expiryDate);
-    const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    
-    if (diffDays < 0) return 'expired';
-    if (diffDays <= 30) return 'warning';
-    return 'valid';
-  };
-
-  const testStatus = calculateStatus(vehicle.test_expiry);
-  const insuranceStatus = calculateStatus(vehicle.insurance_expiry);
-  const worstStatus = testStatus === 'expired' || insuranceStatus === 'expired' 
-    ? 'expired' 
-    : (testStatus === 'warning' || insuranceStatus === 'warning' ? 'warning' : 'valid');
-  const assignedDriver = drivers.find((driver) => driver.id === vehicle.assigned_driver_id) ?? null;
-  const recentHandovers = handoverHistory.slice(0, 3);
-
+function VehicleCard({ vehicle }: { vehicle: any; key?: string }) {
   return (
-    <Card className="card-hover">
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
-              <Car className="h-6 w-6 text-primary" />
-            </div>
-            <div>
-              <h3 className="font-semibold">{vehicle.manufacturer} {vehicle.model}</h3>
-              <p className="text-sm text-muted-foreground">{vehicle.plate_number}</p>
-            </div>
-          </div>
-          <StatusBadge status={worstStatus} />
+    <div className="audi-premium-card p-4 md:p-8">
+      <div className="mb-2 text-lg md:text-2xl font-black neon-title uppercase">
+        {vehicle.manufacturer} {vehicle.model}
+      </div>
+      <div className="mb-4 text-2xl md:text-4xl font-black tracking-[0.1em] md:tracking-[0.15em] text-cyan-400 text-center drop-shadow-[0_0_10px_rgba(34,211,238,0.4)]">
+        {vehicle.plate_number}
+      </div>
+      <div className="grid grid-cols-3 gap-2 md:gap-4 mb-3">
+        <div className="bg-white/5 rounded-xl md:rounded-2xl p-2 md:p-4 flex flex-col items-center border border-white/10">
+          <span className="white-data text-base md:text-2xl tabular-nums" dir="ltr">{vehicle.current_odometer.toLocaleString()}</span>
+          <span className="data-label-glow text-xs">ק"מ</span>
         </div>
-        
-        <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-          <div className="col-span-2 flex items-center gap-2">
-            <span className="text-muted-foreground">נהג משויך:</span>
-            <span>{assignedDriver?.full_name ?? 'לא משויך'}</span>
-          </div>
-          <div>
-            <span className="text-muted-foreground">שנה:</span> {vehicle.year}
-          </div>
-          <div>
-            <span className="text-muted-foreground">ק"מ:</span> {vehicle.current_odometer.toLocaleString()}
-          </div>
-          <div>
-            <span className="text-muted-foreground">טסט:</span> {new Date(vehicle.test_expiry).toLocaleDateString('he-IL')}
-          </div>
-          <div>
-            <span className="text-muted-foreground">ביטוח:</span> {new Date(vehicle.insurance_expiry).toLocaleDateString('he-IL')}
-          </div>
+        <div className="bg-white/5 rounded-xl md:rounded-2xl p-2 md:p-4 flex flex-col items-center border border-white/10">
+          <span className="white-data text-base md:text-2xl">{vehicle.year}</span>
+          <span className="data-label-glow text-xs">שנה</span>
         </div>
-
-        <div className="mt-4 space-y-2 text-sm">
-          {canEdit && (
-            <div>
-              <Select
-                value={vehicle.assigned_driver_id ?? '__none__'}
-                onValueChange={(value) => onAssignDriver(vehicle.id, value === '__none__' ? null : value)}
-                disabled={isAssigning}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="בחר נהג" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">ללא נהג משויך</SelectItem>
-                  {drivers.map((driver) => (
-                    <SelectItem key={driver.id} value={driver.id}>
-                      {driver.full_name} ({driver.id_number})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+        <div className="bg-white/5 rounded-xl md:rounded-2xl p-2 md:p-4 flex flex-col items-center border border-white/10">
+          <span className="white-data text-sm md:text-lg text-center leading-tight">{vehicle.ownership_type ?? '—'}</span>
+          <span className="data-label-glow text-xs">בעלות</span>
         </div>
-
-        <div className="mt-4 border-t border-border pt-3 space-y-2">
-          <p className="text-sm font-semibold">היסטוריית מסירות</p>
-          {recentHandovers.length === 0 ? (
-            <p className="text-xs text-muted-foreground">אין נתוני מסירה/החזרה</p>
-          ) : (
-            <div className="space-y-2">
-              {recentHandovers.map((handover) => {
-                const formUrl = handover.form_url || buildHandoverRecordUrl(handover.vehicle_id, handover.id);
-                return (
-                  <div key={handover.id} className="rounded-md border border-border p-2.5">
-                    <div className="flex items-center justify-between gap-2 text-xs">
-                      <span className="text-muted-foreground">{new Date(handover.handover_date).toLocaleDateString('he-IL')} {new Date(handover.handover_date).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</span>
-                      <span>{handover.driver_label}</span>
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <Button asChild size="sm" variant="outline" className="h-7 px-2 text-xs">
-                        <a href={formUrl} target="_blank" rel="noopener noreferrer">View Form</a>
-                      </Button>
-                      {handover.photo_urls.length > 0 && (
-                        <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs">
-                          <a href={handover.photo_urls[0]} target="_blank" rel="noopener noreferrer">
-                            תמונות ({handover.photo_urls.length})
-                          </a>
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+      </div>
+      <div className="grid grid-cols-3 gap-2 mb-4">
+        <div className="bg-white/5 rounded-xl p-2 flex flex-col items-center border border-white/10">
+          <span className="white-data text-xs md:text-sm tabular-nums" dir="ltr">{fmtDate(vehicle.created_at)}</span>
+          <span className="data-label-glow text-xs">תאריך הקמה</span>
         </div>
-
-        <div className="mt-4 flex gap-2">
-          <Link to={`/vehicles/${vehicle.id}`} className="flex-1">
-            <Button variant="outline" size="sm" className="w-full gap-1">
-              <Eye className="h-4 w-4" />
-              צפייה
-            </Button>
-          </Link>
-          {canEdit && (
-            <>
-              <Link to={`/vehicles/${vehicle.id}/edit`}>
-                <Button variant="outline" size="sm">
-                  <Edit className="h-4 w-4" />
-                </Button>
-              </Link>
-              <Button variant="outline" size="sm" onClick={onDelete}>
-                <Trash2 className="h-4 w-4 text-destructive" />
-              </Button>
-            </>
-          )}
+        <div className="bg-white/5 rounded-xl p-2 flex flex-col items-center border border-cyan-500/20">
+          <span className="text-cyan-300 text-xs md:text-sm font-bold tabular-nums" dir="ltr">{fmtDate(vehicle.purchase_date)}</span>
+          <span className="data-label-glow text-xs">תחילת עסקה</span>
         </div>
-      </CardContent>
-    </Card>
+        <div className="bg-white/5 rounded-xl p-2 flex flex-col items-center border border-orange-500/20">
+          <span className="text-orange-300 text-xs md:text-sm font-bold tabular-nums" dir="ltr">{fmtDate(vehicle.sale_date)}</span>
+          <span className="data-label-glow text-xs">סיום עסקה</span>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <Link to={`/vehicles/${vehicle.id}#handover-history`}>
+          <button className="glass-button w-full py-2 md:py-3 text-xs md:text-sm font-bold">היסטוריה</button>
+        </Link>
+        <Link to={`/vehicles/${vehicle.id}#tax-data`}>
+          <button className="glass-button w-full py-2 md:py-3 text-xs md:text-sm font-bold">נתוני מס</button>
+        </Link>
+        <Link to={`/vehicles/${vehicle.id}#overview`}>
+          <button className="glass-button w-full py-2 md:py-3 text-xs md:text-sm font-bold">צפייה</button>
+        </Link>
+        <Link to={`/vehicles/${vehicle.id}#vehicle-documents`}>
+          <button className="glass-button w-full py-2 md:py-3 text-xs md:text-sm font-bold">מסמכים</button>
+        </Link>
+      </div>
+    </div>
   );
 }
 
 export default function VehicleListPage() {
-  const { data: vehicles, isLoading, isError, error, refetch } = useVehicles();
-  const { data: drivers } = useDrivers();
-  const { data: handoverHistory } = useHandoverHistory();
-  const deleteVehicle = useDeleteVehicle();
-  const assignDriver = useAssignDriverToVehicle();
-  const { isManager, user } = useAuth();
-  const { t } = useTranslation();
+  const { data: vehicles, isLoading } = useVehicles();
   const [search, setSearch] = useState('');
-  const [deleteId, setDeleteId] = useState<string | null>(null);
-  const errorMessage = getErrorMessage(error);
-
-  const filteredVehicles = vehicles?.filter(v => 
-    v.plate_number.includes(search) ||
-    v.manufacturer.includes(search) ||
-    v.model.includes(search)
-  );
-
-  const handleAssignDriver = (vehicleId: string, driverId: string | null) => {
-    assignDriver.mutate({
-      vehicleId,
-      driverId,
-      assignedBy: user?.id ?? null,
-    });
-  };
+  const filtered = vehicles?.filter(v => v.plate_number.includes(search) || v.manufacturer.toLowerCase().includes(search.toLowerCase()));
 
   return (
-    <div className="container py-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900">{t('vehicles.title')}</h1>
-          <p className="text-slate-500 mt-1">{t('vehicles.subtitle')}</p>
+    <div className="min-h-screen bg-[#020617] p-4 md:p-8 text-white relative overflow-hidden">
+      <div className="absolute top-[-180px] left-1/2 -translate-x-1/2 w-[120vw] max-w-[800px] h-[120vw] max-h-[800px] bg-cyan-500/10 blur-[150px] pointer-events-none" />
+      <div className="relative z-10 space-y-6 md:space-y-10">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+          <h1 className="text-2xl md:text-4xl font-black neon-title">ניהול צי רכבים</h1>
+          <Link to="/vehicles/add" className="w-full sm:w-auto">
+            <Button className="w-full sm:w-auto bg-cyan-600 hover:bg-cyan-500 font-bold px-4 md:px-8 py-2 md:py-6 text-sm md:text-lg shadow-[0_0_20px_rgba(6,182,212,0.4)]">הוסף רכב</Button>
+          </Link>
         </div>
-        <Link to="/vehicles/add">
-          <Button>
-            <Plus className="h-4 w-4 mr-2" />
-            {t('vehicles.addVehicle')}
-          </Button>
-        </Link>
+        <div className="relative max-w-xl">
+          <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-cyan-500/50" />
+          <Input
+            placeholder="חפש רכב..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-11 md:h-14 bg-white/5 border-white/10 pr-12 text-base md:text-xl focus:border-cyan-500"
+          />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-10">
+          {filtered?.map(v => <VehicleCard key={v.id} vehicle={v} />)}
+        </div>
       </div>
-
-      {/* Search */}
-      <div className="relative max-w-md">
-        <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder={t('vehicles.searchPlaceholder')}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pr-10"
-        />
-      </div>
-
-      {/* Content */}
-      <div>
-        {isLoading ? (
-          <div className="space-y-4">
-            {[1, 2, 3].map(i => <Skeleton key={i} className="h-48" />)}
-          </div>
-        ) : isError ? (
-          <Alert variant="destructive">
-            <AlertTitle>שגיאה בטעינת הרכבים</AlertTitle>
-            <AlertDescription className="space-y-3">
-              <p>{errorMessage}</p>
-              <Button variant="outline" size="sm" onClick={() => refetch()}>
-                נסה שוב
-              </Button>
-            </AlertDescription>
-          </Alert>
-        ) : filteredVehicles?.length === 0 ? (
-          <Card>
-            <CardContent className="py-8 text-center">
-              <Car className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">{t('vehicles.noVehicles')}</p>
-              <Link to="/vehicles/add">
-                <Button className="mt-4">
-                  <Plus className="h-4 w-4 mr-2" />
-                  {t('vehicles.addNewVehicle')}
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-4">
-            {filteredVehicles?.map(vehicle => (
-              <VehicleCard 
-                key={vehicle.id} 
-                vehicle={vehicle} 
-                onDelete={() => setDeleteId(vehicle.id)}
-                canEdit={isManager}
-                drivers={drivers ?? []}
-                onAssignDriver={handleAssignDriver}
-                isAssigning={assignDriver.isPending}
-                handoverHistory={(handoverHistory ?? []).filter((handover) => handover.vehicle_id === vehicle.id)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Delete Dialog */}
-      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('vehicles.deleteTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('vehicles.deleteDescription')}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="gap-2">
-            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (deleteId) {
-                  deleteVehicle.mutate(deleteId);
-                  setDeleteId(null);
-                }
-              }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {t('common.delete')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

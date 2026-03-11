@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useCreateVehicle } from '@/hooks/useVehicles';
+import { useCreateVehicle, useAssignDriverToVehicle } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
+import { useAuth } from '@/hooks/useAuth';
 import { usePricingLookup } from '@/hooks/usePricingData';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,7 +16,9 @@ import { toast } from 'sonner';
 export default function AddVehiclePage() {
   const navigate = useNavigate();
   const createVehicle = useCreateVehicle();
+  const assignDriverToVehicle = useAssignDriverToVehicle();
   const { data: drivers } = useDrivers();
+  const { user } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isActive, setIsActive] = useState(true);
   const [assignedDriverId, setAssignedDriverId] = useState<string>('');
@@ -46,7 +49,7 @@ export default function AddVehiclePage() {
     try {
       const formData = new FormData(e.currentTarget);
       
-      await createVehicle.mutateAsync({
+      const createdVehicle = await createVehicle.mutateAsync({
         plate_number: formData.get('plate_number') as string,
         manufacturer: formData.get('manufacturer') as string,
         model: formData.get('model') as string,
@@ -63,7 +66,7 @@ export default function AddVehiclePage() {
         color: formData.get('color') as string || null,
         ignition_code: formData.get('ignition_code') as string || null,
         is_active: isActive,
-        assigned_driver_id: assignedDriverId || null,
+        assigned_driver_id: null,
         pickup_date: formData.get('pickup_date') as string || null,
         road_ascent_year: formData.get('road_ascent_year') 
           ? parseInt(formData.get('road_ascent_year') as string) 
@@ -92,6 +95,14 @@ export default function AddVehiclePage() {
           : null
       });
 
+      if (assignedDriverId) {
+        await assignDriverToVehicle.mutateAsync({
+          vehicleId: createdVehicle.id,
+          driverId: assignedDriverId,
+          assignedBy: user?.id ?? null,
+        });
+      }
+
       toast.success('הרכב נוסף בהצלחה');
       navigate('/vehicles');
     } catch (error) {
@@ -101,7 +112,7 @@ export default function AddVehiclePage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-[#020617] text-white">
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
           <div className="flex items-center gap-3">
@@ -128,7 +139,7 @@ export default function AddVehiclePage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <Label htmlFor="plate_number">מספר רישוי *</Label>
                   <Input 
@@ -251,7 +262,7 @@ export default function AddVehiclePage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="current_odometer">קילומטראז׳ נוכחי</Label>
                   <Input 
@@ -287,7 +298,7 @@ export default function AddVehiclePage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="road_ascent_year">שנת עלייה לכביש</Label>
                   <Input 
@@ -403,7 +414,7 @@ export default function AddVehiclePage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="manufacturer_code">קוד תוצר *</Label>
                   <Input 
@@ -535,7 +546,7 @@ export default function AddVehiclePage() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="border-2 border-dashed border-border rounded-lg p-4 flex flex-col items-center justify-center text-center cursor-not-allowed opacity-60">
                   <Upload className="h-8 w-8 text-muted-foreground mb-2" />
                   <span className="text-sm font-medium">רישיון רכב</span>

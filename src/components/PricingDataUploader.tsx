@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { useUploadPricingData, useSyncVehiclesFromPricing } from '@/hooks/usePricingData';
+import { useUploadPricingData, useSyncVehiclesFromPricing, usePricingRowCount } from '@/hooks/usePricingData';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -169,6 +169,7 @@ export default function PricingDataUploader() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadMutation = useUploadPricingData();
   const syncMutation = useSyncVehiclesFromPricing();
+  const { data: pricingRowCount, refetch: refetchCount } = usePricingRowCount();
   const [parsedRows, setParsedRows] = useState<ParsedRow[]>([]);
   const [fileName, setFileName] = useState<string>('');
   const [error, setError] = useState<string>('');
@@ -286,6 +287,7 @@ export default function PricingDataUploader() {
       
       // Save last upload timestamp
       localStorage.setItem('last_pricing_upload', new Date().toISOString());
+      refetchCount();
       
       setTimeout(() => {
         setParsedRows([]);
@@ -304,7 +306,14 @@ export default function PricingDataUploader() {
   const handleSync = async () => {
     try {
       const result = await syncMutation.mutateAsync();
-      toast.success(`עודכנו ${result.updated} רכבים מתוך ${result.total} רכבים עם קוד תוצר/דגם`);
+      if (result.notFound > 0) {
+        toast.warning(
+          `סונכרנו ${result.updated} רכבים בהצלחה. ${result.notFound} רכבים לא נמצאו במחירון:\n${result.notFoundNames.join('\n')}`,
+          { duration: 10000 }
+        );
+      } else {
+        toast.success(`סונכרנו ${result.updated} רכבים מתוך ${result.total} רכבים עם קוד תוצר/דגם`);
+      }
     } catch { /* handled by mutation */ }
   };
 
@@ -421,10 +430,24 @@ export default function PricingDataUploader() {
         )}
 
         {/* Sync Button - always visible */}
-        <div className="border-t pt-4">
+        <div className="border-t pt-4 space-y-3">
+          {/* Live pricing table status */}
+          {pricingRowCount === 0 ? (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+              <span className="text-base leading-none mt-0.5">⚠️</span>
+              <span>
+                <strong>טבלת המחירון ריקה</strong> — יש להעלות תחילה קובץ Excel של משרד התחבורה כדי שהסנכרון יפעל.
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="h-2 w-2 rounded-full bg-green-500 inline-block" />
+              טבלת מחירון פעילה — {pricingRowCount?.toLocaleString('he-IL')} רשומות טעונות
+            </div>
+          )}
           <Button
             onClick={handleSync}
-            disabled={syncMutation.isPending}
+            disabled={syncMutation.isPending || pricingRowCount === 0}
             variant="secondary"
             className="w-full"
           >
@@ -435,7 +458,7 @@ export default function PricingDataUploader() {
             )}
             סנכרן כרטיסי רכב
           </Button>
-          <p className="text-xs text-muted-foreground mt-2">
+          <p className="text-xs text-muted-foreground">
             מעדכן את כרטיסי הרכב לפי התאמת קוד תוצר + קוד דגם + שנת רישום מול נתוני המחירון.
           </p>
         </div>

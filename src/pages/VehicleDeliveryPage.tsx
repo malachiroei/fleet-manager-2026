@@ -1,27 +1,34 @@
-import { useState, useRef } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { useVehicles } from '@/hooks/useVehicles';
+import { useEffect, useState, useRef, type FormEvent } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useVehicles, fetchActiveDriverAssignments } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
 import {
   useCreateHandover,
   uploadHandoverPhoto,
   uploadSignature,
   archiveHandoverSubmission,
-  sendHandoverNotificationEmail,
   type AssignmentMode,
 } from '@/hooks/useHandovers';
 import { useAuth } from '@/hooks/useAuth';
+import { useOrgDocuments } from '@/hooks/useOrgDocuments';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import SignaturePad, { SignaturePadRef } from '@/components/SignaturePad';
 import FuelLevelSelector from '@/components/FuelLevelSelector';
 import PhotoUpload from '@/components/PhotoUpload';
-import { ArrowRight, Loader2, Truck, Camera } from 'lucide-react';
+import VehicleDamage3DSelector from '@/components/VehicleDamage3DSelector';
+import { ArrowRight, ArrowLeft, Loader2, Truck, Camera } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  cloneEmptyDamageReport,
+  hasAnyDamage,
+  summarizeDamageReport,
+} from '@/lib/vehicleDamage';
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -36,20 +43,28 @@ function getErrorMessage(error: unknown) {
 
 export default function VehicleDeliveryPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { data: vehicles } = useVehicles();
   const { data: drivers } = useDrivers();
+  const { data: orgDocuments } = useOrgDocuments();
   const createHandover = useCreateHandover();
   const { user } = useAuth();
   const signatureRef = useRef<SignaturePadRef>(null);
+  const replacementApprovalSignatureRef = useRef<SignaturePadRef>(null);
+  const forcedMode = searchParams.get('mode') === 'replacement' ? 'replacement' : 'permanent';
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState('');
   const [selectedDriver, setSelectedDriver] = useState('');
-  const [assignmentMode, setAssignmentMode] = useState<AssignmentMode>('permanent');
+  const assignmentMode: AssignmentMode = forcedMode;
   const [odometer, setOdometer] = useState('');
   const [fuelLevel, setFuelLevel] = useState(4);
   const [notes, setNotes] = useState('');
   const [hasSignature, setHasSignature] = useState(false);
+  const [replacementApprovalChecked, setReplacementApprovalChecked] = useState(false);
+  const [hasReplacementApprovalSignature, setHasReplacementApprovalSignature] = useState(false);
+  const [damageReport, setDamageReport] = useState(cloneEmptyDamageReport());
+  const [selectedDeliveryFormIds, setSelectedDeliveryFormIds] = useState<string[]>([]);
   
   // Photo states
   const [photoFront, setPhotoFront] = useState<File | null>(null);
@@ -59,18 +74,38 @@ export default function VehicleDeliveryPage() {
 
   const selectedVehicleData = vehicles?.find(v => v.id === selectedVehicle);
   const selectedDriverData = drivers?.find(d => d.id === selectedDriver);
-  const allPhotosUploaded = photoFront && photoBack && photoRight && photoLeft;
+  const futuristicCardClass = 'rounded-2xl border border-cyan-400/25 bg-gradient-to-b from-[#0d233b] to-[#08182d] shadow-[0_12px_32px_rgba(0,0,0,0.38)]';
+  const fieldClass = 'h-11 rounded-xl border-cyan-300/25 bg-[#061325]/80 text-white placeholder:text-cyan-100/45 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.08)] focus-visible:ring-cyan-300/45';
+  const labelClass = 'mb-1.5 block text-xs font-semibold tracking-wide text-cyan-100/80';
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const availableDeliveryForms = (orgDocuments ?? []).filter((doc) => doc.is_active);
+
+  useEffect(() => {
+    if (availableDeliveryForms.length === 0) return;
+    setSelectedDeliveryFormIds((current) => {
+      if (current.length > 0) {
+        const existing = new Set(availableDeliveryForms.map((doc) => doc.id));
+        return current.filter((id) => existing.has(id));
+      }
+      const defaults = availableDeliveryForms
+        .filter((doc) => Boolean(doc.include_in_delivery))
+        .map((doc) => doc.id);
+      return defaults.length > 0 ? defaults : availableDeliveryForms.map((doc) => doc.id);
+    });
+  }, [availableDeliveryForms]);
+
+  const toggleDeliveryForm = (formId: string, checked: boolean) => {
+    setSelectedDeliveryFormIds((current) => {
+      if (checked) return Array.from(new Set([...current, formId]));
+      return current.filter((id) => id !== formId);
+    });
+  };
+
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     
     if (!selectedVehicle || !selectedDriver) {
       toast.error('נא לבחור רכב ונהג');
-      return;
-    }
-
-    if (!allPhotosUploaded) {
-      toast.error('נא לצלם את הרכב מכל 4 הזוויות');
       return;
     }
 
@@ -79,16 +114,44 @@ export default function VehicleDeliveryPage() {
       return;
     }
 
+    if (assignmentMode === 'replacement') {
+      if (!replacementApprovalChecked) {
+        toast.error('נא לאשר את הצהרת מסירת הרכב החליפי');
+        return;
+      }
+
+      if (replacementApprovalSignatureRef.current?.isEmpty()) {
+        toast.error('נא לחתום על טופס האישור לרכב חליפי');
+        return;
+      }
+    }
+
+    const existingActiveAssignments = await fetchActiveDriverAssignments(selectedDriver, selectedVehicle);
+    if (existingActiveAssignments.length > 0) {
+      const approved = window.confirm('שים לב, לנהג זה כבר משויך רכב. האם ברצונך להחליף את הרכב הקיים?');
+      if (!approved) {
+        return;
+      }
+    }
+
     setIsSubmitting(true);
+    const damageSummary = summarizeDamageReport(damageReport);
+    const mergedNotes = [
+      notes.trim() || null,
+      hasAnyDamage(damageReport) ? `דיווח נזק: ${damageSummary}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n');
 
     try {
       // Upload photos
-      const photoResults = await Promise.allSettled([
-        uploadHandoverPhoto(photoFront, selectedVehicle, 'front'),
-        uploadHandoverPhoto(photoBack, selectedVehicle, 'back'),
-        uploadHandoverPhoto(photoRight, selectedVehicle, 'right'),
-        uploadHandoverPhoto(photoLeft, selectedVehicle, 'left'),
-      ]);
+      const optionalUploads = [
+        photoFront ? uploadHandoverPhoto(photoFront, selectedVehicle, 'front') : Promise.resolve(null),
+        photoBack ? uploadHandoverPhoto(photoBack, selectedVehicle, 'back') : Promise.resolve(null),
+        photoRight ? uploadHandoverPhoto(photoRight, selectedVehicle, 'right') : Promise.resolve(null),
+        photoLeft ? uploadHandoverPhoto(photoLeft, selectedVehicle, 'left') : Promise.resolve(null),
+      ];
+      const photoResults = await Promise.allSettled(optionalUploads);
 
       const frontUrl = photoResults[0].status === 'fulfilled' ? photoResults[0].value : null;
       const backUrl = photoResults[1].status === 'fulfilled' ? photoResults[1].value : null;
@@ -125,7 +188,7 @@ export default function VehicleDeliveryPage() {
         photo_right_url: rightUrl,
         photo_left_url: leftUrl,
         signature_url: signatureUrl,
-        notes: notes || null,
+        notes: mergedNotes || null,
         created_by: user?.id || null,
       });
 
@@ -141,7 +204,8 @@ export default function VehicleDeliveryPage() {
           driverLabel: selectedDriverData?.full_name ?? 'לא ידוע',
           odometerReading: parseInt(odometer),
           fuelLevel,
-          notes: notes || null,
+          notes: mergedNotes || null,
+          damageReport,
           photoUrls: {
             front: frontUrl,
             back: backUrl,
@@ -168,26 +232,21 @@ export default function VehicleDeliveryPage() {
         return;
       }
 
-      try {
-        await sendHandoverNotificationEmail({
-          handoverId: handover.id,
-          vehicleId: selectedVehicle,
-          handoverType: 'delivery',
-          assignmentMode,
-          vehicleLabel: `${selectedVehicleData?.manufacturer ?? ''} ${selectedVehicleData?.model ?? ''} (${selectedVehicleData?.plate_number ?? ''})`.trim(),
-          driverLabel: selectedDriverData?.full_name ?? 'לא ידוע',
-          odometerReading: parseInt(odometer),
-          fuelLevel,
-          notes: notes || null,
-          reportUrl,
-        });
-      } catch (emailError) {
-        console.error('Email notification error:', emailError);
-        toast.warning('הטופס נשמר, אך שליחת המייל נכשלה');
-      }
+      toast.success(assignmentMode === 'replacement' ? 'מסירת רכב חליפי נרשמה בהצלחה' : 'מסירת רכב נרשמה בהצלחה');
 
-      toast.success('מסירת רכב נרשמה בהצלחה');
-      navigate('/');
+      // Always continue to the wizard. Final email/send is executed only at
+      // the wizard completion step ("סיים וחתום").
+      const wizardUrl =
+        `/handover/wizard?vehicleId=${selectedVehicle}&driverId=${selectedDriver}` +
+        `&handoverId=${encodeURIComponent(handover.id)}` +
+        `&reportUrl=${encodeURIComponent(reportUrl)}` +
+        `&mode=${assignmentMode}` +
+        `&odometer=${encodeURIComponent(odometer)}` +
+        `&fuelLevel=${encodeURIComponent(String(fuelLevel))}` +
+        `&damageNotes=${encodeURIComponent(hasAnyDamage(damageReport) ? damageSummary : '')}` +
+        `&selectedForms=${encodeURIComponent(selectedDeliveryFormIds.join(','))}`;
+
+      window.location.assign(wizardUrl);
     } catch (error) {
       console.error('Error creating handover:', error);
       toast.error(`שגיאה ברישום מסירת הרכב: ${getErrorMessage(error)}`);
@@ -197,16 +256,31 @@ export default function VehicleDeliveryPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-[#020617] text-white">
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
           <div className="flex items-center gap-3">
-            <Link to="/">
-              <Button variant="ghost" size="icon">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                if (window.history.length > 1) {
+                  window.history.back();
+                  return;
+                }
+                window.location.assign('/');
+              }}
+              aria-label="חזרה"
+            >
                 <ArrowRight className="h-5 w-5" />
+            </Button>
+            <h1 className="font-bold text-xl">מסירת רכב קבוע</h1>
+            <div className="mr-auto">
+              <Button type="button" variant="outline" size="sm" onClick={() => window.location.assign('/')}>
+                יציאה
               </Button>
-            </Link>
-            <h1 className="font-bold text-xl">מסירת רכב</h1>
+            </div>
           </div>
         </div>
       </header>
@@ -214,7 +288,7 @@ export default function VehicleDeliveryPage() {
       <main className="container py-6 pb-24">
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Vehicle & Driver Selection */}
-          <Card>
+          <Card className={futuristicCardClass}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Truck className="h-5 w-5 text-primary" />
@@ -223,9 +297,9 @@ export default function VehicleDeliveryPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <Label>בחר רכב *</Label>
+                <Label className={labelClass}>בחר רכב *</Label>
                 <Select value={selectedVehicle} onValueChange={setSelectedVehicle}>
-                  <SelectTrigger>
+                  <SelectTrigger className={fieldClass}>
                     <SelectValue placeholder="בחר רכב מהרשימה" />
                   </SelectTrigger>
                   <SelectContent className="z-[100000] max-h-72 bg-card border border-border shadow-xl">
@@ -239,22 +313,9 @@ export default function VehicleDeliveryPage() {
               </div>
 
               <div>
-                <Label>סוג מסירה *</Label>
-                <Select value={assignmentMode} onValueChange={(value) => setAssignmentMode(value as AssignmentMode)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="בחר סוג מסירה" />
-                  </SelectTrigger>
-                  <SelectContent className="z-[100000] bg-card border border-border shadow-xl">
-                    <SelectItem value="permanent">מסירה קבועה (משייכת נהג לרכב)</SelectItem>
-                    <SelectItem value="replacement">מסירת רכב חליפי (ללא שיוך קבוע)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Label>בחר נהג *</Label>
+                <Label className={labelClass}>בחר נהג *</Label>
                 <Select value={selectedDriver} onValueChange={setSelectedDriver}>
-                  <SelectTrigger>
+                  <SelectTrigger className={fieldClass}>
                     <SelectValue placeholder="בחר נהג מהרשימה" />
                   </SelectTrigger>
                   <SelectContent className="z-[100000] max-h-72 bg-card border border-border shadow-xl">
@@ -267,9 +328,9 @@ export default function VehicleDeliveryPage() {
                 </Select>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="odometer">קילומטראז׳ *</Label>
+                  <Label htmlFor="odometer" className={labelClass}>קילומטראז׳ *</Label>
                   <Input
                     id="odometer"
                     type="number"
@@ -279,6 +340,7 @@ export default function VehicleDeliveryPage() {
                     placeholder={selectedVehicleData ? `מינימום: ${selectedVehicleData.current_odometer}` : 'קריאת מונה'}
                     required
                     dir="ltr"
+                    className={fieldClass}
                   />
                 </div>
               </div>
@@ -287,8 +349,39 @@ export default function VehicleDeliveryPage() {
             </CardContent>
           </Card>
 
+          <Card className={futuristicCardClass}>
+            <CardHeader>
+              <CardTitle className="text-lg">בחירת טפסים למסירה זו</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {availableDeliveryForms.length === 0 ? (
+                <p className="text-sm text-cyan-100/70">לא נמצאו טפסים שסומנו להצגה במסירה במרכז הטפסים.</p>
+              ) : (
+                availableDeliveryForms.map((form) => (
+                  <label key={form.id} className="flex items-center gap-2 rounded-lg border border-cyan-300/20 bg-[#061325]/50 px-3 py-2 text-sm text-cyan-50/95">
+                    <Checkbox
+                      checked={selectedDeliveryFormIds.includes(form.id)}
+                      onCheckedChange={(checked) => toggleDeliveryForm(form.id, checked === true)}
+                    />
+                    <span>{form.title}</span>
+                  </label>
+                ))
+              )}
+              <p className="text-xs text-cyan-100/65">ניתן לשנות שוב את הבחירה גם בתוך אשף המסירה.</p>
+            </CardContent>
+          </Card>
+
+          <Card className={futuristicCardClass}>
+            <CardHeader>
+              <CardTitle className="text-lg">סימון נזקים לפי צד ברכב</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <VehicleDamage3DSelector value={damageReport} onChange={setDamageReport} />
+            </CardContent>
+          </Card>
+
           {/* Photos */}
-          <Card>
+          <Card className={futuristicCardClass}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Camera className="h-5 w-5 text-primary" />
@@ -296,33 +389,17 @@ export default function VehicleDeliveryPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 gap-4">
-                <PhotoUpload
-                  label="חזית"
-                  onPhotoCapture={setPhotoFront}
-                  required
-                />
-                <PhotoUpload
-                  label="אחור"
-                  onPhotoCapture={setPhotoBack}
-                  required
-                />
-                <PhotoUpload
-                  label="צד ימין"
-                  onPhotoCapture={setPhotoRight}
-                  required
-                />
-                <PhotoUpload
-                  label="צד שמאל"
-                  onPhotoCapture={setPhotoLeft}
-                  required
-                />
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="חזית" onPhotoCapture={setPhotoFront} /></div>
+                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="אחור" onPhotoCapture={setPhotoBack} /></div>
+                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="צד ימין" onPhotoCapture={setPhotoRight} /></div>
+                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="צד שמאל" onPhotoCapture={setPhotoLeft} /></div>
               </div>
             </CardContent>
           </Card>
 
           {/* Signature */}
-          <Card>
+          <Card className={futuristicCardClass}>
             <CardHeader>
               <CardTitle className="text-lg">חתימת הנהג</CardTitle>
             </CardHeader>
@@ -331,31 +408,66 @@ export default function VehicleDeliveryPage() {
             </CardContent>
           </Card>
 
+          {assignmentMode === 'replacement' && (
+            <Card className={futuristicCardClass}>
+              <CardHeader>
+                <CardTitle className="text-lg">אישור עובד למסירת רכב חליפי</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="rounded-xl border border-cyan-300/25 bg-[#061325]/75 p-4 text-sm text-cyan-50/95">
+                  <p className="mb-2 font-semibold">הצהרת עובד/ת:</p>
+                  <p>אני מאשר/ת שקיבלתי רכב חליפי תקין, קיבלתי הסבר על השימוש ברכב, ואני מתחייב/ת להחזירו בהתאם לנהלי החברה.</p>
+                </div>
+
+                <label className="flex items-center gap-2 rounded-lg border border-cyan-300/20 bg-[#061325]/50 px-3 py-2 text-sm text-cyan-50/95">
+                  <Checkbox
+                    checked={replacementApprovalChecked}
+                    onCheckedChange={(checked) => setReplacementApprovalChecked(checked === true)}
+                  />
+                  <span>קראתי ואני מאשר/ת את ההצהרה</span>
+                </label>
+
+                <div>
+                  <Label className={labelClass}>חתימת העובד על אישור נפרד</Label>
+                  <SignaturePad ref={replacementApprovalSignatureRef} onSign={setHasReplacementApprovalSignature} />
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Notes */}
-          <Card>
+          <Card className={futuristicCardClass}>
             <CardContent className="pt-6">
-              <Label htmlFor="notes">הערות</Label>
+              <Label htmlFor="notes" className={labelClass}>הערות</Label>
               <Textarea
                 id="notes"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="הערות נוספות לגבי מצב הרכב..."
                 rows={3}
+                className="rounded-xl border-cyan-300/25 bg-[#061325]/80 text-white placeholder:text-cyan-100/45 focus-visible:ring-cyan-300/45"
               />
             </CardContent>
           </Card>
 
           {/* Submit */}
-          <div className="fixed bottom-12 left-0 right-0 p-4 bg-background border-t border-border">
-            <div className="container">
+          <div className="fixed bottom-12 left-0 right-0 p-4">
+            <div className="container flex justify-center">
               <Button 
                 type="submit" 
-                className="w-full" 
+                className="gap-2 min-w-[280px] rounded-2xl bg-cyan-500 px-8 py-6 text-base font-bold text-[#020617] shadow-[0_14px_28px_rgba(14,165,233,0.34)] hover:bg-cyan-400" 
                 size="lg"
-                disabled={isSubmitting || !selectedVehicle || !selectedDriver || !allPhotosUploaded || !hasSignature}
+                disabled={
+                  isSubmitting ||
+                  !selectedVehicle ||
+                  !selectedDriver ||
+                  !hasSignature ||
+                  (assignmentMode === 'replacement' && (!replacementApprovalChecked || !hasReplacementApprovalSignature))
+                }
               >
                 {isSubmitting && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
-                אשר מסירת רכב
+                המשך לחתימה על טפסים
+                <ArrowLeft className="h-4 w-4" />
               </Button>
             </div>
           </div>

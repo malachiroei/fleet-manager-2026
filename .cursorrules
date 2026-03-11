@@ -1,0 +1,5 @@
+- Always prioritize editing ONLY the relevant file.
+- Do not re-read the entire codebase unless explicitly asked.
+- Use `inline` edits (Ctrl+K) for small changes.
+- Focus on `@VehicleHandoverWizard.tsx` for all UI logic.
+- Keep the Footer (Test/Production) visible and fixed.

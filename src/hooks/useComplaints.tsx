@@ -27,6 +27,7 @@ export interface Complaint {
 export function useComplaints() {
   return useQuery({
     queryKey: ['procedure6_complaints'],
+    staleTime: 1000 * 60 * 5,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('procedure6_complaints')

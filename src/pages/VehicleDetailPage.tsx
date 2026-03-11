@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { useVehicle, useUpdateVehicle } from '@/hooks/useVehicles';
+import { useParams, Link, useLocation } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { useVehicle, useUpdateVehicle, useActiveDriverVehicleAssignments } from '@/hooks/useVehicles';
 import { useDriver } from '@/hooks/useDrivers';
 import { useHandovers } from '@/hooks/useHandovers';
 import { usePricingLookup, useSyncVehicleFromPricing } from '@/hooks/usePricingData';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -23,9 +26,15 @@ import {
   Camera,
   RefreshCw,
   Loader2,
-  Zap
+  Zap,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
 } from 'lucide-react';
 import type { ComplianceStatus } from '@/types/fleet';
+import { VehicleFolders } from '@/components/VehicleFolders';
+import VehicleDamageSnapshot from '@/components/VehicleDamageSnapshot';
+import { parseDamageSummaryLine } from '@/lib/vehicleDamage';
 
 function StatusBadge({ status, daysLeft }: { status: ComplianceStatus; daysLeft?: number }) {
   const config = {
@@ -55,14 +64,122 @@ function calculateStatus(expiryDate: string): { status: ComplianceStatus; daysLe
   return { status, daysLeft };
 }
 
+function HandoverHistoryList({ handovers }: { handovers: any[] }) {
+  const [openId, setOpenId] = useState<string | null>(null);
+  return (
+    <div className="space-y-2">
+      {handovers.map((h: any) => {
+        const isOpen = openId === h.id;
+        const date = new Date(h.handover_date);
+        const dateStr = date.toLocaleDateString('he-IL');
+        const timeStr = date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+        const damageSummary = parseDamageSummaryLine(h.notes);
+        return (
+          <div id={`handover-${h.id}`} key={h.id} className="rounded-lg border border-border overflow-hidden">
+            {/* Compact row */}
+            <button
+              onClick={() => setOpenId(isOpen ? null : h.id)}
+              className="w-full flex items-center justify-between px-4 py-2.5 bg-muted/30 hover:bg-muted/60 transition-colors text-sm"
+            >
+              <div className="flex items-center gap-3">
+                <Badge variant={h.handover_type === 'delivery' ? 'default' : 'secondary'} className="text-xs">
+                  {h.handover_type === 'delivery' ? 'מסירה' : 'החזרה'}
+                </Badge>
+                <span className="font-medium">{dateStr}</span>
+                <span className="text-muted-foreground">{timeStr}</span>
+              </div>
+              {isOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+            </button>
+            {/* Expanded details */}
+            {isOpen && (
+              <div className="px-4 py-3 space-y-3 border-t border-border bg-background">
+                {h.driver && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <User className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span>{h.driver.full_name}</span>
+                  </div>
+                )}
+                <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <Gauge className="h-3.5 w-3.5" />
+                    {h.odometer_reading.toLocaleString()} ק&quot;מ
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Fuel className="h-3.5 w-3.5" />
+                    {h.fuel_level}/8
+                  </span>
+                </div>
+                {(h.photo_front_url || h.photo_back_url || h.photo_right_url || h.photo_left_url) && (
+                  <div className="grid grid-cols-4 gap-2">
+                    {[h.photo_front_url, h.photo_back_url, h.photo_right_url, h.photo_left_url].filter(Boolean).map((url: string, i: number) => (
+                      <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                        <img src={url} alt={`תמונה ${i + 1}`} className="rounded border border-border aspect-square object-cover w-full" />
+                      </a>
+                    ))}
+                  </div>
+                )}
+                {h.signature_url && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">חתימה:</p>
+                    <img src={h.signature_url} alt="חתימה" className="h-10 bg-white rounded border border-border px-2" />
+                  </div>
+                )}
+                {h.notes && <p className="text-sm text-muted-foreground">{h.notes}</p>}
+                {damageSummary && <VehicleDamageSnapshot summary={damageSummary} />}
+                {h.pdf_url && (
+                  <a
+                    href={h.pdf_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    צפה בטופס PDF
+                    <ExternalLink className="h-3 w-3 opacity-60" />
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function VehicleDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
   const { data: vehicle, isLoading } = useVehicle(id || '');
-  const { data: assignedDriver } = useDriver(vehicle?.assigned_driver_id || '');
+  const { data: activeAssignments } = useActiveDriverVehicleAssignments();
+  const currentAssignedDriverId = (activeAssignments ?? []).find((assignment) => assignment.vehicle_id === vehicle?.id)?.driver_id ?? '';
+  const { data: assignedDriver } = useDriver(currentAssignedDriverId || '');
   const { data: handovers } = useHandovers(id);
   const updateVehicle = useUpdateVehicle();
   const syncFromPricing = useSyncVehicleFromPricing();
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isUploadingDocument, setIsUploadingDocument] = useState(false);
+  const section = location.hash.replace('#', '');
+  const isOverviewSection = section === 'overview';
+  const isTaxSection = section === 'tax-data';
+  const isHandoverSection = section === 'handover-history';
+  const isDocumentsSection = section === 'vehicle-documents';
+  const isFoldersSection    = section === 'vehicle-folders';
+
+  const { data: vehicleDocuments = [], refetch: refetchVehicleDocuments } = useQuery({
+    queryKey: ['vehicle-documents', vehicle?.id],
+    enabled: !!vehicle?.id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('vehicle_documents' as any)
+        .select('id, title, file_url, created_at')
+        .eq('vehicle_id', vehicle!.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      return (data ?? []) as Array<{ id: string; title: string; file_url: string; created_at: string }>;
+    },
+  });
   const { data: pricingLookup } = usePricingLookup(
     vehicle?.manufacturer_code || null,
     vehicle?.model_code || null,
@@ -81,7 +198,7 @@ export default function VehicleDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-[#020617] text-white">
         <header className="bg-card border-b border-border sticky top-0 z-10">
           <div className="container py-4">
             <div className="flex items-center gap-3">
@@ -104,7 +221,7 @@ export default function VehicleDetailPage() {
 
   if (!vehicle) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-[#020617] text-white">
         <header className="bg-card border-b border-border sticky top-0 z-10">
           <div className="container py-4">
             <div className="flex items-center gap-3">
@@ -119,7 +236,7 @@ export default function VehicleDetailPage() {
         </header>
         <main className="container py-6">
           <Card>
-            <CardContent className="p-8 text-center">
+            <CardContent className="p-4 sm:p-8 text-center">
               <Car className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
               <p className="text-muted-foreground">הרכב המבוקש לא נמצא במערכת</p>
               <Link to="/vehicles">
@@ -137,6 +254,39 @@ export default function VehicleDetailPage() {
   const taxValuePrice = vehicle.tax_value_price ?? pricingLookup?.usage_value ?? null;
   const taxValueYear = vehicle.tax_year ?? pricingLookup?.usage_year ?? null;
   const adjustedPrice = vehicle.adjusted_price ?? pricingLookup?.adjusted_price ?? null;
+
+  const handleDocumentUpload = async (file: File | null) => {
+    if (!file || !vehicle) return;
+
+    setIsUploadingDocument(true);
+    try {
+      const fileName = `vehicle-files/${vehicle.id}/${Date.now()}_${file.name}`;
+      const { error: uploadError } = await supabase.storage
+        .from('vehicle-documents')
+        .upload(fileName, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage
+        .from('vehicle-documents')
+        .getPublicUrl(fileName);
+
+      const { error: insertError } = await supabase
+        .from('vehicle_documents' as any)
+        .insert({
+          vehicle_id: vehicle.id,
+          title: file.name,
+          file_url: data.publicUrl,
+          document_type: 'manual',
+        });
+
+      if (insertError) throw insertError;
+
+      await refetchVehicleDocuments();
+    } finally {
+      setIsUploadingDocument(false);
+    }
+  };
 
   const handleSyncFromPricing = async () => {
     if (!vehicle.manufacturer_code || !vehicle.model_code || !vehicle.year) {
@@ -178,7 +328,7 @@ export default function VehicleDetailPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-[#020617] text-white">
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
           <div className="flex items-center justify-between">
@@ -200,9 +350,39 @@ export default function VehicleDetailPage() {
         </div>
       </header>
 
+      {/* Tab navigation */}
+      <div className="sticky top-[65px] z-10 bg-card border-b border-border">
+        <div className="container">
+          <nav className="flex gap-1 overflow-x-auto" aria-label="סעיפי רכב">
+            {[
+              { label: 'סקירה', hash: '' },
+              { label: 'נתוני מס', hash: '#tax-data' },
+              { label: 'מסירות', hash: '#handover-history' },
+              { label: 'תיקייות ניהול', hash: '#vehicle-folders' },
+              { label: 'מסמכים', hash: '#vehicle-documents' },
+            ].map(({ label, hash }) => {
+              const active = hash === '' ? (!section || section === 'overview') : section === hash.slice(1);
+              return (
+                <Link
+                  key={hash}
+                  to={`/vehicles/${vehicle.id}${hash}`}
+                  className={`whitespace-nowrap px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                    active
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
+                  }`}
+                >
+                  {label}
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
+      </div>
+
       <main className="container py-6 space-y-4">
         {/* Basic Info */}
-        <Card>
+        {!isHandoverSection && !isTaxSection && !isDocumentsSection && <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
@@ -212,7 +392,7 @@ export default function VehicleDetailPage() {
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <p className="text-sm text-muted-foreground">יצרן</p>
                 <p className="font-medium">{vehicle.manufacturer}</p>
@@ -243,19 +423,20 @@ export default function VehicleDetailPage() {
               )}
             </div>
           </CardContent>
-        </Card>
+        </Card>}
 
         {/* Pricing / Tax Data - All 19 columns */}
-        <Card>
+        {isTaxSection && (
+        <Card id="tax-data">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
                   <Zap className="h-5 w-5 text-primary" />
                 </div>
-                <CardTitle>נתוני מחירון</CardTitle>
+                <CardTitle>נתוני מס</CardTitle>
               </div>
-              {vehicle.manufacturer_code && vehicle.model_code && (
+              {vehicle.manufacturer_code && vehicle.model_code ? (
                 <Button
                   variant="outline"
                   size="sm"
@@ -267,13 +448,39 @@ export default function VehicleDetailPage() {
                   ) : (
                     <RefreshCw className="h-4 w-4 ml-1" />
                   )}
-                  סנכרון מהמחירון
+                  סנכרון נתונים
                 </Button>
+              ) : (
+                <Link to={`/vehicles/${vehicle.id}/edit`}>
+                  <Button variant="outline" size="sm" className="border-amber-500/50 text-amber-400 hover:bg-amber-500/10">
+                    <Edit className="h-4 w-4 ml-1" />
+                    הגדר קוד תוצר/דגם
+                  </Button>
+                </Link>
               )}
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-4">
+            {(!vehicle.manufacturer_code || !vehicle.model_code) && (
+              <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
+                <span className="text-amber-400 text-lg leading-none mt-0.5">⚠️</span>
+                <div className="space-y-1">
+                  <p className="font-medium text-amber-300">חסרים קודי יצרן/דגם</p>
+                  <p className="text-amber-400/80">
+                    כדי לסנכרן נתוני מס ושווי שימוש, יש להגדיר{' '}
+                    {!vehicle.manufacturer_code && <strong>קוד תוצר</strong>}
+                    {!vehicle.manufacturer_code && !vehicle.model_code && ' ו'}
+                    {!vehicle.model_code && <strong>קוד דגם</strong>}
+                    {' '}בדף עריכת הרכב.
+                  </p>
+                  <Link to={`/vehicles/${vehicle.id}/edit`} className="inline-flex items-center gap-1 text-amber-300 hover:text-amber-200 underline underline-offset-2 text-xs font-medium">
+                    <Edit className="h-3 w-3" />
+                    פתח עריכת רכב
+                  </Link>
+                </div>
+              </div>
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* A - שנת מס */}
               <div>
                 <p className="text-sm text-muted-foreground">שנת מס</p>
@@ -372,8 +579,10 @@ export default function VehicleDetailPage() {
             </div>
           </CardContent>
         </Card>
+        )}
 
         {/* Odometer */}
+        {(isOverviewSection || !section) && (
         <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
@@ -395,8 +604,10 @@ export default function VehicleDetailPage() {
             )}
           </CardContent>
         </Card>
+        )}
 
         {/* Compliance */}
+        {(isOverviewSection || !section) && (
         <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
@@ -427,9 +638,10 @@ export default function VehicleDetailPage() {
             </div>
           </CardContent>
         </Card>
+        )}
 
         {/* Maintenance */}
-        {(vehicle.next_maintenance_date || vehicle.next_maintenance_km) && (
+        {(isOverviewSection || !section) && (vehicle.next_maintenance_date || vehicle.next_maintenance_km) && (
           <Card>
             <CardHeader>
               <div className="flex items-center gap-3">
@@ -439,7 +651,7 @@ export default function VehicleDetailPage() {
                 <CardTitle>טיפול הבא</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-4">
+            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {vehicle.next_maintenance_date && (
                 <div>
                   <p className="text-sm text-muted-foreground">תאריך</p>
@@ -459,6 +671,7 @@ export default function VehicleDetailPage() {
         )}
 
         {/* Assigned Driver */}
+        {(isOverviewSection || !section) && (
         <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
@@ -486,9 +699,10 @@ export default function VehicleDetailPage() {
             )}
           </CardContent>
         </Card>
+        )}
 
         {/* Ownership Info */}
-        {(vehicle.ownership_type || vehicle.leasing_company_name) && (
+        {(isOverviewSection || !section) && (vehicle.ownership_type || vehicle.leasing_company_name) && (
           <Card>
             <CardHeader>
               <div className="flex items-center gap-3">
@@ -498,7 +712,7 @@ export default function VehicleDetailPage() {
                 <CardTitle>בעלות</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-4">
+            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {vehicle.ownership_type && (
                 <div>
                   <p className="text-sm text-muted-foreground">סוג בעלות</p>
@@ -516,7 +730,8 @@ export default function VehicleDetailPage() {
         )}
 
         {/* Handover History */}
-        <Card>
+        {isHandoverSection && (
+        <Card id="handover-history">
           <CardHeader>
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
@@ -527,59 +742,58 @@ export default function VehicleDetailPage() {
           </CardHeader>
           <CardContent>
             {handovers && handovers.length > 0 ? (
-              <div className="space-y-3">
-                {handovers.map((h: any) => (
-                  <div id={`handover-${h.id}`} key={h.id} className="p-3 bg-muted/50 rounded-lg space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Badge variant={h.handover_type === 'delivery' ? 'default' : 'secondary'}>
-                        {h.handover_type === 'delivery' ? 'מסירה' : 'החזרה'}
-                      </Badge>
-                      <span className="text-sm text-muted-foreground">
-                        {new Date(h.handover_date).toLocaleDateString('he-IL')}
-                      </span>
-                    </div>
-                    {h.driver && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <User className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span>{h.driver.full_name}</span>
-                      </div>
-                    )}
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Gauge className="h-3.5 w-3.5" />
-                        {h.odometer_reading.toLocaleString()} ק"מ
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Fuel className="h-3.5 w-3.5" />
-                        {h.fuel_level}/8
-                      </span>
-                    </div>
-                    {(h.photo_front_url || h.photo_back_url || h.photo_right_url || h.photo_left_url) && (
-                      <div className="grid grid-cols-4 gap-2 mt-2">
-                        {[h.photo_front_url, h.photo_back_url, h.photo_right_url, h.photo_left_url].filter(Boolean).map((url: string, i: number) => (
-                          <a key={i} href={url} target="_blank" rel="noopener noreferrer">
-                            <img src={url} alt={`תמונה ${i + 1}`} className="rounded border border-border aspect-square object-cover w-full" />
-                          </a>
-                        ))}
-                      </div>
-                    )}
-                    {h.signature_url && (
-                      <div className="mt-1">
-                        <p className="text-xs text-muted-foreground mb-1">חתימה:</p>
-                        <img src={h.signature_url} alt="חתימה" className="h-10 bg-white rounded border border-border px-2" />
-                      </div>
-                    )}
-                    {h.notes && (
-                      <p className="text-sm text-muted-foreground">{h.notes}</p>
-                    )}
-                  </div>
-                ))}
-              </div>
+              <HandoverHistoryList handovers={handovers} />
             ) : (
               <p className="text-muted-foreground">אין היסטוריית מסירות</p>
             )}
           </CardContent>
         </Card>
+        )}
+
+        {/* Vehicle Folders */}
+        {isFoldersSection && <VehicleFolders vehicle={vehicle} />}
+
+        {/* Vehicle Documents */}
+        {isDocumentsSection && (
+          <Card id="vehicle-documents">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                  <FileText className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <CardTitle>מסמכים</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center gap-3">
+                <Input
+                  type="file"
+                  onChange={(event) => handleDocumentUpload(event.target.files?.[0] ?? null)}
+                  disabled={isUploadingDocument}
+                />
+                {isUploadingDocument && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+              </div>
+              {vehicleDocuments.length === 0 ? (
+                <p className="text-sm text-muted-foreground">אין מסמכים לרכב זה</p>
+              ) : (
+                <div className="space-y-2">
+                  {vehicleDocuments.map((doc) => (
+                    <a
+                      key={doc.id}
+                      href={doc.file_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-between rounded-md border border-border p-2 text-foreground hover:bg-muted"
+                    >
+                      <span>{doc.title}</span>
+                      <span className="text-xs text-muted-foreground">{new Date(doc.created_at).toLocaleDateString('he-IL')}</span>
+                    </a>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </main>
     </div>
   );

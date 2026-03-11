@@ -57,6 +57,7 @@ export interface Vehicle {
   chassis_number: string | null;
   average_fuel_consumption: number | null;
   monthly_total_cost: number | null;
+  purchase_date: string | null;
   sale_date: string | null;
   group_name: string | null;
   internal_number: string | null;
@@ -81,6 +82,13 @@ export interface Vehicle {
   weight: number | null;
   list_price: number | null;
   effective_date: string | null;
+  // Maintenance folder fields
+  last_service_date: string | null;
+  last_service_km: number | null;
+  last_tire_change_date: string | null;
+  next_tire_change_date: string | null;
+  last_inspection_date: string | null;
+  next_inspection_date: string | null;
 }
 
 export interface Driver {
@@ -119,6 +127,12 @@ export interface Driver {
   group_name: string | null;
   group_code: string | null;
   documents?: DriverDocument[];
+  // Driver folder fields
+  birth_date: string | null;
+  family_permit_date: string | null;
+  driving_permit: string | null;
+  is_field_person: boolean;
+  practical_driving_test_date: string | null;
 }
 
 export interface DriverSummary {

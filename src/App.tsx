@@ -23,11 +23,17 @@ import AddMaintenancePage from "./pages/AddMaintenancePage";
 import UpdateOdometerPage from "./pages/UpdateOdometerPage";
 import VehicleDeliveryPage from "./pages/VehicleDeliveryPage";
 import VehicleReturnPage from "./pages/VehicleReturnPage";
+import ReplacementVehicleHubPage from "./pages/ReplacementVehicleHubPage";
 import AdminSettingsPage from "./pages/AdminSettingsPage";
+import OrgSettingsPage from "./pages/OrgSettingsPage";
 import NotFound from "./pages/NotFound";
 import ScanReportPage from "./pages/ScanReportPage";
 import ReportsPage from "./pages/ReportsPage";
-
+import FormsPage from "./pages/FormsPage";
+import VehicleHandoverWizard from './pages/VehicleHandoverWizard';
+import TransfersPage from './pages/TransfersPage';
+import { ThemeProvider } from '@/hooks/useTheme';
+import Footer from "@/components/layout/Footer";
 const queryClient = new QueryClient();
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
@@ -83,11 +89,16 @@ function AppRoutes() {
       <Route path="/compliance" element={<ProtectedRoute><CompliancePage /></ProtectedRoute>} />
       <Route path="/procedure6-complaints" element={<ProtectedRoute><Procedure6ComplaintsPage /></ProtectedRoute>} />
       <Route path="/maintenance/add" element={<ProtectedRoute><AddMaintenancePage /></ProtectedRoute>} />
+      <Route path="/vehicles/transfers" element={<ProtectedRoute><TransfersPage /></ProtectedRoute>} />
       <Route path="/handover/delivery" element={<ProtectedRoute><VehicleDeliveryPage /></ProtectedRoute>} />
       <Route path="/handover/return" element={<ProtectedRoute><VehicleReturnPage /></ProtectedRoute>} />
+      <Route path="/handover/replacement" element={<ProtectedRoute><ReplacementVehicleHubPage /></ProtectedRoute>} />
+      <Route path="/handover/wizard" element={<ProtectedRoute><VehicleHandoverWizard /></ProtectedRoute>} />
       <Route path="/admin/settings" element={<ProtectedRoute><AdminSettingsPage /></ProtectedRoute>} />
+      <Route path="/admin/org-settings" element={<ProtectedRoute><OrgSettingsPage /></ProtectedRoute>} />
       <Route path="/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
       <Route path="/reports/scan" element={<ProtectedRoute><ScanReportPage /></ProtectedRoute>} />
+      <Route path="/forms" element={<ProtectedRoute><FormsPage /></ProtectedRoute>} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
@@ -95,31 +106,24 @@ function AppRoutes() {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
+    <ThemeProvider>
     <TooltipProvider>
       <Toaster />
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
           <AppErrorBoundary>
-            <AppRoutes />
+            <div className="flex min-h-screen flex-col">
+              <div className="flex-1">
+                <AppRoutes />
+              </div>
+              <Footer />
+            </div>
           </AppErrorBoundary>
-          
-          {/* האינדיקטור לגרסת הטסט - מוצג רק בדומיין טסט או localhost */}
-          {(window.location.hostname === 'manager-2026-test.vercel.app' || window.location.hostname === 'localhost') && (
-            <div className="fixed bottom-0 left-0 right-0 bg-red-600 text-white text-center py-2 text-sm font-bold z-[99999] shadow-[0_-2px_10px_rgba(0,0,0,0.3)] tracking-widest">
-              גרסה זו היא גרסת טסט (TEST-BRANCH) - נא לא להסתמך על הנתונים
-            </div>
-          )}
-
-          {/* אינדיקטור לגרסת מקור (Production) - דק בתחתית המסך */}
-          {window.location.hostname !== 'manager-2026-test.vercel.app' && window.location.hostname !== 'localhost' && (
-            <div className="fixed bottom-0 left-0 right-0 bg-green-600 text-white text-center py-0.5 text-xs font-semibold z-[99999]">
-              גרסת מקור
-            </div>
-          )}
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 
