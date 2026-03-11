@@ -74,7 +74,6 @@ export default function VehicleDeliveryPage() {
 
   const selectedVehicleData = vehicles?.find(v => v.id === selectedVehicle);
   const selectedDriverData = drivers?.find(d => d.id === selectedDriver);
-  const allPhotosUploaded = photoFront && photoBack && photoRight && photoLeft;
   const futuristicCardClass = 'rounded-2xl border border-cyan-400/25 bg-gradient-to-b from-[#0d233b] to-[#08182d] shadow-[0_12px_32px_rgba(0,0,0,0.38)]';
   const fieldClass = 'h-11 rounded-xl border-cyan-300/25 bg-[#061325]/80 text-white placeholder:text-cyan-100/45 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.08)] focus-visible:ring-cyan-300/45';
   const labelClass = 'mb-1.5 block text-xs font-semibold tracking-wide text-cyan-100/80';
@@ -107,11 +106,6 @@ export default function VehicleDeliveryPage() {
     
     if (!selectedVehicle || !selectedDriver) {
       toast.error('נא לבחור רכב ונהג');
-      return;
-    }
-
-    if (!allPhotosUploaded) {
-      toast.error('נא לצלם את הרכב מכל 4 הזוויות');
       return;
     }
 
@@ -151,12 +145,13 @@ export default function VehicleDeliveryPage() {
 
     try {
       // Upload photos
-      const photoResults = await Promise.allSettled([
-        uploadHandoverPhoto(photoFront, selectedVehicle, 'front'),
-        uploadHandoverPhoto(photoBack, selectedVehicle, 'back'),
-        uploadHandoverPhoto(photoRight, selectedVehicle, 'right'),
-        uploadHandoverPhoto(photoLeft, selectedVehicle, 'left'),
-      ]);
+      const optionalUploads = [
+        photoFront ? uploadHandoverPhoto(photoFront, selectedVehicle, 'front') : Promise.resolve(null),
+        photoBack ? uploadHandoverPhoto(photoBack, selectedVehicle, 'back') : Promise.resolve(null),
+        photoRight ? uploadHandoverPhoto(photoRight, selectedVehicle, 'right') : Promise.resolve(null),
+        photoLeft ? uploadHandoverPhoto(photoLeft, selectedVehicle, 'left') : Promise.resolve(null),
+      ];
+      const photoResults = await Promise.allSettled(optionalUploads);
 
       const frontUrl = photoResults[0].status === 'fulfilled' ? photoResults[0].value : null;
       const backUrl = photoResults[1].status === 'fulfilled' ? photoResults[1].value : null;
@@ -246,6 +241,9 @@ export default function VehicleDeliveryPage() {
         `&handoverId=${encodeURIComponent(handover.id)}` +
         `&reportUrl=${encodeURIComponent(reportUrl)}` +
         `&mode=${assignmentMode}` +
+        `&odometer=${encodeURIComponent(odometer)}` +
+        `&fuelLevel=${encodeURIComponent(String(fuelLevel))}` +
+        `&damageNotes=${encodeURIComponent(hasAnyDamage(damageReport) ? damageSummary : '')}` +
         `&selectedForms=${encodeURIComponent(selectedDeliveryFormIds.join(','))}`;
 
       window.location.assign(wizardUrl);
@@ -392,10 +390,10 @@ export default function VehicleDeliveryPage() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="חזית" onPhotoCapture={setPhotoFront} required /></div>
-                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="אחור" onPhotoCapture={setPhotoBack} required /></div>
-                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="צד ימין" onPhotoCapture={setPhotoRight} required /></div>
-                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="צד שמאל" onPhotoCapture={setPhotoLeft} required /></div>
+                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="חזית" onPhotoCapture={setPhotoFront} /></div>
+                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="אחור" onPhotoCapture={setPhotoBack} /></div>
+                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="צד ימין" onPhotoCapture={setPhotoRight} /></div>
+                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="צד שמאל" onPhotoCapture={setPhotoLeft} /></div>
               </div>
             </CardContent>
           </Card>
@@ -463,7 +461,6 @@ export default function VehicleDeliveryPage() {
                   isSubmitting ||
                   !selectedVehicle ||
                   !selectedDriver ||
-                  !allPhotosUploaded ||
                   !hasSignature ||
                   (assignmentMode === 'replacement' && (!replacementApprovalChecked || !hasReplacementApprovalSignature))
                 }

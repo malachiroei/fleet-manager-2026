@@ -3,8 +3,6 @@ import { supabase } from '@/integrations/supabase/client';
 import type { VehicleHandover } from '@/types/fleet';
 import { jsPDF } from 'jspdf';
 import hebrewFontUrl from '@/assets/fonts/NotoSansHebrew.ttf?url';
-import carPngUrl from '@/assets/car.png';
-import carPdfUrl from '@/assets/car-pdf.jpg';
 import {
   DAMAGE_SIDES,
   DAMAGE_SIDE_LABELS,
@@ -19,6 +17,13 @@ export type AssignmentMode = 'permanent' | 'replacement';
 const APP_BASE_URL = 'https://fleet-manager-2026.vercel.app';
 const HANDOVER_PHOTOS_BUCKET = 'handover-photos';
 const HANDOVER_ARCHIVE_BUCKET = 'vehicle-documents';
+
+function formatVehicleLabelForPdf(label: string) {
+  const trimmed = String(label ?? '').trim();
+  const match = trimmed.match(/^(.*)\(([^)]+)\)\s*$/);
+  if (match) return `${match[1].trim()} - ${match[2].trim()}`;
+  return trimmed.replace(/[()]/g, '');
+}
 
 function getSupabaseErrorMessage(error: unknown) {
   if (!error || typeof error !== 'object') {
@@ -86,6 +91,7 @@ function arrayBufferToBase64(buffer: ArrayBuffer) {
 
 let cachedHebrewFontBase64: string | null = null;
 let cachedPdfCarImage: { dataUrl: string; format: 'PNG' | 'JPEG' } | null = null;
+const FUTURISTIC_CAR_UI_PATH = '/car.png';
 
 async function getPdfCarImage() {
   if (cachedPdfCarImage) {
@@ -93,9 +99,7 @@ async function getPdfCarImage() {
   }
 
   const candidates = [
-    carPdfUrl,
-    carPngUrl,
-    '/car.png',
+    FUTURISTIC_CAR_UI_PATH,
     typeof window !== 'undefined' ? `${window.location.origin}/car.png` : null,
   ].filter(Boolean) as string[];
 
@@ -108,6 +112,85 @@ async function getPdfCarImage() {
   }
 
   return null;
+}
+
+async function rotateCarImagePortrait(image: { dataUrl: string; format: 'PNG' | 'JPEG' }) {
+  try {
+    const rotatedDataUrl = await new Promise<string>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.height;
+        canvas.height = img.width;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Could not create canvas context for rotation'));
+          return;
+        }
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.rotate(Math.PI / 2);
+        ctx.drawImage(img, -img.width / 2, -img.height / 2);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.onerror = () => reject(new Error('Could not load car image for rotation'));
+      img.src = image.dataUrl;
+    });
+
+    return { dataUrl: rotatedDataUrl, format: 'PNG' as const };
+  } catch {
+    return image;
+  }
+}
+
+function drawFuelGaugeInPdf(doc: any, rightX: number, startY: number, fuelLevel: number) {
+  const panelW = 168;
+  const panelH = 150;
+  const panelX = rightX - panelW;
+  const panelY = startY + 2;
+  const clampedFuel = Math.max(0, Math.min(8, Math.round(fuelLevel)));
+
+  doc.setDrawColor(84, 125, 164);
+  doc.setFillColor(245, 250, 255);
+  doc.roundedRect(panelX, panelY, panelW, panelH, 8, 8, 'FD');
+  doc.setFontSize(11);
+  doc.text('מחוון דלק', rightX - 10, panelY + 16, { align: 'right' });
+
+  const gaugeX = panelX + 26;
+  const gaugeY = panelY + 28;
+  const segW = 54;
+  const segH = 10;
+  const segGap = 4;
+
+  doc.setFontSize(8);
+  doc.text('F', gaugeX - 10, gaugeY + 7, { align: 'center' });
+  doc.text('E', gaugeX - 10, gaugeY + (segH + segGap) * 8 + 2, { align: 'center' });
+
+  for (let segment = 8; segment >= 1; segment -= 1) {
+    const idx = 8 - segment;
+    const y = gaugeY + idx * (segH + segGap);
+    const filled = segment <= clampedFuel;
+    if (filled) {
+      if (clampedFuel <= 2) {
+        doc.setFillColor(220, 38, 38);
+      } else {
+        doc.setFillColor(22, 163, 74);
+      }
+      doc.setDrawColor(140, 140, 140);
+      doc.roundedRect(gaugeX, y, segW, segH, 2, 2, 'FD');
+    } else {
+      doc.setDrawColor(160, 174, 192);
+      doc.roundedRect(gaugeX, y, segW, segH, 2, 2, 'S');
+    }
+  }
+
+  const needleBaseSegment = clampedFuel > 0 ? clampedFuel : 1;
+  const needleY = gaugeY + (8 - needleBaseSegment) * (segH + segGap) + segH / 2;
+  doc.setFillColor(30, 41, 59);
+  doc.triangle(gaugeX + segW + 4, needleY, gaugeX + segW + 14, needleY - 5, gaugeX + segW + 14, needleY + 5, 'F');
+
+  doc.setFontSize(10);
+  doc.text(`${clampedFuel}/8`, panelX + panelW - 16, panelY + panelH - 12, { align: 'right' });
+  return panelY + panelH + 8;
 }
 
 async function drawDamageDiagramInPdf(
@@ -125,7 +208,7 @@ async function drawDamageDiagramInPdf(
   const panelX = 40;
   const panelY = startY + 8;
   const panelW = pageWidth - 80;
-  const panelH = 208;
+  const panelH = 312;
 
   doc.setDrawColor(40, 80, 120);
   doc.setFillColor(245, 250, 255);
@@ -135,9 +218,9 @@ async function drawDamageDiagramInPdf(
   doc.text('סימון נזקים לפי צד ברכב', rightX - 12, panelY + 18, { align: 'right' });
 
   const cx = panelX + panelW / 2;
-  const carY = panelY + 44;
-  const carW = 220;
-  const carH = 124;
+  const carY = panelY + 48;
+  const carW = 124;
+  const carH = 220;
 
   const markSide = (x: number, y: number, w: number, h: number, side: keyof VehicleDamageReport, label: string) => {
     const marked = (damageReport[side] ?? []).length > 0;
@@ -152,7 +235,8 @@ async function drawDamageDiagramInPdf(
     doc.text(label, x + w / 2, y + h / 2 + 3, { align: 'center' });
   };
 
-  const carImage = await getPdfCarImage();
+  const sourceCarImage = await getPdfCarImage();
+  const carImage = sourceCarImage ? await rotateCarImagePortrait(sourceCarImage) : null;
   if (carImage) {
     doc.addImage(carImage.dataUrl, carImage.format, cx - carW / 2, carY, carW, carH, undefined, 'MEDIUM');
   } else {
@@ -165,10 +249,12 @@ async function drawDamageDiagramInPdf(
     doc.roundedRect(cx - 26, carY + 82, 52, 22, 6, 6, 'F');
   }
 
-  markSide(cx - carW / 2 - 52, carY + 38, 44, 42, 'front', 'קדימה');
-  markSide(cx + carW / 2 + 8, carY + 38, 44, 42, 'back', 'אחורה');
-  markSide(cx - 32, carY - 22, 64, 18, 'right', 'ימין');
-  markSide(cx - 32, carY + carH + 6, 64, 18, 'left', 'שמאל');
+  // Keep the same orientation as the app selector:
+  // front=top, back=bottom, right=right side, left=left side.
+  markSide(cx - 32, carY - 22, 64, 18, 'front', 'קדימה');
+  markSide(cx - 32, carY + carH + 6, 64, 18, 'back', 'אחורה');
+  markSide(cx + carW / 2 + 8, carY + 88, 44, 42, 'right', 'צד ימין');
+  markSide(cx - carW / 2 - 52, carY + 88, 44, 42, 'left', 'צד שמאל');
 
   // Damage legend text
   let textY = panelY + panelH - 18;
@@ -188,6 +274,7 @@ async function createPdfBlob(
   lines: string[],
   photos: Array<{ key: string; url: string | null }>,
   signatureUrl: string | null,
+  fuelLevel?: number,
   damageReport?: VehicleDamageReport,
 ) {
   const fontResponse = await fetch(hebrewFontUrl);
@@ -215,6 +302,16 @@ async function createPdfBlob(
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const rightX = pageWidth - 40;
+  const pageBottomPadding = 36;
+  const resetYAfterPageBreak = () => 48;
+
+  const ensurePageSpace = (currentY: number, requiredHeight: number) => {
+    if (currentY + requiredHeight <= pageHeight - pageBottomPadding) {
+      return currentY;
+    }
+    doc.addPage();
+    return resetYAfterPageBreak();
+  };
 
   doc.setFontSize(16);
   doc.text('טופס מסירה / החזרת רכב', pageWidth / 2, 56, { align: 'center' });
@@ -226,7 +323,13 @@ async function createPdfBlob(
     currentY += 18;
   }
 
+  if (typeof fuelLevel === 'number' && Number.isFinite(fuelLevel)) {
+    currentY = ensurePageSpace(currentY, 170);
+    currentY = drawFuelGaugeInPdf(doc, rightX, currentY, fuelLevel);
+  }
+
   if (damageReport && hasAnyDamage(damageReport)) {
+    currentY = ensurePageSpace(currentY, 340);
     currentY = await drawDamageDiagramInPdf(doc, pageWidth, rightX, currentY, damageReport);
   }
 
@@ -242,15 +345,24 @@ async function createPdfBlob(
     right: 'ימין',
     left: 'שמאל',
   };
+  const photoStatusLine = (['front', 'back', 'right', 'left'] as const)
+    .map((key) => `${photoLabels[key]}: ${photos.find((p) => p.key === key)?.url ? 'צורפה' : 'חסרה'}`)
+    .join(' | ');
 
   if (validPhotoImages.length > 0) {
+    const cards = validPhotoImages.slice(0, 4);
+    const estimatedPhotosHeight =
+      cards.length === 1 ? 230 :
+      cards.length === 2 ? 210 :
+      300;
+    currentY = ensurePageSpace(currentY, estimatedPhotosHeight);
+
     doc.setFontSize(12);
     doc.text('תמונות רכב', rightX, currentY + 4, { align: 'right' });
 
     const gridTop = currentY + 16;
     const marginX = 40;
     const gap = 12;
-    const cards = validPhotoImages.slice(0, 4);
 
     if (cards.length === 1) {
       const boxWidth = pageWidth - marginX * 2;
@@ -293,11 +405,21 @@ async function createPdfBlob(
 
       currentY = gridTop + (cards.length > 2 ? (boxHeight + 24) * 2 : (boxHeight + 24)) + 4;
     }
+  } else {
+    doc.setFontSize(10);
+    doc.text('תמונות רכב: לא צורפו תמונות לשלב זה', rightX, currentY + 12, { align: 'right' });
+    currentY += 20;
   }
+
+  currentY = ensurePageSpace(currentY, 40);
+  doc.setFontSize(9);
+  doc.text(`סטטוס תמונות: ${photoStatusLine}`, rightX, currentY + 8, { align: 'right' });
+  currentY += 16;
 
   if (signatureUrl) {
     const signatureImage = await imageUrlToDataUrl(signatureUrl);
     if (signatureImage) {
+      currentY = ensurePageSpace(currentY, 112);
       const signatureBlockHeight = 96;
       const signatureY = Math.min(currentY + 4, pageHeight - signatureBlockHeight - 36);
       doc.setFontSize(12);
@@ -345,7 +467,7 @@ async function buildWizardPdfDoc(
 
   doc.setFontSize(10);
   let y = 76;
-  for (const line of [`תאריך: ${date}`, `רכב: ${vehicleLabel}`, `נהג: ${driverName}`]) {
+  for (const line of [`תאריך: ${date}`, `רכב: ${formatVehicleLabelForPdf(vehicleLabel)}`, `נהג: ${driverName}`]) {
     doc.text(line, rightX, y, { align: 'right' });
     y += 14;
   }
@@ -393,6 +515,7 @@ export async function generateReceptionPDF({
   declarationText?: string;
   manualFields?: {
     idNumber?: string;
+    employeeNumber?: string;
     phone?: string;
     address?: string;
     ignitionCode?: string;
@@ -434,6 +557,7 @@ export async function generateReceptionPDF({
 
   const footerLines = [
     `מספר ת"ז: ${manualFields?.idNumber || 'לא הוזן'}`,
+    `מספר עובד: ${manualFields?.employeeNumber || 'לא הוזן'}`,
     `טלפון נייד: ${manualFields?.phone || 'לא הוזן'}`,
     `כתובת: ${manualFields?.address || 'לא הוזנה'}`,
     `קוד קודנית: ${manualFields?.ignitionCode || 'לא הוזן'}`,
@@ -450,20 +574,24 @@ export async function generateReceptionPDF({
 }
 
 export async function generateProcedurePDF({
+  formTitle,
   vehicleLabel,
   driverName,
   date,
   clauses,
+  approvedRead,
   signatureDataUrl,
 }: {
+  formTitle?: string;
   vehicleLabel: string;
   driverName: string;
   date: string;
   clauses: Array<{ id: number; text: string }>;
+  approvedRead?: boolean;
   signatureDataUrl: string | null;
 }): Promise<Blob> {
   const { doc, pageWidth, rightX, y: startY } = await buildWizardPdfDoc(
-    'נוהל שימוש ברכב חברה',
+    formTitle?.trim() || 'נוהל שימוש ברכב חברה',
     vehicleLabel,
     driverName,
     date,
@@ -485,7 +613,7 @@ export async function generateProcedurePDF({
   y += 10;
   doc.setFontSize(9);
   const commitText = doc.splitTextToSize(
-    'בחתימתי אני מאשר/ת כי קראתי והבנתי את כלל סעיפי נוהל 04-05-001 ואני מתחייב/ת לפעול על-פיו.',
+    'אני מאשר/ת כי קראתי והבנתי את הטופס ואני מתחייב/ת לפעול לפיו.',
     460,
   ) as string[];
   if (y + commitText.length * 13 + 90 > pageHeight) {
@@ -494,8 +622,10 @@ export async function generateProcedurePDF({
   }
   doc.text(commitText, rightX, y, { align: 'right' });
   y += commitText.length * 13 + 10;
-
-  addSignatureToPdf(doc as any, signatureDataUrl, y, pageWidth, rightX, 'חתימת הנהג — הצהרת מחויבות לנוהל שימוש ברכב:');
+  doc.setFontSize(10);
+  doc.text(`אישור קריאה: ${approvedRead ? 'מאושר' : 'לא אושר'}`, rightX, y, { align: 'right' });
+  y += 14;
+  addSignatureToPdf(doc as any, signatureDataUrl, y, pageWidth, rightX, 'חתימת הנהג:');
   return doc.output('blob');
 }
 
@@ -531,8 +661,8 @@ export async function generateHealthDeclarationPDF({
   doc.setFontSize(9);
   for (let i = 0; i < healthItems.length; i++) {
     const item = healthItems[i];
-    const mark = item.checked ? '[✓]' : '[ ]';
-    const split = doc.splitTextToSize(`${mark}  ${i + 1}. ${item.text}`, 460) as string[];
+    const mark = item.checked ? 'מאושר' : 'לא אושר';
+    const split = doc.splitTextToSize(`(${mark}) ${i + 1}. ${item.text}`, 460) as string[];
     doc.text(split, rightX, y, { align: 'right' });
     y += split.length * 13 + 4;
   }
@@ -591,6 +721,299 @@ export async function generateReplacementDeliveryApprovalPDF({
 
   y += 10;
   addSignatureToPdf(doc as any, signatureDataUrl, y, pageWidth, rightX, 'חתימת העובד — אישור מסירת רכב חליפי:');
+  return doc.output('blob');
+}
+
+export async function generateGenericFormPDF({
+  title,
+  builtinTemplateKey,
+  vehicleLabel,
+  driverName,
+  date,
+  templateText,
+  notes,
+  signatureDataUrl,
+  returnDateTime,
+  fuelLevel,
+  damageReport,
+  missingAccessories,
+  practicalTestUi,
+  trafficLiabilityUi,
+  upgradeUi,
+  returnFormUi,
+  receptionFields,
+}: {
+  title: string;
+  builtinTemplateKey?: string;
+  vehicleLabel: string;
+  driverName: string;
+  date: string;
+  templateText: string;
+  notes?: string;
+  signatureDataUrl: string | null;
+  returnDateTime?: string;
+  fuelLevel?: number;
+  damageReport?: VehicleDamageReport;
+  missingAccessories?: string[];
+  practicalTestUi?: {
+    checks?: Record<string, 'pass' | 'fail' | ''>;
+    date?: string;
+    time?: string;
+    examinerName?: string;
+    result?: 'pass' | 'fail' | '';
+  };
+  trafficLiabilityUi?: {
+    firstName?: string;
+    lastName?: string;
+    idNumber?: string;
+    fullAddress?: string;
+    mobile?: string;
+  };
+  upgradeUi?: {
+    vehicleNameToUpgrade?: string;
+    netUpgradeAmount?: string;
+    fullName?: string;
+  };
+  returnFormUi?: {
+    returnDate?: string;
+    returnTime?: string;
+    odometer?: string;
+    fuel?: string;
+    damages?: string;
+    missingAccessories?: string;
+  };
+  receptionFields?: {
+    idNumber?: string;
+    employeeNumber?: string;
+    phone?: string;
+    address?: string;
+    ignitionCode?: string;
+  };
+}): Promise<Blob> {
+  const { doc, pageWidth, rightX, y: startY } = await buildWizardPdfDoc(title, vehicleLabel, driverName, date);
+  const pageHeight = doc.internal.pageSize.getHeight();
+  let y = startY;
+
+  const ensureSpace = (required: number) => {
+    if (y + required <= pageHeight - 36) return;
+    doc.addPage();
+    y = 50;
+  };
+
+  const rawLines = String(templateText || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const key = String(builtinTemplateKey ?? '').trim();
+  const isReturnForm = key === 'system-return-form' || title.includes('החזרת רכב');
+  const isTrafficLiabilityForm =
+    key === 'system-traffic-liability-annex' ||
+    (title.includes('אחריות אישית') && title.includes('עבירות תנועה'));
+  const isUpgradeForm = key === 'system-upgrade-request' || title.includes('שדרוג');
+  const isPracticalDrivingTestForm =
+    key === 'system-practical-driving-test' || title.includes('מבחן מעשי בנהיגה');
+  const filteredLines = isUpgradeForm
+    ? rawLines.filter(
+        (line) =>
+          !line.includes('דגם הרכב המבוקש') &&
+          !line.includes('סכום חיוב חודשי') &&
+          !line.includes('שדות מילוי ידני'),
+      )
+    : rawLines;
+
+  doc.setFontSize(10);
+  for (const line of filteredLines) {
+    const split = doc.splitTextToSize(line, 460) as string[];
+    ensureSpace(split.length * 13 + 6);
+    doc.text(split, rightX, y, { align: 'right' });
+    y += split.length * 13 + 3;
+  }
+
+  if (isUpgradeForm) {
+    y += 8;
+    ensureSpace(150);
+    doc.setFontSize(11);
+    doc.text('3. שדות מילוי ידני (למילוי ידני על גבי הטופס):', rightX, y, { align: 'right' });
+    y += 16;
+    doc.setFontSize(10);
+    const upgradeDate = date;
+    const blankLines = [
+      `• שם הרכב לשדרוג: ${upgradeUi?.vehicleNameToUpgrade?.trim() || '_____________________________'}`,
+      `• סכום שדרוג נטו: ${upgradeUi?.netUpgradeAmount?.trim() || '____________________________'}`,
+      `• שם מלא: ${upgradeUi?.fullName?.trim() || '____________________________________'}`,
+      `• תאריך: ${upgradeDate}`,
+    ];
+    for (const line of blankLines) {
+      doc.text(line, rightX, y, { align: 'right' });
+      y += 14;
+    }
+  }
+
+  const needsReceptionFields = title.includes('קבלת רכב');
+  if (needsReceptionFields && receptionFields) {
+    y += 8;
+    ensureSpace(120);
+    doc.setFontSize(11);
+    doc.text('3. שדות מילוי ידני:', rightX, y, { align: 'right' });
+    y += 14;
+    doc.setFontSize(9);
+    const lines = [
+      `מספר ת"ז: ${receptionFields.idNumber || 'לא הוזן'}`,
+      `מספר עובד: ${receptionFields.employeeNumber || 'לא הוזן'}`,
+      `טלפון נייד: ${receptionFields.phone || 'לא הוזן'}`,
+      `כתובת: ${receptionFields.address || 'לא הוזנה'}`,
+      `קוד קודנית: ${receptionFields.ignitionCode || 'לא הוזן'}`,
+    ];
+    for (const line of lines) {
+      doc.text(line, rightX, y, { align: 'right' });
+      y += 13;
+    }
+  }
+
+  if (isReturnForm) {
+    y += 8;
+    ensureSpace(220);
+    doc.setFontSize(11);
+    doc.text('3. פרטי החזרת רכב:', rightX, y, { align: 'right' });
+    y += 14;
+    doc.setFontSize(10);
+    const effectiveReturnDate = returnFormUi?.returnDate?.trim() || '';
+    const effectiveReturnTime = returnFormUi?.returnTime?.trim() || '';
+    const effectiveReturnDateTime = effectiveReturnDate || effectiveReturnTime
+      ? `${effectiveReturnDate || date} ${effectiveReturnTime || ''}`.trim()
+      : returnDateTime || date;
+    const returnLines = [
+      `תאריך ושעת החזרה: ${effectiveReturnDateTime}`,
+      `קריאת ק"מ בעת החזרה: ${returnFormUi?.odometer?.trim() || '____________________________'}`,
+      `רמת דלק בעת החזרה: ${returnFormUi?.fuel?.trim() || '________________________________'}`,
+      `סימון נזקים: ${returnFormUi?.damages?.trim() || '_______________________________________'}`,
+      `אביזרים חסרים: ${returnFormUi?.missingAccessories?.trim() || '_______________________________'} ${missingAccessories?.length ? `(דווח כעת: ${missingAccessories.join(', ')})` : ''}`,
+    ];
+    for (const line of returnLines) {
+      doc.text(line, rightX, y, { align: 'right' });
+      y += 14;
+    }
+
+    if (typeof fuelLevel === 'number' && Number.isFinite(fuelLevel)) {
+      ensureSpace(170);
+      y = drawFuelGaugeInPdf(doc, rightX, y, fuelLevel);
+    }
+    if (damageReport && hasAnyDamage(damageReport)) {
+      ensureSpace(340);
+      y = await drawDamageDiagramInPdf(doc, pageWidth, rightX, y, damageReport);
+    }
+  }
+
+  if (isTrafficLiabilityForm) {
+    y += 8;
+    ensureSpace(120);
+    doc.setFontSize(11);
+    doc.text('פרטי עובד למילוי בסוף הטופס:', rightX, y, { align: 'right' });
+    y += 14;
+    doc.setFontSize(10);
+    const identityLines = [
+      `שם: ${trafficLiabilityUi?.firstName?.trim() || '____________________________'}`,
+      `שם משפחה: ${trafficLiabilityUi?.lastName?.trim() || '_____________________'}`,
+      `מספר ת.ז: ${trafficLiabilityUi?.idNumber?.trim() || '______________________'}`,
+      `כתובת מלאה: ${trafficLiabilityUi?.fullAddress?.trim() || '____________________'}`,
+      `מספר נייד: ${trafficLiabilityUi?.mobile?.trim() || '_____________________'}`,
+    ];
+    for (const line of identityLines) {
+      doc.text(line, rightX, y, { align: 'right' });
+      y += 14;
+    }
+  }
+
+  if (isPracticalDrivingTestForm) {
+    y += 8;
+    ensureSpace(300);
+    doc.setFontSize(11);
+    doc.text('טבלת הערכת מבחן מעשי: עבר / לא עבר', rightX, y, { align: 'right' });
+    y += 16;
+
+    const rows = [
+      'שליטה בהגה',
+      'עצירה',
+      'נסיעה לאחור',
+      'שליטה כללית ברכב',
+      'איתות',
+      'מיקום בנתיבי הכביש',
+      'מיקום בצמתים',
+      'פניות',
+      'ציות לתמרורים ורמזורים',
+      'הסתכלות',
+      'מהירות',
+      'קצב נסיעה',
+      'שמירת רווח מלפנים ומהצדדים',
+    ];
+
+    const tableRight = rightX;
+    const colPassedW = 58;
+    const colFailedW = 58;
+    const colItemW = 260;
+    const rowH = 18;
+    const tableLeft = tableRight - (colPassedW + colFailedW + colItemW);
+
+    doc.setDrawColor(170, 170, 170);
+    doc.rect(tableLeft, y, colPassedW, rowH);
+    doc.rect(tableLeft + colPassedW, y, colFailedW, rowH);
+    doc.rect(tableLeft + colPassedW + colFailedW, y, colItemW, rowH);
+    doc.setFontSize(9);
+    doc.text('עבר', tableLeft + colPassedW / 2, y + 12, { align: 'center' });
+    doc.text('לא עבר', tableLeft + colPassedW + colFailedW / 2, y + 12, { align: 'center' });
+    doc.text('פריט בדיקה', tableRight - 6, y + 12, { align: 'right' });
+    y += rowH;
+
+    rows.forEach((item) => {
+      ensureSpace(rowH + 4);
+      doc.rect(tableLeft, y, colPassedW, rowH);
+      doc.rect(tableLeft + colPassedW, y, colFailedW, rowH);
+      doc.rect(tableLeft + colPassedW + colFailedW, y, colItemW, rowH);
+      doc.circle(tableLeft + colPassedW / 2, y + rowH / 2, 4);
+      doc.circle(tableLeft + colPassedW + colFailedW / 2, y + rowH / 2, 4);
+      const status = practicalTestUi?.checks?.[item] ?? '';
+      if (status === 'pass') {
+        doc.setFillColor(30, 64, 175);
+        doc.circle(tableLeft + colPassedW / 2, y + rowH / 2, 2.4, 'F');
+      } else if (status === 'fail') {
+        doc.setFillColor(220, 38, 38);
+        doc.circle(tableLeft + colPassedW + colFailedW / 2, y + rowH / 2, 2.4, 'F');
+      }
+      doc.text(item, tableRight - 6, y + 12, { align: 'right' });
+      y += rowH;
+    });
+
+    y += 10;
+    ensureSpace(110);
+    doc.setFontSize(10);
+    const footer = [
+      `תאריך: ${practicalTestUi?.date?.trim() || '_____________________'}`,
+      `שעה: ${practicalTestUi?.time?.trim() || '_______________________'}`,
+      `שם הבוחן: ${practicalTestUi?.examinerName?.trim() || '__________________'}`,
+      `תוצאת מבחן: ${practicalTestUi?.result === 'pass' ? 'עבר' : practicalTestUi?.result === 'fail' ? 'לא עבר' : 'עבר / לא עבר'}`,
+    ];
+    footer.forEach((line) => {
+      doc.text(line, rightX, y, { align: 'right' });
+      y += 14;
+    });
+  }
+
+  if (notes?.trim()) {
+    ensureSpace(56);
+    y += 8;
+    doc.setFontSize(10);
+    doc.text('הערות:', rightX, y, { align: 'right' });
+    y += 14;
+    const notesSplit = doc.splitTextToSize(notes.trim(), 460) as string[];
+    doc.setFontSize(9);
+    doc.text(notesSplit, rightX, y, { align: 'right' });
+    y += notesSplit.length * 13 + 4;
+  }
+
+  y += 10;
+  ensureSpace(96);
+  addSignatureToPdf(doc as any, signatureDataUrl, y, pageWidth, rightX, 'חתימת הנהג:');
   return doc.output('blob');
 }
 
@@ -813,17 +1236,21 @@ interface ArchiveHandoverInput {
 
 export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Promise<ArchivedHandoverResult> {
   const hasDamage = input.damageReport ? hasAnyDamage(input.damageReport) : false;
-  const damageSummary = input.damageReport ? summarizeDamageReport(input.damageReport) : 'ללא נזקים מסומנים';
+  const notesDamageMatch = (input.notes ?? '').match(/דיווח נזקים:\s*([^|]+)/);
+  const notesDamageSummary = notesDamageMatch?.[1]?.trim() ?? '';
+  const damageSummary = hasDamage
+    ? summarizeDamageReport(input.damageReport as VehicleDamageReport)
+    : (notesDamageSummary || 'ללא נזקים');
   const timestamp = new Date().toISOString();
   const formBlob = await createPdfBlob([
     `מספר טופס: ${input.handoverId}`,
     `סוג טופס: ${input.handoverType === 'delivery' ? 'מסירה' : 'החזרה'}`,
     `סוג מסירה: ${input.assignmentMode === 'replacement' ? 'חליפי' : 'קבוע'}`,
-    `רכב: ${input.vehicleLabel}`,
+    `רכב: ${formatVehicleLabelForPdf(input.vehicleLabel)}`,
     `נהג: ${input.driverLabel}`,
     `קילומטראז': ${input.odometerReading.toLocaleString('he-IL')}`,
     `דלק: ${input.fuelLevel}/8`,
-    `דיווח נזקים: ${hasDamage ? damageSummary : 'ללא נזקים'}`,
+    `דיווח נזקים: ${damageSummary}`,
     `הערות: ${input.notes || 'ללא'}`,
     `זמן ביצוע: ${new Date(timestamp).toLocaleString('he-IL')}`,
   ], [
@@ -831,7 +1258,7 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
     { key: 'back', url: input.photoUrls.back },
     { key: 'right', url: input.photoUrls.right },
     { key: 'left', url: input.photoUrls.left },
-  ], input.signatureUrl, input.damageReport);
+  ], input.signatureUrl, input.fuelLevel, input.damageReport);
   const fileName = `handover-forms/${input.vehicleId}/${Date.now()}_${input.handoverType}.pdf`;
 
   const { error: uploadError } = await supabase.storage
@@ -1069,6 +1496,14 @@ interface SendHandoverEmailInput {
   fuelLevel: number;
   notes: string | null;
   damageSummary?: string;
+  receptionFormData?: {
+    idNumber?: string;
+    employeeNumber?: string;
+    phone?: string;
+    address?: string;
+    ignitionCode?: string;
+    accessoriesSummary?: string;
+  };
   reportUrl: string;
   /** Extra files to attach alongside the PDF (wizard documents). */
   additionalAttachments?: { filename: string; url: string }[];
@@ -1076,6 +1511,11 @@ interface SendHandoverEmailInput {
 
 export async function sendHandoverNotificationEmail(input: SendHandoverEmailInput) {
   const toEmail = localStorage.getItem('handover_notification_email') || 'malachiroei@gmail.com';
+  const hasReceptionAttachment = (input.additionalAttachments ?? []).some((file) => file.filename.includes('טופס קבלת רכב'));
+  console.log('[sendHandoverNotificationEmail] reception attachment pushed', {
+    hasReceptionAttachment,
+    attachmentNames: (input.additionalAttachments ?? []).map((file) => file.filename),
+  });
   const body = {
     to: toEmail,
     subject: `${input.handoverType === 'delivery' ? 'מסירת רכב' : 'החזרת רכב'} - ${input.vehicleLabel}`,

@@ -25,6 +25,7 @@ Write-Host "[deploy:test] Running build..."
 npm run build
 
 Write-Host "[deploy:test] Deploying to Vercel test project..."
+# Same repo/public assets as prod: official brand logo is public/og-image.png (favicon, manifest, AppLayout).
 vercel --prod --yes
 
 Write-Host "[deploy:test] Done. Expected alias: https://manager-2026-test.vercel.app"

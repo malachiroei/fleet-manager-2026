@@ -1,5 +1,7 @@
 {
   "rewrites": [
+    { "source": "/favicon.ico", "destination": "/og-image.png" },
+    { "source": "/favicon.png", "destination": "/og-image.png" },
     { "source": "/(.*)", "destination": "/" }
   ]
 }

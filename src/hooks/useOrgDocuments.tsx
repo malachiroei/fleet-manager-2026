@@ -39,7 +39,10 @@ export function useOrgDocuments() {
       if (error) throw error;
       return (data ?? []) as OrgDocument[];
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
   });
 }
 

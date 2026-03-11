@@ -1,20 +1,22 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo, RefObject } from 'react';
-import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link, useLocation } from 'react-router-dom';
 import { useVehicles } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
-import { useCreateHandover, sendHandoverNotificationEmail, generateReceptionPDF, generateProcedurePDF, generateHealthDeclarationPDF } from '@/hooks/useHandovers';
-import { useOrgSettings, parsePolicyClauses, parseHealthItems } from '@/hooks/useOrgSettings';
+import { useCreateHandover, sendHandoverNotificationEmail, generateReceptionPDF, generateProcedurePDF, generateHealthDeclarationPDF, generateGenericFormPDF } from '@/hooks/useHandovers';
+import { parsePolicyClauses, parseHealthItems } from '@/hooks/useOrgSettings';
 import { useOrgDocuments } from '@/hooks/useOrgDocuments';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { buildFormsAutoFillContext } from '@/lib/formsAutofill';
 import SignaturePad, { SignaturePadRef } from '@/components/SignaturePad';
+import VehicleDamage3DSelector from '@/components/VehicleDamage3DSelector';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { HANDOVER_ACCESSORY_CEILINGS, formatCeilingPrice } from '@/lib/accessoryCeilings';
+import { cloneEmptyDamageReport, hasAnyDamage, summarizeDamageReport, type VehicleDamageReport } from '@/lib/vehicleDamage';
 // Badge no longer needed — replaced with plain span
 import { toast } from 'sonner';
 import {
@@ -81,6 +83,14 @@ interface ReceptionManualFields {
   ignitionCode: string;
 }
 
+type ReceptionFieldErrors = Partial<Record<keyof ReceptionManualFields, string>>;
+
+interface VehicleHandoverWizardLocationState {
+  vehicleId?: string;
+  driverId?: string;
+  reportUrl?: string;
+}
+
 const idNumberRegex = /^\d{9}$/;
 const phoneRegex = /^0\d{8,9}$/;
 const ignitionCodeRegex = /^\d{4,6}$/;
@@ -105,7 +115,13 @@ function extractCommitmentSection(text?: string): string[] {
   }
 
   const sliced = lines.slice(startIdx + 1);
-  const endIdx = sliced.findIndex((line) => line.includes('שדות מילוי') || line.includes('חתימה דיגיטלית'));
+  const endIdx = sliced.findIndex(
+    (line) =>
+      line.includes('טבלת אישור אביזרים') ||
+      line.startsWith('2.') ||
+      line.includes('שדות מילוי') ||
+      line.includes('חתימה דיגיטלית'),
+  );
   const section = endIdx >= 0 ? sliced.slice(0, endIdx) : sliced;
 
   return section.filter(
@@ -113,10 +129,140 @@ function extractCommitmentSection(text?: string): string[] {
   );
 }
 
+function extractSectionLines(text: string, sectionTitleIncludes: string, stopMarkers: string[]): string[] {
+  const lines = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return [];
+
+  const start = lines.findIndex((line) => line.includes(sectionTitleIncludes));
+  if (start < 0) return [];
+  const section = lines.slice(start + 1);
+  const stopIndex = section.findIndex((line) => stopMarkers.some((marker) => line.includes(marker)));
+  return (stopIndex >= 0 ? section.slice(0, stopIndex) : section).filter(Boolean);
+}
+
+function parseAccessoriesFromTemplate(text?: string): AccessoryItem[] {
+  if (!text?.trim()) return [];
+  const sectionLines = extractSectionLines(text, 'טבלת אישור אביזרים', ['שדות מילוי', 'חתימה', 'חתימת']);
+  if (sectionLines.length === 0) return [];
+
+  const parsed: AccessoryItem[] = [];
+  sectionLines.forEach((line, index) => {
+    const candidate = line
+      .replace(/^\[[^\]]*]\s*/, '')
+      .replace(/^[-•]\s*/, '')
+      .replace(/^\d+[).\-]\s*/, '')
+      .trim();
+    if (!candidate) return;
+    if (
+      candidate.includes('נא לסמן') ||
+      candidate.includes('תקרות אביזרים') ||
+      candidate.includes('במקרה של חוסר')
+    ) {
+      return;
+    }
+
+    const hasCurrency = /(₪|ש["״]?ח|nis)/i.test(candidate);
+    const hasPriceInParens = /\([^)]*\d[^)]*\)/.test(candidate);
+    const hasCeilingPattern = /תקרה[:：]?\s*\d/.test(candidate);
+    const hasChecklistMarker = line.includes('[');
+    const isLikelyAccessory = hasChecklistMarker || hasPriceInParens || hasCurrency || hasCeilingPattern;
+    if (!isLikelyAccessory) return;
+
+    const match = candidate.match(/^(.*?)(?:\s*\(([^)]*)\))?$/);
+    if (!match) return;
+    let name = (match[1] ?? '').trim().replace(/\s*-\s*תקרה[:：]?.*$/i, '').trim();
+    if (!name) return;
+    const priceRaw = (match[2] ?? '').trim();
+    const ceilingMatch = candidate.match(/תקרה[:：]?\s*([\d,.\s]+(?:₪|ש["״]?ח)?)/i);
+    const maxPrice = (priceRaw || ceilingMatch?.[1] || 'ללא הגבלה').trim();
+
+    parsed.push({
+      id: `template_accessory_${index}`,
+      name,
+      maxPrice,
+      checked: false,
+      notes: '',
+      missing: false,
+    });
+  });
+  return parsed;
+}
+
+function parseProcedureClausesFromTemplateFallback(text?: string): ProcedureClause[] {
+  if (!text?.trim()) return [];
+  const lines = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter(
+      (line) =>
+        !line.includes('נוהל שימוש') &&
+        !line.includes('שדות מילוי') &&
+        !line.includes('חתימה') &&
+        !line.startsWith('['),
+    );
+  const clauses = lines
+    .map((line, index) => ({
+      id: index + 1,
+      text: line.replace(/^\d+[).\-]?\s*/, '').trim(),
+    }))
+    .filter((item) => item.text.length > 0);
+  return clauses;
+}
+
+function parseHealthItemsFromTemplateFallback(text?: string): HealthDeclaration[] {
+  if (!text?.trim()) return [];
+  const lines = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter(
+      (line) =>
+        !line.includes('הצהרת בריאות') &&
+        !line.includes('שדות מילוי') &&
+        !line.includes('חתימה') &&
+        !line.includes('הערות') &&
+        !line.startsWith('['),
+    );
+  return lines
+    .map((textLine, index) => ({
+      id: `health_fallback_${index + 1}`,
+      text: textLine.replace(/^\d+[).\-]?\s*/, '').trim(),
+      checked: false,
+    }))
+    .filter((item) => item.text.length > 0);
+}
+
 function joinHebrewList(items: string[]): string {
   if (items.length <= 1) return items[0] ?? '';
   if (items.length === 2) return `${items[0]} ו${items[1]}`;
   return `${items.slice(0, -1).join(', ')} ו${items[items.length - 1]}`;
+}
+
+function parseOdometerReading(rawValue: string): number {
+  const digitsOnly = rawValue.replace(/[^\d]/g, '');
+  if (!digitsOnly) return 0;
+  return Number.parseInt(digitsOnly, 10) || 0;
+}
+
+function parseFuelLevel(rawValue: string): number {
+  const match = rawValue.match(/\d+/);
+  if (!match) return 0;
+  const value = Number.parseInt(match[0], 10);
+  if (Number.isNaN(value)) return 0;
+  return Math.max(0, Math.min(8, value));
+}
+
+function buildUnifiedDamageSummary(damageReport: VehicleDamageReport, damageNotes: string): string {
+  const markerSummary = hasAnyDamage(damageReport) ? summarizeDamageReport(damageReport) : '';
+  const noteSummary = damageNotes.trim();
+  if (markerSummary && noteSummary) return `${markerSummary} | ${noteSummary}`;
+  if (markerSummary) return markerSummary;
+  if (noteSummary) return noteSummary;
+  return 'ללא נזקים';
 }
 
 // ─────────────────────────────────────────────
@@ -187,16 +333,17 @@ function OfficialDocHeader({ title, subtitle, date, vehicleLabel, driverName }: 
   );
 }
 
-function SignatureBlock({ sigRef, label, onSign }: {
+function SignatureBlock({ sigRef, label, onSign, signatureKey }: {
   sigRef: RefObject<SignaturePadRef>;
   label: string;
   onSign: (has: boolean) => void;
+  signatureKey?: string;
 }) {
   return (
     <div className="mt-6 border-t border-slate-200 pt-4">
       <p className="text-sm font-semibold text-slate-700 mb-2">{label}</p>
       <div className="border-2 border-dashed border-slate-300 rounded-lg overflow-hidden bg-white">
-        <SignaturePad ref={sigRef} onSign={onSign} />
+        <SignaturePad key={signatureKey} ref={sigRef} onSign={onSign} />
       </div>
       <p className="text-xs text-slate-400 mt-1 text-center">חתום/י באצבע או בעכבר בתוך המסגרת</p>
     </div>
@@ -217,6 +364,7 @@ function Step1({
   deliveryDateTime,
   declarationText,
   manualFields,
+  fieldErrors,
   onManualFieldChange,
   canSign,
   containerRef,
@@ -231,6 +379,7 @@ function Step1({
   deliveryDateTime: string;
   declarationText?: string;
   manualFields: ReceptionManualFields;
+  fieldErrors: ReceptionFieldErrors;
   onManualFieldChange: (field: keyof ReceptionManualFields, value: string) => void;
   canSign: boolean;
   containerRef?: RefObject<HTMLDivElement>;
@@ -255,7 +404,7 @@ function Step1({
   const requiredAsterisk = <span className="text-red-600">*</span>;
 
   return (
-    <div ref={containerRef} className="bg-white text-slate-900 rounded-2xl p-4 pb-32 sm:p-6 shadow-xl max-h-[calc(100vh-220px)] overflow-y-auto">
+    <div ref={containerRef} className="bg-white text-slate-900 rounded-2xl p-4 pb-32 sm:p-6 shadow-xl">
       <OfficialDocHeader
         title="טופס קבלת רכב"
         subtitle="יש לסמן ✓ על כל פריט המצוי ברכב ולחתום בתחתית הטופס"
@@ -367,7 +516,9 @@ function Step1({
               onChange={(e) => onManualFieldChange('idNumber', e.target.value)}
               placeholder="9 ספרות"
               inputMode="numeric"
+              className={fieldErrors.idNumber ? 'border-red-500 focus-visible:ring-red-500' : ''}
             />
+            {fieldErrors.idNumber && <p className="text-xs text-red-600">{fieldErrors.idNumber}</p>}
           </div>
 
           <div className="space-y-1">
@@ -377,7 +528,9 @@ function Step1({
               value={manualFields.employeeNumber}
               onChange={(e) => onManualFieldChange('employeeNumber', e.target.value)}
               placeholder="מספר עובד"
+              className={fieldErrors.employeeNumber ? 'border-red-500 focus-visible:ring-red-500' : ''}
             />
+            {fieldErrors.employeeNumber && <p className="text-xs text-red-600">{fieldErrors.employeeNumber}</p>}
           </div>
 
           <div className="space-y-1">
@@ -388,7 +541,9 @@ function Step1({
               onChange={(e) => onManualFieldChange('phone', e.target.value)}
               placeholder="05X..."
               inputMode="tel"
+              className={fieldErrors.phone ? 'border-red-500 focus-visible:ring-red-500' : ''}
             />
+            {fieldErrors.phone && <p className="text-xs text-red-600">{fieldErrors.phone}</p>}
           </div>
 
           <div className="space-y-1 sm:col-span-2">
@@ -398,7 +553,9 @@ function Step1({
               value={manualFields.address}
               onChange={(e) => onManualFieldChange('address', e.target.value)}
               placeholder="עיר ורחוב"
+              className={fieldErrors.address ? 'border-red-500 focus-visible:ring-red-500' : ''}
             />
+            {fieldErrors.address && <p className="text-xs text-red-600">{fieldErrors.address}</p>}
           </div>
 
           <div className="space-y-1">
@@ -409,7 +566,9 @@ function Step1({
               onChange={(e) => onManualFieldChange('ignitionCode', e.target.value)}
               placeholder="4-6 ספרות"
               inputMode="numeric"
+              className={fieldErrors.ignitionCode ? 'border-red-500 focus-visible:ring-red-500' : ''}
             />
+            {fieldErrors.ignitionCode && <p className="text-xs text-red-600">{fieldErrors.ignitionCode}</p>}
           </div>
 
           <div className="space-y-1">
@@ -420,7 +579,12 @@ function Step1({
       </div>
 
       {canSign && (
-        <SignatureBlock sigRef={sigRef} label="4. חתימת הנהג — אישור קבלת הרכב והאביזרים:" onSign={onSign} />
+        <SignatureBlock
+          sigRef={sigRef}
+          label="4. חתימת הנהג — אישור קבלת הרכב והאביזרים:"
+          onSign={onSign}
+          signatureKey="reception-signature"
+        />
       )}
     </div>
   );
@@ -430,7 +594,7 @@ function Step1({
 // Step 2 — Usage Procedure
 // ─────────────────────────────────────────────
 function Step2({
-  procedureRead, setProcedureRead, sigRef, onSign, vehicleLabel, driverName, date, containerRef, clauses, pdfTemplateUrl,
+  procedureRead, setProcedureRead, sigRef, onSign, vehicleLabel, driverName, date, containerRef, clauses, formTitle,
 }: {
   procedureRead: boolean;
   setProcedureRead: (v: boolean) => void;
@@ -441,42 +605,30 @@ function Step2({
   date: string;
   containerRef?: RefObject<HTMLDivElement>;
   clauses: Array<{ id: number; text: string }>;
-  pdfTemplateUrl?: string | null;
+  formTitle?: string;
 }) {
   return (
     <div ref={containerRef} className="bg-white text-slate-900 rounded-2xl p-4 pb-32 sm:p-6 shadow-xl">
       <OfficialDocHeader
-        title="נוהל שימוש ברכב חברה"
-        subtitle="נוהל מס׳ 04-05-001 — קרא בעיון ואשר חתימה בתחתית"
+        title={formTitle?.trim() || 'נוהל שימוש ברכב חברה'}
+        subtitle="יש לקרוא את הטופס ולאשר קריאה וחתימה בתחתית"
         date={date}
         vehicleLabel={vehicleLabel}
         driverName={driverName}
       />
 
-      {pdfTemplateUrl ? (
-        <div className="mb-6">
-          <iframe
-            src={pdfTemplateUrl}
-            className="w-full rounded-lg border border-slate-200"
-            style={{ minHeight: '420px' }}
-            title="נוהל שימוש ברכב"
-          />
-          <p className="text-xs text-slate-500 mt-2 text-center">גלול לקרוא את כל הנוהל לפני אישור</p>
-        </div>
-      ) : (
-        <div className="space-y-1 mb-6">
-          {clauses.map(clause => (
-            <div key={clause.id} className="flex gap-3 py-2 border-b border-slate-100 last:border-0">
-              <span className="text-xs font-bold text-slate-400 mt-0.5 w-6 shrink-0 text-left">{clause.id}.</span>
-              <p className="text-sm text-slate-700 leading-relaxed">{clause.text}</p>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="space-y-1 mb-6">
+        {clauses.map(clause => (
+          <div key={clause.id} className="flex gap-3 py-2 border-b border-slate-100 last:border-0">
+            <span className="text-xs font-bold text-slate-400 mt-0.5 w-6 shrink-0 text-left">{clause.id}.</span>
+            <p className="text-sm text-slate-700 leading-relaxed">{clause.text}</p>
+          </div>
+        ))}
+      </div>
 
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800 mb-4 flex gap-2">
         <Shield className="h-4 w-4 mt-0.5 shrink-0" />
-        <span>בחתימתי אני מאשר/ת כי קראתי והבנתי את כלל סעיפי נוהל 04-05-001 ואני מתחייב/ת לפעול על-פיו.</span>
+        <span>באישור זה אני מאשר/ת כי קראתי והבנתי את הטופס ואני מתחייב/ת לפעול לפיו.</span>
       </div>
 
       <div className="flex items-center gap-3 mb-2">
@@ -487,11 +639,11 @@ function Step2({
           className="border-slate-400 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
         />
         <label htmlFor="proc-read" className="text-sm font-medium text-slate-700 cursor-pointer select-none">
-          קראתי את כל {clauses.length} הסעיפים ומסכים/ה לתנאים
+          קראתי והבנתי את הטופס
         </label>
       </div>
 
-      <SignatureBlock sigRef={sigRef} label="חתימת הנהג — הצהרת מחויבות לנוהל שימוש ברכב:" onSign={onSign} />
+      <SignatureBlock sigRef={sigRef} label="חתימת הנהג:" onSign={onSign} signatureKey="procedure-signature" />
     </div>
   );
 }
@@ -500,7 +652,7 @@ function Step2({
 // Step 3 — Health Declaration
 // ─────────────────────────────────────────────
 function Step3({
-  healthItems, setHealthItems, notes, setNotes, sigRef, onSign, vehicleLabel, driverName, date, containerRef, pdfTemplateUrl,
+  healthItems, setHealthItems, notes, setNotes, sigRef, onSign, vehicleLabel, driverName, date, containerRef, formTitle,
 }: {
   healthItems: HealthDeclaration[];
   setHealthItems: (h: HealthDeclaration[]) => void;
@@ -512,7 +664,7 @@ function Step3({
   driverName: string;
   date: string;
   containerRef?: RefObject<HTMLDivElement>;
-  pdfTemplateUrl?: string | null;
+  formTitle?: string;
 }) {
   const toggle = (id: string) =>
     setHealthItems(healthItems.map(h => h.id === id ? { ...h, checked: !h.checked } : h));
@@ -524,7 +676,7 @@ function Step3({
   return (
     <div ref={containerRef} className="bg-white text-slate-900 rounded-2xl p-4 pb-32 sm:p-6 shadow-xl">
       <OfficialDocHeader
-        title="הצהרת בריאות לנהג"
+        title={formTitle?.trim() || 'הצהרת בריאות לנהג'}
         subtitle="יש לסמן ✓ על כל סעיף ולחתום. ידוע כי מסירת פרטים כוזבים מהווה עבירה."
         date={date}
         vehicleLabel={vehicleLabel}
@@ -535,58 +687,43 @@ function Step3({
         אני הח"מ מצהיר/ה כי מצב בריאותי מאפשר נהיגה בטוחה, וכי הפרטים הבאים נכונים:
       </p>
 
-      {pdfTemplateUrl ? (
-        <div className="mb-6">
-          <iframe
-            src={pdfTemplateUrl}
-            className="w-full rounded-lg border border-slate-200"
-            style={{ minHeight: '420px' }}
-            title="הצהרת בריאות"
-          />
-          <p className="text-xs text-slate-500 mt-2 text-center">קרא את ההצהרה ולאחר מכן חתום למטה</p>
-        </div>
-      ) : (
-        <>
-          <div className="space-y-3 mb-6">
-            {healthItems.map((item, i) => (
-              <div
-                key={item.id}
-                onClick={() => toggle(item.id)}
-                className={`flex gap-3 p-3 rounded-lg border cursor-pointer transition-colors select-none ${
-                  item.checked
-                    ? 'bg-emerald-50 border-emerald-300'
-                    : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
-                }`}
-              >
-                <div className="mt-0.5 shrink-0">
-                  {item.checked
-                    ? <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                    : <div className="h-5 w-5 rounded-full border-2 border-slate-300" />
-                  }
-                </div>
-                <p className="text-sm text-slate-700 leading-relaxed">
-                  <span className="font-bold text-slate-400 ml-1">{i + 1}.</span> {item.text}
-                </p>
-              </div>
-            ))}
+      <div className="space-y-3 mb-6">
+        {healthItems.map((item, i) => (
+          <div
+            key={item.id}
+            onClick={() => toggle(item.id)}
+            className={`flex gap-3 p-3 rounded-lg border cursor-pointer transition-colors select-none ${
+              item.checked
+                ? 'bg-emerald-50 border-emerald-300'
+                : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            <div className="mt-0.5 shrink-0">
+              {item.checked
+                ? <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                : <div className="h-5 w-5 rounded-full border-2 border-slate-300" />
+              }
+            </div>
+            <p className="text-sm text-slate-700 leading-relaxed">
+              <span className="font-bold text-slate-400 ml-1">{i + 1}.</span> {item.text}
+            </p>
           </div>
+        ))}
+      </div>
 
-          {/* Quick-select button moved below checklist */}
-          <div className="flex justify-end mb-4">
-            <button
-              type="button"
-              onClick={toggleAll}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
-                allChecked
-                  ? 'bg-emerald-100 border-emerald-400 text-emerald-700 hover:bg-emerald-200'
-                  : 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700'
-              }`}
-            >
-              {allChecked ? '✔ כל הסעיפים אושרו' : 'אני מצהיר כי כל הסעיפים תקינים'}
-            </button>
-          </div>
-        </>
-      )}
+      <div className="flex justify-end mb-4">
+        <button
+          type="button"
+          onClick={toggleAll}
+          className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
+            allChecked
+              ? 'bg-emerald-100 border-emerald-400 text-emerald-700 hover:bg-emerald-200'
+              : 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700'
+          }`}
+        >
+          {allChecked ? '✔ כל הסעיפים אושרו' : 'אני מצהיר כי כל הסעיפים תקינים'}
+        </button>
+      </div>
 
       <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 text-xs text-rose-800 mb-4">
         <Heart className="inline h-3.5 w-3.5 ml-1" />
@@ -605,7 +742,12 @@ function Step3({
         />
       </div>
 
-      <SignatureBlock sigRef={sigRef} label="חתימת הנהג — הצהרת בריאות:" onSign={onSign} />
+      <SignatureBlock
+        sigRef={sigRef}
+        label="חתימת הנהג — הצהרת בריאות:"
+        onSign={onSign}
+        signatureKey="health-signature"
+      />
     </div>
   );
 }
@@ -617,6 +759,10 @@ function Step4({
   licenseNumber, setLicenseNumber,
   licenseExpiry, setLicenseExpiry,
   licenseClass, setLicenseClass,
+  odometerReading, setOdometerReading,
+  fuelLevel, setFuelLevel,
+  damageNotes, setDamageNotes,
+  damageReport, setDamageReport,
   licenseFront, setLicenseFront,
   licenseBack, setLicenseBack,
   skipLicenseStep,
@@ -625,6 +771,10 @@ function Step4({
   licenseNumber: string; setLicenseNumber: (v: string) => void;
   licenseExpiry: string; setLicenseExpiry: (v: string) => void;
   licenseClass: string; setLicenseClass: (v: string) => void;
+  odometerReading: string; setOdometerReading: (v: string) => void;
+  fuelLevel: string; setFuelLevel: (v: string) => void;
+  damageNotes: string; setDamageNotes: (v: string) => void;
+  damageReport: VehicleDamageReport; setDamageReport: (v: VehicleDamageReport) => void;
   licenseFront: File | null; setLicenseFront: (f: File | null) => void;
   licenseBack: File | null; setLicenseBack: (f: File | null) => void;
   skipLicenseStep: boolean;
@@ -685,7 +835,7 @@ function Step4({
         )}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <Label className="text-slate-300 text-sm font-semibold">מספר רישיון *</Label>
+            <Label className="text-slate-300 text-sm font-semibold">מספר רישיון</Label>
             <Input
               value={licenseNumber}
               onChange={(e) => setLicenseNumber(e.target.value)}
@@ -695,7 +845,7 @@ function Step4({
             />
           </div>
           <div>
-            <Label className="text-slate-300 text-sm font-semibold">תוקף רישיון *</Label>
+            <Label className="text-slate-300 text-sm font-semibold">תוקף רישיון</Label>
             <Input
               type="date"
               value={licenseExpiry}
@@ -714,6 +864,43 @@ function Step4({
             />
           </div>
         </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+          <div>
+            <Label className="text-slate-300 text-sm font-semibold">קילומטראז' נוכחי</Label>
+            <Input
+              value={odometerReading}
+              onChange={(e) => setOdometerReading(e.target.value)}
+              placeholder="לדוגמה: 125430"
+              inputMode="numeric"
+              dir="ltr"
+              className="mt-1 border-slate-700 bg-slate-900 text-slate-50 font-semibold placeholder:text-slate-400 focus:border-cyan-400"
+            />
+          </div>
+          <div>
+            <Label className="text-slate-300 text-sm font-semibold">רמת דלק (0-8)</Label>
+            <Input
+              value={fuelLevel}
+              onChange={(e) => setFuelLevel(e.target.value)}
+              placeholder="0-8"
+              inputMode="numeric"
+              dir="ltr"
+              className="mt-1 border-slate-700 bg-slate-900 text-slate-50 font-semibold placeholder:text-slate-400 focus:border-cyan-400"
+            />
+          </div>
+          <div className="md:col-span-1">
+            <Label className="text-slate-300 text-sm font-semibold">נזקים קיימים</Label>
+            <Input
+              value={damageNotes}
+              onChange={(e) => setDamageNotes(e.target.value)}
+              placeholder="ללא / פירוט קצר"
+              className="mt-1 border-slate-700 bg-slate-900 text-slate-50 font-semibold placeholder:text-slate-400 focus:border-cyan-400"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-xl border border-slate-200 bg-[#0b1729] p-3">
+        <VehicleDamage3DSelector value={damageReport} onChange={setDamageReport} />
       </div>
 
       <p className="text-xs text-slate-400 mt-4 text-center">
@@ -726,8 +913,58 @@ function Step4({
 // ─────────────────────────────────────────────
 // Progress Bar
 // ─────────────────────────────────────────────
-const BASE_STEPS = [
-  { icon: Car, label: 'טופס קבלת רכב' },
+type WizardStepKind = 'reception' | 'procedure' | 'health' | 'license' | 'generic';
+
+type DeliveryFormDoc = {
+  id: string;
+  title: string;
+  template_name?: string | null;
+  file_url?: string | null;
+  approved?: boolean;
+  description?: string | null;
+  json_schema?: unknown;
+};
+
+type PracticalTestUiState = {
+  checks: Record<string, 'pass' | 'fail' | ''>;
+  date: string;
+  time: string;
+  examinerName: string;
+  result: 'pass' | 'fail' | '';
+};
+
+type TrafficLiabilityUiState = {
+  firstName: string;
+  lastName: string;
+  idNumber: string;
+  fullAddress: string;
+  mobile: string;
+};
+
+type UpgradeUiState = {
+  vehicleNameToUpgrade: string;
+  netUpgradeAmount: string;
+  fullName: string;
+};
+
+type ReturnFormUiState = {
+  returnDate: string;
+  returnTime: string;
+  odometer: string;
+  fuel: string;
+  damages: string;
+  missingAccessories: string;
+};
+
+type WizardStep = {
+  icon: typeof Car;
+  label: string;
+  kind: WizardStepKind;
+  docId?: string;
+};
+
+const BASE_STEPS: WizardStep[] = [
+  { icon: Car, label: 'טופס קבלת רכב', kind: 'reception' },
 ];
 
 // Keep STEPS alias for backward compat
@@ -774,25 +1011,660 @@ function ProgressBar({ current, steps = STEPS }: { current: number; steps?: type
   );
 }
 
+type RenderStepContentProps = {
+  stepIdx: number;
+  wizardSteps: WizardStep[];
+  availableDeliveryForms: DeliveryFormDoc[];
+  accessories: AccessoryItem[];
+  setAccessories: (value: AccessoryItem[]) => void;
+  sig1Ref: RefObject<SignaturePadRef>;
+  setSig1OK: (has: boolean) => void;
+  vehicleLabel: string;
+  driverName: string;
+  today: string;
+  deliveryDateTime: string;
+  receptionDeclarationText: string;
+  manualFields: ReceptionManualFields;
+  step1FieldErrors: ReceptionFieldErrors;
+  onManualFieldChange: (field: keyof ReceptionManualFields, value: string) => void;
+  canSignReception: boolean;
+  healthItems: HealthDeclaration[];
+  setHealthItems: (value: HealthDeclaration[]) => void;
+  healthNotes: string;
+  setHealthNotes: (value: string) => void;
+  sig3Ref: RefObject<SignaturePadRef>;
+  setSig3OK: (has: boolean) => void;
+  procedureRead: boolean;
+  setProcedureRead: (value: boolean) => void;
+  sig2Ref: RefObject<SignaturePadRef>;
+  setSig2OK: (has: boolean) => void;
+  activeClauses: ProcedureClause[];
+  licenseNumber: string;
+  setLicenseNumber: (value: string) => void;
+  licenseExpiry: string;
+  setLicenseExpiry: (value: string) => void;
+  licenseClass: string;
+  setLicenseClass: (value: string) => void;
+  odometerReading: string;
+  setOdometerReading: (value: string) => void;
+  fuelLevel: string;
+  setFuelLevel: (value: string) => void;
+  damageNotes: string;
+  setDamageNotes: (value: string) => void;
+  damageReport: VehicleDamageReport;
+  setDamageReport: (value: VehicleDamageReport) => void;
+  licenseFront: File | null;
+  setLicenseFront: (value: File | null) => void;
+  licenseBack: File | null;
+  setLicenseBack: (value: File | null) => void;
+  skipLicenseStep: boolean;
+  genericFormApprovals: Record<string, boolean>;
+  setGenericFormApprovals: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  genericFormNotes: Record<string, string>;
+  setGenericFormNotes: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  genericSigRef: RefObject<SignaturePadRef>;
+  genericSigOkByDocId: Record<string, boolean>;
+  setGenericSigOkByDocId: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  practicalTestUiByDocId: Record<string, PracticalTestUiState>;
+  setPracticalTestUiByDocId: React.Dispatch<React.SetStateAction<Record<string, PracticalTestUiState>>>;
+  trafficLiabilityUiByDocId: Record<string, TrafficLiabilityUiState>;
+  setTrafficLiabilityUiByDocId: React.Dispatch<React.SetStateAction<Record<string, TrafficLiabilityUiState>>>;
+  upgradeUiByDocId: Record<string, UpgradeUiState>;
+  setUpgradeUiByDocId: React.Dispatch<React.SetStateAction<Record<string, UpgradeUiState>>>;
+  returnFormUiByDocId: Record<string, ReturnFormUiState>;
+  setReturnFormUiByDocId: React.Dispatch<React.SetStateAction<Record<string, ReturnFormUiState>>>;
+};
+
+function renderStepContent({
+  stepIdx,
+  wizardSteps,
+  availableDeliveryForms,
+  accessories,
+  setAccessories,
+  sig1Ref,
+  setSig1OK,
+  vehicleLabel,
+  driverName,
+  today,
+  deliveryDateTime,
+  receptionDeclarationText,
+  manualFields,
+  step1FieldErrors,
+  onManualFieldChange,
+  canSignReception,
+  healthItems,
+  setHealthItems,
+  healthNotes,
+  setHealthNotes,
+  sig3Ref,
+  setSig3OK,
+  procedureRead,
+  setProcedureRead,
+  sig2Ref,
+  setSig2OK,
+  activeClauses,
+  licenseNumber,
+  setLicenseNumber,
+  licenseExpiry,
+  setLicenseExpiry,
+  licenseClass,
+  setLicenseClass,
+  odometerReading,
+  setOdometerReading,
+  fuelLevel,
+  setFuelLevel,
+  damageNotes,
+  setDamageNotes,
+  damageReport,
+  setDamageReport,
+  licenseFront,
+  setLicenseFront,
+  licenseBack,
+  setLicenseBack,
+  skipLicenseStep,
+  genericFormApprovals,
+  setGenericFormApprovals,
+  genericFormNotes,
+  setGenericFormNotes,
+  genericSigRef,
+  genericSigOkByDocId,
+  setGenericSigOkByDocId,
+  practicalTestUiByDocId,
+  setPracticalTestUiByDocId,
+  trafficLiabilityUiByDocId,
+  setTrafficLiabilityUiByDocId,
+  upgradeUiByDocId,
+  setUpgradeUiByDocId,
+  returnFormUiByDocId,
+  setReturnFormUiByDocId,
+}: RenderStepContentProps) {
+  const currentStep = wizardSteps[stepIdx];
+  if (!currentStep) return null;
+
+  if (currentStep.kind === 'reception') {
+    return (
+      <Step1
+        accessories={accessories}
+        setAccessories={setAccessories}
+        sigRef={sig1Ref}
+        onSign={setSig1OK}
+        vehicleLabel={vehicleLabel}
+        driverName={driverName}
+        date={today}
+        deliveryDateTime={deliveryDateTime}
+        declarationText={receptionDeclarationText}
+        manualFields={manualFields}
+        fieldErrors={step1FieldErrors}
+        onManualFieldChange={onManualFieldChange}
+        canSign={canSignReception}
+      />
+    );
+  }
+
+  const doc = currentStep.docId
+    ? availableDeliveryForms.find((f) => f.id === currentStep.docId)
+    : undefined;
+  if (!doc) return null;
+
+  if (currentStep.kind === 'health') {
+    return (
+      <Step3
+        healthItems={healthItems}
+        setHealthItems={setHealthItems}
+        notes={healthNotes}
+        setNotes={setHealthNotes}
+        sigRef={sig3Ref}
+        onSign={setSig3OK}
+        vehicleLabel={vehicleLabel}
+        driverName={driverName}
+        date={today}
+        formTitle={doc.title}
+      />
+    );
+  }
+
+  if (currentStep.kind === 'procedure') {
+    return (
+      <Step2
+        procedureRead={procedureRead}
+        setProcedureRead={setProcedureRead}
+        sigRef={sig2Ref}
+        onSign={setSig2OK}
+        vehicleLabel={vehicleLabel}
+        driverName={driverName}
+        date={today}
+        clauses={activeClauses}
+        formTitle={doc.title}
+      />
+    );
+  }
+
+  if (currentStep.kind === 'license') {
+    return (
+      <Step4
+        licenseNumber={licenseNumber}
+        setLicenseNumber={setLicenseNumber}
+        licenseExpiry={licenseExpiry}
+        setLicenseExpiry={setLicenseExpiry}
+        licenseClass={licenseClass}
+        setLicenseClass={setLicenseClass}
+        odometerReading={odometerReading}
+        setOdometerReading={setOdometerReading}
+        fuelLevel={fuelLevel}
+        setFuelLevel={setFuelLevel}
+        damageNotes={damageNotes}
+        setDamageNotes={setDamageNotes}
+        damageReport={damageReport}
+        setDamageReport={setDamageReport}
+        licenseFront={licenseFront}
+        setLicenseFront={setLicenseFront}
+        licenseBack={licenseBack}
+        setLicenseBack={setLicenseBack}
+        skipLicenseStep={skipLicenseStep}
+        driverName={driverName}
+        date={today}
+      />
+    );
+  }
+
+  const builtinTemplateKey = String((doc.json_schema as any)?.builtin_template_key ?? '');
+  const isPracticalDrivingTestForm =
+    builtinTemplateKey === 'system-practical-driving-test' || doc.title.includes('מבחן מעשי בנהיגה');
+  const isTrafficLiabilityForm =
+    builtinTemplateKey === 'system-traffic-liability-annex' ||
+    (doc.title.includes('אחריות אישית') && doc.title.includes('עבירות תנועה'));
+  const isUpgradeForm =
+    builtinTemplateKey === 'system-upgrade-request' || doc.title.includes('שדרוג');
+  const isReturnForm =
+    builtinTemplateKey === 'system-return-form' || doc.title.includes('החזרת רכב');
+  const isReplacementUsageForm =
+    builtinTemplateKey === 'system-replacement-usage' || doc.title.includes('שימוש ברכב חלופי');
+  const now = new Date();
+  const defaultDateIso = now.toISOString().slice(0, 10);
+  const defaultTimeIso = now.toTimeString().slice(0, 5);
+  const practicalRows = [
+    'שליטה בהגה',
+    'עצירה',
+    'נסיעה לאחור',
+    'שליטה כללית ברכב',
+    'איתות',
+    'מיקום בנתיבי הכביש',
+    'מיקום בצמתים',
+    'פניות',
+    'ציות לתמרורים ורמזורים',
+    'הסתכלות',
+    'מהירות',
+    'קצב נסיעה',
+    'שמירת רווח מלפנים ומהצדדים',
+  ];
+  const practicalState = practicalTestUiByDocId[doc.id] ?? {
+    checks: Object.fromEntries(practicalRows.map((row) => [row, ''])) as Record<string, 'pass' | 'fail' | ''>,
+    date: defaultDateIso,
+    time: defaultTimeIso,
+    examinerName: '',
+    result: '',
+  };
+  const trafficState = trafficLiabilityUiByDocId[doc.id] ?? {
+    firstName: '',
+    lastName: '',
+    idNumber: '',
+    fullAddress: '',
+    mobile: '',
+  };
+  const upgradeState = upgradeUiByDocId[doc.id] ?? {
+    vehicleNameToUpgrade: '',
+    netUpgradeAmount: '',
+    fullName: '',
+  };
+  const returnState = returnFormUiByDocId[doc.id] ?? {
+    returnDate: defaultDateIso,
+    returnTime: defaultTimeIso,
+    odometer: '',
+    fuel: '',
+    damages: '',
+    missingAccessories: '',
+  };
+
+  return (
+    <div className="bg-white text-slate-900 rounded-2xl p-4 pb-32 sm:p-6 shadow-xl">
+      <OfficialDocHeader title={doc.title} date={today} vehicleLabel={vehicleLabel} driverName={driverName} />
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+        {isPracticalDrivingTestForm ? (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-700">
+              מרכיבי המבחן: עבור כל פריט יש לסמן &quot;עבר&quot; או &quot;לא עבר&quot;.
+            </p>
+            <div className="overflow-x-auto border border-slate-200 rounded-lg">
+              <table className="min-w-[520px] w-full text-sm">
+                <thead className="bg-slate-100">
+                  <tr>
+                    <th className="px-3 py-2 text-center w-20">
+                      <div className="flex flex-col items-center gap-1">
+                        <span>עבר</span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 text-[11px]"
+                          onClick={() =>
+                            setPracticalTestUiByDocId((prev) => ({
+                              ...prev,
+                              [doc.id]: {
+                                ...practicalState,
+                                checks: Object.fromEntries(practicalRows.map((row) => [row, 'pass'])) as Record<string, 'pass' | 'fail' | ''>,
+                              },
+                            }))
+                          }
+                        >
+                          סמן הכל
+                        </Button>
+                      </div>
+                    </th>
+                    <th className="px-3 py-2 text-center w-20">לא עבר</th>
+                    <th className="px-3 py-2 text-right">פריט בדיקה</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {practicalRows.map((row, idx) => (
+                    <tr key={`${doc.id}-${row}`} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                      <td className="px-3 py-2 text-center">
+                        <input
+                          type="radio"
+                          name={`practical-${doc.id}-${row}`}
+                          checked={practicalState.checks[row] === 'pass'}
+                          onChange={() =>
+                            setPracticalTestUiByDocId((prev) => ({
+                              ...prev,
+                              [doc.id]: {
+                                ...practicalState,
+                                checks: { ...practicalState.checks, [row]: 'pass' },
+                              },
+                            }))
+                          }
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <input
+                          type="radio"
+                          name={`practical-${doc.id}-${row}`}
+                          checked={practicalState.checks[row] === 'fail'}
+                          onChange={() =>
+                            setPracticalTestUiByDocId((prev) => ({
+                              ...prev,
+                              [doc.id]: {
+                                ...practicalState,
+                                checks: { ...practicalState.checks, [row]: 'fail' },
+                              },
+                            }))
+                          }
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-right">{row}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="text-xs text-slate-500">
+              סעיפים: {practicalRows.map((row) => row).join(' | ')}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label className="text-slate-700 text-sm font-semibold">תאריך</Label>
+                <Input
+                  type="date"
+                  value={practicalState.date || defaultDateIso}
+                  onChange={(e) =>
+                    setPracticalTestUiByDocId((prev) => ({
+                      ...prev,
+                      [doc.id]: { ...practicalState, date: e.target.value },
+                    }))
+                  }
+                />
+              </div>
+              <div>
+                <Label className="text-slate-700 text-sm font-semibold">שעה</Label>
+                <Input
+                  type="time"
+                  value={practicalState.time || defaultTimeIso}
+                  onChange={(e) =>
+                    setPracticalTestUiByDocId((prev) => ({
+                      ...prev,
+                      [doc.id]: { ...practicalState, time: e.target.value },
+                    }))
+                  }
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <Label className="text-slate-700 text-sm font-semibold">שם הבוחן</Label>
+                <Input
+                  value={practicalState.examinerName}
+                  onChange={(e) =>
+                    setPracticalTestUiByDocId((prev) => ({
+                      ...prev,
+                      [doc.id]: { ...practicalState, examinerName: e.target.value },
+                    }))
+                  }
+                  placeholder="שם מלא"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <Label className="text-slate-700 text-sm font-semibold">תוצאת מבחן</Label>
+                <div className="mt-1 flex items-center gap-4 text-sm">
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name={`practical-result-${doc.id}`}
+                      checked={practicalState.result === 'pass'}
+                      onChange={() =>
+                        setPracticalTestUiByDocId((prev) => ({
+                          ...prev,
+                          [doc.id]: { ...practicalState, result: 'pass' },
+                        }))
+                      }
+                    />
+                    עבר
+                  </label>
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name={`practical-result-${doc.id}`}
+                      checked={practicalState.result === 'fail'}
+                      onChange={() =>
+                        setPracticalTestUiByDocId((prev) => ({
+                          ...prev,
+                          [doc.id]: { ...practicalState, result: 'fail' },
+                        }))
+                      }
+                    />
+                    לא עבר
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : isTrafficLiabilityForm ? (
+          <div className="space-y-4">
+            <div className="space-y-2 text-sm text-slate-700 leading-6">
+              {String((doc.json_schema as any)?.template_content ?? doc.description ?? '')
+                .split('\n')
+                .map((line) => line.trim())
+                .filter(Boolean)
+                .map((line, idx) => (
+                  <p key={`${doc.id}-${idx}`}>{line}</p>
+                ))}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-slate-200 pt-3">
+              <div>
+                <Label>שם</Label>
+                <Input value={trafficState.firstName} onChange={(e) => setTrafficLiabilityUiByDocId((prev) => ({ ...prev, [doc.id]: { ...trafficState, firstName: e.target.value } }))} />
+              </div>
+              <div>
+                <Label>שם משפחה</Label>
+                <Input value={trafficState.lastName} onChange={(e) => setTrafficLiabilityUiByDocId((prev) => ({ ...prev, [doc.id]: { ...trafficState, lastName: e.target.value } }))} />
+              </div>
+              <div>
+                <Label>מספר ת.ז</Label>
+                <Input value={trafficState.idNumber} onChange={(e) => setTrafficLiabilityUiByDocId((prev) => ({ ...prev, [doc.id]: { ...trafficState, idNumber: e.target.value } }))} />
+              </div>
+              <div>
+                <Label>נייד</Label>
+                <Input value={trafficState.mobile} onChange={(e) => setTrafficLiabilityUiByDocId((prev) => ({ ...prev, [doc.id]: { ...trafficState, mobile: e.target.value } }))} />
+              </div>
+              <div className="sm:col-span-2">
+                <Label>כתובת מלאה</Label>
+                <Input value={trafficState.fullAddress} onChange={(e) => setTrafficLiabilityUiByDocId((prev) => ({ ...prev, [doc.id]: { ...trafficState, fullAddress: e.target.value } }))} />
+              </div>
+            </div>
+          </div>
+        ) : isUpgradeForm ? (
+          <div className="space-y-4">
+            <div className="space-y-2 text-sm text-slate-700 leading-6">
+              {String((doc.json_schema as any)?.template_content ?? doc.description ?? '')
+                .split('\n')
+                .map((line) => line.trim())
+                .filter(Boolean)
+                .map((line, idx) => (
+                  <p key={`${doc.id}-${idx}`}>{line}</p>
+                ))}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-slate-200 pt-3">
+              <div>
+                <Label>שם הרכב לשדרוג</Label>
+                <Input value={upgradeState.vehicleNameToUpgrade} onChange={(e) => setUpgradeUiByDocId((prev) => ({ ...prev, [doc.id]: { ...upgradeState, vehicleNameToUpgrade: e.target.value } }))} />
+              </div>
+              <div>
+                <Label>סכום שדרוג (נטו)</Label>
+                <Input value={upgradeState.netUpgradeAmount} onChange={(e) => setUpgradeUiByDocId((prev) => ({ ...prev, [doc.id]: { ...upgradeState, netUpgradeAmount: e.target.value } }))} />
+              </div>
+              <div className="sm:col-span-2">
+                <Label>שם מלא</Label>
+                <Input value={upgradeState.fullName} onChange={(e) => setUpgradeUiByDocId((prev) => ({ ...prev, [doc.id]: { ...upgradeState, fullName: e.target.value } }))} />
+              </div>
+            </div>
+          </div>
+        ) : isReturnForm ? (
+          <div className="space-y-4">
+            <div className="space-y-2 text-sm text-slate-700 leading-6">
+              {String((doc.json_schema as any)?.template_content ?? doc.description ?? '')
+                .split('\n')
+                .map((line) => line.trim())
+                .filter(Boolean)
+                .map((line, idx) => (
+                  <p key={`${doc.id}-${idx}`}>{line}</p>
+                ))}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-slate-200 pt-3">
+              <div>
+                <Label>תאריך החזרה</Label>
+                <Input type="date" value={returnState.returnDate || defaultDateIso} onChange={(e) => setReturnFormUiByDocId((prev) => ({ ...prev, [doc.id]: { ...returnState, returnDate: e.target.value } }))} />
+              </div>
+              <div>
+                <Label>שעת החזרה</Label>
+                <Input type="time" value={returnState.returnTime || defaultTimeIso} onChange={(e) => setReturnFormUiByDocId((prev) => ({ ...prev, [doc.id]: { ...returnState, returnTime: e.target.value } }))} />
+              </div>
+              <div>
+                <Label>ק"מ בהחזרה</Label>
+                <Input value={returnState.odometer} onChange={(e) => setReturnFormUiByDocId((prev) => ({ ...prev, [doc.id]: { ...returnState, odometer: e.target.value } }))} />
+              </div>
+              <div>
+                <Label>רמת דלק בהחזרה</Label>
+                <Input value={returnState.fuel} onChange={(e) => setReturnFormUiByDocId((prev) => ({ ...prev, [doc.id]: { ...returnState, fuel: e.target.value } }))} />
+              </div>
+              <div className="sm:col-span-2">
+                <Label>סימון נזקים</Label>
+                <Input value={returnState.damages} onChange={(e) => setReturnFormUiByDocId((prev) => ({ ...prev, [doc.id]: { ...returnState, damages: e.target.value } }))} />
+              </div>
+              <div className="sm:col-span-2">
+                <Label>חוסר באביזרים</Label>
+                <Input value={returnState.missingAccessories} onChange={(e) => setReturnFormUiByDocId((prev) => ({ ...prev, [doc.id]: { ...returnState, missingAccessories: e.target.value } }))} />
+              </div>
+            </div>
+          </div>
+        ) : isReplacementUsageForm ? (
+          <div className="space-y-2 text-sm text-slate-700 leading-6">
+            {String((doc.json_schema as any)?.template_content ?? doc.description ?? '')
+              .split('\n')
+              .map((line) => line.trim())
+              .filter(Boolean)
+              .map((line, idx) => (
+                <p key={`${doc.id}-${idx}`}>{line}</p>
+              ))}
+          </div>
+        ) : (
+          <div className="space-y-2 text-sm text-slate-700 leading-6">
+            {String((doc.json_schema as any)?.template_content ?? doc.description ?? '')
+              .split('\n')
+              .map((line) => line.trim())
+              .filter(Boolean)
+              .map((line, idx) => (
+                <p key={`${doc.id}-${idx}`}>{line}</p>
+              ))}
+          </div>
+        )}
+      </div>
+      <div className="mt-4">
+        <Label className="text-slate-700 text-sm font-semibold block mb-1">הערות לטופס</Label>
+        <Textarea
+          value={genericFormNotes[doc.id] ?? ''}
+          onChange={(e) =>
+            setGenericFormNotes((prev) => ({ ...prev, [doc.id]: e.target.value }))
+          }
+          placeholder="הערות נוספות לטופס זה..."
+          rows={3}
+          className="border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:border-blue-400 resize-none"
+        />
+      </div>
+      <div className="mt-4">
+        <SignatureBlock
+          sigRef={genericSigRef}
+          label="חתימת הנהג:"
+          signatureKey={`generic-signature-${doc.id}`}
+          onSign={(has) => setGenericSigOkByDocId((prev) => ({ ...prev, [doc.id]: has }))}
+        />
+        {genericSigOkByDocId[doc.id] && (
+          <p className="mt-2 text-xs text-emerald-600">החתימה נשמרה לטופס זה.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function getStepKindForDoc(doc: DeliveryFormDoc): WizardStepKind {
+  const builtinKey = String((doc.json_schema as any)?.builtin_template_key ?? '').trim();
+  if (doc.template_name === 'health' || builtinKey === 'system-health-statement') return 'health';
+  if (doc.template_name === 'procedure' || builtinKey === 'system-vehicle-policy') return 'procedure';
+  if (doc.template_name === 'license' || doc.title.includes('רישיון')) return 'license';
+  return 'generic';
+}
+
 // ─────────────────────────────────────────────
 // Main Wizard
 // ─────────────────────────────────────────────
 export default function VehicleHandoverWizard() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const { data: vehicles } = useVehicles();
   const { data: drivers  } = useDrivers();
   const { user } = useAuth();
-  const { data: orgSettings } = useOrgSettings();
   const { data: orgDocuments } = useOrgDocuments();
 
-  const vehicleId  = searchParams.get('vehicleId')  ?? '';
-  const driverId   = searchParams.get('driverId')   ?? '';
+  const routerState = (location.state ?? {}) as VehicleHandoverWizardLocationState;
+  const stateVehicleId = routerState.vehicleId?.trim() ?? '';
+  const stateDriverId = routerState.driverId?.trim() ?? '';
+  const stateReportUrl = routerState.reportUrl?.trim() ?? '';
+  const queryVehicleId = searchParams.get('vehicleId')?.trim() ?? '';
+  const queryDriverId = searchParams.get('driverId')?.trim() ?? '';
+  const queryReportUrl = decodeURIComponent(searchParams.get('reportUrl') ?? '').trim();
+
+  const vehicleId  = stateVehicleId || queryVehicleId;
+  const driverId   = stateDriverId || queryDriverId;
   const handoverTypeParam = searchParams.get('handoverType') ?? searchParams.get('type') ?? 'delivery';
   const handoverType = handoverTypeParam === 'return' ? 'return' : 'delivery';
   const selectedFormsParam = searchParams.get('selectedForms') ?? '';
-  const reportUrl  = decodeURIComponent(searchParams.get('reportUrl')  ?? '');
+  const reportUrl  = stateReportUrl || queryReportUrl;
   const handoverId = decodeURIComponent(searchParams.get('handoverId') ?? '');
+  const odometerFromQuery = searchParams.get('odometer')?.trim() ?? '';
+  const fuelLevelFromQuery = searchParams.get('fuelLevel')?.trim() ?? '';
+  const damageNotesFromQuery = searchParams.get('damageNotes')?.trim() ?? '';
+
+  useEffect(() => {
+    const hasLegacyQueryValues = Boolean(queryVehicleId || queryDriverId || queryReportUrl);
+    if (!hasLegacyQueryValues) return;
+
+    const nextSearch = new URLSearchParams(searchParams);
+    nextSearch.delete('vehicleId');
+    nextSearch.delete('driverId');
+    nextSearch.delete('reportUrl');
+
+    const nextSearchString = nextSearch.toString();
+    const nextState: VehicleHandoverWizardLocationState = {
+      ...routerState,
+      vehicleId: stateVehicleId || queryVehicleId,
+      driverId: stateDriverId || queryDriverId,
+      reportUrl: stateReportUrl || queryReportUrl,
+    };
+
+    navigate(
+      {
+        pathname: location.pathname,
+        search: nextSearchString ? `?${nextSearchString}` : '',
+      },
+      { replace: true, state: nextState },
+    );
+  }, [
+    location.pathname,
+    navigate,
+    queryDriverId,
+    queryReportUrl,
+    queryVehicleId,
+    routerState,
+    searchParams,
+    stateDriverId,
+    stateReportUrl,
+    stateVehicleId,
+  ]);
 
   const vehicle = vehicles?.find(v => v.id === vehicleId);
   const driver  = drivers?.find(d => d.id === driverId);
@@ -823,6 +1695,7 @@ export default function VehicleHandoverWizard() {
   const sig1Ref = useRef<SignaturePadRef>(null);
   const sig2Ref = useRef<SignaturePadRef>(null);
   const sig3Ref = useRef<SignaturePadRef>(null);
+  const genericSigRef = useRef<SignaturePadRef>(null);
 
 
 
@@ -842,27 +1715,28 @@ export default function VehicleHandoverWizard() {
   const [healthItems, setHealthItems] = useState<HealthDeclaration[]>(INITIAL_HEALTH);
   const [healthNotes, setHealthNotes] = useState('');
   const [sig3OK, setSig3OK] = useState(false);
+  const [genericFormApprovals, setGenericFormApprovals] = useState<Record<string, boolean>>({});
+  const [genericFormNotes, setGenericFormNotes] = useState<Record<string, string>>({});
+  const [genericSigOkByDocId, setGenericSigOkByDocId] = useState<Record<string, boolean>>({});
+  const [genericSigDataUrlByDocId, setGenericSigDataUrlByDocId] = useState<Record<string, string>>({});
+  const [practicalTestUiByDocId, setPracticalTestUiByDocId] = useState<Record<string, PracticalTestUiState>>({});
+  const [trafficLiabilityUiByDocId, setTrafficLiabilityUiByDocId] = useState<Record<string, TrafficLiabilityUiState>>({});
+  const [upgradeUiByDocId, setUpgradeUiByDocId] = useState<Record<string, UpgradeUiState>>({});
+  const [returnFormUiByDocId, setReturnFormUiByDocId] = useState<Record<string, ReturnFormUiState>>({});
   const [selectedDeliveryFormIds, setSelectedDeliveryFormIds] = useState<string[]>([]);
   const [formsPickerOpen, setFormsPickerOpen] = useState(false);
-
-  // Derive effective clauses / health items from org settings, fall back to static defaults
-  const parsedClauses = parsePolicyClauses(orgSettings?.vehicle_policy_text);
-  const activeClauses = parsedClauses.length > 0 ? parsedClauses : PROCEDURE_CLAUSES;
-
-  useEffect(() => {
-    if (!orgSettings?.health_statement_text) return;
-    const parsed = parseHealthItems(orgSettings.health_statement_text);
-    if (parsed.length > 0) {
-      setHealthItems(prev => prev.every(p => !p.checked) ? parsed : prev);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgSettings?.health_statement_text]);
 
   const [licenseNumber, setLicenseNumber] = useState('');
   const [licenseExpiry, setLicenseExpiry] = useState('');
   const [licenseClass,  setLicenseClass]  = useState('B');
+  const [odometerReading, setOdometerReading] = useState(odometerFromQuery);
+  const [fuelLevel, setFuelLevel] = useState(fuelLevelFromQuery);
+  const [damageNotes, setDamageNotes] = useState(damageNotesFromQuery);
+  const [damageReport, setDamageReport] = useState<VehicleDamageReport>(cloneEmptyDamageReport());
   const [licenseFront,  setLicenseFront]  = useState<File | null>(null);
   const [licenseBack,   setLicenseBack]   = useState<File | null>(null);
+  const [recentlyToggledFormId, setRecentlyToggledFormId] = useState<string | null>(null);
+  const [recentlyToggledAdded, setRecentlyToggledAdded] = useState(false);
 
   // All active forms (for backward compatibility)
   const availableDeliveryForms = useMemo(
@@ -918,10 +1792,6 @@ export default function VehicleHandoverWizard() {
     setLicenseExpiry((prev) => prev || (driver?.license_expiry ?? ''));
   }, [driver?.id, driver?.license_expiry]);
 
-  // ── PDF template URLs (from org settings) ──
-  const healthPdfUrl  = (orgSettings as any)?.health_statement_pdf_url as string | null ?? null;
-  const policyPdfUrl  = (orgSettings as any)?.vehicle_policy_pdf_url  as string | null ?? null;
-
   const selectedDeliveryForms = useMemo(() => {
     const selectedSet = new Set(selectedDeliveryFormIds);
     return availableDeliveryForms.filter((doc) => selectedSet.has(doc.id));
@@ -937,6 +1807,72 @@ export default function VehicleHandoverWizard() {
     String((receptionFormDoc?.json_schema as any)?.template_content ?? '').trim() ||
     String(receptionFormDoc?.description ?? '').trim() ||
     '';
+
+  const procedureFormDoc = useMemo(
+    () =>
+      availableDeliveryForms.find(
+        (doc) => doc.template_name === 'procedure' || doc.title.includes('נוהל'),
+      ) ?? null,
+    [availableDeliveryForms],
+  );
+  const healthFormDoc = useMemo(
+    () =>
+      availableDeliveryForms.find(
+        (doc) => doc.template_name === 'health' || doc.title.includes('בריאות'),
+      ) ?? null,
+    [availableDeliveryForms],
+  );
+
+  const procedureTemplateText = useMemo(
+    () =>
+      String((procedureFormDoc?.json_schema as any)?.template_content ?? procedureFormDoc?.description ?? '').trim(),
+    [procedureFormDoc],
+  );
+  const healthTemplateText = useMemo(
+    () =>
+      String((healthFormDoc?.json_schema as any)?.template_content ?? healthFormDoc?.description ?? '').trim(),
+    [healthFormDoc],
+  );
+
+  const parsedClauses = useMemo(() => parsePolicyClauses(procedureTemplateText), [procedureTemplateText]);
+  const fallbackProcedureClauses = useMemo(
+    () => parseProcedureClausesFromTemplateFallback(procedureTemplateText),
+    [procedureTemplateText],
+  );
+  const activeClauses = parsedClauses.length > 0
+    ? parsedClauses
+    : fallbackProcedureClauses.length > 0
+      ? fallbackProcedureClauses
+      : PROCEDURE_CLAUSES;
+  const parsedHealthItems = useMemo(() => parseHealthItems(healthTemplateText), [healthTemplateText]);
+  const fallbackHealthItems = useMemo(
+    () => parseHealthItemsFromTemplateFallback(healthTemplateText),
+    [healthTemplateText],
+  );
+  const activeHealthItems = parsedHealthItems.length > 0
+    ? parsedHealthItems
+    : fallbackHealthItems.length > 0
+      ? fallbackHealthItems
+      : INITIAL_HEALTH;
+
+  useEffect(() => {
+    if (activeHealthItems.length === 0) return;
+    setHealthItems((prev) => {
+      const hasUserProgress = prev.some((item) => item.checked);
+      if (hasUserProgress) return prev;
+      return activeHealthItems;
+    });
+  }, [activeHealthItems]);
+
+  useEffect(() => {
+    const parsedAccessories = parseAccessoriesFromTemplate(receptionDeclarationText);
+    if (parsedAccessories.length === 0) return;
+    setAccessories((prev) => {
+      const hasUserProgress = prev.some((item) => item.checked || item.missing || item.notes.trim().length > 0);
+      if (hasUserProgress) return prev;
+      return parsedAccessories;
+    });
+  }, [receptionDeclarationText]);
 
   const requiredStep1FieldsMissing = useMemo(() => {
     const missing: Array<{ key: keyof ReceptionManualFields; label: string }> = [];
@@ -957,6 +1893,61 @@ export default function VehicleHandoverWizard() {
     }
     return invalid;
   }, [manualFields.idNumber, manualFields.ignitionCode, manualFields.phone]);
+
+  const step1FieldErrors = useMemo<ReceptionFieldErrors>(() => {
+    const errors: ReceptionFieldErrors = {};
+    const idNumber = manualFields.idNumber.trim();
+    const employeeNumber = manualFields.employeeNumber.trim();
+    const phone = manualFields.phone.trim();
+    const address = manualFields.address.trim();
+    const ignitionCode = manualFields.ignitionCode.trim();
+
+    if (!idNumber) {
+      errors.idNumber = 'נא למלא מספר תעודת זהות';
+    } else if (!idNumberRegex.test(idNumber)) {
+      errors.idNumber = 'מספר תעודת זהות חייב להכיל 9 ספרות';
+    }
+
+    if (!employeeNumber) {
+      errors.employeeNumber = 'נא למלא מספר עובד';
+    }
+
+    if (!phone) {
+      errors.phone = 'נא למלא מספר טלפון נייד';
+    } else if (!phoneRegex.test(phone)) {
+      errors.phone = 'מספר טלפון לא תקין (יש להזין 05X...)';
+    }
+
+    if (!address) {
+      errors.address = 'נא למלא כתובת מלאה (עיר ורחוב)';
+    } else if (address.length < 5) {
+      errors.address = 'כתובת חייבת להכיל לפחות 5 תווים';
+    }
+
+    if (!ignitionCode) {
+      errors.ignitionCode = 'נא למלא קוד קודנית';
+    } else if (!ignitionCodeRegex.test(ignitionCode)) {
+      errors.ignitionCode = 'קוד קודנית חייב להכיל 4-6 ספרות';
+    }
+
+    return errors;
+  }, [manualFields.address, manualFields.employeeNumber, manualFields.idNumber, manualFields.ignitionCode, manualFields.phone]);
+
+  const firstStep1ProblemLabel = useMemo(() => {
+    const orderedFields: Array<{ key: keyof ReceptionManualFields; label: string }> = [
+      { key: 'idNumber', label: 'מספר תעודת זהות' },
+      { key: 'employeeNumber', label: 'מספר עובד' },
+      { key: 'phone', label: 'טלפון נייד' },
+      { key: 'address', label: 'כתובת העובד' },
+      { key: 'ignitionCode', label: 'קוד קודנית' },
+    ];
+    const firstFieldWithError = orderedFields.find((field) => Boolean(step1FieldErrors[field.key]));
+    if (firstFieldWithError) return firstFieldWithError.label;
+    const accessoriesComplete = accessories.every((item) => item.checked || item.missing);
+    if (!accessoriesComplete) return 'טבלת האביזרים';
+    if (!sig1OK) return 'חתימת הנהג';
+    return null;
+  }, [accessories, sig1OK, step1FieldErrors]);
 
   const manualFieldsValid = useMemo(() => {
     const requiredFields: Array<keyof ReceptionManualFields> = ['idNumber', 'employeeNumber', 'phone', 'address', 'ignitionCode'];
@@ -983,33 +1974,62 @@ export default function VehicleHandoverWizard() {
     }
   }, [canSignReception, sig1OK]);
 
-  // Build full wizard steps array
-  // Build full wizard steps array, including dynamic forms
-  // Always build steps from selected forms (order preserved), plus required steps
-  const wizardSteps = useMemo(() => {
-    // Always start with required 'טופס קבלת רכב'
-    const steps = [...BASE_STEPS];
-    // Add only selected forms except 'טופס קבלת רכב'
+  const wizardSteps = useMemo<WizardStep[]>(() => {
+    const steps: WizardStep[] = [...BASE_STEPS];
     const dynamicSteps = selectedDeliveryFormIds
-      .map(id => {
-        const doc = availableDeliveryForms.find(f => f.id === id && f.title !== 'טופס קבלת רכב');
-        return doc ? { icon: FileText, label: doc.title } : null;
-      })
-      .filter(Boolean);
-    return steps.concat(dynamicSteps);
+      .map((id) => availableDeliveryForms.find((f) => f.id === id && f.title !== 'טופס קבלת רכב'))
+      .filter(Boolean)
+      .map((doc) => ({
+        icon: FileText,
+        label: (doc as DeliveryFormDoc).title,
+        kind: getStepKindForDoc(doc as DeliveryFormDoc),
+        docId: (doc as DeliveryFormDoc).id,
+      }));
+    return [...steps, ...dynamicSteps];
   }, [selectedDeliveryFormIds, availableDeliveryForms]);
 
-  // ── Validation per step ──
-  // ── Validation per step ──
-  const canAdvance = useCallback(() => {
-    if (step === 0) return sig1OK && allAccessoriesChecked && manualFieldsValid;
-    if (step === 1) return sig2OK && procedureRead;
-    if (step === 2) return sig3OK && (healthPdfUrl ? true : healthItems.every(h => h.checked));
-    if (step === 3) return skipLicenseStep ? true : (!!licenseNumber && !!licenseExpiry && !!licenseFront && !!licenseBack);
-    // Dynamic forms: allow advance if step is a dynamic form (after base steps)
-    if (step > 3 && step < wizardSteps.length) return true;
+  const currentStepDef = wizardSteps[step];
+
+  const canAdvance = useMemo(() => {
+    if (!currentStepDef) return false;
+
+    if (currentStepDef.kind === 'reception') {
+      return sig1OK && allAccessoriesChecked && manualFieldsValid;
+    }
+    if (currentStepDef.kind === 'procedure') {
+      return sig2OK && procedureRead;
+    }
+    if (currentStepDef.kind === 'health') {
+      return sig3OK && healthItems.every((h) => h.checked);
+    }
+    if (currentStepDef.kind === 'license') {
+      return true;
+    }
+    if (currentStepDef.kind === 'generic' && currentStepDef.docId) {
+      return !!genericSigOkByDocId[currentStepDef.docId];
+    }
     return false;
-  }, [step, sig1OK, allAccessoriesChecked, manualFieldsValid, sig2OK, procedureRead, sig3OK, healthItems, healthPdfUrl, licenseNumber, licenseExpiry, licenseFront, licenseBack, skipLicenseStep, wizardSteps]);
+  }, [
+    allAccessoriesChecked,
+    currentStepDef,
+    genericSigOkByDocId,
+    healthItems,
+    licenseBack,
+    licenseExpiry,
+    fuelLevel,
+    licenseNumber,
+    manualFieldsValid,
+    odometerReading,
+    procedureRead,
+    sig1OK,
+    sig2OK,
+    sig3OK,
+    skipLicenseStep,
+  ]);
+
+  const hasLicenseStep = useMemo(() => wizardSteps.some((wizardStep) => wizardStep.kind === 'license'), [wizardSteps]);
+  const hasProcedureStep = useMemo(() => wizardSteps.some((wizardStep) => wizardStep.kind === 'procedure'), [wizardSteps]);
+  const hasHealthStep = useMemo(() => wizardSteps.some((wizardStep) => wizardStep.kind === 'health'), [wizardSteps]);
 
   // ── Upload helper — always targets the public vehicle-documents bucket ──
   const uploadFileToStorage = async (file: File, path: string): Promise<string | null> => {
@@ -1052,27 +2072,50 @@ export default function VehicleHandoverWizard() {
   // ── Final submit ──
   const handleFinish = async () => {
     setSubmitting(true);
+    const effectiveSig1DataUrl = sig1DataUrl ?? sig1Ref.current?.getDataUrl() ?? null;
+    const effectiveSig2DataUrl = sig2DataUrl ?? sig2Ref.current?.getDataUrl() ?? null;
+    const effectiveSig3DataUrl = sig3DataUrl ?? sig3Ref.current?.getDataUrl() ?? null;
+    const effectiveGenericSigDataUrlByDocId = { ...genericSigDataUrlByDocId };
+    if (currentStepDef?.kind === 'generic' && currentStepDef.docId) {
+      const latestCurrentGenericSig = genericSigRef.current?.getDataUrl() ?? null;
+      if (latestCurrentGenericSig) {
+        effectiveGenericSigDataUrlByDocId[currentStepDef.docId] = latestCurrentGenericSig;
+      }
+    }
 
     // ── Step 1: Generate PDFs (each failure is isolated) ──────────────────────
     console.log('[Wizard] handleFinish start', { vehicleId, driverId, handoverId, reportUrl });
     const ts     = Date.now();
     const folder = `documents/${vehicleId || 'unknown'}/${ts}`;
 
+    const deliveryPdfBase = {
+      vehicleLabel,
+      driverName,
+      date: today,
+    };
     const [pdf1Blob, pdf2Blob, pdf3Blob] = await Promise.all([
       generateReceptionPDF({
-        vehicleLabel,
-        driverName,
-        date: today,
+        ...deliveryPdfBase,
         accessories,
-        signatureDataUrl: sig1DataUrl,
+        signatureDataUrl: effectiveSig1DataUrl,
         declarationText: extractCommitmentSection(receptionDeclarationText).join('\n'),
         manualFields,
       })
         .catch((e) => { console.error('[Wizard] PDF1 failed:', e); return null; }),
-      generateProcedurePDF({ vehicleLabel, driverName, date: today, clauses: activeClauses, signatureDataUrl: sig2DataUrl })
-        .catch((e) => { console.error('[Wizard] PDF2 failed:', e); return null; }),
-      generateHealthDeclarationPDF({ vehicleLabel, driverName, date: today, healthItems, notes: healthNotes, signatureDataUrl: sig3DataUrl })
-        .catch((e) => { console.error('[Wizard] PDF3 failed:', e); return null; }),
+      hasProcedureStep
+        ? generateProcedurePDF({
+            ...deliveryPdfBase,
+            formTitle: procedureFormDoc?.title,
+            clauses: activeClauses,
+            approvedRead: procedureRead,
+            signatureDataUrl: effectiveSig2DataUrl,
+          })
+            .catch((e) => { console.error('[Wizard] PDF2 failed:', e); return null; })
+        : Promise.resolve(null),
+      hasHealthStep
+        ? generateHealthDeclarationPDF({ ...deliveryPdfBase, healthItems, notes: healthNotes, signatureDataUrl: effectiveSig3DataUrl })
+            .catch((e) => { console.error('[Wizard] PDF3 failed:', e); return null; })
+        : Promise.resolve(null),
     ]);
     console.log('[Wizard] PDF blobs:', { pdf1: !!pdf1Blob, pdf2: !!pdf2Blob, pdf3: !!pdf3Blob });
 
@@ -1081,44 +2124,142 @@ export default function VehicleHandoverWizard() {
       pdf1Blob ? uploadBlobToStorage(pdf1Blob, `${folder}/reception_${ts}.pdf`)  : Promise.resolve(null),
       pdf2Blob ? uploadBlobToStorage(pdf2Blob, `${folder}/procedure_${ts}.pdf`)  : Promise.resolve(null),
       pdf3Blob ? uploadBlobToStorage(pdf3Blob, `${folder}/health_${ts}.pdf`)     : Promise.resolve(null),
-      !skipLicenseStep && licenseFront ? uploadFileToStorage(licenseFront, `${folder}/license_front_${ts}.jpg`) : Promise.resolve(null),
-      !skipLicenseStep && licenseBack  ? uploadFileToStorage(licenseBack,  `${folder}/license_back_${ts}.jpg`)  : Promise.resolve(null),
+      hasLicenseStep && !skipLicenseStep && licenseFront ? uploadFileToStorage(licenseFront, `${folder}/license_front_${ts}.jpg`) : Promise.resolve(null),
+      hasLicenseStep && !skipLicenseStep && licenseBack  ? uploadFileToStorage(licenseBack,  `${folder}/license_back_${ts}.jpg`)  : Promise.resolve(null),
     ]);
     console.log('[Wizard] Upload URLs:', { sig1Url, sig2Url, sig3Url, frontUrl, backUrl });
 
-    // ── Step 3: Build attachment list — include only successful uploads ────────
-    const selectedCenterFormAttachments: { filename: string; url: string }[] = selectedDeliveryForms
-      .filter((doc) => Boolean(doc.file_url))
-      .map((doc) => ({
-        filename: `${doc.title}.pdf`,
-        url: doc.file_url as string,
-      }));
+    const genericSelectedDocs = selectedDeliveryFormIds
+      .map((id) => availableDeliveryForms.find((form) => form.id === id))
+      .filter((doc): doc is DeliveryFormDoc => Boolean(doc && getStepKindForDoc(doc as DeliveryFormDoc) === 'generic'));
 
-    const allAttachments: { filename: string; url: string }[] = [
-      sig1Url  && { filename: 'טופס_קבלת_רכב.pdf',  url: sig1Url  },
-      sig2Url  && { filename: 'נוהל_שימוש_ברכב.pdf', url: sig2Url  },
-      sig3Url  && { filename: 'הצהרת_בריאות.pdf',    url: sig3Url  },
-      frontUrl && { filename: 'רישיון_קדמי.jpg',     url: frontUrl },
-      backUrl  && { filename: 'רישיון_אחורי.jpg',    url: backUrl  },
-      ...selectedCenterFormAttachments,
-    ].filter(Boolean) as { filename: string; url: string }[];
+    const genericGeneratedUrlByDocId = new Map<string, string>();
+    if (genericSelectedDocs.length > 0) {
+      const genericResults = await Promise.all(
+        genericSelectedDocs.map(async (doc) => {
+          const templateText = String((doc.json_schema as any)?.template_content ?? doc.description ?? '').trim();
+          if (!templateText) return { docId: doc.id, url: null as string | null };
+          const practicalUi = practicalTestUiByDocId[doc.id];
+          const trafficUi = trafficLiabilityUiByDocId[doc.id];
+          const upgradeUi = upgradeUiByDocId[doc.id];
+          const returnUi = returnFormUiByDocId[doc.id];
+          const genericBlob = await generateGenericFormPDF({
+            title: doc.title,
+            builtinTemplateKey: String((doc.json_schema as any)?.builtin_template_key ?? ''),
+            vehicleLabel,
+            driverName,
+            date: today,
+            templateText,
+            notes: genericFormNotes[doc.id] ?? '',
+            signatureDataUrl: effectiveGenericSigDataUrlByDocId[doc.id] ?? null,
+            returnDateTime: deliveryDateTime,
+            fuelLevel: parseFuelLevel(fuelLevel),
+            damageReport,
+            missingAccessories: accessories.filter((item) => item.missing).map((item) => item.name),
+            practicalTestUi: practicalUi,
+            trafficLiabilityUi: trafficUi,
+            upgradeUi,
+            returnFormUi: returnUi,
+            receptionFields: {
+              idNumber: manualFields.idNumber.trim(),
+              employeeNumber: manualFields.employeeNumber.trim(),
+              phone: manualFields.phone.trim(),
+              address: manualFields.address.trim(),
+              ignitionCode: manualFields.ignitionCode.trim(),
+            },
+          }).catch((e) => {
+            console.error(`[Wizard] generic PDF generation failed for "${doc.title}":`, e);
+            return null;
+          });
+          if (!genericBlob) return { docId: doc.id, url: null as string | null };
+          const url = await uploadBlobToStorage(genericBlob, `${folder}/generic_${doc.id}_${ts}.pdf`);
+          return { docId: doc.id, url };
+        }),
+      );
+      genericResults.forEach(({ docId, url }) => {
+        if (url) genericGeneratedUrlByDocId.set(docId, url);
+      });
+    }
 
-    const expectedAttachments = skipLicenseStep ? 3 : 5;
+    // ── Step 3: Build attachment list from selected forms only ──────────────────
+    const selectedForms = [...selectedDeliveryFormIds];
+    const selectedFormsSet = new Set(selectedForms);
+    const selectedFormCandidates = selectedForms
+      .filter((id) => id !== receptionFormDoc?.id)
+      .map((id) => {
+        const doc = availableDeliveryForms.find((form) => form.id === id);
+        if (!doc) return null;
+        const kind = getStepKindForDoc(doc as DeliveryFormDoc);
+        if (kind === 'procedure') {
+          return { id, filename: `${doc.title}.pdf`, url: sig2Url ?? (doc.file_url as string | null) };
+        }
+        if (kind === 'health') {
+          return { id, filename: `${doc.title}.pdf`, url: sig3Url ?? (doc.file_url as string | null) };
+        }
+        if (kind === 'license') {
+          return { id, filename: `${doc.title}.jpg`, url: frontUrl ?? backUrl ?? (doc.file_url as string | null) };
+        }
+        return { id, filename: `${doc.title}.pdf`, url: genericGeneratedUrlByDocId.get(id) ?? (doc.file_url as string | null) };
+      })
+      .filter(Boolean) as Array<{ id: string; filename: string; url: string | null }>;
+
+    const allAttachments: { filename: string; url: string }[] = [];
+    if (sig1Url) {
+      allAttachments.push({
+        filename: `${receptionFormDoc?.title || 'טופס קבלת רכב'}.pdf`,
+        url: sig1Url,
+      });
+    }
+    selectedFormCandidates.forEach((candidate) => {
+      if (!selectedFormsSet.has(candidate.id) || !candidate.url) return;
+      allAttachments.push({ filename: candidate.filename, url: candidate.url });
+    });
+
+    const expectedAttachments = selectedForms.length;
+    const hasReceptionAttachment = allAttachments.some((file) => file.filename.includes('טופס קבלת רכב'));
+    console.log('[Wizard] reception attachment check', { hasReceptionAttachment, selectedForms, attachmentNames: allAttachments.map((file) => file.filename) });
     const failedCount = expectedAttachments - allAttachments.length;
     console.log(`[Wizard] ${allAttachments.length} attachments ready, ${failedCount} failed`);
 
     // ── Step 4: Send email — ALWAYS, regardless of upload failures ────────────
     try {
+      const assignmentMode = (searchParams.get('mode') === 'replacement' ? 'replacement' : 'permanent') as 'replacement' | 'permanent';
+      const latestOdometerReading = parseOdometerReading(odometerReading);
+      const latestFuelLevel = parseFuelLevel(fuelLevel);
+      const missingAccessories = accessories.filter((item) => item.missing).map((item) => item.name);
+      const accessoriesSummary = missingAccessories.length > 0
+        ? `חסרים: ${missingAccessories.join(', ')}`
+        : 'ללא חוסרים';
+      const wizardState = {
+        data: {
+          odometerReading: latestOdometerReading,
+          fuelLevel: latestFuelLevel,
+          damageSummary: buildUnifiedDamageSummary(damageReport, damageNotes),
+          vehicleLabel,
+          driverName,
+          receptionForm: {
+            idNumber: manualFields.idNumber.trim(),
+            employeeNumber: manualFields.employeeNumber.trim(),
+            phone: manualFields.phone.trim(),
+            address: manualFields.address.trim(),
+            ignitionCode: manualFields.ignitionCode.trim(),
+            accessoriesSummary,
+          },
+        },
+      };
+      const latestNotes = [healthNotes.trim()].filter(Boolean).join(' | ') || null;
       await sendHandoverNotificationEmail({
         handoverId,
         vehicleId,
         handoverType,
-        assignmentMode:  'permanent',
-        vehicleLabel,
-        driverLabel:     driverName,
-        odometerReading: 0,
-        fuelLevel:       0,
-        notes:           healthNotes || null,
+        assignmentMode,
+        vehicleLabel: wizardState.data.vehicleLabel,
+        driverLabel: wizardState.data.driverName,
+        odometerReading: Number.isNaN(wizardState.data.odometerReading) ? 0 : wizardState.data.odometerReading,
+        fuelLevel: Number.isNaN(wizardState.data.fuelLevel) ? 0 : wizardState.data.fuelLevel,
+        notes:           latestNotes,
+        damageSummary: wizardState.data.damageSummary,
+        receptionFormData: wizardState.data.receptionForm,
         reportUrl,
         additionalAttachments: allAttachments,
       });
@@ -1139,8 +2280,8 @@ export default function VehicleHandoverWizard() {
         sig1Url  && { driver_id: driverId, file_url: sig1Url,  title: `אישור קבלת רכב | ${vehicleLabel}` },
         sig2Url  && { driver_id: driverId, file_url: sig2Url,  title: `התחייבות נוהל שימוש ברכב | ${vehicleLabel}` },
         sig3Url  && { driver_id: driverId, file_url: sig3Url,  title: `הצהרת בריאות חתומה | ${vehicleLabel}` },
-        frontUrl && { driver_id: driverId, file_url: frontUrl, title: `רישיון נהיגה (קדמי) | מס׳: ${licenseNumber}` },
-        backUrl  && { driver_id: driverId, file_url: backUrl,  title: `רישיון נהיגה (אחורי) | תוקף: ${licenseExpiry}` },
+        hasLicenseStep && frontUrl && { driver_id: driverId, file_url: frontUrl, title: `רישיון נהיגה (קדמי) | מס׳: ${licenseNumber}` },
+        hasLicenseStep && backUrl  && { driver_id: driverId, file_url: backUrl,  title: `רישיון נהיגה (אחורי) | תוקף: ${licenseExpiry}` },
       ].filter(Boolean);
 
       if (docsToInsert.length > 0) {
@@ -1154,10 +2295,10 @@ export default function VehicleHandoverWizard() {
           employee_number:   manualFields.employeeNumber.trim() || undefined,
           phone:             manualFields.phone.trim() || undefined,
           address:           manualFields.address.trim() || undefined,
-          license_number:    licenseNumber || undefined,
-          license_expiry:    licenseExpiry || undefined,
-          license_front_url: frontUrl      || undefined,
-          license_back_url:  backUrl       || undefined,
+          license_number:    hasLicenseStep ? (licenseNumber || undefined) : undefined,
+          license_expiry:    hasLicenseStep ? (licenseExpiry || undefined) : undefined,
+          license_front_url: hasLicenseStep ? (frontUrl || undefined) : undefined,
+          license_back_url:  hasLicenseStep ? (backUrl || undefined) : undefined,
         }).eq('id', driverId);
         if (updateErr) console.error('[Wizard] drivers update error:', updateErr.message);
       }
@@ -1181,109 +2322,6 @@ export default function VehicleHandoverWizard() {
   const onManualFieldChange = useCallback((field: keyof ReceptionManualFields, value: string) => {
     setManualFields((prev) => ({ ...prev, [field]: value }));
   }, []);
-
-  // ── Memoized step content renderer ──
-  const RenderStepContent = useMemo(() => {
-    return function RenderStepContent({ stepIdx }: { stepIdx: number }) {
-      // Always first step: טופס קבלת רכב
-      if (stepIdx === 0) {
-        return (
-          <Step1
-            accessories={accessories}
-            setAccessories={setAccessories}
-            sigRef={sig1Ref}
-            onSign={setSig1OK}
-            vehicleLabel={vehicleLabel}
-            driverName={driverName}
-            date={today}
-            deliveryDateTime={deliveryDateTime}
-            declarationText={receptionDeclarationText}
-            manualFields={manualFields}
-            onManualFieldChange={onManualFieldChange}
-            canSign={canSignReception}
-          />
-        );
-      }
-      // Dynamic steps: find doc by id
-      const dynamicStepIdx = stepIdx - 1;
-      const docId = selectedDeliveryFormIds[dynamicStepIdx];
-      const doc = availableDeliveryForms.find(f => f.id === docId);
-      if (!doc) return null;
-
-      // Map template/component by doc.template_name or doc.title
-      if (doc.template_name === 'health' || doc.title.includes('בריאות')) {
-        return (
-          <Step3
-            healthItems={healthItems}
-            setHealthItems={setHealthItems}
-            notes={healthNotes}
-            setNotes={setHealthNotes}
-            sigRef={sig3Ref}
-            onSign={setSig3OK}
-            vehicleLabel={vehicleLabel}
-            driverName={driverName}
-            date={today}
-            pdfTemplateUrl={doc.file_url}
-          />
-        );
-      }
-      if (doc.template_name === 'procedure' || doc.title.includes('נוהל')) {
-        return (
-          <Step2
-            procedureRead={procedureRead}
-            setProcedureRead={setProcedureRead}
-            sigRef={sig2Ref}
-            onSign={setSig2OK}
-            vehicleLabel={vehicleLabel}
-            driverName={driverName}
-            date={today}
-            clauses={activeClauses}
-            pdfTemplateUrl={doc.file_url}
-          />
-        );
-      }
-      if (doc.template_name === 'license' || doc.title.includes('רישיון')) {
-        return (
-          <Step4
-            licenseNumber={licenseNumber} setLicenseNumber={setLicenseNumber}
-            licenseExpiry={licenseExpiry} setLicenseExpiry={setLicenseExpiry}
-            licenseClass={licenseClass}   setLicenseClass={setLicenseClass}
-            licenseFront={licenseFront}   setLicenseFront={setLicenseFront}
-            licenseBack={licenseBack}     setLicenseBack={setLicenseBack}
-            skipLicenseStep={skipLicenseStep}
-            driverName={driverName}
-            date={today}
-          />
-        );
-      }
-      // Default: show PDF with checkbox
-      return (
-        <div className="bg-white text-slate-900 rounded-2xl p-4 pb-32 sm:p-6 shadow-xl">
-          <h2 className="text-xl font-bold mb-4">{doc.title}</h2>
-          {doc.file_url ? (
-            <iframe
-              src={doc.file_url}
-              className="w-full rounded-lg border border-slate-200"
-              style={{ minHeight: '420px' }}
-              title={doc.title}
-            />
-          ) : (
-            <p className="text-sm text-slate-500">לא נמצא קובץ PDF עבור טופס זה.</p>
-          )}
-          <div className="flex items-center gap-3 mt-4">
-            <Checkbox
-              checked={!!doc.approved}
-              onCheckedChange={() => {/* handle approval state if needed */}}
-              className="border-slate-400 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
-            />
-            <span className="text-sm font-medium text-slate-700 cursor-pointer select-none">
-              קראתי והבנתי את הטופס
-            </span>
-          </div>
-        </div>
-      );
-    };
-  }, [accessories, setAccessories, sig1Ref, setSig1OK, vehicleLabel, driverName, today, deliveryDateTime, receptionDeclarationText, manualFields, onManualFieldChange, canSignReception, selectedDeliveryFormIds, availableDeliveryForms, healthItems, setHealthItems, healthNotes, setHealthNotes, sig3Ref, setSig3OK, procedureRead, setProcedureRead, sig2Ref, setSig2OK, activeClauses, licenseNumber, setLicenseNumber, licenseExpiry, setLicenseExpiry, licenseClass, setLicenseClass, licenseFront, setLicenseFront, licenseBack, setLicenseBack, skipLicenseStep]);
 
   return (
     <div className="min-h-screen bg-[#020617] text-white">
@@ -1326,7 +2364,13 @@ export default function VehicleHandoverWizard() {
             e.currentTarget.style.opacity = '1';
           }}
         >
-          <Button type="button" onClick={() => setFormsPickerOpen((prev) => !prev)} variant="outline" size="sm">
+          <Button
+            type="button"
+            onClick={() => setFormsPickerOpen((prev) => !prev)}
+            variant="outline"
+            size="sm"
+            className="bg-white text-slate-800 border-slate-300 hover:bg-slate-100"
+          >
             <Plus className="w-4 h-4 mr-1" /> הוספת טפסים
           </Button>
         </div>
@@ -1348,8 +2392,16 @@ export default function VehicleHandoverWizard() {
               ) : (
                 formsPickerForms.map((doc) => {
                   const selected = selectedDeliveryFormIds.includes(doc.id);
+                  const wasJustToggled = recentlyToggledFormId === doc.id;
                   return (
-                    <label key={doc.id} className="flex items-center gap-2 rounded-lg border border-cyan-400/15 bg-[#061325]/70 px-3 py-2 text-sm">
+                    <label
+                      key={doc.id}
+                      className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
+                        selected
+                          ? 'border-emerald-400/60 bg-emerald-500/15'
+                          : 'border-cyan-400/15 bg-[#061325]/70'
+                      } ${wasJustToggled ? 'ring-1 ring-emerald-400/80' : ''}`}
+                    >
                       <Checkbox
                         checked={selected}
                         onCheckedChange={(checked) => {
@@ -1360,9 +2412,17 @@ export default function VehicleHandoverWizard() {
                             if (!isChecked) return current.filter((id) => id !== doc.id);
                             return current;
                           });
+                          setRecentlyToggledFormId(doc.id);
+                          setRecentlyToggledAdded(isChecked);
+                          setTimeout(() => setRecentlyToggledFormId((prev) => (prev === doc.id ? null : prev)), 900);
                         }}
                       />
-                      <span className="text-cyan-50">{doc.title}</span>
+                      <span className={selected ? 'text-emerald-100' : 'text-cyan-50'}>{doc.title}</span>
+                      {wasJustToggled && (
+                        <span className={`text-xs font-semibold ${recentlyToggledAdded ? 'text-emerald-300' : 'text-amber-300'}`}>
+                          {recentlyToggledAdded ? 'נוסף' : 'הוסר'}
+                        </span>
+                      )}
                       {doc.file_url && (
                         <button
                           type="button"
@@ -1377,11 +2437,77 @@ export default function VehicleHandoverWizard() {
                 })
               )}
             </div>
+            <div className="mt-4 flex justify-end border-t border-cyan-400/15 pt-3">
+              <Button type="button" className="bg-emerald-500 hover:bg-emerald-400 text-[#020617] font-semibold" onClick={() => setFormsPickerOpen(false)}>
+                אישור
+              </Button>
+            </div>
           </div>
         )}
 
-        {/* Render the current step by mapping */}
-        <RenderStepContent stepIdx={step} />
+        {renderStepContent({
+          stepIdx: step,
+          wizardSteps,
+          availableDeliveryForms: availableDeliveryForms as DeliveryFormDoc[],
+          accessories,
+          setAccessories,
+          sig1Ref,
+          setSig1OK,
+          vehicleLabel,
+          driverName,
+          today,
+          deliveryDateTime,
+          receptionDeclarationText,
+          manualFields,
+          step1FieldErrors,
+          onManualFieldChange,
+          canSignReception,
+          healthItems,
+          setHealthItems,
+          healthNotes,
+          setHealthNotes,
+          sig3Ref,
+          setSig3OK,
+          procedureRead,
+          setProcedureRead,
+          sig2Ref,
+          setSig2OK,
+          activeClauses,
+          licenseNumber,
+          setLicenseNumber,
+          licenseExpiry,
+          setLicenseExpiry,
+          licenseClass,
+          setLicenseClass,
+          odometerReading,
+          setOdometerReading,
+          fuelLevel,
+          setFuelLevel,
+          damageNotes,
+          setDamageNotes,
+          damageReport,
+          setDamageReport,
+          licenseFront,
+          setLicenseFront,
+          licenseBack,
+          setLicenseBack,
+          skipLicenseStep,
+          genericFormApprovals,
+          setGenericFormApprovals,
+          genericFormNotes,
+          setGenericFormNotes,
+          genericSigRef,
+          genericSigOkByDocId,
+          setGenericSigOkByDocId,
+          practicalTestUiByDocId,
+          setPracticalTestUiByDocId,
+          trafficLiabilityUiByDocId,
+          setTrafficLiabilityUiByDocId,
+          upgradeUiByDocId,
+          setUpgradeUiByDocId,
+          returnFormUiByDocId,
+          setReturnFormUiByDocId,
+        })}
       </main>
 
       {/* Floating navigation controls (outside form card) */}
@@ -1401,23 +2527,21 @@ export default function VehicleHandoverWizard() {
             </div>
           )}
 
-          {!canAdvance() && (
+          {!canAdvance && (
             <p className="pointer-events-none absolute left-1/2 -translate-x-1/2 -top-6 whitespace-nowrap text-xs text-amber-400/90">
-              {step === 0 && (step1MissingRequiredCount > 0
-                ? `יש להשלים ${step1MissingRequiredCount} שדות חובה`
-                : !manualFieldsValid
-                  ? 'יש להשלים שדות בפורמט תקין'
+              {currentStepDef?.kind === 'reception' && (firstStep1ProblemLabel
+                ? `שדה בעייתי: ${firstStep1ProblemLabel}`
                 : 'נדרשת חתימה להמשך')}
-              {step === 1 && (!procedureRead ? 'סמן קריאה ואישור להמשך' : 'נדרשת חתימה להמשך')}
-              {step === 2 && (healthPdfUrl ? 'נדרשת חתימה להמשך' : (!healthItems.every(h => h.checked) ? 'סמן את כל סעיפי הבריאות' : 'נדרשת חתימה להמשך'))}
-              {step === 3 && (
+              {currentStepDef?.kind === 'procedure' && (!procedureRead ? 'סמן קראתי והבנתי להמשך' : 'נדרשת חתימה להמשך')}
+              {currentStepDef?.kind === 'health' && (!healthItems.every(h => h.checked) ? 'סמן את כל סעיפי הבריאות' : 'נדרשת חתימה להמשך')}
+              {currentStepDef?.kind === 'license' && (
                 skipLicenseStep
-                  ? (!licenseNumber ? 'חסר מספר רישיון' : 'חסר תוקף רישיון')
-                  : (!licenseFront ? 'חסר צילום צד א׳' :
-                    !licenseBack  ? 'חסר צילום צד ב׳' :
-                    !licenseNumber ? 'חסר מספר רישיון' :
+                  ? 'שלב צילום הרישיון סומן כדילוג'
+                  : (!odometerReading ? "חסר קילומטראז'" :
+                    !fuelLevel ? 'חסרה רמת דלק' :
                     'חסר תוקף רישיון')
               )}
+              {currentStepDef?.kind === 'generic' && 'יש לחתום לפני המשך'}
             </p>
           )}
 
@@ -1445,22 +2569,36 @@ export default function VehicleHandoverWizard() {
                       return;
                     }
                   }
-                  if (step === 1 && !procedureRead) {
+                  if (currentStepDef?.kind === 'procedure' && !procedureRead) {
                     toast.error('יש לאשר את קריאת הסעיפים בטרם המעבר');
                     return;
                   }
-                  if (step === 2 && !healthPdfUrl && !healthItems.every(h => h.checked)) {
+                  if (currentStepDef?.kind === 'procedure' && !sig2OK) {
+                    toast.error('נדרשת חתימה בטופס זה לפני המשך');
+                    return;
+                  }
+                  if (currentStepDef?.kind === 'health' && !healthItems.every((h) => h.checked)) {
                     toast.error('עליך לאשר את כל סעיפי הבריאות כדי להמשיך');
                     return;
                   }
-                  if (!canAdvance()) return;
+                  if (currentStepDef?.kind === 'generic' && currentStepDef.docId && !genericSigOkByDocId[currentStepDef.docId]) {
+                    toast.error('נדרשת חתימה בטופס זה לפני המשך');
+                    return;
+                  }
+                  if (!canAdvance) return;
                   // Capture raw signature dataUrl from ref before the step unmounts
-                  if (step === 0) setSig1DataUrl(sig1Ref.current?.getDataUrl() ?? null);
-                  if (step === 1) setSig2DataUrl(sig2Ref.current?.getDataUrl() ?? null);
-                  if (step === 2) setSig3DataUrl(sig3Ref.current?.getDataUrl() ?? null);
+                  if (currentStepDef?.kind === 'reception') setSig1DataUrl(sig1Ref.current?.getDataUrl() ?? null);
+                  if (currentStepDef?.kind === 'procedure') setSig2DataUrl(sig2Ref.current?.getDataUrl() ?? null);
+                  if (currentStepDef?.kind === 'health') setSig3DataUrl(sig3Ref.current?.getDataUrl() ?? null);
+                  if (currentStepDef?.kind === 'generic' && currentStepDef.docId) {
+                    const genericSig = genericSigRef.current?.getDataUrl() ?? null;
+                    if (genericSig) {
+                      setGenericSigDataUrlByDocId((prev) => ({ ...prev, [currentStepDef.docId as string]: genericSig }));
+                    }
+                  }
                   setStep(s => s + 1);
                 }}
-                disabled={submitting || ((step !== 0 && step !== 1 && step !== 2) && !canAdvance())}
+                disabled={submitting || !canAdvance}
                 className="gap-2 bg-cyan-500 hover:bg-cyan-400 text-[#020617] font-bold px-6"
               >
                 {step === 0 && step1MissingRequiredCount > 0
@@ -1471,7 +2609,7 @@ export default function VehicleHandoverWizard() {
             </div>
           ) : (
             <div className="absolute left-1/2 -translate-x-1/2 bottom-0 pointer-events-auto flex items-center justify-center gap-3">
-              {step === 3 && (
+              {currentStepDef?.kind === 'license' && (
                 <Button
                   variant="outline"
                   disabled={submitting}
@@ -1485,12 +2623,12 @@ export default function VehicleHandoverWizard() {
                 </Button>
               )}
               <Button
-                disabled={submitting}
+                disabled={submitting || !canAdvance}
                 onClick={() => {
-                  if (!skipLicenseStep && !licenseNumber) { toast.error('נא להזין מספר רישיון'); return; }
-                  if (!skipLicenseStep && !licenseExpiry) { toast.error('נא להזין תוקף רישיון'); return; }
-                  if (!skipLicenseStep && !licenseFront) { toast.error('נא לצלם את צד א׳ של הרישיון או לדלג על שלב זה'); return; }
-                  if (!skipLicenseStep && !licenseBack)  { toast.error('נא לצלם את צד ב׳ של הרישיון או לדלג על שלב זה'); return; }
+                  if (!canAdvance) {
+                    toast.error('יש להשלים אישור וחתימה בטופס לפני סיום');
+                    return;
+                  }
                   handleFinish();
                 }}
                 className="gap-2 bg-emerald-500 hover:bg-emerald-400 text-white font-bold px-8"

@@ -20,6 +20,14 @@ interface NotificationRequest {
     fuelLevel: number;
     notes: string | null;
     damageSummary?: string | null;
+    receptionFormData?: {
+      idNumber?: string;
+      employeeNumber?: string;
+      phone?: string;
+      address?: string;
+      ignitionCode?: string;
+      accessoriesSummary?: string;
+    } | null;
     recordUrl?: string;
     reportUrl: string;
     sentAt: string;
@@ -52,13 +60,17 @@ async function buildAttachments(
 ): Promise<{ filename: string; content: string }[]> {
   const list: { filename: string; content: string }[] = [];
 
-  // 1. Main delivery form PDF (optional fallback)
-  if (pdfBase64) {
-    list.push({ filename: 'טופס_מסירת_רכב.pdf', content: pdfBase64 });
+  const selectedAttachments = payload.additionalAttachments ?? [];
+  const hasMainDeliveryAttachment = selectedAttachments.some(
+    (att) => att.filename.includes('טופס מסירת רכב') || att.filename.includes('טופס_מסירת_רכב'),
+  );
+  // Always attach the primary archived delivery PDF unless it was already selected explicitly.
+  if (pdfBase64 && !hasMainDeliveryAttachment) {
+    list.push({ filename: 'טופס_מסירת_רכב_ראשי.pdf', content: pdfBase64 });
   }
 
-  // 2. Any additional wizard attachments (signatures + license photos)
-  for (const att of payload.additionalAttachments ?? []) {
+  // 2. Only explicitly selected attachments from wizard
+  for (const att of selectedAttachments) {
     try {
       const resp = await fetch(att.url);
       if (!resp.ok) {
@@ -111,13 +123,18 @@ serve(async (req) => {
       to,
       subject,
       handoverId: payload.handoverId,
+      odometerReading: payload.odometerReading,
+      fuelLevel: payload.fuelLevel,
+      damageSummary: payload.damageSummary,
       reportUrl: payload.reportUrl,
       additionalAttachments: (payload.additionalAttachments ?? []).map(a => a.filename),
     });
     const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
     let persistedPdfUrl = payload.reportUrl;
-    if (payload.handoverId && isUuid(payload.handoverId)) {
+    // Prefer the explicit URL from the wizard (latest signed form).
+    // Fallback to vehicle_handovers.pdf_url only when missing.
+    if ((!persistedPdfUrl || persistedPdfUrl === 'לא נוצר קישור לטופס') && payload.handoverId && isUuid(payload.handoverId)) {
       const { data: handoverRow, error: handoverError } = await supabase
         .from('vehicle_handovers')
         .select('pdf_url')
@@ -190,6 +207,12 @@ serve(async (req) => {
         <p><strong>קילומטראז':</strong> ${payload.odometerReading.toLocaleString('en-US')}</p>
         <p><strong>רמת דלק:</strong> ${payload.fuelLevel}/8</p>
         <p><strong>דיווח נזקים:</strong> ${payload.damageSummary || 'ללא נזקים מסומנים'}</p>
+        <p><strong>ת"ז:</strong> ${payload.receptionFormData?.idNumber || 'ללא'}</p>
+        <p><strong>מספר עובד:</strong> ${payload.receptionFormData?.employeeNumber || 'ללא'}</p>
+        <p><strong>טלפון:</strong> ${payload.receptionFormData?.phone || 'ללא'}</p>
+        <p><strong>כתובת:</strong> ${payload.receptionFormData?.address || 'ללא'}</p>
+        <p><strong>קוד קודנית:</strong> ${payload.receptionFormData?.ignitionCode || 'ללא'}</p>
+        <p><strong>אביזרים חסרים:</strong> ${payload.receptionFormData?.accessoriesSummary || 'ללא חוסרים'}</p>
         <p><strong>הערות:</strong> ${payload.notes || 'ללא'}</p>
         <p><strong>קישור לרישום המסירה:</strong> <a href="${recordUrl}" target="_blank">צפייה ברישום</a></p>
         <p><strong>טופס חתום/ארכיון:</strong> <a href="${persistedPdfUrl}" target="_blank">View Form</a></p>

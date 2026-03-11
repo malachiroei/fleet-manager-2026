@@ -17,6 +17,20 @@ interface VehicleDamage3DSelectorProps {
   onChange: (next: VehicleDamageReport) => void;
 }
 
+const DAMAGE_MARKER_LABEL: Record<VehicleDamageType, string> = {
+  dent: 'מ',
+  scratch: 'ש',
+  scuff: 'פ',
+  crack: 'ב',
+};
+
+const SIDE_MARKER_ANCHOR: Record<VehicleDamageSide, { x: number; y: number }> = {
+  front: { x: 50, y: 17 },
+  back: { x: 50, y: 83 },
+  right: { x: 68, y: 50 },
+  left: { x: 32, y: 50 },
+};
+
 export default function VehicleDamage3DSelector({ value, onChange }: VehicleDamage3DSelectorProps) {
   const [activeSide, setActiveSide] = useState<VehicleDamageSide>('front');
   const [pickerSide, setPickerSide] = useState<VehicleDamageSide | null>(null);
@@ -63,6 +77,17 @@ export default function VehicleDamage3DSelector({ value, onChange }: VehicleDama
         : 'border-white/20 bg-[#081325]/85 hover:border-cyan-300/60 hover:bg-cyan-500/10'
     );
   };
+
+  const markers = sideOptions.flatMap(({ side }) => {
+    const anchor = SIDE_MARKER_ANCHOR[side];
+    return value[side].map((type, idx) => ({
+      id: `${side}-${type}-${idx}`,
+      label: DAMAGE_MARKER_LABEL[type],
+      title: `${DAMAGE_SIDE_LABELS[side]}: ${DAMAGE_TYPE_LABELS[type]}`,
+      x: anchor.x + (idx % 2 === 0 ? -2 : 2),
+      y: anchor.y + Math.floor(idx / 2) * 4,
+    }));
+  });
 
   return (
     <div className="space-y-4" dir="rtl">
@@ -115,6 +140,17 @@ export default function VehicleDamage3DSelector({ value, onChange }: VehicleDama
                 className="h-full w-full rotate-90 scale-[1.18] origin-center select-none object-contain object-center drop-shadow-[0_24px_45px_rgba(0,0,0,0.62)]"
                 draggable={false}
               />
+
+              {markers.map((marker) => (
+                <div
+                  key={marker.id}
+                  className="pointer-events-none absolute z-30 flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white/90 bg-red-600 text-[10px] font-black text-white shadow-[0_0_16px_rgba(239,68,68,0.9)]"
+                  style={{ left: `${marker.x}%`, top: `${marker.y}%` }}
+                  title={marker.title}
+                >
+                  {marker.label}
+                </div>
+              ))}
 
               {activeSide === 'right' && (
                 <div className="pointer-events-none absolute right-[120px] top-1/2 h-24 w-5 -translate-y-1/2 rounded-full bg-cyan-300/35 blur-[1px]" />

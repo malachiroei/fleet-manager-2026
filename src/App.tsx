@@ -32,6 +32,7 @@ import FormsPage from "./pages/FormsPage";
 import VehicleHandoverWizard from './pages/VehicleHandoverWizard';
 import TransfersPage from './pages/TransfersPage';
 import { ThemeProvider } from '@/hooks/useTheme';
+import Footer from "@/components/layout/Footer";
 const queryClient = new QueryClient();
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -111,15 +112,13 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <AppErrorBoundary>
-            <AppRoutes />
-          </AppErrorBoundary>
-          
-          {/* האינדיקטור לגרסת הטסט - מוצג רק בדומיין טסט או localhost */}
-          {(window.location.hostname === 'manager-2026-test.vercel.app' || window.location.hostname === 'localhost') && (
-            <div className="fixed bottom-0 left-0 right-0 bg-red-600 text-white text-center py-0.5 text-xs font-bold z-[99999] tracking-widest">
-              גרסה זו היא גרסת טסט (TEST-BRANCH) - נא לא להסתמך על הנתונים
+            <div className="flex min-h-screen flex-col">
+              <div className="flex-1">
+                <AppRoutes />
+              </div>
+              <Footer />
             </div>
-          )}
+          </AppErrorBoundary>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
