@@ -1,6 +1,12 @@
-import { useEffect, useState, useRef, type FormEvent } from 'react';
+import { useEffect, useState, useRef, useMemo, useCallback, type FormEvent } from 'react';
+import { flushSync } from 'react-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
+import {
+  useVehicleSpecDirty,
+  DIRTY_SOURCE_VEHICLE_DELIVERY,
+  VEHICLE_DELIVERY_PATH,
+} from '@/contexts/VehicleSpecDirtyContext';
 import { useVehicles, fetchActiveDriverAssignments } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
 import {
@@ -45,6 +51,8 @@ function getErrorMessage(error: unknown) {
 export default function VehicleDeliveryPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { setDirty, tryNavigate, getDeliveryExitConfirmed } = useVehicleSpecDirty();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const { data: vehicles } = useVehicles();
   const { data: drivers } = useDrivers();
@@ -95,6 +103,73 @@ export default function VehicleDeliveryPage() {
       return defaults.length > 0 ? defaults : availableDeliveryForms.map((doc) => doc.id);
     });
   }, [availableDeliveryForms]);
+
+  /** דף תמיד מרונדר; יציאה רק עם ניקוי dirty ואז navigate — בלי return null */
+  const deliveryDirty = useMemo(() => {
+    if (selectedVehicle) return true;
+    if (selectedDriver) return true;
+    if (odometer.trim() !== '') return true;
+    if (notes.trim() !== '') return true;
+    if (photoFront || photoBack || photoRight || photoLeft) return true;
+    if (hasSignature) return true;
+    if (replacementApprovalChecked || hasReplacementApprovalSignature) return true;
+    if (hasAnyDamage(damageReport)) return true;
+    return false;
+  }, [
+    selectedVehicle,
+    selectedDriver,
+    odometer,
+    notes,
+    photoFront,
+    photoBack,
+    photoRight,
+    photoLeft,
+    hasSignature,
+    replacementApprovalChecked,
+    hasReplacementApprovalSignature,
+    damageReport,
+  ]);
+
+  useEffect(() => {
+    // אחרי אישור יציאה — לא מחזירים dirty (מונע לולאה וניווט תקוע)
+    if (getDeliveryExitConfirmed()) return;
+    setDirty(DIRTY_SOURCE_VEHICLE_DELIVERY, deliveryDirty);
+  }, [deliveryDirty, setDirty, getDeliveryExitConfirmed]);
+
+  // ניקוי כפוי כשהנתיב כבר לא דף מסירה (הגנה כפולה עם ה-Provider)
+  useEffect(() => {
+    const onDelivery =
+      location.pathname === VEHICLE_DELIVERY_PATH ||
+      location.pathname.startsWith(`${VEHICLE_DELIVERY_PATH}/`);
+    if (!onDelivery) {
+      setDirty(DIRTY_SOURCE_VEHICLE_DELIVERY, false);
+    }
+  }, [location.pathname, setDirty]);
+
+  useEffect(() => {
+    return () => setDirty(DIRTY_SOURCE_VEHICLE_DELIVERY, false);
+  }, [setDirty]);
+
+  const exitDelivery = useCallback(
+    (targetPath: string) => {
+      if (deliveryDirty) {
+        if (!window.confirm('ישנם שינויים לא שמורים, האם לצאת בכל זאת?')) return;
+        // סדר קשיח: קודם setDirty(false) בסינכרון, אחר כך navigate בלבד (בלי return null)
+        flushSync(() => {
+          setDirty(DIRTY_SOURCE_VEHICLE_DELIVERY, false);
+        });
+      }
+      // ניווט מלא — אותה בעיית דסינכרון Router/DOM כמו ב-tryNavigate
+      const url =
+        targetPath.startsWith('http')
+          ? targetPath
+          : targetPath.startsWith('/')
+            ? `${window.location.origin}${targetPath}`
+            : `${window.location.origin}/${targetPath}`;
+      window.location.assign(url);
+    },
+    [deliveryDirty, setDirty]
+  );
 
   const toggleDeliveryForm = (formId: string, checked: boolean) => {
     setSelectedDeliveryFormIds((current) => {
@@ -253,6 +328,7 @@ export default function VehicleDeliveryPage() {
         `&damageNotes=${encodeURIComponent(hasAnyDamage(damageReport) ? damageSummary : '')}` +
         `&selectedForms=${encodeURIComponent(selectedDeliveryFormIds.join(','))}`;
 
+      setDirty(DIRTY_SOURCE_VEHICLE_DELIVERY, false);
       window.location.assign(wizardUrl);
     } catch (error) {
       console.error('Error creating handover:', error);
@@ -263,7 +339,7 @@ export default function VehicleDeliveryPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#020617] text-white">
+    <div className="relative min-h-screen bg-[#020617] text-white">
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
           <div className="flex items-center gap-3">
@@ -272,11 +348,15 @@ export default function VehicleDeliveryPage() {
               variant="ghost"
               size="icon"
               onClick={() => {
-                if (window.history.length > 1) {
-                  window.history.back();
+                if (deliveryDirty) {
+                  tryNavigate('/vehicles');
                   return;
                 }
-                window.location.assign('/');
+                if (window.history.length > 1) {
+                  navigate(-1);
+                  return;
+                }
+                navigate('/');
               }}
               aria-label="חזרה"
             >
@@ -284,7 +364,7 @@ export default function VehicleDeliveryPage() {
             </Button>
             <h1 className="font-bold text-xl">מסירת רכב קבוע</h1>
             <div className="mr-auto">
-              <Button type="button" variant="outline" size="sm" onClick={() => window.location.assign('/')}>
+              <Button type="button" variant="outline" size="sm" onClick={() => exitDelivery('/')}>
                 יציאה
               </Button>
             </div>
@@ -457,8 +537,8 @@ export default function VehicleDeliveryPage() {
             </CardContent>
           </Card>
 
-          {/* Submit */}
-          <div className="fixed bottom-12 left-0 right-0 p-4">
+          {/* Submit — sticky בתוך ה-main במקום fixed ל-viewport, כדי שלא יישאר "רפאים" מעל דף אחר אחרי ניווט */}
+          <div className="sticky bottom-0 left-0 right-0 z-10 bg-[#020617]/95 pb-4 pt-4 backdrop-blur-sm">
             <div className="container flex justify-center">
               <Button 
                 type="submit" 

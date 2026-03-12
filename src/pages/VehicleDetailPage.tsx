@@ -555,6 +555,7 @@ export default function VehicleDetailPage() {
   const handleDocumentUpload = async (file: File | null) => {
     if (!file || !vehicle) return;
 
+    setDirty(DIRTY_SOURCE_SPEC, true);
     setIsUploadingDocument(true);
     try {
       const fileName = `vehicle-files/${vehicle.id}/${Date.now()}_${file.name}`;
@@ -580,6 +581,9 @@ export default function VehicleDetailPage() {
       if (insertError) throw insertError;
 
       await refetchVehicleDocuments();
+      setDirty(DIRTY_SOURCE_SPEC, false);
+    } catch {
+      setDirty(DIRTY_SOURCE_SPEC, false);
     } finally {
       setIsUploadingDocument(false);
     }

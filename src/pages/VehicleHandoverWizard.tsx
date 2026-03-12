@@ -1,5 +1,9 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo, RefObject } from 'react';
-import { useNavigate, useSearchParams, Link, useLocation } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
+import {
+  useVehicleSpecDirty,
+  DIRTY_SOURCE_HANDOVER_WIZARD,
+} from '@/contexts/VehicleSpecDirtyContext';
 import { useVehicles } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
 import { useCreateHandover, sendHandoverNotificationEmail, generateReceptionPDF, generateProcedurePDF, generateHealthDeclarationPDF, generateGenericFormPDF } from '@/hooks/useHandovers';
@@ -1603,6 +1607,7 @@ function getStepKindForDoc(doc: DeliveryFormDoc): WizardStepKind {
 // ─────────────────────────────────────────────
 export default function VehicleHandoverWizard() {
   const navigate = useNavigate();
+  const { setDirty } = useVehicleSpecDirty();
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const { data: vehicles } = useVehicles();
@@ -1665,6 +1670,12 @@ export default function VehicleHandoverWizard() {
     stateReportUrl,
     stateVehicleId,
   ]);
+
+  // חסימת ניווט מתפריט בזמן אשף — סיידבר יציג התראה עד יציאה או סיום
+  useEffect(() => {
+    setDirty(DIRTY_SOURCE_HANDOVER_WIZARD, true);
+    return () => setDirty(DIRTY_SOURCE_HANDOVER_WIZARD, false);
+  }, [setDirty]);
 
   const vehicle = vehicles?.find(v => v.id === vehicleId);
   const driver  = drivers?.find(d => d.id === driverId);
@@ -2315,6 +2326,7 @@ export default function VehicleHandoverWizard() {
     }
 
     setSubmitting(false);
+    setDirty(DIRTY_SOURCE_HANDOVER_WIZARD, false);
     navigate(vehicleId ? `/vehicles/${vehicleId}` : '/vehicles');
   };
 
@@ -2328,11 +2340,25 @@ export default function VehicleHandoverWizard() {
       {/* Top bar */}
       <header className="sticky top-0 z-20 bg-[#0d1b2e]/95 backdrop-blur-sm border-b border-white/10">
         <div className="container py-3 flex items-center gap-3">
-          <Link to={vehicleId ? `/vehicles/${vehicleId}` : '/vehicles'}>
-            <Button variant="ghost" size="icon" className="text-white/70 hover:text-white">
-              <ArrowRight className="h-5 w-5" />
-            </Button>
-          </Link>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="text-white/70 hover:text-white"
+            title="חזרה"
+            aria-label="חזרה"
+            onClick={() => {
+              setDirty(DIRTY_SOURCE_HANDOVER_WIZARD, false);
+              const fallback = vehicleId ? `/vehicles/${vehicleId}` : '/vehicles';
+              if (typeof window !== 'undefined' && window.history.length > 1) {
+                navigate(-1);
+              } else {
+                navigate(fallback);
+              }
+            }}
+          >
+            <ArrowRight className="h-5 w-5" />
+          </Button>
           <div>
             <h1 className="font-bold text-lg leading-tight">{handoverType === 'return' ? 'אשף החזרת רכב' : 'אשף מסירת רכב'}</h1>
             <p className="text-xs text-cyan-400/70">{vehicleLabel}</p>

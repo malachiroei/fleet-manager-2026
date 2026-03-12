@@ -100,6 +100,123 @@ iframe[src*="lovable"] {
   }
 }
 
+/* Card shine animation (dashboard status cards hover) */
+@keyframes status-card-shine {
+  0% { left: -100%; opacity: 0; }
+  100% { left: 125%; opacity: 1; }
+}
+.group:hover .status-card-shine {
+  animation: status-card-shine 0.8s ease-in-out forwards;
+}
+
+/* Dashboard status stage: dark gradient + vignette (tech dashboard feel) */
+.dashboard-status-stage {
+  background: linear-gradient(180deg, #050a12 0%, #030712 40%, #020617 100%);
+  position: relative;
+  border-radius: 1.5rem;
+  overflow: hidden;
+}
+.dashboard-status-stage::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 120% 80% at 50% 50%, transparent 0%, transparent 50%, rgba(0, 0, 0, 0.5) 100%);
+  pointer-events: none;
+}
+
+/* Status cards: Dark Glassmorphism — halo חיצוני + inner glow + צל מתחת */
+.status-card {
+  box-shadow: var(--status-card-shadow), var(--status-card-inset);
+  transition: transform 0.4s ease, box-shadow 0.4s ease;
+}
+/* Halo + Inner glow. נהגים — סגול */
+.status-card.status-card--purple {
+  --status-card-inset: inset 0 0 48px rgba(168, 85, 247, 0.06);
+  --status-card-shadow:
+    0 0 48px rgba(168, 85, 247, 0.18),
+    0 0 100px rgba(168, 85, 247, 0.14),
+    0 0 180px rgba(168, 85, 247, 0.09),
+    0 0 260px rgba(168, 85, 247, 0.05),
+    0 0 320px rgba(168, 85, 247, 0.03),
+    0 24px 56px rgba(0, 0, 0, 0.32),
+    0 12px 28px rgba(0, 0, 0, 0.22);
+}
+.status-card.status-card--purple:hover {
+  box-shadow:
+    0 0 56px rgba(168, 85, 247, 0.22),
+    0 0 120px rgba(168, 85, 247, 0.16),
+    0 0 200px rgba(168, 85, 247, 0.1),
+    0 0 280px rgba(168, 85, 247, 0.06),
+    0 0 340px rgba(168, 85, 247, 0.04),
+    0 28px 64px rgba(0, 0, 0, 0.36),
+    0 14px 32px rgba(0, 0, 0, 0.24);
+}
+/* רכבים — כחול חשמלי */
+.status-card.status-card--blue {
+  --status-card-inset: inset 0 0 48px rgba(59, 130, 246, 0.06);
+  --status-card-shadow:
+    0 0 48px rgba(59, 130, 246, 0.18),
+    0 0 100px rgba(56, 189, 248, 0.14),
+    0 0 180px rgba(59, 130, 246, 0.09),
+    0 0 260px rgba(56, 189, 248, 0.05),
+    0 0 320px rgba(59, 130, 246, 0.03),
+    0 24px 56px rgba(0, 0, 0, 0.32),
+    0 12px 28px rgba(0, 0, 0, 0.22);
+}
+.status-card.status-card--blue:hover {
+  box-shadow:
+    0 0 56px rgba(59, 130, 246, 0.22),
+    0 0 120px rgba(56, 189, 248, 0.16),
+    0 0 200px rgba(59, 130, 246, 0.1),
+    0 0 280px rgba(56, 189, 248, 0.06),
+    0 0 340px rgba(59, 130, 246, 0.04),
+    0 28px 64px rgba(0, 0, 0, 0.36),
+    0 14px 32px rgba(0, 0, 0, 0.24);
+}
+/* התראות חריגה — כתום */
+.status-card.status-card--orange {
+  --status-card-inset: inset 0 0 48px rgba(249, 115, 22, 0.06);
+  --status-card-shadow:
+    0 0 48px rgba(249, 115, 22, 0.18),
+    0 0 100px rgba(251, 146, 60, 0.14),
+    0 0 180px rgba(249, 115, 22, 0.09),
+    0 0 260px rgba(251, 146, 60, 0.05),
+    0 0 320px rgba(249, 115, 22, 0.03),
+    0 24px 56px rgba(0, 0, 0, 0.32),
+    0 12px 28px rgba(0, 0, 0, 0.22);
+}
+.status-card.status-card--orange:hover {
+  box-shadow:
+    0 0 56px rgba(249, 115, 22, 0.22),
+    0 0 120px rgba(251, 146, 60, 0.16),
+    0 0 200px rgba(249, 115, 22, 0.1),
+    0 0 280px rgba(251, 146, 60, 0.06),
+    0 0 340px rgba(249, 115, 22, 0.04),
+    0 28px 64px rgba(0, 0, 0, 0.36),
+    0 14px 32px rgba(0, 0, 0, 0.24);
+}
+
+/* Icon box: small glow + drop shadow per theme */
+.status-card--purple .status-card-icon-box {
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.25), 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+.status-card--blue .status-card-icon-box {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.25), 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+.status-card--orange .status-card-icon-box {
+  box-shadow: 0 0 20px rgba(249, 115, 22, 0.25), 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+/* Entry button: larger, blur bg, soft glow on hover */
+.status-card-entry-btn {
+  transition: border-color 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease;
+}
+.group:hover .status-card-entry-btn {
+  border-color: rgba(255, 255, 255, 0.5);
+  background-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 18px rgba(255, 255, 255, 0.1);
+}
+
 /* ── Global component overrides ── */
 @layer components {
 

@@ -22,6 +22,7 @@ import { toast } from 'sonner';
 import {
   useVehicleSpecDirty,
   DIRTY_SOURCE_MAINTENANCE,
+  DIRTY_SOURCE_FOLDERS_DRAFT,
   VEHICLE_SPEC_UNSAVED_MSG,
 } from '@/contexts/VehicleSpecDirtyContext';
 
@@ -65,6 +66,7 @@ const FOLDER_TABS: { id: FolderTab; label: string; icon: React.ReactNode }[] = [
 
 // ═══ Expenses tab ═════════════════════════════════════════════════════════════
 function ExpensesTab({ vehicleId }: { vehicleId: string }) {
+  const { setDirty } = useVehicleSpecDirty();
   const { data: expenses = [], isLoading } = useVehicleExpenses(vehicleId);
   const createExpense = useCreateVehicleExpense();
   const deleteExpense = useDeleteVehicleExpense();
@@ -93,6 +95,7 @@ function ExpensesTab({ vehicleId }: { vehicleId: string }) {
       notes: form.notes || null,
     });
     toast.success('הוצאה נוספה');
+    setDirty(DIRTY_SOURCE_FOLDERS_DRAFT, false);
     setShowForm(false);
     setForm({ expense_date: new Date().toISOString().slice(0, 10), category: 'other', description: '', amount: '', supplier: '', notes: '' });
   };
@@ -123,11 +126,25 @@ function ExpensesTab({ vehicleId }: { vehicleId: string }) {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <div>
               <label className="text-xs text-muted-foreground">תאריך</label>
-              <Input type="date" value={form.expense_date} onChange={e => setForm(f => ({ ...f, expense_date: e.target.value }))} className="h-8 text-sm mt-1" />
+              <Input
+                type="date"
+                value={form.expense_date}
+                onChange={(e) => {
+                  setDirty(DIRTY_SOURCE_FOLDERS_DRAFT, true);
+                  setForm((f) => ({ ...f, expense_date: e.target.value }));
+                }}
+                className="h-8 text-sm mt-1"
+              />
             </div>
             <div>
               <label className="text-xs text-muted-foreground">קטגוריה</label>
-              <Select value={form.category} onValueChange={v => setForm(f => ({ ...f, category: v as ExpenseCategory }))}>
+              <Select
+                value={form.category}
+                onValueChange={(v) => {
+                  setDirty(DIRTY_SOURCE_FOLDERS_DRAFT, true);
+                  setForm((f) => ({ ...f, category: v as ExpenseCategory }));
+                }}
+              >
                 <SelectTrigger className="h-8 text-sm mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {Object.entries(CATEGORY_LABELS).map(([k, v]) => (
@@ -142,15 +159,40 @@ function ExpensesTab({ vehicleId }: { vehicleId: string }) {
             </div>
             <div className="col-span-2 sm:col-span-2">
               <label className="text-xs text-muted-foreground">תיאור</label>
-              <Input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="תיאור הוצאה" className="h-8 text-sm mt-1" />
+              <Input
+                value={form.description}
+                onChange={(e) => {
+                  setDirty(DIRTY_SOURCE_FOLDERS_DRAFT, true);
+                  setForm((f) => ({ ...f, description: e.target.value }));
+                }}
+                placeholder="תיאור הוצאה"
+                className="h-8 text-sm mt-1"
+              />
             </div>
             <div>
               <label className="text-xs text-muted-foreground">ספק</label>
-              <Input value={form.supplier} onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))} placeholder="שם ספק" className="h-8 text-sm mt-1" />
+              <Input
+                value={form.supplier}
+                onChange={(e) => {
+                  setDirty(DIRTY_SOURCE_FOLDERS_DRAFT, true);
+                  setForm((f) => ({ ...f, supplier: e.target.value }));
+                }}
+                placeholder="שם ספק"
+                className="h-8 text-sm mt-1"
+              />
             </div>
           </div>
           <div className="flex gap-2 justify-end">
-            <Button variant="ghost" size="sm" onClick={() => setShowForm(false)}>ביטול</Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setDirty(DIRTY_SOURCE_FOLDERS_DRAFT, false);
+                setShowForm(false);
+              }}
+            >
+              ביטול
+            </Button>
             <Button size="sm" onClick={submit} disabled={createExpense.isPending}>
               {createExpense.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'שמור'}
             </Button>
@@ -218,6 +260,7 @@ function ExpensesTab({ vehicleId }: { vehicleId: string }) {
 
 // ═══ Incidents tab (events or accidents) ══════════════════════════════════════
 function IncidentsTab({ vehicleId, type }: { vehicleId: string; type: 'event' | 'accident' }) {
+  const { setDirty } = useVehicleSpecDirty();
   const { data: incidents = [], isLoading } = useVehicleIncidents(vehicleId, type);
   const createIncident = useCreateVehicleIncident();
   const deleteIncident = useDeleteVehicleIncident();
@@ -251,17 +294,28 @@ function IncidentsTab({ vehicleId, type }: { vehicleId: string; type: 'event' | 
       notes: form.notes || null,
     });
     toast.success(type === 'accident' ? 'תאונה נוספה' : 'אירוע נוסף');
+    setDirty(DIRTY_SOURCE_FOLDERS_DRAFT, false);
     setShowForm(false);
     setForm({ incident_date: new Date().toISOString().slice(0, 10), description: '', location: '', damage_desc: '', police_report_no: '', insurance_claim: '', notes: '', status: 'open' });
   };
 
+  const markFoldersDraft = () => setDirty(DIRTY_SOURCE_FOLDERS_DRAFT, true);
   const isAccident = type === 'accident';
 
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <p className="text-sm text-muted-foreground">{incidents.length} {isAccident ? 'תאונות' : 'אירועים'}</p>
-        <Button size="sm" className="gap-2" onClick={() => setShowForm(v => !v)}>
+        <Button
+          size="sm"
+          className="gap-2"
+          onClick={() => {
+            setShowForm((v) => {
+              if (v) setDirty(DIRTY_SOURCE_FOLDERS_DRAFT, false);
+              return !v;
+            });
+          }}
+        >
           <Plus className="h-4 w-4" /> {isAccident ? 'הוסף תאונה' : 'הוסף אירוע'}
         </Button>
       </div>
@@ -272,33 +326,33 @@ function IncidentsTab({ vehicleId, type }: { vehicleId: string; type: 'event' | 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-muted-foreground">תאריך</label>
-              <Input type="date" value={form.incident_date} onChange={e => setForm(f => ({ ...f, incident_date: e.target.value }))} className="h-8 text-sm mt-1" />
+              <Input type="date" value={form.incident_date} onChange={e => { markFoldersDraft(); setForm(f => ({ ...f, incident_date: e.target.value })); }} className="h-8 text-sm mt-1" />
             </div>
             <div>
               <label className="text-xs text-muted-foreground">מיקום</label>
-              <Input value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} placeholder="כתובת / מיקום" className="h-8 text-sm mt-1" />
+              <Input value={form.location} onChange={e => { markFoldersDraft(); setForm(f => ({ ...f, location: e.target.value })); }} placeholder="כתובת / מיקום" className="h-8 text-sm mt-1" />
             </div>
             <div className="col-span-2">
               <label className="text-xs text-muted-foreground">תיאור {isAccident ? 'התאונה' : 'האירוע'}</label>
-              <Input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder={isAccident ? 'תיאור מהלך התאונה' : 'תיאור האירוע'} className="h-8 text-sm mt-1" />
+              <Input value={form.description} onChange={e => { markFoldersDraft(); setForm(f => ({ ...f, description: e.target.value })); }} placeholder={isAccident ? 'תיאור מהלך התאונה' : 'תיאור האירוע'} className="h-8 text-sm mt-1" />
             </div>
             {isAccident && <>
               <div>
                 <label className="text-xs text-muted-foreground">נזק לרכב</label>
-                <Input value={form.damage_desc} onChange={e => setForm(f => ({ ...f, damage_desc: e.target.value }))} placeholder="תיאור הנזק" className="h-8 text-sm mt-1" />
+                <Input value={form.damage_desc} onChange={e => { markFoldersDraft(); setForm(f => ({ ...f, damage_desc: e.target.value })); }} placeholder="תיאור הנזק" className="h-8 text-sm mt-1" />
               </div>
               <div>
                 <label className="text-xs text-muted-foreground">מס׳ תיק משטרה</label>
-                <Input value={form.police_report_no} onChange={e => setForm(f => ({ ...f, police_report_no: e.target.value }))} placeholder="1234567" className="h-8 text-sm mt-1" />
+                <Input value={form.police_report_no} onChange={e => { markFoldersDraft(); setForm(f => ({ ...f, police_report_no: e.target.value })); }} placeholder="1234567" className="h-8 text-sm mt-1" />
               </div>
               <div>
                 <label className="text-xs text-muted-foreground">תביעת ביטוח</label>
-                <Input value={form.insurance_claim} onChange={e => setForm(f => ({ ...f, insurance_claim: e.target.value }))} placeholder="מספר תביעה" className="h-8 text-sm mt-1" />
+                <Input value={form.insurance_claim} onChange={e => { markFoldersDraft(); setForm(f => ({ ...f, insurance_claim: e.target.value })); }} placeholder="מספר תביעה" className="h-8 text-sm mt-1" />
               </div>
             </>}
             <div>
               <label className="text-xs text-muted-foreground">סטטוס</label>
-              <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v as any }))}>
+              <Select value={form.status} onValueChange={v => { markFoldersDraft(); setForm(f => ({ ...f, status: v as any })); }}>
                 <SelectTrigger className="h-8 text-sm mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="open">פתוח</SelectItem>
@@ -308,7 +362,7 @@ function IncidentsTab({ vehicleId, type }: { vehicleId: string; type: 'event' | 
             </div>
           </div>
           <div className="flex gap-2 justify-end">
-            <Button variant="ghost" size="sm" onClick={() => setShowForm(false)}>ביטול</Button>
+            <Button variant="ghost" size="sm" onClick={() => { setDirty(DIRTY_SOURCE_FOLDERS_DRAFT, false); setShowForm(false); }}>ביטול</Button>
             <Button size="sm" onClick={submit} disabled={createIncident.isPending}>
               {createIncident.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'שמור'}
             </Button>
@@ -710,6 +764,11 @@ export function VehicleFolders({ vehicle }: { vehicle: Vehicle }) {
     ) {
       if (!window.confirm(VEHICLE_SPEC_UNSAVED_MSG)) return;
       setDirty(DIRTY_SOURCE_MAINTENANCE, false);
+    }
+    // טופס הוצאה/אירוע פתוח ולא נשמר — חובת התראה לפני מעבר שונית
+    if (getSourceDirty(DIRTY_SOURCE_FOLDERS_DRAFT)) {
+      if (!window.confirm(VEHICLE_SPEC_UNSAVED_MSG)) return;
+      setDirty(DIRTY_SOURCE_FOLDERS_DRAFT, false);
     }
     setActiveTab(tabId);
   };

@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
+import {
+  useVehicleSpecDirty,
+  DIRTY_SOURCE_VEHICLE_EDIT,
+} from '@/contexts/VehicleSpecDirtyContext';
 import { useVehicle, useUpdateVehicle, useAssignDriverToVehicle, useActiveDriverVehicleAssignments } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
 import { useAuth } from '@/hooks/useAuth';
@@ -31,6 +35,13 @@ export default function EditVehiclePage() {
   const [taxValuePrice, setTaxValuePrice] = useState<string>('');
   const [taxValueYear, setTaxValueYear] = useState<string>('');
   const [adjustedPrice, setAdjustedPrice] = useState<string>('');
+  const { setDirty, tryNavigate } = useVehicleSpecDirty();
+
+  useEffect(() => {
+    return () => setDirty(DIRTY_SOURCE_VEHICLE_EDIT, false);
+  }, [setDirty]);
+
+  const markVehicleEditDirty = () => setDirty(DIRTY_SOURCE_VEHICLE_EDIT, true);
 
   const { data: pricingData } = usePricingLookup(
     manufacturerCode || null,
@@ -65,7 +76,7 @@ export default function EditVehiclePage() {
       <div className="min-h-screen bg-[#020617] text-white">
         <header className="bg-card border-b border-border sticky top-0 z-10">
           <div className="container py-4"><div className="flex items-center gap-3">
-            <Link to="/vehicles"><Button variant="ghost" size="icon"><ArrowRight className="h-5 w-5" /></Button></Link>
+            <Button variant="ghost" size="icon" type="button" onClick={() => tryNavigate('/vehicles')}><ArrowRight className="h-5 w-5" /></Button>
             <Skeleton className="h-6 w-48" />
           </div></div>
         </header>
@@ -79,7 +90,7 @@ export default function EditVehiclePage() {
       <div className="min-h-screen bg-[#020617] text-white">
         <header className="bg-card border-b border-border sticky top-0 z-10">
           <div className="container py-4"><div className="flex items-center gap-3">
-            <Link to="/vehicles"><Button variant="ghost" size="icon"><ArrowRight className="h-5 w-5" /></Button></Link>
+            <Button variant="ghost" size="icon" type="button" onClick={() => tryNavigate('/vehicles')}><ArrowRight className="h-5 w-5" /></Button>
             <h1 className="font-bold text-xl">רכב לא נמצא</h1>
           </div></div>
         </header>
@@ -141,6 +152,7 @@ export default function EditVehiclePage() {
       }
 
       toast.success('הרכב עודכן בהצלחה');
+      setDirty(DIRTY_SOURCE_VEHICLE_EDIT, false);
       navigate(`/vehicles/${vehicle.id}`);
     } catch (error) {
       toast.error('שגיאה בעדכון הרכב');
@@ -153,14 +165,19 @@ export default function EditVehiclePage() {
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
           <div className="flex items-center gap-3">
-            <Link to={`/vehicles/${vehicle.id}`}><Button variant="ghost" size="icon"><ArrowRight className="h-5 w-5" /></Button></Link>
+            <Button variant="ghost" size="icon" type="button" onClick={() => tryNavigate(`/vehicles/${vehicle.id}`)}><ArrowRight className="h-5 w-5" /></Button>
             <h1 className="font-bold text-xl">עריכת רכב - {vehicle.plate_number}</h1>
           </div>
         </div>
       </header>
 
       <main className="container py-6">
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-6"
+          onInput={markVehicleEditDirty}
+          onChange={markVehicleEditDirty}
+        >
           <Card>
             <CardHeader>
               <div className="flex items-center gap-3">
@@ -194,11 +211,11 @@ export default function EditVehiclePage() {
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
                 <Label>רכב פעיל</Label>
-                <Switch checked={activeValue} onCheckedChange={(val) => setIsActive(val)} />
+                <Switch checked={activeValue} onCheckedChange={(val) => { markVehicleEditDirty(); setIsActive(val); }} />
               </div>
               <div>
                 <Label>נהג מוקצה</Label>
-                <Select value={driverValue || 'none'} onValueChange={(val) => setAssignedDriverId(val === 'none' ? '' : val)}>
+                <Select value={driverValue || 'none'} onValueChange={(val) => { markVehicleEditDirty(); setAssignedDriverId(val === 'none' ? '' : val); }}>
                   <SelectTrigger><SelectValue placeholder="בחר נהג" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">ללא הקצאה</SelectItem>
@@ -282,7 +299,7 @@ export default function EditVehiclePage() {
                     id="manufacturer_code" 
                     name="manufacturer_code" 
                     value={manufacturerCode}
-                    onChange={(e) => setManufacturerCode(e.target.value)}
+                    onChange={(e) => { markVehicleEditDirty(); setManufacturerCode(e.target.value); }}
                     placeholder="001"
                     dir="ltr"
                   />
@@ -294,7 +311,7 @@ export default function EditVehiclePage() {
                     id="model_code" 
                     name="model_code" 
                     value={modelCode}
-                    onChange={(e) => setModelCode(e.target.value)}
+                    onChange={(e) => { markVehicleEditDirty(); setModelCode(e.target.value); }}
                     placeholder="1234"
                     dir="ltr"
                   />
@@ -331,7 +348,7 @@ export default function EditVehiclePage() {
                     id="tax_value_price" 
                     name="tax_value_price" 
                     value={taxValuePrice}
-                    onChange={(e) => setTaxValuePrice(e.target.value)}
+                    onChange={(e) => { markVehicleEditDirty(); setTaxValuePrice(e.target.value); }}
                     type="number"
                     step="0.01"
                     min="0"
@@ -346,7 +363,7 @@ export default function EditVehiclePage() {
                     id="tax_value_year" 
                     name="tax_value_year" 
                     value={taxValueYear}
-                    onChange={(e) => setTaxValueYear(e.target.value)}
+                    onChange={(e) => { markVehicleEditDirty(); setTaxValueYear(e.target.value); }}
                     type="number"
                     min="1990"
                     max={new Date().getFullYear() + 1}
@@ -360,7 +377,7 @@ export default function EditVehiclePage() {
                     id="adjusted_price" 
                     name="adjusted_price" 
                     value={adjustedPrice}
-                    onChange={(e) => setAdjustedPrice(e.target.value)}
+                    onChange={(e) => { markVehicleEditDirty(); setAdjustedPrice(e.target.value); }}
                     type="number"
                     step="0.01"
                     min="0"
@@ -377,9 +394,7 @@ export default function EditVehiclePage() {
               {isSubmitting && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
               שמור שינויים
             </Button>
-            <Link to={`/vehicles/${vehicle.id}`} className="flex-1">
-              <Button type="button" variant="outline" className="w-full">ביטול</Button>
-            </Link>
+            <Button type="button" variant="outline" className="flex-1" onClick={() => tryNavigate(`/vehicles/${vehicle.id}`)}>ביטול</Button>
           </div>
         </form>
       </main>

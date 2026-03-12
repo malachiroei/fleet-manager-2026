@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Users, CalendarClock } from 'lucide-react';
+import { Users, CalendarClock, ArrowLeftRight } from 'lucide-react';
 
 type DriverReportRow = {
   id: string;
@@ -54,7 +55,21 @@ export default function ReportsPage() {
         <p className="text-muted-foreground mt-1">סיכום נהגים פעילים ותוקף רישיונות נהיגה</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <Link to="/vehicles/transfers" className="block rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">
+          <Card className="h-full transition-colors hover:bg-cyan-500/10 hover:border-cyan-400/40 border border-white/10">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <ArrowLeftRight className="h-4 w-4" />
+                דוח העברות
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">היסטוריית מסירות והחזרות — כניסה למסך העברות</p>
+            </CardContent>
+          </Card>
+        </Link>
+
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">

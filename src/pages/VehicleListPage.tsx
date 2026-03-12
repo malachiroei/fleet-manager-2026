@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useVehicles } from '@/hooks/useVehicles';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Search } from 'lucide-react';
+import { Plus, Search, Gauge } from 'lucide-react';
 
 function fmtDate(d: string | null): string {
   if (!d) return '—';
@@ -75,11 +75,22 @@ export default function VehicleListPage() {
     <div className="min-h-screen bg-[#020617] p-4 md:p-8 text-white relative overflow-hidden">
       <div className="absolute top-[-180px] left-1/2 -translate-x-1/2 w-[120vw] max-w-[800px] h-[120vw] max-h-[800px] bg-cyan-500/10 blur-[150px] pointer-events-none" />
       <div className="relative z-10 space-y-6 md:space-y-10">
-        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
           <h1 className="text-2xl md:text-4xl font-black neon-title">ניהול צי רכבים</h1>
-          <Link to="/vehicles/add" className="w-full sm:w-auto">
-            <Button className="w-full sm:w-auto bg-cyan-600 hover:bg-cyan-500 font-bold px-4 md:px-8 py-2 md:py-6 text-sm md:text-lg shadow-[0_0_20px_rgba(6,182,212,0.4)]">הוסף רכב</Button>
-          </Link>
+          <div className="flex flex-col gap-2 w-full sm:w-auto sm:items-end">
+            <Link to="/vehicles/add" className="w-full sm:w-auto">
+              <Button className="w-full sm:w-auto bg-cyan-600 hover:bg-cyan-500 font-bold px-4 md:px-8 py-2 md:py-6 text-sm md:text-lg shadow-[0_0_20px_rgba(6,182,212,0.4)]">הוסף רכב</Button>
+            </Link>
+            <Link to="/vehicles/odometer" className="w-full sm:w-auto">
+              <Button
+                variant="outline"
+                className="w-full sm:w-auto border-cyan-500/40 bg-white/5 hover:bg-cyan-500/10 text-cyan-100 font-semibold gap-2"
+              >
+                <Gauge className="h-4 w-4" />
+                עדכון קילומטראז׳
+              </Button>
+            </Link>
+          </div>
         </div>
         <div className="relative max-w-xl">
           <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-cyan-500/50" />

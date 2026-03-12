@@ -20,7 +20,7 @@ export function LanguageSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-2">
+        <Button variant="outline" size="sm" className="h-8 gap-2 border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white">
           <Globe className="h-4 w-4" />
           <span className="text-xs font-semibold">
             {i18n.language === 'he' ? 'עברית' : 'EN'}

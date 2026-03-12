@@ -2,12 +2,14 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { flushSync } from 'react-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 const MSG =
   'יש שינויים שלא נשמרו. הנתונים לא יתעדכנו בלי ללחוץ "אישור שינויים". לצאת בכל זאת?';
@@ -16,6 +18,23 @@ export const DIRTY_SOURCE_SPEC = 'spec';
 export const DIRTY_SOURCE_MAINTENANCE = 'maintenance';
 /** עריכת נהג — סקשן בודד או עריכה מלאה */
 export const DIRTY_SOURCE_DRIVER_EDIT = 'driver_edit';
+/** אשף מסירת/החזרת רכב */
+export const DIRTY_SOURCE_HANDOVER_WIZARD = 'handover_wizard';
+/** טפסי הוצאה/אירוע בתיקיות רכב לפני שמירה */
+export const DIRTY_SOURCE_FOLDERS_DRAFT = 'folders_draft';
+/** עריכת רכב (דף EditVehiclePage) */
+export const DIRTY_SOURCE_VEHICLE_EDIT = 'vehicle_edit';
+/** מסך מסירת רכב קבוע (/handover/delivery) — בחירת רכב/נהג, ק״מ וכו' */
+export const DIRTY_SOURCE_VEHICLE_DELIVERY = 'vehicle_delivery';
+
+/** נתיב דף מסירה — לניקוי כפוי כשעוזבים */
+export const VEHICLE_DELIVERY_PATH = '/handover/delivery';
+
+function pathnameIsVehicleDelivery(pathname: string) {
+  return pathname === VEHICLE_DELIVERY_PATH || pathname.startsWith(`${VEHICLE_DELIVERY_PATH}/`);
+}
+
+const MSG_DELIVERY_UNSAVED = 'ישנם שינויים לא שמורים, האם לצאת בכל זאת?';
 
 type VehicleSpecDirtyContextValue = {
   isDirty: boolean;
@@ -25,6 +44,12 @@ type VehicleSpecDirtyContextValue = {
   getIsDirty: () => boolean;
   /** רק מקור מסוים (למשל maintenance) — לפני מעבר לשונית */
   getSourceDirty: (sourceId: string) => boolean;
+  /**
+   * מסך מסירה (אופציונלי): דגל יציאה — רק אם קומפוננטה צריכה לדעת
+   */
+  setDeliveryExiting: (exiting: boolean) => void;
+  getDeliveryExiting: () => boolean;
+  getDeliveryExitConfirmed: () => boolean;
 };
 
 const defaultValue: VehicleSpecDirtyContextValue = {
@@ -33,15 +58,51 @@ const defaultValue: VehicleSpecDirtyContextValue = {
   tryNavigate: () => {},
   getIsDirty: () => false,
   getSourceDirty: () => false,
+  setDeliveryExiting: () => {},
+  getDeliveryExiting: () => false,
+  getDeliveryExitConfirmed: () => false,
 };
 
 const VehicleSpecDirtyContext = createContext<VehicleSpecDirtyContextValue>(defaultValue);
 
 export function VehicleSpecDirtyProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [version, setVersion] = useState(0);
   /** מקור אמת סינכרוני — מתעדכן מיד ב-setDirty */
   const sourcesRef = useRef<Record<string, true>>({});
+  /** יציאה ממסך מסירה אושרה — לא להחזיר dirty עד unmount */
+  const deliveryExitingRef = useRef(false);
+  /** אחרי confirm ב-tryNavigate — VehicleDeliveryPage לא יחזיר dirty באותו רנדר */
+  const deliveryExitConfirmedRef = useRef(false);
+
+  const getDeliveryExitConfirmed = useCallback(() => deliveryExitConfirmedRef.current, []);
+
+  // ניקוי כפוי כשהנתיב כבר לא דף מסירה — רק ב-useEffect (לא בזמן render)
+  useEffect(() => {
+    const pathname = location.pathname;
+    if (!pathnameIsVehicleDelivery(pathname)) {
+      if (
+        sourcesRef.current[DIRTY_SOURCE_VEHICLE_DELIVERY] ||
+        sourcesRef.current[DIRTY_SOURCE_HANDOVER_WIZARD] ||
+        deliveryExitConfirmedRef.current
+      ) {
+        delete sourcesRef.current[DIRTY_SOURCE_VEHICLE_DELIVERY];
+        delete sourcesRef.current[DIRTY_SOURCE_HANDOVER_WIZARD];
+        deliveryExitConfirmedRef.current = false;
+        deliveryExitingRef.current = false;
+        setVersion((v) => v + 1);
+      }
+    } else {
+      deliveryExitConfirmedRef.current = false;
+    }
+  }, [location.pathname]);
+
+  const setDeliveryExiting = useCallback((exiting: boolean) => {
+    deliveryExitingRef.current = exiting;
+  }, []);
+
+  const getDeliveryExiting = useCallback(() => deliveryExitingRef.current, []);
 
   const setDirty = useCallback((sourceId: string, dirty: boolean) => {
     if (dirty) sourcesRef.current[sourceId] = true;
@@ -56,20 +117,57 @@ export function VehicleSpecDirtyProvider({ children }: { children: ReactNode }) 
       navigate(to);
       return;
     }
-    if (window.confirm(MSG)) {
-      sourcesRef.current = {};
-      setVersion((v) => v + 1);
-      navigate(to);
-    }
-  }, [navigate]);
+    const confirmMsg = sourcesRef.current[DIRTY_SOURCE_VEHICLE_DELIVERY]
+      ? MSG_DELIVERY_UNSAVED
+      : MSG;
+    if (!window.confirm(confirmMsg)) return;
+    // סדר קשיח: קודם setDirty(false) בסינכרון — רק אחרי commit, navigate (מונע התקעות)
+    deliveryExitConfirmedRef.current = true;
+    flushSync(() => {
+      setDirty(DIRTY_SOURCE_VEHICLE_DELIVERY, false);
+    });
+    delete sourcesRef.current[DIRTY_SOURCE_VEHICLE_DELIVERY];
+    deliveryExitingRef.current = false;
+    // אחרי ניקוי מסירה — רוקנים הכל כדי שלא יישאר dirty ממקור אחר שיחסום ניווט
+    sourcesRef.current = {};
+    setVersion((v) => v + 1);
+    // navigate() אחרי flushSync עלול להשאיר את ה-URL בדפדפן מעודכן בעוד ש-React Router
+    // והדOM נשארים על דף המסירה (דסינכרון). ניווט מלא מכריח טעינה נכונה של היעד.
+    const target =
+      to.startsWith('http://') || to.startsWith('https://')
+        ? to
+        : to.startsWith('/')
+          ? `${window.location.origin}${to}`
+          : `${window.location.origin}/${to}`;
+    window.location.assign(target);
+  }, [navigate, setDirty]);
 
   const getIsDirty = useCallback(() => Object.keys(sourcesRef.current).length > 0, []);
 
   const getSourceDirty = useCallback((sourceId: string) => !!sourcesRef.current[sourceId], []);
 
   const value = useMemo(
-    () => ({ isDirty, setDirty, tryNavigate, getIsDirty, getSourceDirty }),
-    [isDirty, setDirty, tryNavigate, getIsDirty, getSourceDirty, version]
+    () => ({
+      isDirty,
+      setDirty,
+      tryNavigate,
+      getIsDirty,
+      getSourceDirty,
+      setDeliveryExiting,
+      getDeliveryExiting,
+      getDeliveryExitConfirmed,
+    }),
+    [
+      isDirty,
+      setDirty,
+      tryNavigate,
+      getIsDirty,
+      getSourceDirty,
+      setDeliveryExiting,
+      getDeliveryExiting,
+      getDeliveryExitConfirmed,
+      version,
+    ]
   );
 
   return (
@@ -83,4 +181,4 @@ export function useVehicleSpecDirty() {
   return useContext(VehicleSpecDirtyContext);
 }
 
-export { MSG as VEHICLE_SPEC_UNSAVED_MSG };
+export { MSG as VEHICLE_SPEC_UNSAVED_MSG, MSG_DELIVERY_UNSAVED };
