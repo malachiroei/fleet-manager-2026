@@ -29,6 +29,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { Button } from './ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from './ui/sheet';
 import { ScrollArea } from './ui/scroll-area';
+import { BrandLogo } from './BrandLogo';
 
 interface NavItem {
   title: string;
@@ -122,9 +123,10 @@ export function MobileNav() {
       >
         <SheetHeader>
           <SheetTitle className={cn('flex items-center gap-3', isRtl ? 'text-right' : 'text-left')}>
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-cyan-400/40 bg-cyan-500/15 shadow-[0_0_14px_rgba(0,255,255,0.2)]">
-              <Car className="h-5 w-5 text-cyan-300" />
-            </div>
+            <BrandLogo
+              size="sidebar"
+              className="drop-shadow-[0_0_12px_rgba(255,255,255,0.2)]"
+            />
             <div>
               <h1 className="font-bold text-base leading-tight text-white">{t('navigation.fleetManager')}</h1>
               <p className="text-xs text-cyan-400/60">{t('navigation.proDashboard')}</p>

@@ -22,6 +22,7 @@ import { useLabel, useIsVisible } from '@/hooks/useUiLabels';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
 import { SidebarUserMenu } from './SidebarUserMenu';
+import { BrandLogo } from './BrandLogo';
 
 interface NavItem {
   title: string;
@@ -91,9 +92,10 @@ export function Sidebar() {
       {/* Logo/Header */}
       <div className="flex h-16 items-center border-b border-white/10 px-6">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-cyan-400/40 bg-cyan-500/15 shadow-[0_0_14px_rgba(0,255,255,0.2)]">
-            <Car className="h-5 w-5 text-cyan-300" />
-          </div>
+          <BrandLogo
+            size="sidebar"
+            className="drop-shadow-[0_0_12px_rgba(255,255,255,0.2)]"
+          />
           <div className={cn(isRtl ? 'text-right' : 'text-left')}>
             <h1 className="font-bold text-base leading-tight text-white">{t('navigation.fleetManager')}</h1>
             <p className="text-xs text-cyan-400/60">{t('navigation.proDashboard')}</p>

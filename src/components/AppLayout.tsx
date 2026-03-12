@@ -7,19 +7,20 @@ import { LanguageSwitcher } from './LanguageSwitcher';
 import { AIChatAssistant } from './AIChatAssistant';
 import { useTheme } from '@/hooks/useTheme';
 import { Sun, Moon } from 'lucide-react';
+import { PwaInstallButton } from './PwaInstallButton';
 /** Brand logo – same asset as og:image (public/og-image.png). Identical for prod and manager-2026-test. */
 const appLogo = '/og-image.png';
 
 /**
  * Fixed box + deep blue so the white car pops; overflow-hidden clips scaled img = zoom on car.
- * Container h-14 w-20 gives the scaled image room before clip.
+ * Larger box + higher scale so the car reads clearly next to title.
  */
 const logoWrapClassName =
-  'h-14 w-20 shrink-0 bg-[#0a1525] rounded-xl p-1 overflow-hidden flex items-center justify-center';
+  'h-16 w-24 shrink-0 bg-[#0a1525] rounded-xl p-1.5 overflow-hidden flex items-center justify-center';
 
 /** Zoom in on center of asset; transform + scale so the car fills the visible area */
 const logoImgClassName =
-  'h-full w-full object-contain object-center scale-[1.8] transform origin-center';
+  'h-full w-full object-contain object-center scale-[2.1] transform origin-center';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -63,6 +64,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <PwaInstallButton />
               <ThemeToggle />
               <LanguageSwitcher />
             </div>
@@ -82,6 +84,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <PwaInstallButton />
               <ThemeToggle />
               <LanguageSwitcher />
             </div>

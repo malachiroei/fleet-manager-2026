@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useVehicles } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
 import { supabase } from '@/integrations/supabase/client';
@@ -44,6 +44,7 @@ function getErrorMessage(error: unknown) {
 }
 
 export default function VehicleReturnPage() {
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { data: vehicles } = useVehicles();
@@ -251,6 +252,8 @@ export default function VehicleReturnPage() {
         const data = archived.handover;
         console.log('Persisted PDF URL:', data.pdf_url);
         reportUrl = archived.handover.pdf_url;
+        queryClient.invalidateQueries({ queryKey: ['active-driver-vehicle-assignments'] });
+        queryClient.invalidateQueries({ queryKey: ['vehicles'] });
       } catch (archiveError) {
         console.error('Archive form copy error:', archiveError);
         const message = archiveError instanceof Error ? archiveError.message : 'שגיאה לא ידועה';

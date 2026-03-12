@@ -6,8 +6,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowRight, Loader2, User, CreditCard, Briefcase } from 'lucide-react';
+import { ArrowRight, Loader2, User, CreditCard, Briefcase, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
+import { formatSupabaseError } from '@/lib/supabaseError';
 
 export default function EditDriverPage() {
   const { id } = useParams<{ id: string }>();
@@ -47,14 +48,19 @@ export default function EditDriverPage() {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const licenseExpiry = (formData.get('license_expiry') as string)?.trim();
+    if (!licenseExpiry) {
+      toast.error('חובה למלא תוקף רישיון נהיגה');
+      return;
+    }
     setIsSubmitting(true);
     try {
-      const formData = new FormData(e.currentTarget);
       await updateDriver.mutateAsync({
         id: driver.id,
         full_name: formData.get('full_name') as string,
         id_number: formData.get('id_number') as string,
-        license_expiry: formData.get('license_expiry') as string,
+        license_expiry: licenseExpiry,
         phone: formData.get('phone') as string || null,
         email: formData.get('email') as string || null,
         health_declaration_date: formData.get('health_declaration_date') as string || null,
@@ -68,7 +74,12 @@ export default function EditDriverPage() {
       toast.success('הנהג עודכן בהצלחה');
       navigate(`/drivers/${driver.id}`);
     } catch (error) {
-      toast.error('שגיאה בעדכון הנהג');
+      // מציג את השגיאה המדויקת מה-DB (RLS, constraint, עמודה חסרה וכו')
+      const description = formatSupabaseError(error);
+      toast.error('שגיאה בעדכון הנהג', {
+        description,
+        duration: 12_000, // זמן ארוך יותר כדי להספיק לקרוא code/details
+      });
       setIsSubmitting(false);
     }
   };
@@ -127,7 +138,7 @@ export default function EditDriverPage() {
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
                   <Briefcase className="h-5 w-5 text-primary" />
                 </div>
-                <CardTitle>מידע מקצועי</CardTitle>
+                <CardTitle>שיוך ארגוני</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -150,7 +161,7 @@ export default function EditDriverPage() {
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10">
                   <CreditCard className="h-5 w-5 text-amber-600" />
                 </div>
-                <CardTitle>רישיון ותאימות</CardTitle>
+                <CardTitle>רישיונות</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -159,10 +170,25 @@ export default function EditDriverPage() {
                   <Label htmlFor="license_number">מספר רישיון נהיגה</Label>
                   <Input id="license_number" name="license_number" defaultValue={driver.license_number || ''} dir="ltr" />
                 </div>
-                <div className="col-span-2">
+                <div className="md:col-span-2">
                   <Label htmlFor="license_expiry">תוקף רישיון נהיגה *</Label>
                   <Input id="license_expiry" name="license_expiry" type="date" defaultValue={driver.license_expiry} required />
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10">
+                  <ShieldCheck className="h-5 w-5 text-emerald-600" />
+                </div>
+                <CardTitle>כשירות ובטיחות</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="health_declaration_date">תאריך הצהרת בריאות</Label>
                   <Input id="health_declaration_date" name="health_declaration_date" type="date" defaultValue={driver.health_declaration_date || ''} />
@@ -171,7 +197,7 @@ export default function EditDriverPage() {
                   <Label htmlFor="safety_training_date">תאריך הדרכת בטיחות</Label>
                   <Input id="safety_training_date" name="safety_training_date" type="date" defaultValue={driver.safety_training_date || ''} />
                 </div>
-                <div className="col-span-2">
+                <div className="md:col-span-2">
                   <Label htmlFor="regulation_585b_date">תאריך בדיקת תקנה 585ב'</Label>
                   <Input id="regulation_585b_date" name="regulation_585b_date" type="date" defaultValue={driver.regulation_585b_date || ''} />
                 </div>

@@ -1,7 +1,6 @@
-import { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useDriver } from '@/hooks/useDrivers';
-import DriverFolders from '@/components/DriverFolders';
 import { useDriverDocuments } from '@/hooks/useDriverDocuments';
 import { useActiveDriverVehicleAssignments } from '@/hooks/useVehicles';
 import { Button } from '@/components/ui/button';
@@ -13,6 +12,22 @@ import {
   ArrowRight, User, CreditCard, Phone, Briefcase, Car, Edit, FileText, X, Eye, ExternalLink
 } from 'lucide-react';
 import type { ComplianceStatus, DriverDocument } from '@/types/fleet';
+import { MISSING_DATA } from '@/components/DriverCard';
+import type { DriverSectionId } from '@/lib/driverFieldMap';
+import { DRIVER_SECTION_QUERY_PARAM } from '@/lib/driverFieldMap';
+
+/** ערך להצגה — לעולם לא מסתיר שורה */
+function orMissing(v: string | null | undefined): string {
+  if (v == null || String(v).trim() === '') return MISSING_DATA;
+  return String(v).trim();
+}
+
+function orMissingDate(v: string | null | undefined): string | null {
+  if (v == null || String(v).trim() === '') return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  return v;
+}
 
 function StatusBadge({ status, daysLeft }: { status: ComplianceStatus; daysLeft?: number }) {
   const config = {
@@ -82,16 +97,40 @@ function FileCard({ title, src, onClick }: { title: string; src: string; onClick
 }
 
 function InfoRow({ label, value, dir }: { label: string; value: string; dir?: 'ltr' }) {
+  const missing = value === MISSING_DATA || value === '—';
   return (
     <div className="flex items-center justify-between py-2 border-b border-border/30 last:border-0">
       <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="text-base font-medium text-foreground" dir={dir}>{value}</span>
+      <span
+        className={`text-base font-medium ${missing ? 'text-muted-foreground' : 'text-foreground'}`}
+        dir={dir}
+      >
+        {value}
+      </span>
     </div>
   );
 }
 
-function CompInfoRow({ label, date }: { label: string; date: string }) {
-  const d = new Date(date);
+/** שורת תאריך — תמיד מוצגת; בלי תאריך → חסר נתון באפור */
+function CompInfoRow({ label, date }: { label: string; date: string | null | undefined }) {
+  const raw = date && String(date).trim() !== '' ? date : null;
+  if (!raw) {
+    return (
+      <div className="flex items-center justify-between py-2 border-b border-border/30 last:border-0">
+        <span className="text-sm text-muted-foreground">{label}</span>
+        <span className="text-base font-medium text-muted-foreground">{MISSING_DATA}</span>
+      </div>
+    );
+  }
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) {
+    return (
+      <div className="flex items-center justify-between py-2 border-b border-border/30 last:border-0">
+        <span className="text-sm text-muted-foreground">{label}</span>
+        <span className="text-base font-medium text-muted-foreground">{MISSING_DATA}</span>
+      </div>
+    );
+  }
   const today = new Date();
   const daysLeft = Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
   const color = daysLeft < 0 ? 'text-red-400' : daysLeft <= 30 ? 'text-amber-400' : 'text-emerald-400';
@@ -103,9 +142,36 @@ function CompInfoRow({ label, date }: { label: string; date: string }) {
   );
 }
 
+const SECTION_ANCHOR_PREFIX = 'driver-section-';
+
 export default function DriverDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data: driver, isLoading } = useDriver(id || '');
+  const scrolledRef = useRef(false);
+
+  // גלילה לאזור המתאים כשמגיעים מלחיצה על משבצת בכרטיס (/?section=personal|organizational|licenses|safety)
+  const sectionParam = searchParams.get(DRIVER_SECTION_QUERY_PARAM);
+  useEffect(() => {
+    scrolledRef.current = false;
+  }, [id, sectionParam]);
+
+  useEffect(() => {
+    const section = sectionParam as DriverSectionId | null;
+    if (!section || !driver || scrolledRef.current) return;
+    const valid: string[] = ['personal', 'organizational', 'licenses', 'safety'];
+    if (!valid.includes(section)) return;
+    const el = document.getElementById(`${SECTION_ANCHOR_PREFIX}${section}`);
+    if (el) {
+      requestAnimationFrame(() => {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      scrolledRef.current = true;
+      const next = new URLSearchParams(searchParams);
+      next.delete(DRIVER_SECTION_QUERY_PARAM);
+      setSearchParams(next, { replace: true });
+    }
+  }, [driver, sectionParam, searchParams, setSearchParams]);
   const { data: dbDocuments } = useDriverDocuments(id || '');
   const { data: activeAssignments } = useActiveDriverVehicleAssignments();
   const [selectedImage, setSelectedImage] = useState<{ src: string; title: string } | null>(null);
@@ -192,34 +258,62 @@ export default function DriverDetailPage() {
   const allDocuments: DriverDocument[] = [...dbDocs, ...legacyDocs];
   void allDocuments; // available for future use (e.g. document folder)
 
+  const assignedVehicles = (activeAssignments ?? [])
+    .filter((a) => a.driver_id === driver.id && a.vehicle)
+    .map((a) => a.vehicle!)
+    .filter((v, i, arr) => arr.findIndex((x) => x.id === v.id) === i);
+
   return (
     <div className="min-h-screen bg-[#020617] text-white">
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Link to="/drivers"><Button variant="ghost" size="icon"><ArrowRight className="h-5 w-5" /></Button></Link>
-              <div>
-                <h1 className="font-bold text-xl text-foreground">{driver.full_name}</h1>
-                <p className="text-sm text-muted-foreground">ת.ז. {driver.id_number}</p>
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Link to="/drivers"><Button variant="ghost" size="icon"><ArrowRight className="h-5 w-5" /></Button></Link>
+                <div>
+                  <h1 className="font-bold text-xl text-foreground">{driver.full_name}</h1>
+                  <p className="text-sm text-muted-foreground">ת.ז. {driver.id_number}</p>
+                </div>
               </div>
+              <Link to={`/drivers/${driver.id}/edit`}>
+                <Button variant="outline" size="sm"><Edit className="h-4 w-4 ml-1" />עריכה</Button>
+              </Link>
             </div>
-            <Link to={`/drivers/${driver.id}/edit`}>
-              <Button variant="outline" size="sm"><Edit className="h-4 w-4 ml-1" />עריכה</Button>
-            </Link>
+            {/* רכב משויך — מתחת לשם, לא בתוך המשבצות */}
+            <div className="flex flex-wrap items-center gap-2 border-t border-border/50 pt-3">
+              <span className="text-xs font-medium text-muted-foreground">רכב משויך</span>
+              {assignedVehicles.length > 0 ? (
+                assignedVehicles.map((v) => (
+                  <div
+                    key={v.id}
+                    className="flex items-center gap-2 rounded-lg border border-primary/25 bg-primary/10 px-2.5 py-1 text-sm font-medium text-primary"
+                  >
+                    <Car className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate max-w-[200px]">{v.manufacturer} {v.model}</span>
+                    <span className="text-xs text-muted-foreground">({v.plate_number})</span>
+                  </div>
+                ))
+              ) : (
+                <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+                  <Car className="h-3.5 w-3.5" />
+                  אין רכב משויך
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </header>
 
-      <main className="container py-6 space-y-5">
+      <main className="container space-y-5 py-6">
         <>
-
-            {/* ── Two-column grid ───────────────────────────────── */}
+            {/* ── Two-column grid — קודם כרטיסי המידע (כמו בתמונה השנייה) ── */}
             <div className="grid gap-4 md:grid-cols-2">
               {/* Left column */}
               <div className="space-y-4">
 
-                {/* Personal details */}
+                {/* Personal details — עוגן ל-section=personal */}
+                <div id={`${SECTION_ANCHOR_PREFIX}personal`} className="scroll-mt-28" />
                 <Card>
                   <CardHeader className="pb-2 pt-4 px-4">
                     <div className="flex items-center gap-2">
@@ -230,15 +324,20 @@ export default function DriverDetailPage() {
                     </div>
                   </CardHeader>
                   <CardContent className="px-4 pb-4 pt-0">
-                    <InfoRow label="ת.ז." value={driver.id_number} />
-                    {driver.birth_date && (
-                      <InfoRow label="תאריך לידה" value={new Date(driver.birth_date).toLocaleDateString('he-IL')} />
-                    )}
-                    {driver.city && <InfoRow label="עיר" value={driver.city} />}
-                    {driver.address && <InfoRow label="כתובת" value={driver.address} />}
-                    {driver.note1 && <InfoRow label="הערה 1" value={driver.note1} />}
-                    {driver.note2 && <InfoRow label="הערה 2" value={driver.note2} />}
-                    {driver.rating && <InfoRow label="דירוג" value={driver.rating} />}
+                    <InfoRow label="ת.ז." value={orMissing(driver.id_number)} />
+                    <InfoRow
+                      label="תאריך לידה"
+                      value={
+                        orMissingDate(driver.birth_date)
+                          ? new Date(driver.birth_date!).toLocaleDateString('he-IL')
+                          : MISSING_DATA
+                      }
+                    />
+                    <InfoRow label="עיר" value={orMissing(driver.city)} />
+                    <InfoRow label="כתובת" value={orMissing(driver.address)} />
+                    <InfoRow label="הערה 1" value={orMissing(driver.note1)} />
+                    <InfoRow label="הערה 2" value={orMissing(driver.note2)} />
+                    <InfoRow label="דירוג" value={orMissing(driver.rating)} />
                   </CardContent>
                 </Card>
 
@@ -253,11 +352,8 @@ export default function DriverDetailPage() {
                     </div>
                   </CardHeader>
                   <CardContent className="px-4 pb-4 pt-0">
-                    {driver.phone && <InfoRow label="טלפון" value={driver.phone} dir="ltr" />}
-                    {driver.email && <InfoRow label="מייל" value={driver.email} dir="ltr" />}
-                    {!driver.phone && !driver.email && (
-                      <p className="text-sm text-muted-foreground py-1">לא הוזנו פרטי קשר</p>
-                    )}
+                    <InfoRow label="טלפון" value={orMissing(driver.phone)} dir="ltr" />
+                    <InfoRow label="מייל" value={orMissing(driver.email)} dir="ltr" />
                   </CardContent>
                 </Card>
 
@@ -266,7 +362,8 @@ export default function DriverDetailPage() {
               {/* Right column */}
               <div className="space-y-4">
 
-                {/* Employment */}
+                {/* Employment — עוגן ל-section=organizational (תפקיד, מחלקה) */}
+                <div id={`${SECTION_ANCHOR_PREFIX}organizational`} className="scroll-mt-28" />
                 <Card>
                   <CardHeader className="pb-2 pt-4 px-4">
                     <div className="flex items-center gap-2">
@@ -277,25 +374,28 @@ export default function DriverDetailPage() {
                     </div>
                   </CardHeader>
                   <CardContent className="px-4 pb-4 pt-0">
-                    {driver.employee_number && <InfoRow label="מ. עובד" value={driver.employee_number} />}
-                    {driver.driver_code && <InfoRow label="קוד נהג" value={driver.driver_code} />}
-                    {driver.job_title && <InfoRow label="תפקיד" value={driver.job_title} />}
-                    {driver.department && <InfoRow label="מחלקה" value={driver.department} />}
-                    {driver.division && <InfoRow label="מחוז" value={driver.division} />}
-                    {driver.area && <InfoRow label="אזור" value={driver.area} />}
-                    {driver.group_name && <InfoRow label="קבוצה" value={driver.group_name} />}
-                    {driver.group_code && <InfoRow label="קוד קבוצה" value={driver.group_code} />}
-                    {driver.eligibility && <InfoRow label="כשירות" value={driver.eligibility} />}
-                    {driver.work_start_date && (
-                      <InfoRow label="ת. תחילת עבודה" value={new Date(driver.work_start_date).toLocaleDateString('he-IL')} />
-                    )}
-                    {!driver.employee_number && !driver.job_title && !driver.department && (
-                      <p className="text-sm text-muted-foreground py-1">לא הוזנו פרטי העסקה</p>
-                    )}
+                    <InfoRow label="מ. עובד" value={orMissing(driver.employee_number)} />
+                    <InfoRow label="קוד נהג" value={orMissing(driver.driver_code)} />
+                    <InfoRow label="תפקיד" value={orMissing(driver.job_title)} />
+                    <InfoRow label="מחלקה" value={orMissing(driver.department)} />
+                    <InfoRow label="מחוז" value={orMissing(driver.division)} />
+                    <InfoRow label="אזור" value={orMissing(driver.area)} />
+                    <InfoRow label="קבוצה" value={orMissing(driver.group_name)} />
+                    <InfoRow label="קוד קבוצה" value={orMissing(driver.group_code)} />
+                    <InfoRow label="כשירות" value={orMissing(driver.eligibility)} />
+                    <InfoRow
+                      label="ת. תחילת עבודה"
+                      value={
+                        orMissingDate(driver.work_start_date)
+                          ? new Date(driver.work_start_date!).toLocaleDateString('he-IL')
+                          : MISSING_DATA
+                      }
+                    />
                   </CardContent>
                 </Card>
 
-                {/* License & Compliance */}
+                {/* License & Compliance — licenses + safety באותו כרטיס, שני עוגנים */}
+                <div id={`${SECTION_ANCHOR_PREFIX}licenses`} className="scroll-mt-28" />
                 <Card>
                   <CardHeader className="pb-2 pt-4 px-4">
                     <div className="flex items-center gap-2">
@@ -306,48 +406,38 @@ export default function DriverDetailPage() {
                     </div>
                   </CardHeader>
                   <CardContent className="px-4 pb-4 pt-0">
-                    {/* License — main row with status badge */}
+                    {/* License — main row with status badge; מספר רישיון תמיד בשורה */}
                     <div className="flex items-center justify-between py-2 border-b border-border/30">
                       <div>
                         <p className="text-base font-semibold">רישיון נהיגה</p>
-                        {driver.license_number && (
-                          <p className="text-sm text-muted-foreground">מס' {driver.license_number}</p>
-                        )}
+                        <p className="text-sm text-muted-foreground">
+                          מס&apos; {orMissing(driver.license_number)}
+                        </p>
                       </div>
                       <div className="text-left space-y-0.5">
                         <StatusBadge status={license.status} daysLeft={license.daysLeft} />
-                        <p className="text-sm text-muted-foreground">{new Date(driver.license_expiry).toLocaleDateString('he-IL')}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {orMissingDate(driver.license_expiry)
+                            ? new Date(driver.license_expiry).toLocaleDateString('he-IL')
+                            : MISSING_DATA}
+                        </p>
                       </div>
                     </div>
-                    {driver.health_declaration_date && (
-                      <CompInfoRow label="הצהרת בריאות" date={driver.health_declaration_date} />
-                    )}
-                    {driver.safety_training_date && (
-                      <CompInfoRow label="הדרכת בטיחות" date={driver.safety_training_date} />
-                    )}
-                    {driver.regulation_585b_date && (
-                      <CompInfoRow label="תקנה 585ב'" date={driver.regulation_585b_date} />
-                    )}
-                    {driver.practical_driving_test_date && (
-                      <CompInfoRow label="מבחן מעשי" date={driver.practical_driving_test_date} />
-                    )}
-                    {driver.family_permit_date && (
-                      <CompInfoRow label="היתר בני משפחה" date={driver.family_permit_date} />
-                    )}
-                    {driver.driving_permit && (
-                      <InfoRow label="היתר נהיגה" value={driver.driving_permit} />
-                    )}
-                    {driver.is_field_person && (
-                      <InfoRow label="איש שטח" value="כן" />
-                    )}
+                    <div id={`${SECTION_ANCHOR_PREFIX}safety`} className="scroll-mt-28 -mt-2 pt-2 border-t border-border/20" />
+                    <CompInfoRow label="הצהרת בריאות" date={driver.health_declaration_date} />
+                    <CompInfoRow label="הדרכת בטיחות" date={driver.safety_training_date} />
+                    <CompInfoRow label="תקנה 585ב'" date={driver.regulation_585b_date} />
+                    <CompInfoRow label="מבחן מעשי" date={driver.practical_driving_test_date} />
+                    <CompInfoRow label="היתר בני משפחה" date={driver.family_permit_date} />
+                    <InfoRow label="היתר נהיגה" value={orMissing(driver.driving_permit)} />
+                    <InfoRow label="איש שטח" value={driver.is_field_person ? 'כן' : 'לא'} />
                   </CardContent>
                 </Card>
 
               </div>
             </div>
 
-            {/* ── Folders ───────────────────────────────────────── */}
-            <DriverFolders driver={driver} />
+            {/* תיקיות ניהול נהג הועברו לדף הרשימה (/drivers?folders=id) */}
         </>
       </main>
 

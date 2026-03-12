@@ -135,6 +135,7 @@ export interface Driver {
   practical_driving_test_date: string | null;
 }
 
+/** List/card view: same DB fields as edit form — all optional beyond core id/name */
 export interface DriverSummary {
   id: string;
   full_name: string;
@@ -143,6 +144,13 @@ export interface DriverSummary {
   email: string | null;
   license_expiry: string;
   status: ComplianceStatus;
+  address: string | null;
+  job_title: string | null;
+  department: string | null;
+  license_number: string | null;
+  health_declaration_date: string | null;
+  safety_training_date: string | null;
+  regulation_585b_date: string | null;
 }
 
 export interface DriverDocument {

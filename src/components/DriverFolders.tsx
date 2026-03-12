@@ -12,6 +12,7 @@ import {
 import { useComplaints } from '@/hooks/useComplaints';
 import { useHandoverHistory } from '@/hooks/useHandovers';
 import { useDriverDocuments } from '@/hooks/useDriverDocuments';
+import { useDriverStorageFiles } from '@/hooks/useDriverStorageFiles';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,12 +32,15 @@ import {
   FileText,
   ExternalLink,
   Eye,
+  Download,
   Plus,
   Trash2,
   ChevronDown,
   ChevronUp,
   X,
+  FolderOpen,
 } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import type { Driver } from '@/types/fleet';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -45,6 +49,10 @@ type FolderTab = 'events' | 'accidents' | 'complaints' | 'transfers' | 'family' 
 
 interface Props {
   driver: Driver;
+  /** When true, folders are hidden behind a trigger button (less clutter on detail page) */
+  collapsible?: boolean;
+  /** Initial open state when collapsible (default false) */
+  defaultOpen?: boolean;
 }
 
 // ─── Tab button ───────────────────────────────────────────────────────────────
@@ -698,8 +706,15 @@ function FamilyTab({ driver }: { driver: Driver }) {
 
 // ─── Documents tab ───────────────────────────────────────────────────────────
 
+/** שם תצוגה לקובץ — שם הקובץ בלי סיומת או מלא */
+function displayFileName(fileName: string): string {
+  const base = fileName.replace(/\.[^.]+$/, '');
+  return base || fileName;
+}
+
 function DocumentsTab({ driver }: { driver: Driver }) {
   const { data: docs = [], isLoading } = useDriverDocuments(driver.id);
+  const { data: storageFiles = [], isLoading: storageLoading } = useDriverStorageFiles(driver.id);
   const [lightbox, setLightbox] = useState<{ src: string; title: string } | null>(null);
 
   const getUrl = (path: string | null): string | undefined => {
@@ -718,19 +733,108 @@ function DocumentsTab({ driver }: { driver: Driver }) {
     legacyDocs.push({ id: 'leg-health', title: 'הצהרת בריאות', file_url: (driver as any).health_declaration_url });
   const allDocs = [...docs, ...legacyDocs];
 
-  if (isLoading) return <p className="text-muted-foreground text-sm p-4">טוען...</p>;
+  const formatStorageDate = (iso: string | null) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString('he-IL');
+  };
 
-  if (allDocs.length === 0)
+  if (isLoading && storageLoading)
+    return <p className="text-muted-foreground text-sm p-4">טוען...</p>;
+
+  const hasStorage = storageFiles.length > 0;
+  const hasDbDocs = allDocs.length > 0;
+
+  if (!hasStorage && !hasDbDocs)
     return (
-      <div className="text-center py-8 text-muted-foreground text-sm">
-        <FileText className="h-8 w-8 mx-auto mb-2 opacity-30" />
-        אין מסמכים לנהג זה
+      <div className="space-y-4">
+        <div className="rounded-lg border border-dashed border-border bg-muted/20 p-4">
+          <p className="text-sm font-medium text-foreground mb-1">תיקיית Storage</p>
+          <p className="text-xs text-muted-foreground">
+            נתיב: Documents/Drivers/{driver.id}/
+          </p>
+          <p className="text-sm text-muted-foreground mt-2">אין קבצים בתיקייה זו.</p>
+        </div>
+        <div className="text-center py-6 text-muted-foreground text-sm">
+          <FileText className="h-8 w-8 mx-auto mb-2 opacity-30" />
+          אין מסמכים רשומים לנהג זה
+        </div>
       </div>
     );
 
   return (
     <>
-      <p className="text-sm text-muted-foreground mb-3">{allDocs.length} מסמכים</p>
+      {/* רשימה מקובצי Storage */}
+      {hasStorage && (
+        <div className="mb-6">
+          <p className="text-sm font-medium text-foreground mb-2">
+            קבצים מתיקיית מסמכים ({storageFiles.length})
+          </p>
+          <p className="text-xs text-muted-foreground mb-3">
+            Storage: Documents/Drivers/{driver.id}/
+          </p>
+          <div className="rounded-lg border border-border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/40 text-right">
+                  <th className="px-3 py-2 font-medium">שם הטופס</th>
+                  <th className="px-3 py-2 font-medium whitespace-nowrap">תאריך העלאה</th>
+                  <th className="px-3 py-2 font-medium w-[1%]">פעולות</th>
+                </tr>
+              </thead>
+              <tbody>
+                {storageFiles.map((file) => (
+                  <tr key={file.path} className="border-b border-border/60 last:border-0 hover:bg-muted/20">
+                    <td className="px-3 py-2 align-middle">
+                      <span className="font-medium">{displayFileName(file.name)}</span>
+                      <span className="text-xs text-muted-foreground mr-2">({file.name})</span>
+                    </td>
+                    <td className="px-3 py-2 align-middle whitespace-nowrap text-muted-foreground">
+                      {formatStorageDate(file.createdAt || file.updatedAt)}
+                    </td>
+                    <td className="px-3 py-2 align-middle">
+                      <div className="flex items-center gap-1 justify-end">
+                        <a
+                          href={file.publicUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs font-medium hover:bg-muted"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          צפייה
+                        </a>
+                        <a
+                          href={file.publicUrl}
+                          download={file.name}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs font-medium hover:bg-muted"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          הורדה
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {!hasStorage && !storageLoading && (
+        <div className="rounded-lg border border-dashed border-border bg-muted/10 p-4 mb-6">
+          <p className="text-sm text-muted-foreground">
+            אין קבצים בנתיב Storage Documents/Drivers/{driver.id}/
+          </p>
+        </div>
+      )}
+
+      {/* מסמכים רשומים (טבלה + קבצים ישנים) */}
+      {hasDbDocs && (
+        <>
+          <p className="text-sm text-muted-foreground mb-3">{allDocs.length} מסמכים רשומים במערכת</p>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {allDocs.map((doc) => {
           const src = getUrl(doc.file_url);
@@ -760,6 +864,9 @@ function DocumentsTab({ driver }: { driver: Driver }) {
           );
         })}
       </div>
+        </>
+      )}
+
       {lightbox && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80" onClick={() => setLightbox(null)}>
           <div className="relative max-w-4xl w-full mx-4" onClick={(e) => e.stopPropagation()}>
@@ -777,8 +884,9 @@ function DocumentsTab({ driver }: { driver: Driver }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function DriverFolders({ driver }: Props) {
+export default function DriverFolders({ driver, collapsible = false, defaultOpen = false }: Props) {
   const [activeTab, setActiveTab] = useState<FolderTab>('events');
+  const [open, setOpen] = useState(defaultOpen);
 
   const tabs: { id: FolderTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { id: 'events', label: 'אירועים', icon: AlertTriangle },
@@ -789,40 +897,77 @@ export default function DriverFolders({ driver }: Props) {
     { id: 'documents', label: 'מסמכים', icon: FileText },
   ];
 
+  const tabBar = (
+    <div className="border-b border-border px-4">
+      <div className="flex gap-1 overflow-x-auto">
+        {tabs.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setActiveTab(id)}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-md border-b-2 transition-colors whitespace-nowrap ${
+              activeTab === id
+                ? 'border-primary text-primary bg-primary/5'
+                : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
+            }`}
+          >
+            <Icon className="h-4 w-4" />
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  const tabContent = (
+    <CardContent className="pt-4">
+      {activeTab === 'events' && <IncidentsTab driver={driver} incidentType="event" />}
+      {activeTab === 'accidents' && <IncidentsTab driver={driver} incidentType="accident" />}
+      {activeTab === 'complaints' && <ComplaintsTab driver={driver} />}
+      {activeTab === 'transfers' && <TransfersTab driver={driver} />}
+      {activeTab === 'family' && <FamilyTab driver={driver} />}
+      {activeTab === 'documents' && <DocumentsTab driver={driver} />}
+    </CardContent>
+  );
+
+  if (collapsible) {
+    return (
+      <Collapsible open={open} onOpenChange={setOpen}>
+        <Card>
+          <CardHeader className="pb-2">
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-muted/20 px-4 py-3 text-right transition-colors hover:bg-muted/40"
+              >
+                <span className="flex items-center gap-2 font-semibold text-foreground">
+                  <FolderOpen className="h-5 w-5 text-primary" />
+                  תיקיות ניהול נהג
+                </span>
+                {open ? (
+                  <ChevronUp className="h-5 w-5 shrink-0 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
+                )}
+              </button>
+            </CollapsibleTrigger>
+          </CardHeader>
+          <CollapsibleContent>
+            {tabBar}
+            {tabContent}
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
+    );
+  }
+
   return (
     <Card>
       <CardHeader className="pb-0">
         <CardTitle className="text-base">תיקיות ניהול נהג</CardTitle>
       </CardHeader>
-
-      {/* Inner tab bar */}
-      <div className="border-b border-border px-4">
-        <div className="flex gap-1 overflow-x-auto">
-          {tabs.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              onClick={() => setActiveTab(id)}
-              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-md border-b-2 transition-colors whitespace-nowrap ${
-                activeTab === id
-                  ? 'border-primary text-primary bg-primary/5'
-                  : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
-              }`}
-            >
-              <Icon className="h-4 w-4" />
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <CardContent className="pt-4">
-        {activeTab === 'events' && <IncidentsTab driver={driver} incidentType="event" />}
-        {activeTab === 'accidents' && <IncidentsTab driver={driver} incidentType="accident" />}
-        {activeTab === 'complaints' && <ComplaintsTab driver={driver} />}
-        {activeTab === 'transfers' && <TransfersTab driver={driver} />}
-        {activeTab === 'family' && <FamilyTab driver={driver} />}
-        {activeTab === 'documents' && <DocumentsTab driver={driver} />}
-      </CardContent>
+      {tabBar}
+      {tabContent}
     </Card>
   );
 }

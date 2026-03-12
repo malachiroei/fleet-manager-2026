@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { Driver, DriverSummary } from '@/types/fleet';
 import { toast } from '@/hooks/use-toast';
+import { formatSupabaseError } from '@/lib/supabaseError';
 
 export function useDrivers() {
   return useQuery({
@@ -31,22 +32,44 @@ export function useDrivers() {
           );
         }
 
-        return (fallback.data ?? []).map((row) => ({
-          ...(row as Omit<DriverSummary, 'status'>),
-          status: 'valid' as const,
-        }));
+        return (fallback.data ?? []).map((row) => {
+          const d = row as Record<string, unknown>;
+          return {
+            id: String(d.id ?? ''),
+            full_name: String(d.full_name ?? ''),
+            id_number: String(d.id_number ?? ''),
+            phone: (d.phone as string) ?? null,
+            email: (d.email as string) ?? null,
+            license_expiry: String(d.license_expiry ?? ''),
+            status: (d.status as DriverSummary['status']) ?? 'valid',
+            address: (d.address as string) ?? null,
+            job_title: (d.job_title as string) ?? null,
+            department: (d.department as string) ?? null,
+            license_number: (d.license_number as string) ?? null,
+            health_declaration_date: (d.health_declaration_date as string) ?? null,
+            safety_training_date: (d.safety_training_date as string) ?? null,
+            regulation_585b_date: (d.regulation_585b_date as string) ?? null,
+          } satisfies DriverSummary;
+        });
       }
 
       return (data ?? []).map((row) => {
-        const driver = row as Partial<DriverSummary>;
+        const d = row as Record<string, unknown>;
         return {
-          id: driver.id ?? '',
-          full_name: driver.full_name ?? '',
-          id_number: driver.id_number ?? '',
-          phone: driver.phone ?? null,
-          email: driver.email ?? null,
-          license_expiry: driver.license_expiry ?? '',
-          status: driver.status ?? 'valid',
+          id: String(d.id ?? ''),
+          full_name: String(d.full_name ?? ''),
+          id_number: String(d.id_number ?? ''),
+          phone: (d.phone as string) ?? null,
+          email: (d.email as string) ?? null,
+          license_expiry: String(d.license_expiry ?? ''),
+          status: (d.status as DriverSummary['status']) ?? 'valid',
+          address: (d.address as string) ?? null,
+          job_title: (d.job_title as string) ?? null,
+          department: (d.department as string) ?? null,
+          license_number: (d.license_number as string) ?? null,
+          health_declaration_date: (d.health_declaration_date as string) ?? null,
+          safety_training_date: (d.safety_training_date as string) ?? null,
+          regulation_585b_date: (d.regulation_585b_date as string) ?? null,
         } satisfies DriverSummary;
       });
     }
@@ -98,20 +121,50 @@ export function useCreateDriver() {
   });
 }
 
+/** Empty string → null for optional DB columns (avoids invalid date / coercion issues) */
+function normalizeDriverUpdates(updates: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...updates };
+  const nullableKeys = [
+    'phone',
+    'email',
+    'address',
+    'job_title',
+    'department',
+    'license_number',
+    'health_declaration_date',
+    'safety_training_date',
+    'regulation_585b_date',
+  ];
+  for (const key of nullableKeys) {
+    if (key in out && (out[key] === '' || out[key] === undefined)) {
+      out[key] = null;
+    }
+  }
+  return out;
+}
+
 export function useUpdateDriver() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async ({ id, ...updates }: Partial<Driver> & { id: string }) => {
+      const payload = normalizeDriverUpdates(updates as Record<string, unknown>) as Partial<Driver>;
+
+      // Do NOT use .single() after update — if RLS returns 0 rows, single() throws
+      // "Cannot coerce the result to a single JSON object"
       const { data, error } = await supabase
         .from('drivers')
-        .update(updates)
+        .update(payload)
         .eq('id', id)
-        .select()
-        .single();
+        .select();
 
       if (error) throw error;
-      return data;
+      if (!data || data.length === 0) {
+        throw new Error(
+          'העדכון לא הוחל — לא חזרה שורה מהשרת. ייתכן שחסרה הרשאה (RLS) או שהנהג לא נמצא.'
+        );
+      }
+      return data[0] as Driver;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['drivers'] });
@@ -119,7 +172,11 @@ export function useUpdateDriver() {
       toast({ title: 'הנהג עודכן בהצלחה' });
     },
     onError: (error) => {
-      toast({ title: 'שגיאה בעדכון הנהג', description: error.message, variant: 'destructive' });
+      toast({
+        title: 'שגיאה בעדכון הנהג',
+        description: formatSupabaseError(error),
+        variant: 'destructive',
+      });
     }
   });
 }

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useMemo } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useDrivers, useDeleteDriver } from '@/hooks/useDrivers';
 import {
@@ -10,7 +10,6 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -24,17 +23,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  Plus,
-  Search,
-  User,
-  Trash2,
-  Edit,
-  Car,
-  Phone,
-  Mail
-} from 'lucide-react';
-import type { DriverSummary, ComplianceStatus } from '@/types/fleet';
+import { Plus, Search, User, Filter, FolderOpen } from 'lucide-react';
+import { DriverCard, licenseExpiresWithin30Days } from '@/components/DriverCard';
+import DriverFolders from '@/components/DriverFolders';
+import { useDriver } from '@/hooks/useDrivers';
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -47,115 +39,6 @@ function getErrorMessage(error: unknown) {
   return 'אירעה שגיאה לא צפויה בעת שליפת הנהגים.';
 }
 
-function StatusBadge({ status }: { status: ComplianceStatus }) {
-  const config = {
-    valid: { label: 'תקין', className: 'status-valid' },
-    warning: { label: 'אזהרה', className: 'status-warning' },
-    expired: { label: 'פג תוקף', className: 'status-expired' }
-  };
-
-  const { label, className } = config[status];
-  return <Badge className={className}>{label}</Badge>;
-}
-
-function DriverCard({
-  driver,
-  onDelete,
-  canEdit,
-  driverActiveAssignments,
-}: {
-  driver: DriverSummary;
-  onDelete: () => void;
-  canEdit: boolean;
-  driverActiveAssignments: ActiveDriverVehicleAssignment[];
-}) {
-  const today = new Date();
-  const expiry = new Date(driver.license_expiry);
-  const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  const licenseStatus: ComplianceStatus = diffDays < 0 ? 'expired' : diffDays <= 30 ? 'warning' : 'valid';
-
-  const assignedVehicles = driverActiveAssignments
-    .map((a) => a.vehicle)
-    .filter((v): v is NonNullable<ActiveDriverVehicleAssignment['vehicle']> => !!v);
-
-  return (
-    <Link to={`/drivers/${driver.id}`} className="block group">
-      <Card className="card-hover border border-border hover:border-primary/40 transition-all cursor-pointer">
-        <CardContent className="p-0">
-          <div className="flex flex-col xl:flex-row xl:items-stretch">
-            {/* RIGHT — driver info */}
-            <div className="flex flex-1 flex-col gap-4 px-4 py-4 sm:px-5 xl:justify-between">
-              <div className="flex items-start gap-3 sm:items-center sm:gap-4">
-                <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-sm font-bold text-white shadow-md sm:h-12 sm:w-12 sm:text-base ${
-                  licenseStatus === 'expired' ? 'bg-red-600' : licenseStatus === 'warning' ? 'bg-amber-600' : 'bg-emerald-600'
-                }`}>
-                  {driver.full_name.trim().slice(0, 2)}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h3 className="truncate text-base font-bold text-foreground sm:text-lg">{driver.full_name}</h3>
-                  <p className="text-xs text-muted-foreground sm:text-sm">ת.ז. {driver.id_number}</p>
-                  <div className="mt-1 flex flex-wrap gap-2 sm:gap-x-4 sm:gap-y-0.5">
-                    {driver.phone && (
-                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground sm:text-sm" dir="ltr">
-                        <Phone className="h-3.5 w-3.5" />
-                        {driver.phone}
-                      </span>
-                    )}
-                    {driver.email && (
-                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground sm:text-sm" dir="ltr">
-                        <Mail className="h-3.5 w-3.5" />
-                        <span className="truncate max-w-[180px] sm:max-w-[260px]">{driver.email}</span>
-                      </span>
-                    )}
-                    <span className="text-xs text-muted-foreground sm:text-sm">
-                      רישיון: {new Date(driver.license_expiry).toLocaleDateString('he-IL')}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 shrink-0" onClick={(e) => e.preventDefault()}>
-                <StatusBadge status={licenseStatus} />
-                {canEdit && (
-                  <div className="flex gap-1">
-                    <Link to={`/drivers/${driver.id}/edit`} onClick={(e) => e.stopPropagation()}>
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                    </Link>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(); }}>
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* LEFT — vehicle */}
-            <div className="flex w-full flex-col justify-center gap-2 border-t border-border bg-muted/20 px-4 py-4 sm:px-5 xl:w-auto xl:min-w-[220px] xl:border-l xl:border-t-0">
-              <p className="text-xs text-muted-foreground mb-0.5">רכב משויך</p>
-              {assignedVehicles.length > 0 ? (
-                assignedVehicles.map((v) => (
-                  <div key={v.id} className="flex items-center gap-2 rounded-xl bg-primary/10 border border-primary/20 text-primary px-3 py-2 text-sm font-semibold">
-                    <Car className="h-4 w-4 shrink-0" />
-                    <span className="truncate">{v.manufacturer} {v.model}</span>
-                    <span className="text-xs font-normal text-muted-foreground shrink-0">({v.plate_number})</span>
-                  </div>
-                ))
-              ) : (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Car className="h-4 w-4" />
-                  <span>אין רכב משויך</span>
-                </div>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </Link>
-  );
-}
-
 export default function DriverListPage() {
   const { data: drivers, isLoading, isError, error, refetch } = useDrivers();
   const { data: activeAssignments } = useActiveDriverVehicleAssignments();
@@ -164,34 +47,83 @@ export default function DriverListPage() {
   const { t } = useTranslation();
   const [search, setSearch] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [filterExpiredLicense, setFilterExpiredLicense] = useState(false);
+  const [filterNoVehicle, setFilterNoVehicle] = useState(false);
+  const [filterNoSafetyTraining, setFilterNoSafetyTraining] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const foldersDriverId = searchParams.get('folders') || '';
+  const { data: foldersDriver } = useDriver(foldersDriverId);
   const errorMessage = getErrorMessage(error);
 
-  const filteredDrivers = (drivers ?? []).filter(d =>
-    d.full_name.includes(search) ||
-    d.id_number.includes(search) ||
-    d.email?.includes(search) ||
-    d.phone?.includes(search)
-  );
+  const assignmentsByDriver = useMemo(() => {
+    const map = new Map<string, ActiveDriverVehicleAssignment[]>();
+    for (const a of activeAssignments ?? []) {
+      if (!a.driver_id) continue;
+      const list = map.get(a.driver_id) ?? [];
+      list.push(a);
+      map.set(a.driver_id, list);
+    }
+    return map;
+  }, [activeAssignments]);
+
+  const filteredDrivers = useMemo(() => {
+    let list = drivers ?? [];
+    if (search.trim()) {
+      list = list.filter(
+        (d) =>
+          d.full_name.includes(search) ||
+          d.id_number.includes(search) ||
+          d.email?.includes(search) ||
+          d.phone?.includes(search)
+      );
+    }
+    if (filterExpiredLicense) {
+      list = list.filter((d) => licenseExpiresWithin30Days(d.license_expiry));
+    }
+    if (filterNoVehicle) {
+      list = list.filter((d) => {
+        const assigns = assignmentsByDriver.get(d.id) ?? [];
+        const hasVehicle = assigns.some((a) => a.vehicle != null);
+        return !hasVehicle;
+      });
+    }
+    if (filterNoSafetyTraining) {
+      list = list.filter(
+        (d) => !d.safety_training_date || String(d.safety_training_date).trim() === ''
+      );
+    }
+    return list;
+  }, [
+    drivers,
+    search,
+    filterExpiredLicense,
+    filterNoVehicle,
+    filterNoSafetyTraining,
+    assignmentsByDriver,
+  ]);
+
+  const toggleBtn = (active: boolean) =>
+    active
+      ? 'bg-primary text-primary-foreground border-primary'
+      : 'bg-muted/50 text-muted-foreground border-border hover:bg-muted';
 
   return (
     <div className="container space-y-5 py-4 sm:space-y-6 sm:py-6">
-      {/* Header */}
-        <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+      <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-white">{t('drivers.title')}</h1>
-          <p className="text-muted-foreground mt-1 text-sm">{t('drivers.subtitle')}</p>
+          <h1 className="text-2xl font-bold text-white md:text-3xl">{t('drivers.title')}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t('drivers.subtitle')}</p>
         </div>
         <Link to="/drivers/add" className="w-full shrink-0 sm:w-auto">
           <Button size="sm" className="w-full sm:w-auto">
-            <Plus className="h-4 w-4 mr-2" />
+            <Plus className="mr-2 h-4 w-4" />
             {t('drivers.addDriver')}
           </Button>
         </Link>
       </div>
 
-      {/* Search */}
       <div className="relative w-full max-w-md">
-        <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           placeholder={t('drivers.searchPlaceholder')}
           value={search}
@@ -200,11 +132,49 @@ export default function DriverListPage() {
         />
       </div>
 
-      {/* Content */}
+      {/* סינון מתקדם */}
+      <div className="flex flex-col gap-2 rounded-xl border border-border/60 bg-muted/10 p-3 sm:p-4">
+        <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+          <Filter className="h-4 w-4" />
+          <span>סינון מתקדם</span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className={toggleBtn(filterExpiredLicense)}
+            onClick={() => setFilterExpiredLicense((v) => !v)}
+          >
+            נהגים עם רישיון פג תוקף
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className={toggleBtn(filterNoVehicle)}
+            onClick={() => setFilterNoVehicle((v) => !v)}
+          >
+            נהגים ללא שיוך רכב
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className={toggleBtn(filterNoSafetyTraining)}
+            onClick={() => setFilterNoSafetyTraining((v) => !v)}
+          >
+            נהגים ללא הדרכת בטיחות
+          </Button>
+        </div>
+      </div>
+
       <div>
         {isLoading ? (
           <div className="space-y-4">
-            {[1, 2, 3].map(i => <Skeleton key={i} className="h-48" />)}
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-64" />
+            ))}
           </div>
         ) : isError ? (
           <Alert variant="destructive">
@@ -219,11 +189,11 @@ export default function DriverListPage() {
         ) : filteredDrivers.length === 0 ? (
           <Card>
             <CardContent className="py-8 text-center">
-              <User className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <User className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
               <p className="text-muted-foreground">{t('drivers.noDrivers')}</p>
               <Link to="/drivers/add">
                 <Button className="mt-4">
-                  <Plus className="h-4 w-4 mr-2" />
+                  <Plus className="mr-2 h-4 w-4" />
                   {t('drivers.addNewDriver')}
                 </Button>
               </Link>
@@ -231,26 +201,68 @@ export default function DriverListPage() {
           </Card>
         ) : (
           <div className="space-y-4">
-            {filteredDrivers.map(driver => (
+            {/* קישור מהיר לתיקיות — אותו נהג נשאר ב-URL ?folders= */}
+            {foldersDriverId && !foldersDriver && (
+              <Alert>
+                <AlertTitle>נהג לא נמצא</AlertTitle>
+                <AlertDescription className="flex flex-wrap items-center gap-2">
+                  <span>לא נטען נהג עבור התיקיות. </span>
+                  <Button variant="link" className="h-auto p-0" onClick={() => { searchParams.delete('folders'); setSearchParams(searchParams); }}>
+                    נקה בחירה
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+            {filteredDrivers.map((driver) => (
               <DriverCard
                 key={driver.id}
                 driver={driver}
                 onDelete={() => setDeleteId(driver.id)}
                 canEdit={isManager}
-                driverActiveAssignments={(activeAssignments ?? []).filter((assignment) => assignment.driver_id === driver.id)}
+                driverActiveAssignments={assignmentsByDriver.get(driver.id) ?? []}
               />
             ))}
           </div>
         )}
       </div>
 
+      {/* תיקיות ניהול נהג — בדף הראשי; בוחרים נהג דרך כפתור על הכרטיס או ?folders=id */}
+      {foldersDriver && (
+        <div className="pt-2">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="text-sm text-muted-foreground">
+              תיקיות עבור: <strong className="text-foreground">{foldersDriver.full_name}</strong>
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                searchParams.delete('folders');
+                setSearchParams(searchParams);
+              }}
+            >
+              סגור תיקיות
+            </Button>
+          </div>
+          <DriverFolders driver={foldersDriver} collapsible defaultOpen />
+        </div>
+      )}
+
+      {!foldersDriver && filteredDrivers.length > 0 && (
+        <div className="rounded-xl border border-dashed border-border/60 bg-muted/5 p-4 text-center">
+          <FolderOpen className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">
+            לפתיחת <strong className="text-foreground">תיקיות ניהול נהג</strong> — לחץ על כפתור התיקיות בכרטיס הנהג
+          </p>
+        </div>
+      )}
+
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('drivers.deleteTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('drivers.deleteDescription')}
-            </AlertDialogDescription>
+            <AlertDialogDescription>{t('drivers.deleteDescription')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2">
             <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>

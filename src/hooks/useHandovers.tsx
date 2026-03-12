@@ -1342,6 +1342,17 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
     throw new Error(`vehicle_handovers update failed: ${getSupabaseErrorMessage(handoverUpdateError)}`);
   }
 
+  // סנכרון שיוך נהג–רכב לכל הנהגים (כמו רועי מלאכי): מסירה פותחת שיוך, החזרה סוגרת מיד
+  const { error: syncError } = await (supabase as any).rpc('sync_assignment_from_handover', {
+    p_handover_id: input.handoverId,
+  });
+  if (syncError) {
+    console.warn('[archiveHandoverSubmission] sync_assignment_from_handover failed (הרץ migration אם חסר)', {
+      handoverId: input.handoverId,
+      message: getSupabaseErrorMessage(syncError),
+    });
+  }
+
   if (input.includeDriverArchive && input.driverId) {
     const { error: driverDocError } = await supabase
       .from('driver_documents')

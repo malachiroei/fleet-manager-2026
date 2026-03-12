@@ -16,6 +16,7 @@ import DriverListPage from "./pages/DriverListPage";
 import AddDriverPage from "./pages/AddDriverPage";
 import DriverDetailPage from "./pages/DriverDetailPage";
 import EditDriverPage from "./pages/EditDriverPage";
+import DriverSectionEditPage from "./pages/DriverSectionEditPage";
 import EditVehiclePage from "./pages/EditVehiclePage";
 import CompliancePage from "./pages/CompliancePage";
 import Procedure6ComplaintsPage from "./pages/Procedure6ComplaintsPage";
@@ -83,6 +84,7 @@ function AppRoutes() {
       <Route path="/vehicles/:id" element={<ProtectedRoute><VehicleDetailPage /></ProtectedRoute>} />
       <Route path="/drivers" element={<ProtectedRoute><DriverListPage /></ProtectedRoute>} />
       <Route path="/drivers/add" element={<ProtectedRoute><AddDriverPage /></ProtectedRoute>} />
+      <Route path="/drivers/:id/section/:sectionId" element={<ProtectedRoute><DriverSectionEditPage /></ProtectedRoute>} />
       <Route path="/drivers/:id" element={<ProtectedRoute><DriverDetailPage /></ProtectedRoute>} />
       <Route path="/drivers/:id/edit" element={<ProtectedRoute><EditDriverPage /></ProtectedRoute>} />
       <Route path="/vehicles/:id/edit" element={<ProtectedRoute><EditVehiclePage /></ProtectedRoute>} />
