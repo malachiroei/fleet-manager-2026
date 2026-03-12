@@ -144,8 +144,8 @@ export default function DriverListPage() {
       </div>
 
       {/* סינון מתקדם */}
-      <div className="flex flex-col gap-2 rounded-xl border border-border/60 bg-muted/10 p-3 sm:p-4">
-        <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+      <div className="flex flex-col gap-2 rounded-xl border border-white/10 bg-slate-900/40 p-3 sm:p-4">
+        <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
           <Filter className="h-4 w-4" />
           <span>סינון מתקדם</span>
         </div>
@@ -193,10 +193,10 @@ export default function DriverListPage() {
         </Alert>
       )}
       {foldersDriver && (
-        <div id="driver-folders-panel" ref={foldersPanelRef} className="mb-6 scroll-mt-24 rounded-xl border border-primary/30 bg-card/50 p-4">
+        <div id="driver-folders-panel" ref={foldersPanelRef} className="mb-6 scroll-mt-24 rounded-xl border border-white/10 bg-slate-900/40 p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <span className="text-sm text-muted-foreground">
-              תיקיות עבור: <strong className="text-foreground">{foldersDriver.full_name}</strong>
+              תיקיות עבור: <strong className="font-semibold text-slate-200">{foldersDriver.full_name}</strong>
             </span>
             <Button
               type="button"

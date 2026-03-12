@@ -58,10 +58,11 @@ function FieldRow({
     children === MISSING_DATA ||
     (typeof children === 'string' && children === MISSING_DATA);
   return (
-    <div className={`min-w-0 flex flex-col gap-0.5 ${className ?? ''}`}>
-      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
+    <div className={`min-w-0 flex flex-col gap-1 ${className ?? ''}`}>
+      {/* כמו מפרט מלא ברכב: text-xs font-medium text-muted-foreground */}
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <span
-        className={`break-words text-sm ${isMissing ? 'text-muted-foreground' : 'text-foreground'}`}
+        className={`break-words text-sm font-medium ${isMissing ? 'text-muted-foreground' : 'text-slate-200'}`}
       >
         {children}
       </span>
@@ -84,12 +85,18 @@ function SectionBlock({
   return (
     <Link
       to={`/drivers/${driverId}/section/${sectionId}`}
-      className="flex min-h-0 flex-col rounded-xl border border-border/80 bg-muted/10 p-3 transition-colors hover:border-primary/50 hover:bg-muted/20"
+      className="flex min-h-0 flex-col justify-between rounded-xl border border-white/10 bg-slate-900/60 px-4 py-4 transition-colors hover:border-cyan-500/25 hover:bg-slate-900/80"
       onClick={(e) => e.stopPropagation()}
     >
-      <p className="mb-2 shrink-0 text-xs font-semibold text-primary">
-        {DRIVER_SECTION_LABELS[sectionId]}
-      </p>
+      {/* כותרת משבצת כמו בנטו רכב: text-xs font-medium uppercase tracking-wider */}
+      <div className="mb-3 flex shrink-0 items-center justify-between gap-2 text-muted-foreground">
+        <span className="text-xs font-medium uppercase tracking-wider text-slate-300">
+          {DRIVER_SECTION_LABELS[sectionId]}
+        </span>
+        <span className="rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-cyan-400">
+          עריכה + שמירה
+        </span>
+      </div>
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">{children}</div>
     </Link>
   );
@@ -136,7 +143,7 @@ export function DriverCard({
   const navigate = useNavigate();
 
   return (
-    <Card className="group overflow-hidden border border-border transition-all hover:border-primary/40">
+    <Card className="group overflow-hidden rounded-xl border border-white/10 bg-slate-950/40 transition-all hover:border-cyan-500/20">
         <CardContent className="p-0">
           {/* Header — בלי Link עוטף הכל: כפתור תיקיות לא יכול להיות בתוך <a> */}
           <div className="flex flex-col gap-2 px-4 pt-4 sm:px-5">
@@ -155,7 +162,7 @@ export function DriverCard({
               </Link>
               <div className="min-w-0 flex-1">
                 <Link to={`/drivers/${driver.id}`} className="block">
-                  <h3 className="truncate text-base font-bold text-foreground sm:text-lg hover:underline">
+                  <h3 className="truncate text-base font-semibold text-slate-200 sm:text-lg hover:underline">
                     {driver.full_name}
                   </h3>
                 </Link>
@@ -218,17 +225,17 @@ export function DriverCard({
               )}
             </div>
             {/* רכב משויך — ליד/מתחת לשם, לא בתחתית הכרטיס */}
-            <div className="flex flex-wrap items-center gap-2 border-t border-border/40 pt-2">
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">רכב משויך</span>
+            <div className="flex flex-wrap items-center gap-2 border-t border-white/10 pt-2">
+              <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">רכב משויך</span>
               {assignedVehicles.length > 0 ? (
                 assignedVehicles.map((v) => (
                   <div
                     key={v.id}
-                    className="flex max-w-full items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/10 px-2 py-1 text-xs font-semibold text-primary"
+                    className="flex max-w-full items-center gap-1.5 rounded-lg border border-white/10 bg-slate-900/60 px-2 py-1 text-xs font-medium text-slate-200"
                   >
                     <Car className="h-3.5 w-3.5 shrink-0" />
                     <span className="truncate">{v.manufacturer} {v.model}</span>
-                    <span className="shrink-0 text-[10px] font-normal text-muted-foreground">
+                    <span className="shrink-0 text-xs font-normal text-muted-foreground">
                       ({v.plate_number})
                     </span>
                   </div>
@@ -243,7 +250,7 @@ export function DriverCard({
           </div>
 
           {/* 4 משבצות — כל אחת נפתחת בעמוד עריכה רק לאותה משבצת */}
-          <div className="mt-3 grid grid-cols-1 gap-3 border-t border-border/60 px-4 py-4 sm:px-5 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-3 grid grid-cols-1 gap-3 border-t border-white/10 bg-white/[0.02] px-4 py-4 sm:px-5 sm:grid-cols-2 xl:grid-cols-4">
             {/* personal — same order as Edit card 1 */}
             <SectionBlock sectionId="personal" driverId={driver.id}>
               <FieldRow label="שם מלא">{str(driver.full_name)}</FieldRow>
@@ -251,7 +258,7 @@ export function DriverCard({
               <FieldRow label="תאריך לידה">{fmtDriverDate(driver.birth_date)}</FieldRow>
               <FieldRow label="טלפון" className="dir-ltr">
                 {driver.phone && String(driver.phone).trim() !== '' ? (
-                  <span className="inline-flex items-center gap-1 text-foreground" dir="ltr">
+                  <span className="inline-flex items-center gap-1 text-slate-200" dir="ltr">
                     <Phone className="h-3.5 w-3.5 shrink-0" />
                     {driver.phone}
                   </span>
@@ -261,7 +268,7 @@ export function DriverCard({
               </FieldRow>
               <FieldRow label="אימייל" className="dir-ltr">
                 {driver.email && String(driver.email).trim() !== '' ? (
-                  <span className="inline-flex min-w-0 items-center gap-1 text-foreground" dir="ltr">
+                  <span className="inline-flex min-w-0 items-center gap-1 text-slate-200" dir="ltr">
                     <Mail className="h-3.5 w-3.5 shrink-0" />
                     <span className="truncate">{driver.email}</span>
                   </span>
@@ -289,7 +296,7 @@ export function DriverCard({
                   const formatted = fmtDriverDate(raw);
                   if (formatted === MISSING_DATA) return MISSING_DATA;
                   return (
-                    <span className={licenseExpired ? 'font-semibold text-red-600' : 'text-foreground'}>
+                    <span className={licenseExpired ? 'font-semibold text-red-400' : 'text-slate-200'}>
                       {formatted}
                     </span>
                   );

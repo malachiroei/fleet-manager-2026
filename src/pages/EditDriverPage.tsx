@@ -1,5 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
+import {
+  useVehicleSpecDirty,
+  DIRTY_SOURCE_DRIVER_EDIT,
+} from '@/contexts/VehicleSpecDirtyContext';
 import { useDriver, useUpdateDriver } from '@/hooks/useDrivers';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,13 +20,20 @@ export default function EditDriverPage() {
   const { data: driver, isLoading } = useDriver(id || '');
   const updateDriver = useUpdateDriver();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { setDirty, tryNavigate } = useVehicleSpecDirty();
+
+  useEffect(() => {
+    return () => setDirty(DIRTY_SOURCE_DRIVER_EDIT, false);
+  }, [setDirty]);
 
   if (isLoading) {
     return (
       <div className="min-h-screen bg-[#020617] text-white">
         <header className="bg-card border-b border-border sticky top-0 z-10">
           <div className="container py-4"><div className="flex items-center gap-3">
-            <Link to="/drivers"><Button variant="ghost" size="icon"><ArrowRight className="h-5 w-5" /></Button></Link>
+            <Button variant="ghost" size="icon" type="button" onClick={() => tryNavigate('/drivers')} title="חזרה">
+              <ArrowRight className="h-5 w-5" />
+            </Button>
             <Skeleton className="h-6 w-48" />
           </div></div>
         </header>
@@ -38,7 +49,9 @@ export default function EditDriverPage() {
       <div className="min-h-screen bg-[#020617] text-white">
         <header className="bg-card border-b border-border sticky top-0 z-10">
           <div className="container py-4"><div className="flex items-center gap-3">
-            <Link to="/drivers"><Button variant="ghost" size="icon"><ArrowRight className="h-5 w-5" /></Button></Link>
+            <Button variant="ghost" size="icon" type="button" onClick={() => tryNavigate('/drivers')} title="חזרה">
+              <ArrowRight className="h-5 w-5" />
+            </Button>
             <h1 className="font-bold text-xl">נהג לא נמצא</h1>
           </div></div>
         </header>
@@ -73,6 +86,7 @@ export default function EditDriverPage() {
         regulation_585b_date: formData.get('regulation_585b_date') as string || null,
       });
       toast.success('הנהג עודכן בהצלחה');
+      setDirty(DIRTY_SOURCE_DRIVER_EDIT, false);
       navigate('/drivers', { replace: true });
     } catch (error) {
       // מציג את השגיאה המדויקת מה-DB (RLS, constraint, עמודה חסרה וכו')
@@ -90,14 +104,21 @@ export default function EditDriverPage() {
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
           <div className="flex items-center gap-3">
-            <Link to="/drivers"><Button variant="ghost" size="icon"><ArrowRight className="h-5 w-5" /></Button></Link>
+            <Button variant="ghost" size="icon" type="button" onClick={() => tryNavigate('/drivers')} title="חזרה">
+              <ArrowRight className="h-5 w-5" />
+            </Button>
             <h1 className="font-bold text-xl">עריכת נהג - {driver.full_name}</h1>
           </div>
         </div>
       </header>
 
       <main className="container py-6">
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-6"
+          onInput={() => setDirty(DIRTY_SOURCE_DRIVER_EDIT, true)}
+          onChange={() => setDirty(DIRTY_SOURCE_DRIVER_EDIT, true)}
+        >
           <Card>
             <CardHeader>
               <div className="flex items-center gap-3">
@@ -234,19 +255,26 @@ export default function EditDriverPage() {
             </CardContent>
           </Card>
 
-          <div className="flex gap-3">
-            <Button type="submit" className="flex-1" disabled={isSubmitting}>
-              {isSubmitting && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
-              שמור שינויים
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="flex-1 w-full"
-              onClick={() => navigate('/drivers', { replace: true })}
-            >
-              ביטול
-            </Button>
+          <div className="rounded-lg border border-cyan-500/20 bg-white/[0.03] p-3 space-y-2">
+            <p className="text-xs text-muted-foreground">לחץ אישור שינויים לשמירה — יציאה בלי שמירה תציג התראה</p>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button
+                type="submit"
+                className="flex-1 bg-cyan-600 hover:bg-cyan-500 font-semibold shadow-lg shadow-cyan-900/30"
+                disabled={isSubmitting}
+              >
+                {isSubmitting && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
+                אישור שינויים
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1 w-full"
+                onClick={() => tryNavigate('/drivers')}
+              >
+                ביטול
+              </Button>
+            </div>
           </div>
         </form>
       </main>

@@ -8,7 +8,7 @@ import { useActiveDriverVehicleAssignments } from '@/hooks/useVehicles';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowRight, User, Car, Edit, FolderOpen } from 'lucide-react';
+import { ArrowRight, User, Car, FolderOpen } from 'lucide-react';
 import type { DriverSectionId } from '@/lib/driverFieldMap';
 import { DRIVER_SECTION_QUERY_PARAM } from '@/lib/driverFieldMap';
 
@@ -105,12 +105,6 @@ export default function DriverDetailPage() {
                     תיקיות
                   </Button>
                 </Link>
-                <Link to={`/drivers/${driver.id}/edit`}>
-                  <Button variant="outline" size="sm">
-                    <Edit className="ml-1 h-4 w-4" />
-                    עריכה מלאה
-                  </Button>
-                </Link>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 border-t border-border/50 pt-3">
@@ -145,7 +139,7 @@ export default function DriverDetailPage() {
             <p className="text-muted-foreground">
               הפרטים המלאים מפורקים לפי <strong className="text-foreground">המשבצות בכרטיס הנהג</strong> ברשימה.
               <br />
-              לעריכת קטגוריה — חזור לרשימה ולחץ על המשבצת המתאימה, או השתמש בעריכה מלאה.
+              לעריכת קטגוריה — חזור לרשימה ולחץ על המשבצת המתאימה (עריכה + שמירה).
             </p>
             <div className="flex flex-wrap justify-center gap-2">
               <Link to="/drivers">

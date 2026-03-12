@@ -14,6 +14,8 @@ const MSG =
 
 export const DIRTY_SOURCE_SPEC = 'spec';
 export const DIRTY_SOURCE_MAINTENANCE = 'maintenance';
+/** עריכת נהג — סקשן בודד או עריכה מלאה */
+export const DIRTY_SOURCE_DRIVER_EDIT = 'driver_edit';
 
 type VehicleSpecDirtyContextValue = {
   isDirty: boolean;

@@ -2,8 +2,12 @@
  * עמוד סקשן — טופס עריכה לפי קטגוריה (אישי / ארגוני / רישיונות / בטיחות),
  * באותו סגנון רשת כמו שאר הלשוניות.
  */
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import {
+  useVehicleSpecDirty,
+  DIRTY_SOURCE_DRIVER_EDIT,
+} from '@/contexts/VehicleSpecDirtyContext';
 import { useDriver, useUpdateDriver } from '@/hooks/useDrivers';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -45,6 +49,16 @@ export default function DriverSectionEditPage() {
   const { data: driver, isLoading } = useDriver(id || '');
   const updateDriver = useUpdateDriver();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { setDirty, tryNavigate } = useVehicleSpecDirty();
+  const formRef = useRef<HTMLFormElement>(null);
+
+  useEffect(() => {
+    return () => setDirty(DIRTY_SOURCE_DRIVER_EDIT, false);
+  }, [setDirty]);
+
+  const markDirty = useCallback(() => {
+    setDirty(DIRTY_SOURCE_DRIVER_EDIT, true);
+  }, [setDirty]);
 
   const section = sectionId && isSectionId(sectionId) ? sectionId : null;
 
@@ -133,6 +147,7 @@ export default function DriverSectionEditPage() {
       }
 
       await updateDriver.mutateAsync(payload as Parameters<typeof updateDriver.mutateAsync>[0]);
+      setDirty(DIRTY_SOURCE_DRIVER_EDIT, false);
       // חזרה לרשימה — לא לדף המינימלי שמרגיש כמו התראה
       navigate('/drivers', { replace: true });
     } catch (error) {
@@ -149,35 +164,60 @@ export default function DriverSectionEditPage() {
 
   return (
     <div className="min-h-screen bg-[#020617] text-white">
-      <header className="sticky top-0 z-10 border-b border-border bg-card">
-        <div className="container py-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-3">
+      <main className="container max-w-5xl py-6 space-y-6">
+        {/* הירו כמו מסך רכב — אישור שינויים באותו מיקום (צד אחד), כותרת בצד השני */}
+        <div className="relative overflow-hidden rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-slate-800/90 via-slate-900 to-[#0a1628] px-5 py-6 shadow-[0_0_50px_rgba(6,182,212,0.06)] sm:px-8 sm:py-8">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(34,211,238,0.12),transparent)]" />
+          <div className="relative flex flex-col gap-4 sm:flex-row-reverse sm:items-center sm:justify-between">
+            <div className="flex shrink-0 flex-col items-center gap-2 self-center sm:items-end sm:self-start">
               <Button
-                variant="ghost"
-                size="icon"
-                type="button"
-                title="חזרה לפרטי הנהג"
-                onClick={() => navigate('/drivers', { replace: true })}
+                type="submit"
+                form="driver-section-form"
+                className="w-full bg-cyan-600 font-semibold shadow-lg shadow-cyan-900/30 hover:bg-cyan-500 sm:w-auto"
+                disabled={isSubmitting}
               >
-                <ArrowRight className="h-5 w-5" />
+                {isSubmitting ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : null}
+                אישור שינויים
               </Button>
-              <div>
-                <h1 className="text-xl font-bold">{title}</h1>
-                <p className="text-sm text-muted-foreground">{driver.full_name}</p>
-              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full border-white/20 sm:w-auto"
+                onClick={() => tryNavigate('/drivers')}
+              >
+                ביטול
+              </Button>
             </div>
-            <Link to={`/drivers/${driver.id}/edit`}>
-              <Button variant="outline" size="sm">
-                עריכה מלאה
-              </Button>
-            </Link>
+            <div className="min-w-0 flex-1 text-center sm:text-right">
+              <div className="mb-2 flex items-center justify-center gap-2 sm:justify-start">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  type="button"
+                  title="חזרה לרשימת נהגים"
+                  className="shrink-0"
+                  onClick={() => tryNavigate('/drivers')}
+                >
+                  <ArrowRight className="h-5 w-5" />
+                </Button>
+              </div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-500/70">נהג</p>
+              <h1 className="mt-1 text-2xl font-bold tracking-tight text-cyan-100 sm:text-3xl">{title}</h1>
+              <p className="mt-2 text-base font-medium text-slate-200 sm:text-lg">{driver.full_name}</p>
+              <p className="mt-1 text-sm text-slate-500">עריכת סקשן — יציאה בלי שמירה תציג התראה</p>
+            </div>
           </div>
         </div>
-      </header>
 
-      <main className="container max-w-3xl py-6">
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form
+          id="driver-section-form"
+          ref={formRef}
+          onSubmit={handleSubmit}
+          className="space-y-6"
+          onInput={markDirty}
+          onChange={markDirty}
+        >
           {section === 'personal' && (
             <Card>
               <CardHeader>
@@ -365,20 +405,10 @@ export default function DriverSectionEditPage() {
               </Card>
           )}
 
-          <div className="flex gap-3">
-            <Button type="submit" className="flex-1" disabled={isSubmitting}>
-              {isSubmitting && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
-              שמור
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="flex-1"
-              onClick={() => navigate('/drivers', { replace: true })}
-            >
-              ביטול
-            </Button>
-          </div>
+          {/* שמירה וביטול בהירו למעלה — כאן רק הערה קצרה */}
+          <p className="text-center text-xs text-muted-foreground">
+            שינויים נשמרים רק אחרי לחיצה על <span className="font-medium text-cyan-400/90">אישור שינויים</span> בהירו
+          </p>
         </form>
       </main>
     </div>

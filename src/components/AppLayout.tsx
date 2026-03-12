@@ -9,17 +9,11 @@ import { AIChatAssistant } from './AIChatAssistant';
 import { useTheme } from '@/hooks/useTheme';
 import { Sun, Moon } from 'lucide-react';
 import { PwaInstallButton } from './PwaInstallButton';
-/** Brand logo – same asset as og:image (public/og-image.png). Identical for prod and manager-2026-test. */
-const appLogo = '/og-image.png';
 
-/**
- * Fixed box + deep blue so the white car pops; overflow-hidden clips scaled img = zoom on car.
- * Larger box + higher scale so the car reads clearly next to title.
- */
+/** לוגו בשורת הכותרת בדסקטופ בלבד — הסיידבר בלי תמונה כדי למנוע כפילות */
+const appLogo = '/og-image.png';
 const logoWrapClassName =
   'h-16 w-24 shrink-0 bg-[#0a1525] rounded-xl p-1.5 overflow-hidden flex items-center justify-center';
-
-/** Zoom in on center of asset; transform + scale so the car fills the visible area */
 const logoImgClassName =
   'h-full w-full object-contain object-center scale-[2.1] transform origin-center';
 
@@ -73,15 +67,15 @@ export function AppLayout({ children }: AppLayoutProps) {
           </header>
         )}
 
-        {/* Desktop Header with Language Switcher */}
+        {/* Desktop Header — לוגו + כותרת כמו קודם (תמונה רק כאן; בסיידבר בלי תמונה) */}
         {!isMobile && (
-          <div className="flex min-h-16 items-center border-b border-white/10 bg-[#0d1b2e] px-6 py-2 justify-between">
+          <div className="flex min-h-16 items-center justify-between border-b border-white/10 bg-[#0d1b2e] px-6 py-2">
             <div className="flex items-center gap-3">
               <div className={logoWrapClassName}>
                 <img src={appLogo} alt="Fleet Manager logo" className={logoImgClassName} />
               </div>
               <div>
-                <h1 className="font-bold text-base leading-tight">{t('navigation.fleetManager')}</h1>
+                <h1 className="text-base font-bold leading-tight">{t('navigation.fleetManager')}</h1>
                 <p className="text-xs text-cyan-400/60">{t('navigation.proDashboard')}</p>
               </div>
             </div>

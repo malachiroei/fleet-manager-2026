@@ -23,7 +23,6 @@ import { useLabel, useIsVisible } from '@/hooks/useUiLabels';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
 import { SidebarUserMenu } from './SidebarUserMenu';
-import { BrandLogo } from './BrandLogo';
 
 interface NavItem {
   title: string;
@@ -91,17 +90,11 @@ export function Sidebar() {
 
   return (
     <div dir={isRtl ? 'rtl' : 'ltr'} className="glass flex h-full w-64 flex-col text-white">
-      {/* Logo/Header */}
+      {/* כותרת סיידבר בלי תמונת רכב — המיתוג עם הלוגו רק בשורת הכותרת של אזור התוכן */}
       <div className="flex h-16 items-center border-b border-white/10 px-6">
-        <div className="flex items-center gap-3">
-          <BrandLogo
-            size="sidebar"
-            className="drop-shadow-[0_0_12px_rgba(255,255,255,0.2)]"
-          />
-          <div className={cn(isRtl ? 'text-right' : 'text-left')}>
-            <h1 className="font-bold text-base leading-tight text-white">{t('navigation.fleetManager')}</h1>
-            <p className="text-xs text-cyan-400/60">{t('navigation.proDashboard')}</p>
-          </div>
+        <div className={cn('min-w-0 flex-1', isRtl ? 'text-right' : 'text-left')}>
+          <h1 className="text-base font-bold leading-tight text-white">{t('navigation.fleetManager')}</h1>
+          <p className="text-xs text-cyan-400/60">{t('navigation.proDashboard')}</p>
         </div>
       </div>
 
