@@ -87,8 +87,15 @@ export interface Vehicle {
   last_service_km: number | null;
   last_tire_change_date: string | null;
   next_tire_change_date: string | null;
+  /** תאריך החלפה לפי מיקום צמיג */
+  tire_change_date_front_right: string | null;
+  tire_change_date_front_left: string | null;
+  tire_change_date_rear_right: string | null;
+  tire_change_date_rear_left: string | null;
   last_inspection_date: string | null;
   next_inspection_date: string | null;
+  /** קובץ/תמונת טופס ביקורת תקופתית */
+  inspection_form_url: string | null;
 }
 
 export interface Driver {

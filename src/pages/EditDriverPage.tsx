@@ -69,10 +69,11 @@ export default function EditDriverPage() {
         job_title: formData.get('job_title') as string || null,
         department: formData.get('department') as string || null,
         license_number: formData.get('license_number') as string || null,
+        birth_date: (formData.get('birth_date') as string)?.trim() || null,
         regulation_585b_date: formData.get('regulation_585b_date') as string || null,
       });
       toast.success('הנהג עודכן בהצלחה');
-      navigate(`/drivers/${driver.id}`);
+      navigate('/drivers', { replace: true });
     } catch (error) {
       // מציג את השגיאה המדויקת מה-DB (RLS, constraint, עמודה חסרה וכו')
       const description = formatSupabaseError(error);
@@ -89,7 +90,7 @@ export default function EditDriverPage() {
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
           <div className="flex items-center gap-3">
-            <Link to={`/drivers/${driver.id}`}><Button variant="ghost" size="icon"><ArrowRight className="h-5 w-5" /></Button></Link>
+            <Link to="/drivers"><Button variant="ghost" size="icon"><ArrowRight className="h-5 w-5" /></Button></Link>
             <h1 className="font-bold text-xl">עריכת נהג - {driver.full_name}</h1>
           </div>
         </div>
@@ -117,6 +118,10 @@ export default function EditDriverPage() {
                   <Input id="id_number" name="id_number" defaultValue={driver.id_number} required dir="ltr" />
                 </div>
                 <div>
+                  <Label htmlFor="birth_date">תאריך לידה</Label>
+                  <Input id="birth_date" name="birth_date" type="date" defaultValue={driver.birth_date || ''} />
+                </div>
+                <div>
                   <Label htmlFor="phone">טלפון</Label>
                   <Input id="phone" name="phone" type="tel" defaultValue={driver.phone || ''} dir="ltr" />
                 </div>
@@ -125,7 +130,7 @@ export default function EditDriverPage() {
                   <Input id="email" name="email" type="email" defaultValue={driver.email || ''} dir="ltr" />
                 </div>
                 <div className="col-span-2">
-                  <Label htmlFor="address">כתובת מגורים</Label>
+                  <Label htmlFor="address">רחוב</Label>
                   <Input id="address" name="address" defaultValue={driver.address || ''} />
                 </div>
               </div>
@@ -164,16 +169,14 @@ export default function EditDriverPage() {
                 <CardTitle>רישיונות</CardTitle>
               </div>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="license_number">מספר רישיון נהיגה</Label>
-                  <Input id="license_number" name="license_number" defaultValue={driver.license_number || ''} dir="ltr" />
-                </div>
-                <div className="md:col-span-2">
-                  <Label htmlFor="license_expiry">תוקף רישיון נהיגה *</Label>
-                  <Input id="license_expiry" name="license_expiry" type="date" defaultValue={driver.license_expiry} required />
-                </div>
+            <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <Label htmlFor="license_number">מספר רישיון נהיגה</Label>
+                <Input id="license_number" name="license_number" defaultValue={driver.license_number || ''} dir="ltr" />
+              </div>
+              <div>
+                <Label htmlFor="license_expiry">תוקף רישיון נהיגה *</Label>
+                <Input id="license_expiry" name="license_expiry" type="date" defaultValue={driver.license_expiry || ''} required />
               </div>
             </CardContent>
           </Card>
@@ -188,18 +191,44 @@ export default function EditDriverPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="space-y-2">
                   <Label htmlFor="health_declaration_date">תאריך הצהרת בריאות</Label>
                   <Input id="health_declaration_date" name="health_declaration_date" type="date" defaultValue={driver.health_declaration_date || ''} />
+                  <p className="text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">תוקף הצהרת בריאות: </span>
+                    {(() => {
+                      const iso = driver.health_declaration_date;
+                      if (!iso) return '—';
+                      const d = new Date(iso);
+                      if (Number.isNaN(d.getTime())) return '—';
+                      const e = new Date(d);
+                      e.setFullYear(e.getFullYear() + 5);
+                      return e.toLocaleDateString('he-IL');
+                    })()}
+                    <span className="mr-1 opacity-80"> (5 שנים מההצהרה)</span>
+                  </p>
                 </div>
                 <div>
                   <Label htmlFor="safety_training_date">תאריך הדרכת בטיחות</Label>
                   <Input id="safety_training_date" name="safety_training_date" type="date" defaultValue={driver.safety_training_date || ''} />
                 </div>
-                <div className="md:col-span-2">
-                  <Label htmlFor="regulation_585b_date">תאריך בדיקת תקנה 585ב'</Label>
+                <div className="md:col-span-2 space-y-2">
+                  <Label htmlFor="regulation_585b_date">תאריך בדיקת רישיון ע״פ תקנה 585 ב׳</Label>
                   <Input id="regulation_585b_date" name="regulation_585b_date" type="date" defaultValue={driver.regulation_585b_date || ''} />
+                  <p className="text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">תוקף הבדיקה: </span>
+                    {(() => {
+                      const iso = driver.regulation_585b_date;
+                      if (!iso) return '—';
+                      const d = new Date(iso);
+                      if (Number.isNaN(d.getTime())) return '—';
+                      const e = new Date(d);
+                      e.setFullYear(e.getFullYear() + 3);
+                      return e.toLocaleDateString('he-IL');
+                    })()}
+                    <span className="mr-1 opacity-80"> (3 שנים ממועד הבדיקה)</span>
+                  </p>
                 </div>
               </div>
             </CardContent>
@@ -210,9 +239,14 @@ export default function EditDriverPage() {
               {isSubmitting && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
               שמור שינויים
             </Button>
-            <Link to={`/drivers/${driver.id}`} className="flex-1">
-              <Button type="button" variant="outline" className="w-full">ביטול</Button>
-            </Link>
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1 w-full"
+              onClick={() => navigate('/drivers', { replace: true })}
+            >
+              ביטול
+            </Button>
           </div>
         </form>
       </main>

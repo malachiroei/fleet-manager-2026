@@ -25,6 +25,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { useVehicleSpecDirty } from '@/contexts/VehicleSpecDirtyContext';
 import { useTheme } from '@/hooks/useTheme';
 import { Button } from './ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from './ui/sheet';
@@ -46,6 +47,7 @@ interface NavGroup {
 }
 
 export function MobileNav() {
+  const { tryNavigate, getIsDirty } = useVehicleSpecDirty();
   const location = useLocation();
   const { user, signOut } = useAuth();
   const { t, i18n } = useTranslation();
@@ -138,7 +140,17 @@ export function MobileNav() {
           <div className="space-y-6">
             <nav className="space-y-4">
             {/* Home Button */}
-            <Link to="/" onClick={() => setOpen(false)} className="block px-3">
+            <Link
+              to="/"
+              onClick={(e) => {
+                if (isDirty) {
+                  e.preventDefault();
+                  tryNavigate('/');
+                }
+                setOpen(false);
+              }}
+              className="block px-3"
+            >
               <Button
                 variant={location.pathname === '/' ? 'default' : 'ghost'}
                 className={cn(
@@ -184,7 +196,13 @@ export function MobileNav() {
                       <Link
                         key={item.href}
                         to={item.href}
-                        onClick={() => setOpen(false)}
+                        onClick={(e) => {
+                          if (getIsDirty()) {
+                            e.preventDefault();
+                            tryNavigate(item.href);
+                          }
+                          setOpen(false);
+                        }}
                         className={cn(
                           'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors mx-3',
                           isRtl ? 'flex-row-reverse text-right' : 'text-left',

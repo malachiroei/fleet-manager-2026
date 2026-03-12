@@ -134,6 +134,22 @@ function normalizeDriverUpdates(updates: Record<string, unknown>): Record<string
     'health_declaration_date',
     'safety_training_date',
     'regulation_585b_date',
+    'birth_date',
+    'city',
+    'note1',
+    'note2',
+    'rating',
+    'employee_number',
+    'driver_code',
+    'division',
+    'area',
+    'group_name',
+    'group_code',
+    'eligibility',
+    'work_start_date',
+    'practical_driving_test_date',
+    'family_permit_date',
+    'driving_permit',
   ];
   for (const key of nullableKeys) {
     if (key in out && (out[key] === '' || out[key] === undefined)) {

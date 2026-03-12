@@ -119,6 +119,8 @@ export function useUpdateVehicle() {
       return data;
     },
     onSuccess: (data) => {
+      // עדכון מיידי של מסך הסקירה בלי להמתין ל-refetch
+      queryClient.setQueryData(['vehicle', data.id], data as Vehicle);
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['vehicle', data.id] });
       toast({ title: 'הרכב עודכן בהצלחה' });

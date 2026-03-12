@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import {
   DollarSign, AlertCircle, Car, Wrench, Plus, Trash2, ExternalLink,
-  ChevronDown, ChevronUp, CalendarDays, Loader2, FolderOpen,
+  ChevronDown, ChevronUp, CalendarDays, Loader2, FolderOpen, Camera, FileText,
 } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,6 +19,11 @@ import {
 } from '@/hooks/useVehicleFolders';
 import type { Vehicle } from '@/types/fleet';
 import { toast } from 'sonner';
+import {
+  useVehicleSpecDirty,
+  DIRTY_SOURCE_MAINTENANCE,
+  VEHICLE_SPEC_UNSAVED_MSG,
+} from '@/contexts/VehicleSpecDirtyContext';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 function fmt(d: string | null | undefined) {
@@ -373,124 +379,318 @@ function IncidentsTab({ vehicleId, type }: { vehicleId: string; type: 'event' | 
 }
 
 // ═══ Maintenance tab ══════════════════════════════════════════════════════════
+function dateInputVal(v: string | null | undefined) {
+  if (!v || String(v).trim() === '') return '';
+  return String(v).slice(0, 10);
+}
+
+const MAINTENANCE_KM_INTERVAL = 15000;
+
+function addOneYearDate(isoDate: string): string {
+  if (!isoDate || isoDate.length < 10) return '';
+  const d = new Date(`${isoDate.slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return '';
+  d.setFullYear(d.getFullYear() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function maintenanceFieldsFromVehicle(v: Vehicle) {
+  return {
+    last_service_date:     dateInputVal(v.last_service_date),
+    last_service_km:       v.last_service_km != null ? String(v.last_service_km) : '',
+    next_maintenance_date: dateInputVal(v.next_maintenance_date),
+    next_maintenance_km:   v.next_maintenance_km != null ? String(v.next_maintenance_km) : '',
+    tire_change_date_front_right: dateInputVal(v.tire_change_date_front_right),
+    tire_change_date_front_left:  dateInputVal(v.tire_change_date_front_left),
+    tire_change_date_rear_right:  dateInputVal(v.tire_change_date_rear_right),
+    tire_change_date_rear_left:   dateInputVal(v.tire_change_date_rear_left),
+    last_inspection_date:  dateInputVal(v.last_inspection_date),
+    next_inspection_date:  dateInputVal(v.next_inspection_date),
+    inspection_form_url:   v.inspection_form_url ?? '',
+  };
+}
+
+function fieldsEqual(
+  a: ReturnType<typeof maintenanceFieldsFromVehicle>,
+  b: ReturnType<typeof maintenanceFieldsFromVehicle>
+) {
+  const keys = Object.keys(a) as Array<keyof typeof a>;
+  for (const k of keys) {
+    if ((a[k] ?? '').trim() !== (b[k] ?? '').trim()) return false;
+  }
+  return true;
+}
+
 function MaintenanceTab({ vehicle }: { vehicle: Vehicle }) {
   const updateVehicle = useUpdateVehicle();
-  const [editing, setEditing] = useState(false);
+  const { setDirty } = useVehicleSpecDirty();
   const [saving, setSaving] = useState(false);
-  const [fields, setFields] = useState({
-    last_service_date:     vehicle.last_service_date ?? '',
-    last_service_km:       vehicle.last_service_km?.toString() ?? '',
-    next_maintenance_date: vehicle.next_maintenance_date ?? '',
-    next_maintenance_km:   vehicle.next_maintenance_km?.toString() ?? '',
-    last_tire_change_date: vehicle.last_tire_change_date ?? '',
-    next_tire_change_date: vehicle.next_tire_change_date ?? '',
-    last_inspection_date:  vehicle.last_inspection_date ?? '',
-    next_inspection_date:  vehicle.next_inspection_date ?? '',
-  });
+  const [fields, setFields] = useState(() => maintenanceFieldsFromVehicle(vehicle));
+  /** baseline לשינוי — לא מתעדכן מרפרושי vehicle בזמן עריכה; רק אחרי שמירה או החלפת רכב */
+  const baselineRef = useRef(maintenanceFieldsFromVehicle(vehicle));
+  const vehicleIdRef = useRef(vehicle.id);
+
+  if (vehicleIdRef.current !== vehicle.id) {
+    vehicleIdRef.current = vehicle.id;
+    const next = maintenanceFieldsFromVehicle(vehicle);
+    baselineRef.current = next;
+    setFields(next);
+    setDirty(DIRTY_SOURCE_MAINTENANCE, false);
+  }
+
+  const isDirty = useMemo(() => {
+    return !fieldsEqual(fields, baselineRef.current);
+  }, [fields]);
+
+  useLayoutEffect(() => {
+    setDirty(DIRTY_SOURCE_MAINTENANCE, isDirty);
+  }, [isDirty, setDirty]);
+
+  const [inspectionUploading, setInspectionUploading] = useState(false);
 
   const save = async () => {
     setSaving(true);
     try {
-      await updateVehicle.mutateAsync({
+      const lastKm = fields.last_service_km ? parseInt(fields.last_service_km, 10) : null;
+      const payload: Record<string, unknown> = {
         id: vehicle.id,
         last_service_date:     fields.last_service_date || null,
-        last_service_km:       fields.last_service_km ? parseInt(fields.last_service_km) : null,
+        last_service_km:       lastKm,
         next_maintenance_date: fields.next_maintenance_date || null,
-        next_maintenance_km:   fields.next_maintenance_km ? parseInt(fields.next_maintenance_km) : null,
-        last_tire_change_date: fields.last_tire_change_date || null,
-        next_tire_change_date: fields.next_tire_change_date || null,
+        next_maintenance_km:   fields.next_maintenance_km ? parseInt(fields.next_maintenance_km, 10) : null,
+        tire_change_date_front_right: fields.tire_change_date_front_right || null,
+        tire_change_date_front_left:  fields.tire_change_date_front_left || null,
+        tire_change_date_rear_right:  fields.tire_change_date_rear_right || null,
+        tire_change_date_rear_left:   fields.tire_change_date_rear_left || null,
         last_inspection_date:  fields.last_inspection_date || null,
         next_inspection_date:  fields.next_inspection_date || null,
-      } as any);
+        inspection_form_url:   fields.inspection_form_url?.trim() || null,
+      };
+      // מד אוץ: אם טיפול אחרון בק״מ גבוה מ-current_odometer — מעדכנים כדי שהבנטו יציג את הגבוה
+      const currentOdo = Number(vehicle.current_odometer) || 0;
+      if (lastKm != null && !Number.isNaN(lastKm) && lastKm > currentOdo) {
+        payload.current_odometer = lastKm;
+        payload.last_odometer_date = new Date().toISOString().slice(0, 10);
+      }
+      await updateVehicle.mutateAsync(payload as any);
       toast.success('נתוני תחזוקה נשמרו');
-      setEditing(false);
-    } catch { toast.error('שמירה נכשלה'); }
-    finally { setSaving(false); }
+      baselineRef.current = { ...fields };
+      setDirty(DIRTY_SOURCE_MAINTENANCE, false);
+    } catch {
+      toast.error('שמירה נכשלה');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const f = (key: keyof typeof fields) => fields[key] || null;
-  const fmtField = (key: keyof typeof fields) => {
-    const v = f(key);
-    return v ? new Date(v).toLocaleDateString('he-IL') : '—';
+  const handleInspectionUpload = async (file: File | null) => {
+    if (!file) return;
+    setInspectionUploading(true);
+    try {
+      const fileName = `vehicle-files/${vehicle.id}/inspection_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      const { error } = await supabase.storage.from('vehicle-documents').upload(fileName, file, { upsert: true });
+      if (error) throw error;
+      const { data } = supabase.storage.from('vehicle-documents').getPublicUrl(fileName);
+      setDirty(DIRTY_SOURCE_MAINTENANCE, true);
+      setFields((p) => ({ ...p, inspection_form_url: data.publicUrl }));
+      toast.success('טופס ביקורת הועלה — לחץ אישור שינויים לשמירה');
+    } catch {
+      toast.error('העלאה נכשלה');
+    } finally {
+      setInspectionUploading(false);
+    }
   };
 
-  const groups = [
-    {
-      title: 'טיפול שגרתי',
-      color: 'bg-purple-500/10 border-purple-500/20',
-      icon: <Wrench className="h-4 w-4 text-purple-600" />,
-      rows: [
-        { label: 'טיפול אחרון — תאריך', fieldKey: 'last_service_date' as keyof typeof fields, type: 'date' },
-        { label: 'טיפול אחרון — ק"מ',   fieldKey: 'last_service_km' as keyof typeof fields,   type: 'number' },
-        { label: 'טיפול הבא — תאריך',   fieldKey: 'next_maintenance_date' as keyof typeof fields, type: 'date' },
-        { label: 'טיפול הבא — ק"מ',     fieldKey: 'next_maintenance_km' as keyof typeof fields,   type: 'number' },
-      ],
-    },
-    {
-      title: 'החלפת צמיגים',
-      color: 'bg-slate-500/10 border-slate-500/20',
-      icon: <Car className="h-4 w-4 text-slate-500" />,
-      rows: [
-        { label: 'החלפה אחרונה', fieldKey: 'last_tire_change_date' as keyof typeof fields, type: 'date' },
-        { label: 'החלפה הבאה',   fieldKey: 'next_tire_change_date' as keyof typeof fields, type: 'date' },
-      ],
-    },
-    {
-      title: 'ביקורת תקופתית',
-      color: 'bg-cyan-500/10 border-cyan-500/20',
-      icon: <CalendarDays className="h-4 w-4 text-cyan-600" />,
-      rows: [
-        { label: 'ביקורת אחרונה', fieldKey: 'last_inspection_date' as keyof typeof fields, type: 'date' },
-        { label: 'ביקורת הבאה',   fieldKey: 'next_inspection_date' as keyof typeof fields, type: 'date' },
-      ],
-    },
-  ];
+  type FieldKey = keyof ReturnType<typeof maintenanceFieldsFromVehicle>;
+
+  const setField = (key: FieldKey, value: string) => {
+    setDirty(DIRTY_SOURCE_MAINTENANCE, true);
+    setFields((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const onLastServiceDateChange = (value: string) => {
+    setDirty(DIRTY_SOURCE_MAINTENANCE, true);
+    const nextDate = addOneYearDate(value);
+    setFields((prev) => ({
+      ...prev,
+      last_service_date: value,
+      ...(nextDate ? { next_maintenance_date: nextDate } : {}),
+    }));
+  };
+
+  const onLastServiceKmChange = (value: string) => {
+    setDirty(DIRTY_SOURCE_MAINTENANCE, true);
+    setFields((prev) => {
+      const n = parseInt(value, 10);
+      const nextKm =
+        !Number.isNaN(n) && value.trim() !== ''
+          ? String(n + MAINTENANCE_KM_INTERVAL)
+          : prev.next_maintenance_km;
+      return { ...prev, last_service_km: value, next_maintenance_km: nextKm };
+    });
+  };
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        {editing ? (
-          <div className="flex gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>ביטול</Button>
-            <Button size="sm" onClick={save} disabled={saving}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'שמור'}
-            </Button>
-          </div>
-        ) : (
-          <Button variant="outline" size="sm" onClick={() => setEditing(true)}>עריכה</Button>
-        )}
+      <div className="rounded-lg border border-cyan-500/20 bg-white/[0.03] px-3 py-2">
+        <p className="text-xs text-muted-foreground mb-2">עריכה ישירה — לחץ לאחר עדכון השדות</p>
+        <Button
+          type="button"
+          className="w-full bg-cyan-600 hover:bg-cyan-500 font-semibold shadow-lg shadow-cyan-900/30 sm:w-auto"
+          onClick={save}
+          disabled={saving || !isDirty}
+        >
+          {saving ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : null}
+          אישור שינויים
+        </Button>
       </div>
 
-      {groups.map(g => (
-        <div key={g.title} className={`rounded-xl border p-4 space-y-3 ${g.color}`}>
-          <div className="flex items-center gap-2">
-            {g.icon}
-            <h3 className="font-semibold text-sm text-foreground">{g.title}</h3>
+      {/* טיפול שגרתי — עדכון אוטומטי: תאריך הבא +1 שנה, ק״מ הבא +15,000 */}
+      <div className={`rounded-xl border p-4 space-y-3 bg-purple-500/10 border-purple-500/20`}>
+        <div className="flex items-center gap-2">
+          <Wrench className="h-4 w-4 text-purple-600" />
+          <h3 className="font-semibold text-sm text-foreground">טיפול שגרתי</h3>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          טיפול הבא מתעדכן אוטומטית: תאריך — שנה אחרי טיפול אחרון · ק״מ — {MAINTENANCE_KM_INTERVAL.toLocaleString()} אחרי טיפול אחרון (ניתן לערוך ידנית)
+        </p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">טיפול אחרון — תאריך</p>
+            <Input
+              type="date"
+              value={fields.last_service_date}
+              onChange={(e) => onLastServiceDateChange(e.target.value)}
+              className="h-9 bg-background/80 text-sm"
+            />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            {g.rows.map(row => (
-              <div key={row.fieldKey}>
-                <p className="text-xs text-muted-foreground mb-1">{row.label}</p>
-                {editing ? (
-                  <Input
-                    type={row.type === 'date' ? 'date' : 'number'}
-                    value={fields[row.fieldKey]}
-                    onChange={e => setFields(prev => ({ ...prev, [row.fieldKey]: e.target.value }))}
-                    className="h-8 text-sm"
-                  />
-                ) : (
-                  <p className={`font-medium text-sm ${fmtField(row.fieldKey) === '—' ? 'text-muted-foreground' : 'text-foreground'}`}>
-                    {row.type === 'number' && fields[row.fieldKey]
-                      ? `${parseInt(fields[row.fieldKey]).toLocaleString()} ק"מ`
-                      : fmtField(row.fieldKey)
-                    }
-                  </p>
-                )}
-              </div>
-            ))}
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">טיפול אחרון — ק״מ</p>
+            <Input
+              type="number"
+              value={fields.last_service_km}
+              onChange={(e) => onLastServiceKmChange(e.target.value)}
+              className="h-9 bg-background/80 text-sm"
+              dir="ltr"
+            />
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">טיפול הבא — תאריך</p>
+            <Input
+              type="date"
+              value={fields.next_maintenance_date}
+              onChange={(e) => setField('next_maintenance_date', e.target.value)}
+              className="h-9 bg-background/80 text-sm"
+            />
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">טיפול הבא — ק״מ</p>
+            <Input
+              type="number"
+              value={fields.next_maintenance_km}
+              onChange={(e) => setField('next_maintenance_km', e.target.value)}
+              className="h-9 bg-background/80 text-sm"
+              dir="ltr"
+            />
           </div>
         </div>
-      ))}
+      </div>
+
+      {/* 4 צמיגים */}
+      <div className={`rounded-xl border p-4 space-y-3 bg-slate-500/10 border-slate-500/20`}>
+        <div className="flex items-center gap-2">
+          <Car className="h-4 w-4 text-slate-500" />
+          <h3 className="font-semibold text-sm text-foreground">החלפת צמיגים</h3>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {(
+            [
+              ['tire_change_date_front_right', 'קדמי ימין'],
+              ['tire_change_date_front_left', 'קדמי שמאל'],
+              ['tire_change_date_rear_right', 'אחורי ימין'],
+              ['tire_change_date_rear_left', 'אחורי שמאל'],
+            ] as const
+          ).map(([key, label]) => (
+            <div key={key}>
+              <p className="text-xs text-muted-foreground mb-1">תאריך החלפה — {label}</p>
+              <Input
+                type="date"
+                value={fields[key]}
+                onChange={(e) => setField(key, e.target.value)}
+                className="h-9 bg-background/80 text-sm"
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ביקורת תקופתית + העלאת טופס */}
+      <div className={`rounded-xl border p-4 space-y-3 bg-cyan-500/10 border-cyan-500/20`}>
+        <div className="flex items-center gap-2">
+          <CalendarDays className="h-4 w-4 text-cyan-600" />
+          <h3 className="font-semibold text-sm text-foreground">ביקורת תקופתית</h3>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">ביקורת אחרונה</p>
+            <Input
+              type="date"
+              value={fields.last_inspection_date}
+              onChange={(e) => setField('last_inspection_date', e.target.value)}
+              className="h-9 bg-background/80 text-sm"
+            />
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">ביקורת הבאה</p>
+            <Input
+              type="date"
+              value={fields.next_inspection_date}
+              onChange={(e) => setField('next_inspection_date', e.target.value)}
+              className="h-9 bg-background/80 text-sm"
+            />
+          </div>
+        </div>
+        <div className="flex flex-col gap-2 border-t border-white/10 pt-3">
+          <p className="text-xs font-medium text-muted-foreground">טופס ביקורת</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="file"
+              accept="image/*,application/pdf"
+              className="hidden"
+              id="maintenance-inspection-upload"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleInspectionUpload(f);
+                e.target.value = '';
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={inspectionUploading}
+              onClick={() => document.getElementById('maintenance-inspection-upload')?.click()}
+            >
+              {inspectionUploading ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : <Camera className="ml-2 h-4 w-4" />}
+              העלאת טופס
+            </Button>
+            <Button type="button" variant="ghost" size="sm" disabled className="text-muted-foreground">
+              סריקה (בקרוב)
+            </Button>
+            {fields.inspection_form_url ? (
+              <a
+                href={fields.inspection_form_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-cyan-400 hover:underline"
+                dir="ltr"
+              >
+                צפייה בקובץ
+              </a>
+            ) : null}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -498,6 +698,21 @@ function MaintenanceTab({ vehicle }: { vehicle: Vehicle }) {
 // ═══ Main export ══════════════════════════════════════════════════════════════
 export function VehicleFolders({ vehicle }: { vehicle: Vehicle }) {
   const [activeTab, setActiveTab] = useState<FolderTab>('expenses');
+  const { getSourceDirty, setDirty } = useVehicleSpecDirty();
+
+  const onTabClick = (tabId: FolderTab) => {
+    if (tabId === activeTab) return;
+    // עוזבים תחזוקה עם שינויים לא שמורים — אותה התראה כמו ביציאה מהדף
+    if (
+      activeTab === 'maintenance' &&
+      tabId !== 'maintenance' &&
+      getSourceDirty(DIRTY_SOURCE_MAINTENANCE)
+    ) {
+      if (!window.confirm(VEHICLE_SPEC_UNSAVED_MSG)) return;
+      setDirty(DIRTY_SOURCE_MAINTENANCE, false);
+    }
+    setActiveTab(tabId);
+  };
 
   return (
     <Card id="vehicle-folders">
@@ -513,7 +728,8 @@ export function VehicleFolders({ vehicle }: { vehicle: Vehicle }) {
           {FOLDER_TABS.map(tab => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              type="button"
+              onClick={() => onTabClick(tab.id)}
               className={[
                 'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all',
                 activeTab === tab.id

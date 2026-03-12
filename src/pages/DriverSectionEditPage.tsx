@@ -1,6 +1,6 @@
 /**
- * עמוד ממוקד למשבצת אחת בלבד — רק השדות של אותה קטגוריה + שמירה.
- * מקושר מכרטיס הרשימה (לחיצה על משבצת).
+ * עמוד סקשן — טופס עריכה לפי קטגוריה (אישי / ארגוני / רישיונות / בטיחות),
+ * באותו סגנון רשת כמו שאר הלשוניות.
  */
 import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
@@ -18,9 +18,25 @@ import {
   DRIVER_SECTION_LABELS,
   type DriverSectionId,
 } from '@/lib/driverFieldMap';
+import type { Driver } from '@/types/fleet';
 
 function isSectionId(s: string): s is DriverSectionId {
   return (DRIVER_SECTION_IDS as readonly string[]).includes(s);
+}
+
+function nullable(formData: FormData, key: string): string | null {
+  const v = (formData.get(key) as string)?.trim();
+  return v || null;
+}
+
+/** תאריך תוקף מחושב: years קדימה מתאריך ISO */
+function expiryFromDate(iso: string | null | undefined, years: number): string {
+  if (!iso || String(iso).trim() === '') return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const e = new Date(d);
+  e.setFullYear(e.getFullYear() + years);
+  return e.toLocaleDateString('he-IL');
 }
 
 export default function DriverSectionEditPage() {
@@ -35,7 +51,7 @@ export default function DriverSectionEditPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-[#020617] text-white">
-        <header className="bg-card border-b border-border sticky top-0 z-10">
+        <header className="sticky top-0 z-10 border-b border-border bg-card">
           <div className="container py-4">
             <Skeleton className="h-8 w-64" />
           </div>
@@ -50,14 +66,14 @@ export default function DriverSectionEditPage() {
   if (!driver || !section) {
     return (
       <div className="min-h-screen bg-[#020617] text-white">
-        <header className="bg-card border-b border-border">
-          <div className="container py-4 flex items-center gap-3">
+        <header className="border-b border-border bg-card">
+          <div className="container flex items-center gap-3 py-4">
             <Link to="/drivers">
               <Button variant="ghost" size="icon">
                 <ArrowRight className="h-5 w-5" />
               </Button>
             </Link>
-            <h1 className="font-bold text-xl">סקשן לא נמצא</h1>
+            <h1 className="text-xl font-bold">סקשן לא נמצא</h1>
           </div>
         </header>
         <main className="container py-6">
@@ -79,12 +95,25 @@ export default function DriverSectionEditPage() {
       if (section === 'personal') {
         payload.full_name = formData.get('full_name') as string;
         payload.id_number = formData.get('id_number') as string;
-        payload.phone = (formData.get('phone') as string) || null;
-        payload.email = (formData.get('email') as string) || null;
-        payload.address = (formData.get('address') as string) || null;
+        payload.phone = nullable(formData, 'phone');
+        payload.email = nullable(formData, 'email');
+        payload.address = nullable(formData, 'address');
+        payload.birth_date = nullable(formData, 'birth_date');
+        payload.city = nullable(formData, 'city');
+        payload.note1 = nullable(formData, 'note1');
+        payload.note2 = nullable(formData, 'note2');
+        payload.rating = nullable(formData, 'rating');
       } else if (section === 'organizational') {
-        payload.job_title = (formData.get('job_title') as string) || null;
-        payload.department = (formData.get('department') as string) || null;
+        payload.job_title = nullable(formData, 'job_title');
+        payload.department = nullable(formData, 'department');
+        payload.employee_number = nullable(formData, 'employee_number');
+        payload.driver_code = nullable(formData, 'driver_code');
+        payload.division = nullable(formData, 'division');
+        payload.area = nullable(formData, 'area');
+        payload.group_name = nullable(formData, 'group_name');
+        payload.group_code = nullable(formData, 'group_code');
+        payload.eligibility = nullable(formData, 'eligibility');
+        payload.work_start_date = nullable(formData, 'work_start_date');
       } else if (section === 'licenses') {
         const licenseExpiry = (formData.get('license_expiry') as string)?.trim();
         if (!licenseExpiry) {
@@ -92,17 +121,20 @@ export default function DriverSectionEditPage() {
           setIsSubmitting(false);
           return;
         }
-        payload.license_number = (formData.get('license_number') as string) || null;
+        payload.license_number = nullable(formData, 'license_number');
         payload.license_expiry = licenseExpiry;
       } else if (section === 'safety') {
-        payload.health_declaration_date = (formData.get('health_declaration_date') as string) || null;
-        payload.safety_training_date = (formData.get('safety_training_date') as string) || null;
-        payload.regulation_585b_date = (formData.get('regulation_585b_date') as string) || null;
+        payload.health_declaration_date = nullable(formData, 'health_declaration_date');
+        payload.safety_training_date = nullable(formData, 'safety_training_date');
+        payload.regulation_585b_date = nullable(formData, 'regulation_585b_date');
+        payload.practical_driving_test_date = nullable(formData, 'practical_driving_test_date');
+        // היתר בני משפחה / היתר נהיגה — מנוהלים בתיקייה יעודית / לא בטופס זה
+        payload.is_field_person = formData.get('is_field_person') === 'on';
       }
 
       await updateDriver.mutateAsync(payload as Parameters<typeof updateDriver.mutateAsync>[0]);
-      // useUpdateDriver כבר מציג toast הצלחה
-      navigate(`/drivers/${driver.id}`);
+      // חזרה לרשימה — לא לדף המינימלי שמרגיש כמו התראה
+      navigate('/drivers', { replace: true });
     } catch (error) {
       toast.error('שגיאה בעדכון', {
         description: formatSupabaseError(error),
@@ -113,20 +145,25 @@ export default function DriverSectionEditPage() {
   };
 
   const title = DRIVER_SECTION_LABELS[section];
+  const d = driver as Driver;
 
   return (
     <div className="min-h-screen bg-[#020617] text-white">
-      <header className="bg-card border-b border-border sticky top-0 z-10">
+      <header className="sticky top-0 z-10 border-b border-border bg-card">
         <div className="container py-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-3">
-              <Link to={`/drivers/${driver.id}`}>
-                <Button variant="ghost" size="icon">
-                  <ArrowRight className="h-5 w-5" />
-                </Button>
-              </Link>
+              <Button
+                variant="ghost"
+                size="icon"
+                type="button"
+                title="חזרה לפרטי הנהג"
+                onClick={() => navigate('/drivers', { replace: true })}
+              >
+                <ArrowRight className="h-5 w-5" />
+              </Button>
               <div>
-                <h1 className="font-bold text-xl">{title}</h1>
+                <h1 className="text-xl font-bold">{title}</h1>
                 <p className="text-sm text-muted-foreground">{driver.full_name}</p>
               </div>
             </div>
@@ -139,7 +176,7 @@ export default function DriverSectionEditPage() {
         </div>
       </header>
 
-      <main className="container max-w-2xl py-6">
+      <main className="container max-w-3xl py-6">
         <form onSubmit={handleSubmit} className="space-y-6">
           {section === 'personal' && (
             <Card>
@@ -148,57 +185,105 @@ export default function DriverSectionEditPage() {
                   <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent/10">
                     <User className="h-5 w-5 text-accent" />
                   </div>
-                  <CardTitle>פרטים אישיים</CardTitle>
+                  <CardTitle>פרטים אישיים ופרטי קשר</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 gap-4">
+              <CardContent className="grid grid-cols-1 gap-4">
                   <div>
                     <Label htmlFor="full_name">שם מלא *</Label>
-                    <Input id="full_name" name="full_name" defaultValue={driver.full_name} required />
+                    <Input id="full_name" name="full_name" defaultValue={d.full_name} required />
                   </div>
                   <div>
                     <Label htmlFor="id_number">תעודת זהות *</Label>
-                    <Input id="id_number" name="id_number" defaultValue={driver.id_number} required dir="ltr" />
+                    <Input id="id_number" name="id_number" defaultValue={d.id_number} required dir="ltr" />
+                  </div>
+                  <div>
+                    <Label htmlFor="birth_date">תאריך לידה</Label>
+                    <Input id="birth_date" name="birth_date" type="date" defaultValue={d.birth_date || ''} />
+                  </div>
+                  <div>
+                    <Label htmlFor="city">עיר</Label>
+                    <Input id="city" name="city" defaultValue={d.city || ''} />
+                  </div>
+                  <div>
+                    <Label htmlFor="address">רחוב</Label>
+                    <Input id="address" name="address" defaultValue={d.address || ''} />
+                  </div>
+                  <div>
+                    <Label htmlFor="note1">הערה 1</Label>
+                    <Input id="note1" name="note1" defaultValue={d.note1 || ''} />
+                  </div>
+                  <div>
+                    <Label htmlFor="note2">הערה 2</Label>
+                    <Input id="note2" name="note2" defaultValue={d.note2 || ''} />
+                  </div>
+                  <div>
+                    <Label htmlFor="rating">דירוג</Label>
+                    <Input id="rating" name="rating" defaultValue={d.rating || ''} />
                   </div>
                   <div>
                     <Label htmlFor="phone">טלפון</Label>
-                    <Input id="phone" name="phone" type="tel" defaultValue={driver.phone || ''} dir="ltr" />
+                    <Input id="phone" name="phone" type="tel" defaultValue={d.phone || ''} dir="ltr" />
                   </div>
                   <div>
                     <Label htmlFor="email">אימייל</Label>
-                    <Input id="email" name="email" type="email" defaultValue={driver.email || ''} dir="ltr" />
+                    <Input id="email" name="email" type="email" defaultValue={d.email || ''} dir="ltr" />
                   </div>
-                  <div>
-                    <Label htmlFor="address">כתובת מגורים</Label>
-                    <Input id="address" name="address" defaultValue={driver.address || ''} />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
           )}
 
           {section === 'organizational' && (
-            <Card>
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-3">
                     <Briefcase className="h-5 w-5 text-primary" />
+                    <CardTitle>שיוך ארגוני / פרטי העסקה</CardTitle>
                   </div>
-                  <CardTitle>שיוך ארגוני</CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="job_title">תפקיד</Label>
-                  <Input id="job_title" name="job_title" defaultValue={driver.job_title || ''} />
-                </div>
-                <div>
-                  <Label htmlFor="department">מחלקה</Label>
-                  <Input id="department" name="department" defaultValue={driver.department || ''} />
-                </div>
-              </CardContent>
-            </Card>
+                </CardHeader>
+                <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <Label htmlFor="employee_number">מ. עובד</Label>
+                    <Input id="employee_number" name="employee_number" defaultValue={d.employee_number || ''} dir="ltr" />
+                  </div>
+                  <div>
+                    <Label htmlFor="driver_code">קוד נהג</Label>
+                    <Input id="driver_code" name="driver_code" defaultValue={d.driver_code || ''} dir="ltr" />
+                  </div>
+                  <div>
+                    <Label htmlFor="job_title">תפקיד</Label>
+                    <Input id="job_title" name="job_title" defaultValue={d.job_title || ''} />
+                  </div>
+                  <div>
+                    <Label htmlFor="department">מחלקה</Label>
+                    <Input id="department" name="department" defaultValue={d.department || ''} />
+                  </div>
+                  <div>
+                    <Label htmlFor="division">מחוז</Label>
+                    <Input id="division" name="division" defaultValue={d.division || ''} />
+                  </div>
+                  <div>
+                    <Label htmlFor="area">אזור</Label>
+                    <Input id="area" name="area" defaultValue={d.area || ''} />
+                  </div>
+                  <div>
+                    <Label htmlFor="group_name">קבוצה</Label>
+                    <Input id="group_name" name="group_name" defaultValue={d.group_name || ''} />
+                  </div>
+                  <div>
+                    <Label htmlFor="group_code">קוד קבוצה</Label>
+                    <Input id="group_code" name="group_code" defaultValue={d.group_code || ''} dir="ltr" />
+                  </div>
+                  <div>
+                    <Label htmlFor="eligibility">כשירות</Label>
+                    <Input id="eligibility" name="eligibility" defaultValue={d.eligibility || ''} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <Label htmlFor="work_start_date">ת. תחילת עבודה</Label>
+                    <Input id="work_start_date" name="work_start_date" type="date" defaultValue={d.work_start_date || ''} />
+                  </div>
+                </CardContent>
+              </Card>
           )}
 
           {section === 'licenses' && (
@@ -211,56 +296,88 @@ export default function DriverSectionEditPage() {
                   <CardTitle>רישיונות</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <Label htmlFor="license_number">מספר רישיון נהיגה</Label>
-                  <Input id="license_number" name="license_number" defaultValue={driver.license_number || ''} dir="ltr" />
+                  <Label htmlFor="license_number_lic">מספר רישיון נהיגה</Label>
+                  <Input
+                    id="license_number_lic"
+                    name="license_number"
+                    defaultValue={d.license_number || ''}
+                    dir="ltr"
+                  />
                 </div>
                 <div>
-                  <Label htmlFor="license_expiry">תוקף רישיון נהיגה *</Label>
-                  <Input id="license_expiry" name="license_expiry" type="date" defaultValue={driver.license_expiry} required />
+                  <Label htmlFor="license_expiry_lic">תוקף רישיון נהיגה *</Label>
+                  <Input
+                    id="license_expiry_lic"
+                    name="license_expiry"
+                    type="date"
+                    defaultValue={d.license_expiry || ''}
+                    required
+                  />
                 </div>
               </CardContent>
             </Card>
           )}
 
           {section === 'safety' && (
-            <Card>
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10">
-                    <ShieldCheck className="h-5 w-5 text-emerald-600" />
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10">
+                      <ShieldCheck className="h-5 w-5 text-emerald-600" />
+                    </div>
+                    <CardTitle>כשירות ובטיחות</CardTitle>
                   </div>
-                  <CardTitle>כשירות ובטיחות</CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="health_declaration_date">תאריך הצהרת בריאות</Label>
-                  <Input id="health_declaration_date" name="health_declaration_date" type="date" defaultValue={driver.health_declaration_date || ''} />
-                </div>
-                <div>
-                  <Label htmlFor="safety_training_date">תאריך הדרכת בטיחות</Label>
-                  <Input id="safety_training_date" name="safety_training_date" type="date" defaultValue={driver.safety_training_date || ''} />
-                </div>
-                <div>
-                  <Label htmlFor="regulation_585b_date">תאריך בדיקת תקנה 585ב'</Label>
-                  <Input id="regulation_585b_date" name="regulation_585b_date" type="date" defaultValue={driver.regulation_585b_date || ''} />
-                </div>
-              </CardContent>
-            </Card>
+                </CardHeader>
+                <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="health_declaration_date">תאריך הצהרת בריאות</Label>
+                    <Input id="health_declaration_date" name="health_declaration_date" type="date" defaultValue={d.health_declaration_date || ''} />
+                    <p className="text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">תוקף הצהרת בריאות: </span>
+                      {expiryFromDate(d.health_declaration_date, 5)}
+                      <span className="mr-1 opacity-80"> (תמיד 5 שנים ממועד ההצהרה)</span>
+                    </p>
+                  </div>
+                  <div>
+                    <Label htmlFor="safety_training_date">תאריך הדרכת בטיחות</Label>
+                    <Input id="safety_training_date" name="safety_training_date" type="date" defaultValue={d.safety_training_date || ''} />
+                  </div>
+                  <div className="md:col-span-2 space-y-2">
+                    <Label htmlFor="regulation_585b_date">תאריך בדיקת רישיון ע״פ תקנה 585 ב׳</Label>
+                    <Input id="regulation_585b_date" name="regulation_585b_date" type="date" defaultValue={d.regulation_585b_date || ''} />
+                    <p className="text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">תוקף הבדיקה: </span>
+                      {expiryFromDate(d.regulation_585b_date, 3)}
+                      <span className="mr-1 opacity-80"> (תמיד 3 שנים קדימה ממועד הבדיקה)</span>
+                    </p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <Label htmlFor="practical_driving_test_date">מבחן מעשי</Label>
+                    <Input id="practical_driving_test_date" name="practical_driving_test_date" type="date" defaultValue={d.practical_driving_test_date || ''} />
+                  </div>
+                  <div className="flex items-center gap-2 md:col-span-2">
+                    <input type="checkbox" id="is_field_person" name="is_field_person" value="true" defaultChecked={d.is_field_person} className="h-4 w-4" />
+                    <Label htmlFor="is_field_person">איש שטח</Label>
+                  </div>
+                </CardContent>
+              </Card>
           )}
 
           <div className="flex gap-3">
             <Button type="submit" className="flex-1" disabled={isSubmitting}>
-              {isSubmitting && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
+              {isSubmitting && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
               שמור
             </Button>
-            <Link to={`/drivers/${driver.id}`} className="flex-1">
-              <Button type="button" variant="outline" className="w-full">
-                ביטול
-              </Button>
-            </Link>
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1"
+              onClick={() => navigate('/drivers', { replace: true })}
+            >
+              ביטול
+            </Button>
           </div>
         </form>
       </main>

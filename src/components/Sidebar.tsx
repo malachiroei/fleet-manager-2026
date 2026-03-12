@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useVehicleSpecDirty } from '@/contexts/VehicleSpecDirtyContext';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import {
@@ -41,6 +42,7 @@ interface NavGroup {
 
 export function Sidebar() {
   const location = useLocation();
+  const { tryNavigate, getIsDirty } = useVehicleSpecDirty();
   const { t, i18n } = useTranslation();
   const label = useLabel();
   const isVis = useIsVisible();
@@ -107,7 +109,15 @@ export function Sidebar() {
       <ScrollArea className="flex-1 px-3 py-4">
         <nav className="space-y-4">
           {/* Home Button */}
-          <Link to="/" className="block">
+          <Link
+            to="/"
+            className="block"
+            onClick={(e) => {
+              if (!getIsDirty()) return;
+              e.preventDefault();
+              tryNavigate('/');
+            }}
+          >
             <Button
               variant="ghost"
               className={cn(
@@ -159,6 +169,11 @@ export function Sidebar() {
                     <Link
                       key={item.href}
                       to={item.href}
+                      onClick={(e) => {
+                        if (!getIsDirty()) return;
+                        e.preventDefault();
+                        tryNavigate(item.href);
+                      }}
                       className={cn(
                         'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-300',
                         isRtl ? 'flex-row-reverse text-right' : 'text-left',

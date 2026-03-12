@@ -411,11 +411,29 @@ function ComplaintsTab({ driver }: { driver: Driver }) {
 
 function TransfersTab({ driver }: { driver: Driver }) {
   const { data: allHandovers = [], isLoading } = useHandoverHistory();
-  const handovers = allHandovers.filter((h) => h.driver_id === driver.id);
+  const forDriver = allHandovers.filter((h) => h.driver_id === driver.id);
+  // מניעת כפילויות ברשימה (אותו id לא מופיע פעמיים)
+  const seen = new Set<string>();
+  const handovers = forDriver.filter((h) => {
+    if (seen.has(h.id)) return false;
+    seen.add(h.id);
+    return true;
+  });
+  // איחוד שורות זהות (אותו רכב + תאריך + סוג) — משאירים את הרשומה האחרונה בלבד כדי שלא ייראה "פעמיים"
+  const deduped: typeof handovers = [];
+  const keySet = new Set<string>();
+  for (let i = handovers.length - 1; i >= 0; i--) {
+    const h = handovers[i];
+    const key = `${h.vehicle_id}|${h.handover_date}|${h.handover_type}`;
+    if (keySet.has(key)) continue;
+    keySet.add(key);
+    deduped.unshift(h);
+  }
+  const displayHandovers = deduped.length < handovers.length ? deduped : handovers;
 
   if (isLoading) return <p className="text-muted-foreground text-sm p-4">טוען...</p>;
 
-  if (handovers.length === 0) {
+  if (displayHandovers.length === 0) {
     return (
       <div className="text-center py-8 text-muted-foreground text-sm">
         <ArrowLeftRight className="h-8 w-8 mx-auto mb-2 opacity-30" />
@@ -426,7 +444,12 @@ function TransfersTab({ driver }: { driver: Driver }) {
 
   return (
     <div className="space-y-2">
-      <p className="text-sm text-muted-foreground">{handovers.length} העברות</p>
+      <p className="text-sm text-muted-foreground">
+        {displayHandovers.length} העברות
+        {deduped.length < handovers.length && (
+          <span className="mr-2 text-xs opacity-70"> (מאוחד לפי רכב+תאריך+סוג)</span>
+        )}
+      </p>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -438,7 +461,7 @@ function TransfersTab({ driver }: { driver: Driver }) {
             </tr>
           </thead>
           <tbody>
-            {handovers.map((h) => (
+            {displayHandovers.map((h) => (
               <tr key={h.id} className="border-b border-border/50 hover:bg-muted/30">
                 <td className="py-2 pr-2">
                   {new Date(h.handover_date).toLocaleDateString('he-IL')}
@@ -627,9 +650,9 @@ function FamilyTab({ driver }: { driver: Driver }) {
                 />
               </div>
               <div className="col-span-2">
-                <label className="text-xs text-muted-foreground">כתובת</label>
+                <label className="text-xs text-muted-foreground">רחוב</label>
                 <Input
-                  placeholder="כתובת"
+                  placeholder="רחוב"
                   value={form.address}
                   onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
                 />

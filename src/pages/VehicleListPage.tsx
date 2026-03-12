@@ -50,7 +50,7 @@ function VehicleCard({ vehicle }: { vehicle: any; key?: string }) {
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <Link to={`/vehicles/${vehicle.id}#handover-history`}>
-          <button className="glass-button w-full py-2 md:py-3 text-xs md:text-sm font-bold">היסטוריה</button>
+          <button className="glass-button w-full py-2 md:py-3 text-xs md:text-sm font-bold">היסטורית העברות</button>
         </Link>
         <Link to={`/vehicles/${vehicle.id}#tax-data`}>
           <button className="glass-button w-full py-2 md:py-3 text-xs md:text-sm font-bold">נתוני מס</button>

@@ -1347,11 +1347,20 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
     p_handover_id: input.handoverId,
   });
   if (syncError) {
-    console.warn('[archiveHandoverSubmission] sync_assignment_from_handover failed (הרץ migration אם חסר)', {
+    const msg = getSupabaseErrorMessage(syncError);
+    console.warn('[archiveHandoverSubmission] sync_assignment_from_handover failed', {
       handoverId: input.handoverId,
-      message: getSupabaseErrorMessage(syncError),
+      message: msg,
+    });
+    // שיוך רכב לנהג לא התעדכן — מציגים שגיאה כדי שידעו להריץ migration או לבדוק מצב מסירה (קבוע מול חליפי)
+    toast.error('שיוך נהג–רכב לא עודכן', {
+      description:
+        msg +
+        ' — מסירה קבועה בלבד יוצרת שיוך פעיל. מסירה חליפית נרשמת בהיסטורי בלבד. אם חסרה פונקציה sync_assignment_from_handover — הרץ migration.',
+      duration: 14_000,
     });
   }
+  // רענון שיוכים — הקרואים אחרי archive (דפי מסירה/החזרה) צריכים לקרוא invalidateQueries ל-active-driver-vehicle-assignments
 
   if (input.includeDriverArchive && input.driverId) {
     const { error: driverDocError } = await supabase

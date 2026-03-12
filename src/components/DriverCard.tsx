@@ -70,7 +70,7 @@ function FieldRow({
 }
 
 /**
- * משבצת בכרטיס — לחיצה פותחת עמוד עריכה ממוקד לאותה קטגוריה בלבד (/drivers/:id/section/:sectionId)
+ * משבצת בכרטיס — לחיצה פותחת עמוד עריכה לאותה קטגוריה בלבד (כל השדות שם, בלי דף הכפול)
  */
 function SectionBlock({
   sectionId,
@@ -107,12 +107,23 @@ export function DriverCard({
   driverActiveAssignments: ActiveDriverVehicleAssignment[];
 }) {
   const today = new Date();
-  const expiry = new Date(driver.license_expiry);
-  const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  const licenseStatus: ComplianceStatus =
-    diffDays < 0 ? 'expired' : diffDays <= 30 ? 'warning' : 'valid';
-  const licenseExpired = diffDays < 0;
-  const licenseUrgent = licenseExpiresWithin30Days(driver.license_expiry);
+  const expiryRaw = driver.license_expiry;
+  const expiry =
+    expiryRaw && String(expiryRaw).trim() !== '' ? new Date(expiryRaw) : null;
+  const expiryValid = expiry && !Number.isNaN(expiry.getTime());
+  const diffDays = expiryValid
+    ? Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+    : 9999;
+  const licenseStatus: ComplianceStatus = !expiryValid
+    ? 'valid'
+    : diffDays < 0
+      ? 'expired'
+      : diffDays <= 30
+        ? 'warning'
+        : 'valid';
+  const licenseExpired = expiryValid && diffDays < 0;
+  const licenseUrgent =
+    expiryValid && licenseExpiresWithin30Days(driver.license_expiry);
   const healthMissing = missingHealthDeclarationLastYear(driver.health_declaration_date);
 
   const assignedVehicles = driverActiveAssignments
@@ -140,7 +151,7 @@ export function DriverCard({
                       : 'bg-emerald-600'
                 }`}
               >
-                {driver.full_name.trim().slice(0, 2)}
+                {(driver.full_name ?? '').trim().slice(0, 2) || '?'}
               </Link>
               <div className="min-w-0 flex-1">
                 <Link to={`/drivers/${driver.id}`} className="block">
@@ -160,7 +171,11 @@ export function DriverCard({
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      navigate({ pathname: '/drivers', search: `folders=${driver.id}` });
+                      // חייב להישאר בדף /drivers עם query — גלילה לבלוק התיקיות ב-DriverListPage
+                      navigate(`/drivers?folders=${driver.id}`, { replace: false });
+                      setTimeout(() => {
+                        document.getElementById('driver-folders-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }, 100);
                     }}
                   >
                     <FolderOpen className="h-4 w-4" />
@@ -233,6 +248,7 @@ export function DriverCard({
             <SectionBlock sectionId="personal" driverId={driver.id}>
               <FieldRow label="שם מלא">{str(driver.full_name)}</FieldRow>
               <FieldRow label="תעודת זהות">{str(driver.id_number)}</FieldRow>
+              <FieldRow label="תאריך לידה">{fmtDriverDate(driver.birth_date)}</FieldRow>
               <FieldRow label="טלפון" className="dir-ltr">
                 {driver.phone && String(driver.phone).trim() !== '' ? (
                   <span className="inline-flex items-center gap-1 text-foreground" dir="ltr">
@@ -253,7 +269,7 @@ export function DriverCard({
                   MISSING_DATA
                 )}
               </FieldRow>
-              <FieldRow label="כתובת מגורים">{str(driver.address)}</FieldRow>
+              <FieldRow label="רחוב">{str(driver.address)}</FieldRow>
             </SectionBlock>
 
             {/* organizational — Edit card 2 */}
@@ -289,7 +305,7 @@ export function DriverCard({
               <FieldRow label="תאריך הדרכת בטיחות">
                 {fmtDriverDate(driver.safety_training_date)}
               </FieldRow>
-              <FieldRow label="תאריך בדיקת תקנה 585ב'">
+              <FieldRow label='תאריך בדיקת רישיון ע״פ תקנה 585 ב׳'>
                 {fmtDriverDate(driver.regulation_585b_date)}
               </FieldRow>
             </SectionBlock>

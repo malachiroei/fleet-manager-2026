@@ -224,6 +224,9 @@ export default function VehicleDeliveryPage() {
         reportUrl = archived.handover.pdf_url;
         queryClient.invalidateQueries({ queryKey: ['active-driver-vehicle-assignments'] });
         queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+        queryClient.invalidateQueries({ queryKey: ['drivers'] });
+        queryClient.invalidateQueries({ queryKey: ['driver', selectedDriver] });
+        queryClient.invalidateQueries({ queryKey: ['handover-history'] });
       } catch (archiveError) {
         console.error('Archive form copy error:', archiveError);
         const message = archiveError instanceof Error ? archiveError.message : 'שגיאה לא ידועה';

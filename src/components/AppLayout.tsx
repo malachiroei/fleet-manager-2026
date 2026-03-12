@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+import { VehicleSpecDirtyProvider } from '@/contexts/VehicleSpecDirtyContext';
 import { useTranslation } from 'react-i18next';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Sidebar } from './Sidebar';
@@ -42,6 +43,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   );
 
   return (
+    <VehicleSpecDirtyProvider>
     <div className="flex min-h-[100dvh] overflow-x-hidden bg-[#020617]">
       {/* Desktop Sidebar */}
       {!isMobile && <Sidebar />}
@@ -100,5 +102,6 @@ export function AppLayout({ children }: AppLayoutProps) {
       {/* AI Chat Assistant — floating button available on all pages */}
       <AIChatAssistant />
     </div>
+    </VehicleSpecDirtyProvider>
   );
 }

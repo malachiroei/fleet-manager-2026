@@ -26,7 +26,7 @@ export const DRIVER_SECTION_QUERY_PARAM = 'section';
 
 /** Field keys per section — matches EditDriverPage input names */
 export const DRIVER_SECTION_FIELDS: Record<DriverSectionId, readonly string[]> = {
-  personal: ['full_name', 'id_number', 'phone', 'email', 'address'],
+  personal: ['full_name', 'id_number', 'birth_date', 'phone', 'email', 'address'],
   organizational: ['job_title', 'department'],
   licenses: ['license_number', 'license_expiry'],
   safety: ['health_declaration_date', 'safety_training_date', 'regulation_585b_date'],
@@ -38,12 +38,13 @@ export const DRIVER_FIELD_LABELS: Record<string, string> = {
   id_number: 'תעודת זהות',
   phone: 'טלפון',
   email: 'אימייל',
-  address: 'כתובת מגורים',
+  address: 'רחוב',
   job_title: 'תפקיד',
   department: 'מחלקה',
   license_number: 'מספר רישיון נהיגה',
   license_expiry: 'תוקף רישיון נהיגה',
+  birth_date: 'תאריך לידה',
   health_declaration_date: 'תאריך הצהרת בריאות',
   safety_training_date: 'תאריך הדרכת בטיחות',
-  regulation_585b_date: "תאריך בדיקת תקנה 585ב'",
+  regulation_585b_date: "תאריך בדיקת רישיון ע״פ תקנה 585 ב׳",
 };

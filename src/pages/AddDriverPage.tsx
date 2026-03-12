@@ -285,7 +285,7 @@ export default function AddDriverPage() {
                 </div>
 
                 <div className="col-span-2">
-                  <Label htmlFor="address">כתובת מגורים</Label>
+                  <Label htmlFor="address">רחוב</Label>
                   <Input
                     id="address"
                     name="address"

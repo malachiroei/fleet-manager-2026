@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useDrivers, useDeleteDriver } from '@/hooks/useDrivers';
@@ -53,6 +53,13 @@ export default function DriverListPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const foldersDriverId = searchParams.get('folders') || '';
   const { data: foldersDriver } = useDriver(foldersDriverId);
+  const foldersPanelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (foldersDriver && foldersPanelRef.current) {
+      foldersPanelRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [foldersDriver?.id]);
   const errorMessage = getErrorMessage(error);
 
   const assignmentsByDriver = useMemo(() => {
@@ -69,13 +76,17 @@ export default function DriverListPage() {
   const filteredDrivers = useMemo(() => {
     let list = drivers ?? [];
     if (search.trim()) {
-      list = list.filter(
-        (d) =>
-          d.full_name.includes(search) ||
-          d.id_number.includes(search) ||
-          d.email?.includes(search) ||
-          d.phone?.includes(search)
-      );
+      const q = search.trim();
+      list = list.filter((d) => {
+        const name = String(d.full_name ?? '');
+        const idn = String(d.id_number ?? '');
+        return (
+          name.includes(q) ||
+          idn.includes(q) ||
+          (d.email && d.email.includes(q)) ||
+          (d.phone && d.phone.includes(q))
+        );
+      });
     }
     if (filterExpiredLicense) {
       list = list.filter((d) => licenseExpiresWithin30Days(d.license_expiry));
@@ -108,7 +119,7 @@ export default function DriverListPage() {
       : 'bg-muted/50 text-muted-foreground border-border hover:bg-muted';
 
   return (
-    <div className="container space-y-5 py-4 sm:space-y-6 sm:py-6">
+    <div className="container min-h-[50vh] space-y-5 bg-[#020617] py-4 text-foreground sm:space-y-6 sm:py-6">
       <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-2xl font-bold text-white md:text-3xl">{t('drivers.title')}</h1>
@@ -169,6 +180,40 @@ export default function DriverListPage() {
         </div>
       </div>
 
+      {/* תיקיות — מוצגות מעל הרשימה כשבוחרים נהג, כדי שלא יישארו מתחת למסך */}
+      {foldersDriverId && !foldersDriver && (
+        <Alert className="mb-4">
+          <AlertTitle>טוען תיקיות…</AlertTitle>
+          <AlertDescription>
+            אם זה נמשך,{' '}
+            <Button variant="link" className="h-auto p-0" onClick={() => { searchParams.delete('folders'); setSearchParams(searchParams); }}>
+              נקה בחירה
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+      {foldersDriver && (
+        <div id="driver-folders-panel" ref={foldersPanelRef} className="mb-6 scroll-mt-24 rounded-xl border border-primary/30 bg-card/50 p-4">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-sm text-muted-foreground">
+              תיקיות עבור: <strong className="text-foreground">{foldersDriver.full_name}</strong>
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                searchParams.delete('folders');
+                setSearchParams(searchParams);
+              }}
+            >
+              סגור תיקיות
+            </Button>
+          </div>
+          <DriverFolders driver={foldersDriver} collapsible={false} defaultOpen />
+        </div>
+      )}
+
       <div>
         {isLoading ? (
           <div className="space-y-4">
@@ -201,9 +246,8 @@ export default function DriverListPage() {
           </Card>
         ) : (
           <div className="space-y-4">
-            {/* קישור מהיר לתיקיות — אותו נהג נשאר ב-URL ?folders= */}
-            {foldersDriverId && !foldersDriver && (
-              <Alert>
+            {foldersDriverId && !foldersDriver && !isLoading && (
+              <Alert variant="destructive">
                 <AlertTitle>נהג לא נמצא</AlertTitle>
                 <AlertDescription className="flex flex-wrap items-center gap-2">
                   <span>לא נטען נהג עבור התיקיות. </span>
@@ -225,29 +269,6 @@ export default function DriverListPage() {
           </div>
         )}
       </div>
-
-      {/* תיקיות ניהול נהג — בדף הראשי; בוחרים נהג דרך כפתור על הכרטיס או ?folders=id */}
-      {foldersDriver && (
-        <div className="pt-2">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <span className="text-sm text-muted-foreground">
-              תיקיות עבור: <strong className="text-foreground">{foldersDriver.full_name}</strong>
-            </span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                searchParams.delete('folders');
-                setSearchParams(searchParams);
-              }}
-            >
-              סגור תיקיות
-            </Button>
-          </div>
-          <DriverFolders driver={foldersDriver} collapsible defaultOpen />
-        </div>
-      )}
 
       {!foldersDriver && filteredDrivers.length > 0 && (
         <div className="rounded-xl border border-dashed border-border/60 bg-muted/5 p-4 text-center">
