@@ -26,6 +26,7 @@ import VehicleDeliveryPage from "./pages/VehicleDeliveryPage";
 import VehicleReturnPage from "./pages/VehicleReturnPage";
 import ReplacementVehicleHubPage from "./pages/ReplacementVehicleHubPage";
 import AdminSettingsPage from "./pages/AdminSettingsPage";
+import AdminDashboardPage from "./pages/AdminDashboardPage";
 import OrgSettingsPage from "./pages/OrgSettingsPage";
 import NotFound from "./pages/NotFound";
 import ScanReportPage from "./pages/ScanReportPage";
@@ -102,6 +103,7 @@ function AppRoutes() {
       <Route path="/handover/replacement" element={<ProtectedRoute><ReplacementVehicleHubPage /></ProtectedRoute>} />
       <Route path="/handover/wizard" element={<ProtectedRoute><VehicleHandoverWizard /></ProtectedRoute>} />
       <Route path="/admin/settings" element={<ProtectedRoute><AdminSettingsPage /></ProtectedRoute>} />
+      <Route path="/admin/dashboard" element={<ProtectedRoute><AdminDashboardPage /></ProtectedRoute>} />
       <Route path="/admin/org-settings" element={<ProtectedRoute><OrgSettingsPage /></ProtectedRoute>} />
       <Route path="/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
       <Route path="/reports/scan" element={<ProtectedRoute><ScanReportPage /></ProtectedRoute>} />

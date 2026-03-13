@@ -2,14 +2,14 @@ import React, { useRef, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
-  Moon, Sun, LogOut, Building2, Globe, ChevronRight, ChevronLeft, X, User
+  Moon, Sun, LogOut, Building2, Globe, ChevronRight, ChevronLeft, X, User, LayoutDashboard
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/useTheme';
 import { cn } from '@/lib/utils';
 
 export function SidebarUserMenu() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, isAdmin } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { i18n } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -125,6 +125,22 @@ export function SidebarUserMenu() {
             </button>
 
             <div className="my-1.5 mx-3 h-px bg-white/8 sidebar-divider" />
+
+            {/* Admin Dashboard - only for admins */}
+            {isAdmin && (
+              <Link
+                to="/admin/dashboard"
+                onClick={() => setOpen(false)}
+                className={cn(
+                  'sidebar-menu-item w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors',
+                  isRtl ? 'flex-row-reverse text-right' : 'text-left'
+                )}
+              >
+                <LayoutDashboard className="h-4 w-4 text-cyan-300 sidebar-menu-icon" />
+                <span className={cn('sidebar-menu-label flex-1', isRtl ? 'text-right' : 'text-left')}>לוח ארגונים</span>
+                <CaretIcon className="h-3.5 w-3.5 opacity-40 sidebar-menu-caret" />
+              </Link>
+            )}
 
             {/* Org Settings */}
             <Link

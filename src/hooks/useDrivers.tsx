@@ -3,21 +3,33 @@ import { supabase } from '@/integrations/supabase/client';
 import type { Driver, DriverSummary } from '@/types/fleet';
 import { toast } from '@/hooks/use-toast';
 import { formatSupabaseError } from '@/lib/supabaseError';
+import { useAuth } from '@/hooks/useAuth';
 
 export function useDrivers() {
+  const { profile } = useAuth();
+  const orgId = profile?.org_id ?? undefined;
+
   return useQuery({
-    queryKey: ['drivers'],
+    queryKey: ['drivers', orgId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('drivers')
         .select('*')
         .order('full_name');
+      if (orgId != null) {
+        query = query.eq('org_id', orgId);
+      }
+      const { data, error } = await query;
 
       if (error) {
-        const fallback = await supabase
+        let fallbackQuery = supabase
           .from('drivers')
           .select('id, full_name, id_number, license_expiry, phone, email')
           .order('full_name');
+        if (orgId != null) {
+          fallbackQuery = fallbackQuery.eq('org_id', orgId);
+        }
+        const fallback = await fallbackQuery;
 
         if (fallback.error) {
           throw new Error(
@@ -83,15 +95,20 @@ export function useDrivers() {
 }
 
 export function useDriver(id: string) {
+  const { profile } = useAuth();
+  const orgId = profile?.org_id ?? undefined;
+
   return useQuery({
-    queryKey: ['driver', id],
+    queryKey: ['driver', id, orgId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('drivers')
         .select('*')
-        .eq('id', id)
-        .maybeSingle();
-
+        .eq('id', id);
+      if (orgId != null) {
+        query = query.eq('org_id', orgId);
+      }
+      const { data, error } = await query.maybeSingle();
       if (error) throw error;
       return data as Driver | null;
     },
@@ -101,6 +118,7 @@ export function useDriver(id: string) {
 
 export function useCreateDriver() {
   const queryClient = useQueryClient();
+  const { profile } = useAuth();
 
   return useMutation({
     mutationFn: async (driver: Partial<Omit<Driver, 'id' | 'created_at' | 'updated_at' | 'status'>> & {
@@ -108,9 +126,13 @@ export function useCreateDriver() {
       id_number: string;
       license_expiry: string;
     }) => {
+      const row = { ...driver } as Record<string, unknown>;
+      if (profile?.org_id != null && row.org_id == null) {
+        row.org_id = profile.org_id;
+      }
       const { data, error } = await supabase
         .from('drivers')
-        .insert(driver)
+        .insert(row)
         .select()
         .single();
 

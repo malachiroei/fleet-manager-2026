@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { VehicleHandover } from '@/types/fleet';
+import { useAuth } from '@/hooks/useAuth';
 import { jsPDF } from 'jspdf';
 import hebrewFontUrl from '@/assets/fonts/NotoSansHebrew.ttf?url';
 import {
@@ -1072,14 +1073,19 @@ export function buildHandoverRecordUrl(vehicleId: string, handoverId: string) {
 }
 
 export function useHandovers(vehicleId?: string) {
+  const { profile } = useAuth();
+  const orgId = profile?.org_id ?? undefined;
+
   return useQuery({
-    queryKey: ['handovers', vehicleId],
+    queryKey: ['handovers', vehicleId, orgId],
     queryFn: async () => {
       let query = supabase
         .from('vehicle_handovers')
         .select('*, vehicle:vehicles(*), driver:drivers(*)')
         .order('handover_date', { ascending: false });
-      
+      if (orgId != null) {
+        query = query.eq('org_id', orgId);
+      }
       if (vehicleId) {
         query = query.eq('vehicle_id', vehicleId);
       }
@@ -1136,15 +1142,22 @@ export function useCreateHandover() {
 }
 
 export function useHandoverHistory() {
+  const { profile } = useAuth();
+  const orgId = profile?.org_id ?? undefined;
+
   return useQuery({
-    queryKey: ['handover-history'],
+    queryKey: ['handover-history', orgId],
     staleTime: 1000 * 60 * 5,
     queryFn: async () => {
-      const { data: handoversData, error: handoversError } = await supabase
+      let handoversQuery = supabase
         .from('vehicle_handovers')
         .select('id, vehicle_id, driver_id, handover_type, handover_date, pdf_url, photo_front_url, photo_back_url, photo_right_url, photo_left_url, driver:drivers(full_name), vehicle:vehicles(manufacturer, model, plate_number)')
         .order('handover_date', { ascending: false })
         .limit(300);
+      if (orgId != null) {
+        handoversQuery = handoversQuery.eq('org_id', orgId);
+      }
+      const { data: handoversData, error: handoversError } = await handoversQuery;
 
       if (handoversError) {
         console.warn('Handover history query failed:', handoversError.message);

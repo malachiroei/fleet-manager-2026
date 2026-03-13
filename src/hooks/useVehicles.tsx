@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { Vehicle } from '@/types/fleet';
 import { toast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/useAuth';
 
 export interface ActiveDriverVehicleAssignment {
   id: string;
@@ -31,31 +32,44 @@ export async function fetchActiveDriverAssignments(driverId: string, excludeVehi
 }
 
 export function useActiveDriverVehicleAssignments() {
+  const { profile } = useAuth();
+  const orgId = profile?.org_id ?? undefined;
+
   return useQuery({
-    queryKey: ['active-driver-vehicle-assignments'],
+    queryKey: ['active-driver-vehicle-assignments', orgId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('driver_vehicle_assignments')
-        .select('id, driver_id, vehicle_id, assigned_at, assigned_by, vehicle:vehicles(id, manufacturer, model, plate_number)')
+        .select('id, driver_id, vehicle_id, assigned_at, assigned_by, vehicle:vehicles(id, manufacturer, model, plate_number, org_id)')
         .is('unassigned_at', null)
         .not('driver_id', 'is', null)
         .order('assigned_at', { ascending: false });
 
       if (error) throw error;
-      return (data ?? []) as unknown as ActiveDriverVehicleAssignment[];
+      let list = (data ?? []) as (ActiveDriverVehicleAssignment & { vehicle?: { org_id?: string | null } })[];
+      if (orgId != null) {
+        list = list.filter((a) => (a.vehicle as { org_id?: string | null } | null)?.org_id === orgId);
+      }
+      return list as unknown as ActiveDriverVehicleAssignment[];
     },
   });
 }
 
 export function useVehicles() {
+  const { profile } = useAuth();
+  const orgId = profile?.org_id ?? undefined;
+
   return useQuery({
-    queryKey: ['vehicles'],
+    queryKey: ['vehicles', orgId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('vehicles')
         .select('*')
         .order('plate_number');
-
+      if (orgId != null) {
+        query = query.eq('org_id', orgId);
+      }
+      const { data, error } = await query;
       if (error) throw error;
       return (data ?? []) as Vehicle[];
     },
@@ -63,15 +77,20 @@ export function useVehicles() {
 }
 
 export function useVehicle(id: string) {
+  const { profile } = useAuth();
+  const orgId = profile?.org_id ?? undefined;
+
   return useQuery({
-    queryKey: ['vehicle', id],
+    queryKey: ['vehicle', id, orgId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('vehicles')
         .select('*')
-        .eq('id', id)
-        .maybeSingle();
-
+        .eq('id', id);
+      if (orgId != null) {
+        query = query.eq('org_id', orgId);
+      }
+      const { data, error } = await query.maybeSingle();
       if (error) throw error;
       return data as Vehicle | null;
     },
@@ -81,12 +100,17 @@ export function useVehicle(id: string) {
 
 export function useCreateVehicle() {
   const queryClient = useQueryClient();
+  const { profile } = useAuth();
 
   return useMutation({
     mutationFn: async (newVehicle: Partial<Vehicle>) => {
+      const row = { ...newVehicle } as Record<string, unknown>;
+      if (profile?.org_id != null && row.org_id == null) {
+        row.org_id = profile.org_id;
+      }
       const { data, error } = await supabase
         .from('vehicles')
-        .insert(newVehicle as any)
+        .insert(row as any)
         .select()
         .single();
 

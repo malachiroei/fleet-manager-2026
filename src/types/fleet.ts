@@ -3,12 +3,20 @@ export type AppRole = 'admin' | 'fleet_manager' | 'viewer' | 'driver';
 export type HandoverType = 'delivery' | 'return';
 export type AssignmentMode = 'permanent' | 'replacement';
 
+export interface Organization {
+  id: string;
+  name: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface Profile {
   id: string;
   user_id: string;
   full_name: string;
   email: string | null;
   phone: string | null;
+  org_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -22,6 +30,7 @@ export interface UserRole {
 
 export interface Vehicle {
   id: string;
+  org_id: string | null;
   plate_number: string;
   manufacturer: string;
   model: string;
@@ -100,6 +109,7 @@ export interface Vehicle {
 
 export interface Driver {
   id: string;
+  org_id: string | null;
   user_id: string | null;
   full_name: string;
   id_number: string;
@@ -145,6 +155,7 @@ export interface Driver {
 /** List/card view: same DB fields as edit form — all optional beyond core id/name */
 export interface DriverSummary {
   id: string;
+  org_id?: string | null;
   full_name: string;
   id_number: string;
   phone: string | null;
@@ -213,6 +224,7 @@ export interface MaintenanceLog {
 
 export interface VehicleHandover {
   id: string;
+  org_id: string | null;
   vehicle_id: string;
   driver_id: string | null;
   handover_type: HandoverType;
