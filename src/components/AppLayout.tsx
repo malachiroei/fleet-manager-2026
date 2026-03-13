@@ -1,12 +1,13 @@
 import { ReactNode } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { VehicleSpecDirtyProvider, useVehicleSpecDirty } from '@/contexts/VehicleSpecDirtyContext';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useVehicleSpecDirty } from '@/contexts/VehicleSpecDirtyContext';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks/useAuth';
+import { useOrgSettings } from '@/hooks/useOrgSettings';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { AIChatAssistant } from './AIChatAssistant';
 import { useTheme } from '@/hooks/useTheme';
-import { Sun, Moon, Building2, LogOut, Home } from 'lucide-react';
+import { Sun, Moon, Building2, LogOut, Home, ArrowRight } from 'lucide-react';
 import { PwaInstallButton } from './PwaInstallButton';
 import { Button } from './ui/button';
 import { cn } from '@/lib/utils';
@@ -19,6 +20,7 @@ interface AppLayoutProps {
 
 export function AppLayout({ children }: AppLayoutProps) {
   const location = useLocation();
+  const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const { theme, toggleTheme } = useTheme();
   const { user, signOut } = useAuth();
@@ -26,8 +28,10 @@ export function AppLayout({ children }: AppLayoutProps) {
   const name = user?.user_metadata?.full_name || email.split('@')[0] || '';
   const initials = (name || email || '?').slice(0, 2).toUpperCase();
   const isRtl = i18n.dir() === 'rtl';
-  const { tryNavigate, getIsDirty } = useVehicleSpecDirty();
+  const { tryNavigate, getIsDirty, getLastPath } = useVehicleSpecDirty();
   const isHomeActive = location.pathname === '/';
+  const { data: orgSettings } = useOrgSettings();
+  const orgName = orgSettings?.org_name?.trim() || '';
 
   const handleLogout = () => {
     void signOut();
@@ -44,7 +48,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     </button>
   );
 
-  const ToolsBlock = () => (
+  const TopToolsBlock = () => (
     <div
       className={cn(
         'flex h-8 flex-wrap items-center gap-2 sm:gap-3',
@@ -61,37 +65,70 @@ export function AppLayout({ children }: AppLayoutProps) {
         <Building2 className="h-3.5 w-3.5" />
         <span className="hidden sm:inline">ארגון</span>
       </Link>
-      {user && (
-        <>
-          <div className="hidden h-6 w-px bg-white/10 sm:block" aria-hidden />
-          <div
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-500/20 text-[11px] font-bold text-cyan-200"
-            title={name || email}
-          >
-            {initials}
-          </div>
-          {email ? (
-            <span
-              className="hidden max-w-[180px] truncate text-[11px] text-white/50 sm:inline"
-              title={email}
-            >
-              {email}
-            </span>
-          ) : null}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-8 gap-1.5 px-2 text-red-300 hover:bg-red-500/10 hover:text-red-200"
-            onClick={handleLogout}
-          >
-            <LogOut className="h-4 w-4 shrink-0" />
-            <span className="hidden text-xs font-medium sm:inline">התנתקות</span>
-          </Button>
-        </>
-      )}
     </div>
   );
+
+  const UserInline = () =>
+    user ? (
+      <div
+        className={cn(
+          'flex items-center gap-2 rounded-full bg-black/40 px-3 py-1 text-xs',
+          isRtl ? 'flex-row-reverse' : 'flex-row'
+        )}
+      >
+        <div
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-500/20 text-[10px] font-bold text-cyan-200"
+          title={name || email}
+        >
+          {initials}
+        </div>
+        {email ? (
+          <span
+            className="max-w-[160px] truncate text-[11px] text-white/70"
+            title={email}
+          >
+            {email}
+          </span>
+        ) : null}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-1 px-2 text-red-300 hover:bg-red-500/10 hover:text-red-200"
+          onClick={handleLogout}
+        >
+          <LogOut className="h-3.5 w-3.5 shrink-0" />
+          <span className="text-[11px] font-medium">התנתקות</span>
+        </Button>
+      </div>
+    ) : null;
+
+  const BackButton = () => {
+    const handleBack = () => {
+      // ניווט "אחורה" לנתיב האחרון ששמור בקונטקסט, עם טעינה מלאה כדי למנוע תקיעות
+      const last = getLastPath();
+      const targetPath =
+        last && last !== `${location.pathname}${location.search}` ? last : '/';
+      const fullUrl = targetPath.startsWith('http')
+        ? targetPath
+        : `${window.location.origin}${
+            targetPath.startsWith('/') ? '' : '/'
+          }${targetPath}`;
+      window.location.assign(fullUrl);
+    };
+
+    return (
+      <button
+        type="button"
+        onClick={handleBack}
+        className="inline-flex items-center gap-1 rounded-full bg-black/40 px-3 py-1 text-xs text-white/80 hover:bg-black/60 hover:text-white transition-colors"
+      >
+        {/* ב־RTL חץ לימין הוא חזור אחורה */}
+        <ArrowRight className="h-3.5 w-3.5" />
+        <span>חזרה</span>
+      </button>
+    );
+  };
 
   /* קצה ימין: בית הכי ימני, אחריו לוגו + כותרת (ב־RTL פריט ראשון = ימין) */
   const BrandAndHome = () => (
@@ -131,7 +168,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             {t('navigation.fleetManager')}
           </span>
           <span className="block truncate text-[10px] text-cyan-400/55">
-            {t('navigation.proDashboard')}
+            {orgName || t('navigation.proDashboard')}
           </span>
         </div>
       </div>
@@ -139,29 +176,37 @@ export function AppLayout({ children }: AppLayoutProps) {
   );
 
   return (
-    <VehicleSpecDirtyProvider>
-      <div
-        className="flex min-h-[100dvh] flex-col overflow-x-hidden bg-[#020617]"
-        dir={isRtl ? 'rtl' : 'ltr'}
-      >
-        <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0d1b2e]">
-          {/* בלי flex-row-reverse: ב־RTL האלמנט הראשון נצמד לימין המסך */}
-          <div className="mx-auto flex max-w-[1920px] w-full items-center justify-between gap-4 px-6 py-3">
-            {/* RTL: פריט ראשון = ימין המסך — מותג+בית; שני = שמאל — כלים */}
+    <div
+      className="flex min-h-[100dvh] flex-col overflow-x-hidden bg-[#020617]"
+      dir={isRtl ? 'rtl' : 'ltr'}
+    >
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0d1b2e]">
+        <div className="mx-auto flex max-w-[1920px] w-full flex-col gap-1 px-6 py-3">
+          <div className="flex w-full items-center justify-between gap-4">
+            {/* RTL: פריט ראשון = ימין המסך — בית + מנהל הצי */}
             <BrandAndHome />
-            <ToolsBlock />
+            <TopToolsBlock />
           </div>
-        </header>
+          {/* שורה קומפקטית למייל + התנתקות מתחת לכפתורי הכלים */}
+          <div className={cn('flex w-full', isRtl ? 'justify-end' : 'justify-start')}>
+            <UserInline />
+          </div>
+        </div>
+      </header>
 
-        <main
-          key={location.pathname + location.search}
-          className="relative flex-1 overflow-y-auto bg-transparent px-6 py-6"
-        >
-          {children}
-        </main>
+      <main
+        key={location.pathname + location.search}
+        className="relative flex-1 overflow-y-auto bg-transparent px-6 py-6"
+      >
+        {location.pathname !== '/' && (
+          <div className={cn('mb-4 flex', isRtl ? 'justify-start' : 'justify-end')}>
+            <BackButton />
+          </div>
+        )}
+        {children}
+      </main>
 
-        <AIChatAssistant />
-      </div>
-    </VehicleSpecDirtyProvider>
+      <AIChatAssistant />
+    </div>
   );
 }

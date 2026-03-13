@@ -158,6 +158,9 @@ export interface DriverSummary {
   health_declaration_date: string | null;
   safety_training_date: string | null;
   regulation_585b_date: string | null;
+  license_front_url?: string | null;
+  license_back_url?: string | null;
+  health_declaration_url?: string | null;
 }
 
 export interface DriverDocument {

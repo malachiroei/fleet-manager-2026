@@ -846,10 +846,10 @@ function DocumentsTab({ driver }: { driver: Driver }) {
         </div>
       )}
 
-      {!hasStorage && !storageLoading && (
+      {!hasStorage && !storageLoading && !hasDbDocs && (
         <div className="rounded-lg border border-dashed border-border bg-muted/10 p-4 mb-6">
           <p className="text-sm text-muted-foreground">
-            אין קבצים בנתיב Storage Documents/Drivers/{driver.id}/
+            אין מסמכים בתיקיית הנהג.
           </p>
         </div>
       )}

@@ -340,38 +340,6 @@ export default function VehicleDeliveryPage() {
 
   return (
     <div className="relative min-h-screen bg-[#020617] text-white">
-      <header className="bg-card border-b border-border sticky top-0 z-10">
-        <div className="container py-4">
-          <div className="flex items-center gap-3">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => {
-                if (deliveryDirty) {
-                  tryNavigate('/vehicles');
-                  return;
-                }
-                if (window.history.length > 1) {
-                  navigate(-1);
-                  return;
-                }
-                navigate('/');
-              }}
-              aria-label="חזרה"
-            >
-                <ArrowRight className="h-5 w-5" />
-            </Button>
-            <h1 className="font-bold text-xl">מסירת רכב קבוע</h1>
-            <div className="mr-auto">
-              <Button type="button" variant="outline" size="sm" onClick={() => exitDelivery('/')}>
-                יציאה
-              </Button>
-            </div>
-          </div>
-        </div>
-      </header>
-
       <main className="container py-6 pb-24">
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Vehicle & Driver Selection */}

@@ -148,8 +148,8 @@ export default function DriverSectionEditPage() {
 
       await updateDriver.mutateAsync(payload as Parameters<typeof updateDriver.mutateAsync>[0]);
       setDirty(DIRTY_SOURCE_DRIVER_EDIT, false);
-      // חזרה לרשימה — לא לדף המינימלי שמרגיש כמו התראה
-      navigate('/drivers', { replace: true });
+      // חזרה לרשימה + גלילה לאותו נהג
+      navigate(`/drivers?highlightDriver=${driver.id}`, { replace: true });
     } catch (error) {
       toast.error('שגיאה בעדכון', {
         description: formatSupabaseError(error),
@@ -184,21 +184,21 @@ export default function DriverSectionEditPage() {
                 variant="outline"
                 size="sm"
                 className="w-full border-white/20 sm:w-auto"
-                onClick={() => tryNavigate('/drivers')}
+                onClick={() => tryNavigate(`/drivers?highlightDriver=${driver.id}`)}
               >
                 ביטול
               </Button>
             </div>
             <div className="min-w-0 flex-1 text-center sm:text-right">
               <div className="mb-2 flex items-center justify-center gap-2 sm:justify-start">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  type="button"
-                  title="חזרה לרשימת נהגים"
-                  className="shrink-0"
-                  onClick={() => tryNavigate('/drivers')}
-                >
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    type="button"
+                    title="חזרה לרשימת נהגים"
+                    className="shrink-0"
+                    onClick={() => tryNavigate(`/drivers?highlightDriver=${driver.id}`)}
+                  >
                   <ArrowRight className="h-5 w-5" />
                 </Button>
               </div>

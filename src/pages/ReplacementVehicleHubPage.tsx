@@ -1,26 +1,13 @@
 import { Link } from 'react-router-dom';
-import { ArrowRight, Repeat, RotateCcw, Truck, Sparkles, ChevronLeft } from 'lucide-react';
+import { Repeat, RotateCcw, Truck, Sparkles, ChevronLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export default function ReplacementVehicleHubPage() {
   return (
-    <div className="min-h-screen bg-[#020617] text-white" dir="rtl">
+    <div className="relative text-white" dir="rtl">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-60 bg-[radial-gradient(ellipse_at_top,rgba(34,211,238,0.16),transparent_60%)]" />
-      <header className="sticky top-0 z-10 border-b border-border bg-card">
-        <div className="container py-4">
-          <div className="flex items-center gap-3">
-            <Link to="/">
-              <Button variant="ghost" size="icon">
-                <ArrowRight className="h-5 w-5" />
-              </Button>
-            </Link>
-            <h1 className="text-xl font-bold">רכב חליפי</h1>
-          </div>
-        </div>
-      </header>
-
-      <main className="container relative py-6">
+      <main className="container relative py-4 md:py-6">
         <Card className="overflow-hidden border-cyan-400/25 bg-[#08162a]">
           <CardHeader className="border-b border-cyan-400/15 bg-gradient-to-r from-cyan-500/10 to-transparent">
             <CardTitle className="flex items-center gap-2 text-xl">
@@ -35,28 +22,48 @@ export default function ReplacementVehicleHubPage() {
 
           <CardContent className="grid grid-cols-1 gap-4 p-5 md:grid-cols-2">
             <Link to="/handover/delivery?mode=replacement" className="group block">
-              <div className="rounded-2xl border border-cyan-300/35 bg-gradient-to-br from-cyan-400/15 via-[#0c223a] to-[#0a1a2d] p-5 shadow-[0_12px_28px_rgba(0,255,255,0.12)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_16px_32px_rgba(0,255,255,0.18)]">
-                <div className="mb-4 flex items-center justify-between">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-cyan-300/45 bg-cyan-500/20">
-                    <Truck className="h-5 w-5 text-cyan-200" />
+              <div className="status-card relative flex h-full flex-col items-center justify-between overflow-hidden rounded-2xl border border-cyan-300/35 bg-gradient-to-b from-[#0d233b] to-[#08182d] p-5 shadow-[0_18px_40px_rgba(0,0,0,0.55)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(34,211,238,0.45)]">
+                <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-white/[0.05] via-transparent to-white/[0.02] opacity-80 pointer-events-none" />
+
+                <div className="relative z-10 mt-1 flex flex-col items-center gap-3 text-center">
+                  <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 to-sky-500 shadow-[0_0_18px_rgba(34,211,238,0.55)]">
+                    <Truck className="h-7 w-7 text-white" />
                   </div>
-                  <ChevronLeft className="h-5 w-5 text-cyan-200/70 transition-transform duration-300 group-hover:-translate-x-1" />
+                  <div>
+                    <p className="text-sm font-semibold text-white">מסירת רכב חליפי</p>
+                    <p className="mt-1 text-xs text-cyan-100/70">פתיחת טופס קבלת רכב חליפי לנהג</p>
+                  </div>
                 </div>
-                <p className="text-lg font-semibold text-white">מסירת רכב חליפי</p>
-                <p className="mt-1 text-sm text-cyan-100/70">פתיחת טופס קבלת רכב חליפי לנהג</p>
+
+                <div className="relative z-10 mb-1 mt-4 flex items-center gap-1 text-[11px] font-medium text-white/80">
+                  <div className="status-card-entry-btn flex h-7 w-7 items-center justify-center rounded-full border border-white/25 bg-white/5 backdrop-blur-sm">
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </div>
+                  <span className="tracking-wide">כניסה</span>
+                </div>
               </div>
             </Link>
 
             <Link to="/handover/return?mode=replacement" className="group block">
-              <div className="rounded-2xl border border-emerald-300/35 bg-gradient-to-br from-emerald-400/14 via-[#0d2435] to-[#0a1c2a] p-5 shadow-[0_12px_28px_rgba(16,185,129,0.12)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_16px_32px_rgba(16,185,129,0.18)]">
-                <div className="mb-4 flex items-center justify-between">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-emerald-300/45 bg-emerald-500/20">
-                    <RotateCcw className="h-5 w-5 text-emerald-200" />
+              <div className="status-card relative flex h-full flex-col items-center justify-between overflow-hidden rounded-2xl border border-emerald-300/35 bg-gradient-to-b from-[#0d2435] to-[#08182d] p-5 shadow-[0_18px_40px_rgba(0,0,0,0.55)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(16,185,129,0.45)]">
+                <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-white/[0.05] via-transparent to-white/[0.02] opacity-80 pointer-events-none" />
+
+                <div className="relative z-10 mt-1 flex flex-col items-center gap-3 text-center">
+                  <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-500 shadow-[0_0_18px_rgba(16,185,129,0.55)]">
+                    <RotateCcw className="h-7 w-7 text-white" />
                   </div>
-                  <ChevronLeft className="h-5 w-5 text-emerald-200/70 transition-transform duration-300 group-hover:-translate-x-1" />
+                  <div>
+                    <p className="text-sm font-semibold text-white">החזרת רכב חליפי</p>
+                    <p className="mt-1 text-xs text-emerald-100/70">פתיחת טופס החזרה ובדיקת מצב הרכב</p>
+                  </div>
                 </div>
-                <p className="text-lg font-semibold text-white">החזרת רכב חליפי</p>
-                <p className="mt-1 text-sm text-emerald-100/70">פתיחת טופס החזרה ובדיקת מצב הרכב</p>
+
+                <div className="relative z-10 mb-1 mt-4 flex items-center gap-1 text-[11px] font-medium text-white/80">
+                  <div className="status-card-entry-btn flex h-7 w-7 items-center justify-center rounded-full border border-white/25 bg-white/5 backdrop-blur-sm">
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </div>
+                  <span className="tracking-wide">כניסה</span>
+                </div>
               </div>
             </Link>
           </CardContent>

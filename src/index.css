@@ -196,6 +196,29 @@ iframe[src*="lovable"] {
     0 14px 32px rgba(0, 0, 0, 0.24);
 }
 
+/* רכב חליפי — טורקיז/ירקרק */
+.status-card.status-card--teal {
+  --status-card-inset: inset 0 0 48px rgba(45, 212, 191, 0.06);
+  --status-card-shadow:
+    0 0 48px rgba(45, 212, 191, 0.18),
+    0 0 100px rgba(34, 197, 94, 0.14),
+    0 0 180px rgba(45, 212, 191, 0.09),
+    0 0 260px rgba(34, 197, 94, 0.05),
+    0 0 320px rgba(45, 212, 191, 0.03),
+    0 24px 56px rgba(0, 0, 0, 0.32),
+    0 12px 28px rgba(0, 0, 0, 0.22);
+}
+.status-card.status-card--teal:hover {
+  box-shadow:
+    0 0 56px rgba(45, 212, 191, 0.22),
+    0 0 120px rgba(34, 197, 94, 0.16),
+    0 0 200px rgba(45, 212, 191, 0.1),
+    0 0 280px rgba(34, 197, 94, 0.06),
+    0 0 340px rgba(45, 212, 191, 0.04),
+    0 28px 64px rgba(0, 0, 0, 0.36),
+    0 14px 32px rgba(0, 0, 0, 0.24);
+}
+
 /* Icon box: small glow + drop shadow per theme */
 .status-card--purple .status-card-icon-box {
   box-shadow: 0 0 20px rgba(168, 85, 247, 0.25), 0 4px 14px rgba(0, 0, 0, 0.35);
@@ -205,6 +228,9 @@ iframe[src*="lovable"] {
 }
 .status-card--orange .status-card-icon-box {
   box-shadow: 0 0 20px rgba(249, 115, 22, 0.25), 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+.status-card--teal .status-card-icon-box {
+  box-shadow: 0 0 20px rgba(45, 212, 191, 0.25), 0 4px 14px rgba(0, 0, 0, 0.35);
 }
 
 /* Entry button: larger, blur bg, soft glow on hover */

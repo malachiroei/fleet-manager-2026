@@ -2,7 +2,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Trash2, Edit, Car, Phone, Mail, FolderOpen } from 'lucide-react';
+import { Trash2, Edit, Car, Phone, Mail, FolderOpen, Upload } from 'lucide-react';
 import type { DriverSummary, ComplianceStatus } from '@/types/fleet';
 import type { ActiveDriverVehicleAssignment } from '@/hooks/useVehicles';
 import { DRIVER_SECTION_LABELS } from '@/lib/driverFieldMap';
@@ -302,6 +302,30 @@ export function DriverCard({
                   );
                 })()}
               </FieldRow>
+              {driver.license_front_url ? (
+                <FieldRow label="">
+                  <a
+                    href={driver.license_front_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-cyan-300 hover:text-cyan-100 underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    צפייה בסריקת רישיון
+                  </a>
+                </FieldRow>
+              ) : (
+                <FieldRow label="">
+                  <Link
+                    to={`/drivers/${driver.id}/edit`}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-amber-300 hover:text-amber-100"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                    העלאת סריקת רישיון
+                  </Link>
+                </FieldRow>
+              )}
             </SectionBlock>
 
             {/* safety — Edit card 4 */}
@@ -315,6 +339,18 @@ export function DriverCard({
               <FieldRow label='תאריך בדיקת רישיון ע״פ תקנה 585 ב׳'>
                 {fmtDriverDate(driver.regulation_585b_date)}
               </FieldRow>
+              {healthMissing && (
+                <FieldRow label="">
+                  <Link
+                    to={`/drivers/${driver.id}/edit`}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-amber-300 hover:text-amber-100"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                    העלאת הצהרת בריאות
+                  </Link>
+                </FieldRow>
+              )}
             </SectionBlock>
           </div>
         </CardContent>

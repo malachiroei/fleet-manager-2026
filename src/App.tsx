@@ -35,6 +35,7 @@ import VehicleHandoverWizard from './pages/VehicleHandoverWizard';
 import TransfersPage from './pages/TransfersPage';
 import { ThemeProvider } from '@/hooks/useTheme';
 import Footer from "@/components/layout/Footer";
+import { VehicleSpecDirtyProvider } from "@/contexts/VehicleSpecDirtyContext";
 const queryClient = new QueryClient();
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
@@ -52,7 +53,11 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
     return <Navigate to="/auth" replace />;
   }
 
-  return <AppLayout>{children}</AppLayout>;
+  return (
+    <VehicleSpecDirtyProvider>
+      <AppLayout>{children}</AppLayout>
+    </VehicleSpecDirtyProvider>
+  );
 }
 
 function AuthRoute({ children }: { children: ReactNode }) {

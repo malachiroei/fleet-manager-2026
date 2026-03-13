@@ -1,6 +1,8 @@
 import { useState, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useCreateDriver } from '@/hooks/useDrivers';
+import { useCreateDriverDocument } from '@/hooks/useDriverDocuments';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,19 +23,29 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-// Helper to upload file via API and return the path
-const uploadFile = async (file: File): Promise<string> => {
-  const formData = new FormData();
-  formData.append('file', file);
+// Helper to upload a driver-related file to Supabase storage and return a public URL
+const uploadDriverFileToStorage = async (driverId: string, file: File, kind: 'license_front' | 'license_back' | 'health' | 'extra'): Promise<string | null> => {
+  const ext = file.name.split('.').pop() || 'jpg';
+  const ts = Date.now();
+  const safeKind = kind === 'extra' ? 'extra' : kind;
+  const path = `drivers/${driverId}/${safeKind}_${ts}.${ext}`;
 
-  const res = await fetch('/api/upload', {
-    method: 'POST',
-    body: formData,
-  });
+  try {
+    const { error } = await supabase.storage
+      .from('vehicle-documents')
+      .upload(path, file, { upsert: true });
 
-  if (!res.ok) throw new Error('File upload failed');
-  const data = await res.json();
-  return data.path;
+    if (error) {
+      console.error('[AddDriver] storage upload failed:', error.message);
+      return null;
+    }
+
+    const { data } = supabase.storage.from('vehicle-documents').getPublicUrl(path);
+    return data.publicUrl;
+  } catch (e) {
+    console.error('[AddDriver] storage upload exception:', e);
+    return null;
+  }
 };
 
 function DocumentUploadBox({
@@ -141,6 +153,7 @@ function DocumentUploadBox({
 export default function AddDriverPage() {
   const navigate = useNavigate();
   const createDriver = useCreateDriver();
+  const createDriverDocument = useCreateDriverDocument();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // File states
@@ -156,32 +169,7 @@ export default function AddDriverPage() {
     try {
       const formData = new FormData(e.currentTarget);
 
-      // Upload files via API
-      let licenseFrontUrl = null;
-      let licenseBackUrl = null;
-      let healthDeclarationUrl = null;
-      let additionalDocUrl = null;
-
-      if (licenseFront) licenseFrontUrl = await uploadFile(licenseFront);
-      if (licenseBack) licenseBackUrl = await uploadFile(licenseBack);
-      if (healthDeclaration) healthDeclarationUrl = await uploadFile(healthDeclaration);
-      if (additionalDoc) additionalDocUrl = await uploadFile(additionalDoc);
-
-      const documents = [];
-      if (additionalDocUrl) {
-        documents.push({
-          id: crypto.randomUUID(),
-          // driver_id will be handled by the backend or we use a placeholder
-          // since strict relational integrity isn't enforced in the JSON logic yet.
-          // Ideally useCreateDriver should inject the ID, but for now we create the object structure.
-          driver_id: '', // Placeholder, will be populated on creation if needed or ignored
-          title: 'Additional Document',
-          file_url: additionalDocUrl,
-          created_at: new Date().toISOString()
-        });
-      }
-
-      await createDriver.mutateAsync({
+      const createdDriver = await createDriver.mutateAsync({
         full_name: formData.get('full_name') as string,
         id_number: formData.get('id_number') as string,
         license_expiry: formData.get('license_expiry') as string,
@@ -196,13 +184,53 @@ export default function AddDriverPage() {
         job_title: formData.get('job_title') as string || null,
         department: formData.get('department') as string || null,
         license_number: formData.get('license_number') as string || null,
-        regulation_585b_date: formData.get('regulation_585b_date') as string || null,
-        // Document URLs (Server Paths)
-        license_front_url: licenseFrontUrl,
-        license_back_url: licenseBackUrl,
-        health_declaration_url: healthDeclarationUrl,
-        documents: documents
+        regulation_585b_date: formData.get('regulation_585b_date') as string || null
       });
+
+      if (createdDriver?.id) {
+        const updates: Record<string, string | null> = {};
+
+        if (licenseFront) {
+          const url = await uploadDriverFileToStorage(createdDriver.id, licenseFront, 'license_front');
+          if (url) updates.license_front_url = url;
+        }
+        if (licenseBack) {
+          const url = await uploadDriverFileToStorage(createdDriver.id, licenseBack, 'license_back');
+          if (url) updates.license_back_url = url;
+        }
+        if (healthDeclaration) {
+          const url = await uploadDriverFileToStorage(createdDriver.id, healthDeclaration, 'health');
+          if (url) updates.health_declaration_url = url;
+        }
+
+        if (Object.keys(updates).length > 0) {
+          try {
+            await supabase
+              .from('drivers')
+              .update(updates)
+              .eq('id', createdDriver.id);
+          } catch (e) {
+            console.error('[AddDriver] failed to update driver document URLs', e);
+            toast.error('הנהג נשמר, אבל הייתה שגיאה בשמירת קישורי הסריקות');
+          }
+        }
+
+        if (additionalDoc) {
+          const extraUrl = await uploadDriverFileToStorage(createdDriver.id, additionalDoc, 'extra');
+          if (extraUrl) {
+            try {
+              await createDriverDocument.mutateAsync({
+                driver_id: createdDriver.id,
+                title: 'מסמך נוסף',
+                file_url: extraUrl
+              });
+            } catch (err) {
+              console.error('driver additional document save failed', err);
+              toast.error('הנהג נשמר, אבל הייתה שגיאה בשמירת המסמך הנוסף');
+            }
+          }
+        }
+      }
 
       toast.success('הנהג נוסף בהצלחה');
       navigate('/drivers');
@@ -213,21 +241,24 @@ export default function AddDriverPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#020617] text-white">
-      <header className="bg-card border-b border-border sticky top-0 z-10">
-        <div className="container py-4">
+    <div className="min-h-[100dvh] text-white">
+      <main className="container py-4 pb-24 space-y-6">
+        <div className="rounded-2xl border border-border bg-card/90 px-4 py-3 sm:px-5 sm:py-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Link to="/drivers">
               <Button variant="ghost" size="icon">
                 <ArrowRight className="h-5 w-5" />
               </Button>
             </Link>
-            <h1 className="font-bold text-xl">הוספת נהג חדש</h1>
+            <div>
+              <h1 className="font-bold text-lg sm:text-xl">הוספת נהג חדש</h1>
+              <p className="text-xs text-muted-foreground hidden sm:block">
+                מילוי פרטי נהג, כשירות ורישיונות במסך אחד מותאם לנייד
+              </p>
+            </div>
           </div>
         </div>
-      </header>
 
-      <main className="container py-6">
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Personal Info */}
           <Card>
@@ -240,7 +271,8 @@ export default function AddDriverPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* תמיד טור אחד – גם בדסקטופ, כדי שכל שדה יהיה ברוחב מלא */}
+              <div className="grid grid-cols-1 gap-3 sm:gap-4">
                 <div className="col-span-2">
                   <Label htmlFor="full_name">שם מלא *</Label>
                   <Input
@@ -251,7 +283,7 @@ export default function AddDriverPage() {
                   />
                 </div>
 
-                <div>
+                <div className="col-span-2">
                   <Label htmlFor="id_number">תעודת זהות *</Label>
                   <Input
                     id="id_number"
@@ -259,10 +291,13 @@ export default function AddDriverPage() {
                     placeholder="123456789"
                     required
                     dir="ltr"
+                    inputMode="numeric"
+                    maxLength={9}
+                    className="w-full"
                   />
                 </div>
 
-                <div>
+                <div className="col-span-2">
                   <Label htmlFor="phone">טלפון</Label>
                   <Input
                     id="phone"
@@ -270,6 +305,7 @@ export default function AddDriverPage() {
                     type="tel"
                     placeholder="050-1234567"
                     dir="ltr"
+                    className="w-full"
                   />
                 </div>
 

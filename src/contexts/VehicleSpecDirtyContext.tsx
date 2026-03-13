@@ -50,6 +50,8 @@ type VehicleSpecDirtyContextValue = {
   setDeliveryExiting: (exiting: boolean) => void;
   getDeliveryExiting: () => boolean;
   getDeliveryExitConfirmed: () => boolean;
+  /** הנתיב הקודם בתוך האפליקציה (לכפתור חזרה אחיד) */
+  getLastPath: () => string | null;
 };
 
 const defaultValue: VehicleSpecDirtyContextValue = {
@@ -61,6 +63,7 @@ const defaultValue: VehicleSpecDirtyContextValue = {
   setDeliveryExiting: () => {},
   getDeliveryExiting: () => false,
   getDeliveryExitConfirmed: () => false,
+  getLastPath: () => null,
 };
 
 const VehicleSpecDirtyContext = createContext<VehicleSpecDirtyContextValue>(defaultValue);
@@ -75,6 +78,10 @@ export function VehicleSpecDirtyProvider({ children }: { children: ReactNode }) 
   const deliveryExitingRef = useRef(false);
   /** אחרי confirm ב-tryNavigate — VehicleDeliveryPage לא יחזיר dirty באותו רנדר */
   const deliveryExitConfirmedRef = useRef(false);
+
+  // ניהול נתיב קודם/נוכחי לכל הניווטים באפליקציה
+  const currentPathRef = useRef<string | null>(null);
+  const lastPathRef = useRef<string | null>(null);
 
   const getDeliveryExitConfirmed = useCallback(() => deliveryExitConfirmedRef.current, []);
 
@@ -97,6 +104,15 @@ export function VehicleSpecDirtyProvider({ children }: { children: ReactNode }) 
       deliveryExitConfirmedRef.current = false;
     }
   }, [location.pathname]);
+
+  // מעקב כללי אחרי הנתיב האחרון לצורך כפתור חזרה אחיד
+  useEffect(() => {
+    const newPath = `${location.pathname}${location.search}`;
+    if (currentPathRef.current && currentPathRef.current !== newPath) {
+      lastPathRef.current = currentPathRef.current;
+    }
+    currentPathRef.current = newPath;
+  }, [location.pathname, location.search]);
 
   const setDeliveryExiting = useCallback((exiting: boolean) => {
     deliveryExitingRef.current = exiting;
@@ -146,6 +162,8 @@ export function VehicleSpecDirtyProvider({ children }: { children: ReactNode }) 
 
   const getSourceDirty = useCallback((sourceId: string) => !!sourcesRef.current[sourceId], []);
 
+  const getLastPath = useCallback(() => lastPathRef.current ?? null, []);
+
   const value = useMemo(
     () => ({
       isDirty,
@@ -156,6 +174,7 @@ export function VehicleSpecDirtyProvider({ children }: { children: ReactNode }) 
       setDeliveryExiting,
       getDeliveryExiting,
       getDeliveryExitConfirmed,
+      getLastPath,
     }),
     [
       isDirty,
@@ -166,6 +185,7 @@ export function VehicleSpecDirtyProvider({ children }: { children: ReactNode }) 
       setDeliveryExiting,
       getDeliveryExiting,
       getDeliveryExitConfirmed,
+      getLastPath,
       version,
     ]
   );

@@ -24,14 +24,7 @@ import {
 } from 'lucide-react';
 
 const statusCardConfig = [
-  {
-    titleKey: 'navigation.drivers' as const,
-    icon: Users,
-    theme: 'purple' as const,
-    color: 'from-purple-500 to-indigo-600',
-    link: '/drivers',
-    getValue: (stats: { totalDrivers?: number } | null) => stats?.totalDrivers ?? 0,
-  },
+  // שורה עליונה: רכבים + נהגים
   {
     titleKey: 'navigation.fleetManagement' as const,
     icon: Car,
@@ -41,6 +34,14 @@ const statusCardConfig = [
     getValue: (stats: { totalVehicles?: number } | null) => stats?.totalVehicles ?? 0,
   },
   {
+    titleKey: 'navigation.drivers' as const,
+    icon: Users,
+    theme: 'purple' as const,
+    color: 'from-purple-500 to-indigo-600',
+    link: '/drivers',
+    getValue: (stats: { totalDrivers?: number } | null) => stats?.totalDrivers ?? 0,
+  },
+  {
     titleKey: 'navigation.exceptionAlerts' as const,
     icon: AlertTriangle,
     theme: 'orange' as const,
@@ -48,6 +49,14 @@ const statusCardConfig = [
     link: '/compliance',
     getValue: (_: unknown, alertCount?: number) => alertCount ?? 0,
     alertKey: 'alert' as const,
+  },
+  {
+    titleKey: 'dashboard.replacementVehicle' as const,
+    icon: Repeat,
+    theme: 'teal' as const,
+    color: 'from-teal-400 to-emerald-500',
+    link: '/handover/replacement',
+    getValue: () => '',
   },
 ];
 
@@ -63,38 +72,54 @@ function StatusCard({
   value: string | number;
   icon: React.ElementType;
   link: string;
-  theme: 'purple' | 'blue' | 'orange';
+  theme: 'purple' | 'blue' | 'orange' | 'teal';
   color: string;
 }) {
+  const glowClass =
+    theme === 'blue'
+      ? 'shadow-[0_0_15px_rgba(59,130,246,0.55)]'
+      : theme === 'purple'
+        ? 'shadow-[0_0_15px_rgba(168,85,247,0.55)]'
+        : theme === 'orange'
+          ? 'shadow-[0_0_15px_rgba(249,115,22,0.55)]'
+          : 'shadow-[0_0_15px_rgba(45,212,191,0.55)]';
+
   return (
-    <Link to={link} className="block group flex justify-center shrink-0">
+    <Link to={link} className="block group">
       <div
-        className={`status-card status-card--${theme} relative w-64 h-80 rounded-[2.5rem] bg-white/5 backdrop-blur-md border border-white/10 p-8 flex flex-col justify-between hover:scale-[1.03] hover:-translate-y-1 overflow-hidden transition-[border-color,filter] duration-300 group-hover:backdrop-blur-lg group-hover:border-white/20`}
+        className={`status-card status-card--${theme} relative h-40 sm:h-44 md:h-56 w-full rounded-2xl bg-white/5/80 backdrop-blur-lg border border-white/10 p-3 sm:p-4 flex flex-col items-center justify-between hover:scale-[1.03] hover:-translate-y-1 overflow-hidden transition-all duration-300 ${glowClass}`}
       >
-        {/* השתקפות אור על זכוכית — גרדיאנט לבן שקוף בראש הכרטיס */}
-        <div className="absolute top-0 left-0 right-0 h-2/5 bg-gradient-to-b from-white/[0.05] to-transparent pointer-events-none rounded-t-[2.5rem] z-[1]" />
-        {/* גרדיאנט פנימי: למעלה כהה, למטה מעט בהיר יותר — עומק ותחושת חומר */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/5 to-white/[0.06] pointer-events-none rounded-[2.5rem] z-[0]" />
-        <div className="flex justify-between items-start w-full">
-          <div className={`status-card-icon-box p-3 rounded-2xl bg-gradient-to-br ${color}`}>
-            <Icon className="w-6 h-6 text-white" />
+        {/* השתקפות + גרדיאנט פנימי */}
+        <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-white/[0.07] via-black/40 to-black/80 opacity-80 pointer-events-none" />
+        <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-black/50 via-transparent to-white/[0.03] pointer-events-none" />
+
+        <div className="relative z-10 mt-1 flex flex-col items-center gap-2">
+          <div className={`status-card-icon-box inline-flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-2xl bg-gradient-to-br ${color}`}>
+            <Icon className="h-7 w-7 sm:h-8 sm:w-8 text-white" />
           </div>
-        </div>
-        <div className="text-right z-10">
-          <p className="text-gray-400 text-base font-medium mb-1">{title}</p>
-          <p
-            className="text-white text-7xl font-black tracking-tighter transition-transform duration-300 group-hover:scale-105 origin-right"
-            style={{ textShadow: '0 0 48px rgba(255,255,255,0.12)' }}
-          >
-            {value}
+          <p className="text-[11px] sm:text-xs md:text-sm font-medium text-gray-300 tracking-wide truncate">
+            {title}
           </p>
         </div>
-        <div className="flex items-center gap-2 text-white font-bold z-10">
-          <div className="status-card-entry-btn flex items-center justify-center w-10 h-10 rounded-full border border-white/30 bg-white/5 backdrop-blur-sm shrink-0">
-            <ChevronLeft size={22} />
+
+        {value !== '' && (
+          <div className="relative z-10 text-center">
+            <p
+              className="text-white text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight"
+              style={{ textShadow: '0 0 40px rgba(255,255,255,0.2)' }}
+            >
+              {value}
+            </p>
           </div>
-          <span className="text-sm tracking-wide">כניסה</span>
+        )}
+
+        <div className="relative z-10 mb-1 flex items-center gap-1 text-[10px] sm:text-xs font-medium text-white/80">
+          <div className="status-card-entry-btn flex items-center justify-center h-6 w-6 sm:h-7 sm:w-7 rounded-full border border-white/25 bg-white/5 backdrop-blur-sm">
+            <ChevronLeft className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+          </div>
+          <span className="tracking-wide">כניסה</span>
         </div>
+
         <div className="status-card-shine absolute -inset-full h-full w-1/2 z-[5] block transform -skew-x-12 bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-0" />
       </div>
     </Link>
@@ -120,18 +145,7 @@ export default function Dashboard() {
       href: '/procedure6-complaints',
       icon: AlertTriangle,
     },
-    {
-      title: t('navigation.accounting'),
-      href: '#',
-      icon: Calculator,
-      disabled: true,
-    },
-    {
-      title: t('navigation.fuel'),
-      href: '#',
-      icon: Droplet,
-      disabled: true,
-    },
+    // חשבונאות ודלק ייכנסו כשיתממשקו — כרגע לא מציגים אותם בפעולות מהירות
     {
       title: 'טפסים',
       href: '/forms',
@@ -162,11 +176,6 @@ export default function Dashboard() {
       href: '/handover/delivery',
       icon: Truck,
     },
-    {
-      title: 'רכב חליפי',
-      href: '/handover/replacement',
-      icon: Repeat,
-    },
   ];
 
   return (
@@ -177,34 +186,38 @@ export default function Dashboard() {
       </div>
 
       <section className="dashboard-status-stage p-6 md:p-10 space-y-6">
-        <h2 className="text-lg md:text-xl font-semibold text-foreground text-center md:text-right">תמונת מצב</h2>
-        <div className="flex flex-nowrap justify-center gap-12 md:gap-16 overflow-x-auto pb-2 md:overflow-visible">
-          {isLoading ? (
-            <>
-              <Skeleton className="h-80 w-64 rounded-[2.5rem] shrink-0" />
-              <Skeleton className="h-80 w-64 rounded-[2.5rem] shrink-0" />
-              <Skeleton className="h-80 w-64 rounded-[2.5rem] shrink-0" />
-            </>
-          ) : (
-            statusCardConfig.map((card) => {
+        {isLoading ? (
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-2">
+            {[1, 2, 3, 4].map((i) => (
+              <Skeleton
+                key={i}
+                className="h-40 w-full rounded-2xl"
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-2">
+            {statusCardConfig.map((card) => {
               const Icon = card.icon;
               const value = card.alertKey
                 ? card.getValue(stats, totalAlerts)
                 : card.getValue(stats);
+              const title =
+                card.titleKey === 'dashboard.replacementVehicle' ? 'רכב חליפי' : t(card.titleKey);
               return (
                 <StatusCard
                   key={card.link}
-                  title={t(card.titleKey)}
+                  title={title}
                   value={value}
                   icon={Icon}
                   link={card.link}
-theme={card.theme}
-                      color={card.color}
+                  theme={card.theme}
+                  color={card.color}
                 />
               );
-            })
-          )}
-        </div>
+            })}
+          </div>
+        )}
       </section>
 
       {isMobile ? (

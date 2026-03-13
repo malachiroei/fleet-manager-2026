@@ -23,25 +23,25 @@
  export function useCreateDriverDocument() {
    const queryClient = useQueryClient();
  
-   return useMutation({
-     mutationFn: async (doc: Omit<DriverDocument, 'id' | 'created_at'>) => {
-       const { data, error } = await supabase
-         .from('fleet-documents')
-         .insert(doc)
-         .select()
-         .single();
- 
-       if (error) throw error;
-       return data;
-     },
-     onSuccess: (data) => {
-       queryClient.invalidateQueries({ queryKey: ['driver-documents', data.driver_id] });
-       toast({ title: 'המסמך נוסף בהצלחה' });
-     },
-     onError: (error) => {
-       toast({ title: 'שגיאה בהוספת המסמך', description: error.message, variant: 'destructive' });
-     }
-   });
+  return useMutation({
+    mutationFn: async (doc: Omit<DriverDocument, 'id' | 'created_at'>) => {
+      const { data, error } = await supabase
+        .from('driver_documents')
+        .insert(doc)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data as DriverDocument;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['driver-documents', data.driver_id] });
+      toast({ title: 'המסמך נוסף בהצלחה' });
+    },
+    onError: (error) => {
+      toast({ title: 'שגיאה בהוספת המסמך', description: error.message, variant: 'destructive' });
+    }
+  });
  }
  
  export function useDeleteDriverDocument() {

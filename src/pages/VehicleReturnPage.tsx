@@ -298,19 +298,6 @@ export default function VehicleReturnPage() {
 
   return (
     <div className="min-h-screen bg-[#020617] text-white">
-      <header className="bg-card border-b border-border sticky top-0 z-10">
-        <div className="container py-4">
-          <div className="flex items-center gap-3">
-            <Link to="/">
-              <Button variant="ghost" size="icon">
-                <ArrowRight className="h-5 w-5" />
-              </Button>
-            </Link>
-            <h1 className="font-bold text-xl">{assignmentMode === 'replacement' ? 'החזרת רכב חליפי' : 'החזרת רכב'}</h1>
-          </div>
-        </div>
-      </header>
-
       <main className="container py-6 pb-24">
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Vehicle & Driver Selection */}

@@ -49,6 +49,9 @@ export function useDrivers() {
             health_declaration_date: (d.health_declaration_date as string) ?? null,
             safety_training_date: (d.safety_training_date as string) ?? null,
             regulation_585b_date: (d.regulation_585b_date as string) ?? null,
+            license_front_url: (d.license_front_url as string) ?? null,
+            license_back_url: (d.license_back_url as string) ?? null,
+            health_declaration_url: (d.health_declaration_url as string) ?? null,
           } satisfies DriverSummary;
         });
       }
@@ -70,6 +73,9 @@ export function useDrivers() {
           health_declaration_date: (d.health_declaration_date as string) ?? null,
           safety_training_date: (d.safety_training_date as string) ?? null,
           regulation_585b_date: (d.regulation_585b_date as string) ?? null,
+          license_front_url: (d.license_front_url as string) ?? null,
+          license_back_url: (d.license_back_url as string) ?? null,
+          health_declaration_url: (d.health_declaration_url as string) ?? null,
         } satisfies DriverSummary;
       });
     }

@@ -5,12 +5,13 @@ import {
   DIRTY_SOURCE_DRIVER_EDIT,
 } from '@/contexts/VehicleSpecDirtyContext';
 import { useDriver, useUpdateDriver } from '@/hooks/useDrivers';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowRight, Loader2, User, CreditCard, Briefcase, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Loader2, User, CreditCard, Briefcase, ShieldCheck, FileText, Upload, Heart } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatSupabaseError } from '@/lib/supabaseError';
 
@@ -21,6 +22,29 @@ export default function EditDriverPage() {
   const updateDriver = useUpdateDriver();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { setDirty, tryNavigate } = useVehicleSpecDirty();
+  const [licenseFront, setLicenseFront] = useState<File | null>(null);
+  const [licenseBack, setLicenseBack] = useState<File | null>(null);
+  const [healthDeclaration, setHealthDeclaration] = useState<File | null>(null);
+
+  const uploadDriverFileToStorage = async (driverId: string, file: File, kind: 'license_front' | 'license_back' | 'health'): Promise<string | null> => {
+    const ext = file.name.split('.').pop() || 'jpg';
+    const ts = Date.now();
+    const path = `drivers/${driverId}/${kind}_${ts}.${ext}`;
+    try {
+      const { error } = await supabase.storage
+        .from('vehicle-documents')
+        .upload(path, file, { upsert: true });
+      if (error) {
+        console.error('[EditDriver] storage upload failed:', error.message);
+        return null;
+      }
+      const { data } = supabase.storage.from('vehicle-documents').getPublicUrl(path);
+      return data.publicUrl;
+    } catch (e) {
+      console.error('[EditDriver] storage upload exception:', e);
+      return null;
+    }
+  };
 
   useEffect(() => {
     return () => setDirty(DIRTY_SOURCE_DRIVER_EDIT, false);
@@ -69,6 +93,23 @@ export default function EditDriverPage() {
     }
     setIsSubmitting(true);
     try {
+      let licenseFrontUrl = driver.license_front_url;
+      let licenseBackUrl = driver.license_back_url;
+      let healthDeclarationUrl = driver.health_declaration_url;
+
+      if (licenseFront) {
+        const url = await uploadDriverFileToStorage(driver.id, licenseFront, 'license_front');
+        if (url) licenseFrontUrl = url;
+      }
+      if (licenseBack) {
+        const url = await uploadDriverFileToStorage(driver.id, licenseBack, 'license_back');
+        if (url) licenseBackUrl = url;
+      }
+      if (healthDeclaration) {
+        const url = await uploadDriverFileToStorage(driver.id, healthDeclaration, 'health');
+        if (url) healthDeclarationUrl = url;
+      }
+
       await updateDriver.mutateAsync({
         id: driver.id,
         full_name: formData.get('full_name') as string,
@@ -84,6 +125,9 @@ export default function EditDriverPage() {
         license_number: formData.get('license_number') as string || null,
         birth_date: (formData.get('birth_date') as string)?.trim() || null,
         regulation_585b_date: formData.get('regulation_585b_date') as string || null,
+        license_front_url: licenseFrontUrl,
+        license_back_url: licenseBackUrl,
+        health_declaration_url: healthDeclarationUrl,
       });
       toast.success('הנהג עודכן בהצלחה');
       setDirty(DIRTY_SOURCE_DRIVER_EDIT, false);
@@ -198,6 +242,54 @@ export default function EditDriverPage() {
               <div>
                 <Label htmlFor="license_expiry">תוקף רישיון נהיגה *</Label>
                 <Input id="license_expiry" name="license_expiry" type="date" defaultValue={driver.license_expiry || ''} required />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                  <FileText className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <CardTitle>סריקות רישיון</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>רישיון - חזית</Label>
+                  {driver.license_front_url && (
+                    <img src={driver.license_front_url} alt="רישיון חזית" className="w-full h-32 object-contain rounded border border-border/40 bg-black/20" />
+                  )}
+                  <Input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    onChange={(e) => setLicenseFront(e.target.files?.[0] ?? null)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>רישיון - גב</Label>
+                  {driver.license_back_url && (
+                    <img src={driver.license_back_url} alt="רישיון גב" className="w-full h-32 object-contain rounded border border-border/40 bg-black/20" />
+                  )}
+                  <Input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    onChange={(e) => setLicenseBack(e.target.files?.[0] ?? null)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>הצהרת בריאות</Label>
+                  {driver.health_declaration_url && (
+                    <img src={driver.health_declaration_url} alt="הצהרת בריאות" className="w-full h-32 object-contain rounded border border-border/40 bg-black/20" />
+                  )}
+                  <Input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    onChange={(e) => setHealthDeclaration(e.target.files?.[0] ?? null)}
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>

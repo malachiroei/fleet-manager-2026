@@ -161,6 +161,9 @@ function DocForm({ initial, onSave, onCancel, saving }: {
   );
 }
 
+// קוד מנהל לשינוי פרטי הארגון (ניתן לעדכון לפי הצורך)
+const ORG_DETAILS_EDIT_CODE = '2101';
+
 // ─── Main Page ─────────────────────────────────────────────────────
 export default function OrgSettingsPage() {
   const { data: settings, isLoading } = useOrgSettings();
@@ -174,6 +177,7 @@ export default function OrgSettingsPage() {
   const [policyText, setPolicyText] = useState('');
   const [healthPdfUrl, setHealthPdfUrl] = useState<string | null>(null);
   const [policyPdfUrl, setPolicyPdfUrl] = useState<string | null>(null);
+  const [orgDetailsLocked, setOrgDetailsLocked] = useState<boolean>(true);
 
   useEffect(() => {
     if (!settings) return;
@@ -185,6 +189,17 @@ export default function OrgSettingsPage() {
     setHealthPdfUrl((settings as any).health_statement_pdf_url ?? null);
     setPolicyPdfUrl((settings as any).vehicle_policy_pdf_url ?? null);
   }, [settings]);
+
+  const handleUnlockOrgDetails = () => {
+    const input = window.prompt('לשינוי פרטי הארגון (שם, ח.פ., דוא״ל) נדרש קוד מנהל. הזן קוד:');
+    if (!input) return;
+    if (input === ORG_DETAILS_EDIT_CODE) {
+      setOrgDetailsLocked(false);
+      toast.success('פרטי הארגון נפתחו לעריכה');
+    } else {
+      toast.error('קוד שגוי');
+    }
+  };
 
   const handleSaveDetails = async () => {
     try {
@@ -295,10 +310,56 @@ export default function OrgSettingsPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2"><Label htmlFor="org_name">שם הארגון</Label><Input id="org_name" value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="חברה בע״מ" /></div>
-                    <div className="space-y-2"><Label htmlFor="org_id">מספר ח.פ. / ע.מ.</Label><Input id="org_id" value={orgIdNumber} onChange={(e) => setOrgIdNumber(e.target.value)} placeholder="515XXXXXXX" dir="ltr" /></div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <Label htmlFor="org_name">שם הארגון</Label>
+                        {orgDetailsLocked && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="xs"
+                            className="h-6 px-2 text-[10px]"
+                            onClick={handleUnlockOrgDetails}
+                          >
+                            שינוי פרטים עם קוד
+                          </Button>
+                        )}
+                      </div>
+                      <Input
+                        id="org_name"
+                        value={orgName}
+                        onChange={(e) => setOrgName(e.target.value)}
+                        placeholder="חברה בע״מ"
+                        readOnly={orgDetailsLocked}
+                        className={orgDetailsLocked ? 'cursor-not-allowed opacity-80' : ''}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="org_id">מספר ח.פ. / ע.מ.</Label>
+                      <Input
+                        id="org_id"
+                        value={orgIdNumber}
+                        onChange={(e) => setOrgIdNumber(e.target.value)}
+                        placeholder="515XXXXXXX"
+                        dir="ltr"
+                        readOnly={orgDetailsLocked}
+                        className={orgDetailsLocked ? 'cursor-not-allowed opacity-80' : ''}
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-2"><Label htmlFor="admin_email">דוא"ל ניהולי ראשי</Label><Input id="admin_email" type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} placeholder="admin@company.co.il" dir="ltr" /></div>
+                  <div className="space-y-2">
+                    <Label htmlFor="admin_email">דוא"ל ניהולי ראשי</Label>
+                    <Input
+                      id="admin_email"
+                      type="email"
+                      value={adminEmail}
+                      onChange={(e) => setAdminEmail(e.target.value)}
+                      placeholder="admin@company.co.il"
+                      dir="ltr"
+                      readOnly={orgDetailsLocked}
+                      className={orgDetailsLocked ? 'cursor-not-allowed opacity-80' : ''}
+                    />
+                  </div>
                 </CardContent>
               </Card>
               <Card>

@@ -52,6 +52,7 @@ export default function DriverListPage() {
   const [filterNoSafetyTraining, setFilterNoSafetyTraining] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const foldersDriverId = searchParams.get('folders') || '';
+  const highlightDriverId = searchParams.get('highlightDriver') || '';
   const { data: foldersDriver } = useDriver(foldersDriverId);
   const foldersPanelRef = useRef<HTMLDivElement>(null);
 
@@ -60,6 +61,14 @@ export default function DriverListPage() {
       foldersPanelRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [foldersDriver?.id]);
+
+  useEffect(() => {
+    if (!highlightDriverId || !drivers || drivers.length === 0) return;
+    const el = document.getElementById(`driver-card-${highlightDriverId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [highlightDriverId, drivers]);
   const errorMessage = getErrorMessage(error);
 
   const assignmentsByDriver = useMemo(() => {
@@ -258,13 +267,14 @@ export default function DriverListPage() {
               </Alert>
             )}
             {filteredDrivers.map((driver) => (
-              <DriverCard
-                key={driver.id}
-                driver={driver}
-                onDelete={() => setDeleteId(driver.id)}
-                canEdit={isManager}
-                driverActiveAssignments={assignmentsByDriver.get(driver.id) ?? []}
-              />
+              <div key={driver.id} id={`driver-card-${driver.id}`}>
+                <DriverCard
+                  driver={driver}
+                  onDelete={() => setDeleteId(driver.id)}
+                  canEdit={isManager}
+                  driverActiveAssignments={assignmentsByDriver.get(driver.id) ?? []}
+                />
+              </div>
             ))}
           </div>
         )}
