@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { Home, Menu } from 'lucide-react';
 import { useVehicleSpecDirty } from '@/contexts/VehicleSpecDirtyContext';
+import { useAuth } from '@/hooks/useAuth';
+import { useOrganization } from '@/hooks/useOrganizations';
 import { Button } from './ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from './ui/sheet';
 import { ScrollArea } from './ui/scroll-area';
@@ -17,6 +19,10 @@ export function MobileNav() {
   const isRtl = i18n.dir() === 'rtl';
   const sheetSide = isRtl ? 'right' : 'left';
   const isDirty = getIsDirty();
+  const { user, profile } = useAuth();
+  const { data: organization } = useOrganization(profile?.org_id ?? null);
+  const orgName = organization?.name?.trim() ?? '';
+  const email = user?.email ?? '';
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -34,8 +40,8 @@ export function MobileNav() {
           <SheetTitle className={cn('flex items-center gap-3', isRtl ? 'text-right' : 'text-left')}>
             <BrandLogo size="sidebar" className="drop-shadow-[0_0_12px_rgba(255,255,255,0.2)]" />
             <div>
-              <h1 className="font-bold text-base leading-tight text-white">{t('navigation.fleetManager')}</h1>
-              <p className="text-xs text-cyan-400/60">{t('navigation.proDashboard')}</p>
+              <h1 className="font-bold text-base leading-tight text-white">{orgName || t('navigation.fleetManager')}</h1>
+              <p className="text-xs text-cyan-400/60 truncate" title={email}>{email || t('navigation.proDashboard')}</p>
             </div>
           </SheetTitle>
         </SheetHeader>

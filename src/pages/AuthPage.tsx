@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,8 +11,13 @@ import { Loader2 } from 'lucide-react';
 import { PwaInstallButton } from '@/components/PwaInstallButton';
 import { toast } from '@/hooks/use-toast';
 
+const RESET_PASSWORD_REDIRECT = () => `${window.location.origin}/reset-password`;
+
 export default function AuthPage() {
   const [isLoading, setIsLoading] = useState(false);
+  const [forgotPassword, setForgotPassword] = useState(false);
+  const [forgotPasswordSent, setForgotPasswordSent] = useState(false);
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
   const { signIn, signUp } = useAuth();
   const navigate = useNavigate();
 
@@ -94,6 +100,33 @@ export default function AuthPage() {
     setIsLoading(false);
   };
 
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const email = forgotPasswordEmail.trim();
+    if (!email) {
+      toast({ title: 'נא להזין אימייל', variant: 'destructive' });
+      return;
+    }
+    setIsLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: RESET_PASSWORD_REDIRECT(),
+    });
+    setIsLoading(false);
+    if (error) {
+      toast({
+        title: 'שגיאה בשליחת קישור לאיפוס',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+    setForgotPasswordSent(true);
+    toast({
+      title: 'נשלח קישור לאימייל',
+      description: 'לחץ על הקישור באימייל כדי לאפס את הסיסמה. ייתכן שיופיע בתיקיית דואר זבל.',
+    });
+  };
+
   return (
     <div className="relative min-h-screen flex items-center justify-center bg-[#020617] p-4">
       {/* Install app – top corner, also available after login in header */}
@@ -133,39 +166,93 @@ export default function AuthPage() {
             </TabsList>
             
             <TabsContent value="login">
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="login-email" className="text-white/90">
-                    אימייל
-                  </Label>
-                  <Input
-                    id="login-email"
-                    className="border-white/15 bg-white/5 text-white placeholder:text-white/40" 
-                    name="email" 
-                    type="email" 
-                    placeholder="your@email.com"
-                    required
-                    dir="ltr"
-                  />
+              {forgotPasswordSent ? (
+                <div className="space-y-4 text-center">
+                  <p className="text-cyan-200 text-sm">
+                    נשלח אליך אימייל עם קישור לאיפוס סיסמה. לחץ על הקישור וקבע סיסמה חדשה.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full border-white/20 text-white hover:bg-white/10"
+                    onClick={() => { setForgotPasswordSent(false); setForgotPassword(false); }}
+                  >
+                    חזרה להתחברות
+                  </Button>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="login-password" className="text-white/90">
-                    סיסמה
-                  </Label>
-                  <Input
-                    id="login-password"
-                    className="border-white/15 bg-white/5 text-white placeholder:text-white/40" 
-                    name="password" 
-                    type="password" 
-                    required
-                    dir="ltr"
-                  />
-                </div>
-                <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : null}
-                  התחבר
-                </Button>
-              </form>
+              ) : forgotPassword ? (
+                <form onSubmit={handleForgotPassword} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="forgot-email" className="text-white/90">
+                      אימייל
+                    </Label>
+                    <Input
+                      id="forgot-email"
+                      className="border-white/15 bg-white/5 text-white placeholder:text-white/40"
+                      type="email"
+                      placeholder="your@email.com"
+                      value={forgotPasswordEmail}
+                      onChange={(e) => setForgotPasswordEmail(e.target.value)}
+                      required
+                      dir="ltr"
+                    />
+                  </div>
+                  <Button type="submit" className="w-full" disabled={isLoading}>
+                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : null}
+                    שלח קישור לאיפוס סיסמה
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => { setForgotPassword(false); setForgotPasswordEmail(''); }}
+                    className="w-full text-center text-cyan-400 hover:text-cyan-300 text-sm"
+                  >
+                    חזרה להתחברות
+                  </button>
+                </form>
+              ) : (
+                <>
+                  <form onSubmit={handleLogin} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="login-email" className="text-white/90">
+                        אימייל
+                      </Label>
+                      <Input
+                        id="login-email"
+                        className="border-white/15 bg-white/5 text-white placeholder:text-white/40" 
+                        name="email" 
+                        type="email" 
+                        placeholder="your@email.com"
+                        required
+                        dir="ltr"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="login-password" className="text-white/90">
+                        סיסמה
+                      </Label>
+                      <Input
+                        id="login-password"
+                        className="border-white/15 bg-white/5 text-white placeholder:text-white/40" 
+                        name="password" 
+                        type="password" 
+                        required
+                        dir="ltr"
+                      />
+                    </div>
+                    <Button type="submit" className="w-full" disabled={isLoading}>
+                      {isLoading ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : null}
+                      התחבר
+                    </Button>
+                  </form>
+                  <button
+                    type="button"
+                    onClick={() => setForgotPassword(true)}
+                    className="w-full text-center text-cyan-400 hover:text-cyan-300 text-sm mt-2"
+                  >
+                    שכחת סיסמה?
+                  </button>
+                </>
+              )}
             </TabsContent>
             
             <TabsContent value="signup">

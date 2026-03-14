@@ -12,6 +12,8 @@ import {
   Upload, ExternalLink, Trash2, Plus, Pencil, FileCheck, Tag,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useAuth } from '@/hooks/useAuth';
+import { useOrganization, useUpdateOrganization } from '@/hooks/useOrganizations';
 import { useOrgSettings, useUpdateOrgSettings, uploadTemplatePdf } from '@/hooks/useOrgSettings';
 import { useUiLabels, useUpdateUiLabels, UiLabel } from '@/hooks/useUiLabels';
 import {
@@ -166,10 +168,14 @@ const ORG_DETAILS_EDIT_CODE = '2101';
 
 // ─── Main Page ─────────────────────────────────────────────────────
 export default function OrgSettingsPage() {
-  const { data: settings, isLoading } = useOrgSettings();
+  const { profile } = useAuth();
+  const orgId = profile?.org_id ?? null;
+  const { data: organization, isLoading: orgLoading } = useOrganization(orgId);
+  const updateOrganization = useUpdateOrganization();
+  const { data: settings, isLoading: settingsLoading } = useOrgSettings();
   const updateSettings = useUpdateOrgSettings();
 
-  // Tab 1 state
+  // Tab 1 state — name & email from organizations; rest from organization_settings
   const [orgName, setOrgName] = useState('');
   const [orgIdNumber, setOrgIdNumber] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
@@ -179,11 +185,17 @@ export default function OrgSettingsPage() {
   const [policyPdfUrl, setPolicyPdfUrl] = useState<string | null>(null);
   const [orgDetailsLocked, setOrgDetailsLocked] = useState<boolean>(true);
 
+  // Populate from organizations (name, email) when loaded
+  useEffect(() => {
+    if (!organization) return;
+    setOrgName(organization.name ?? '');
+    setAdminEmail(organization.email ?? '');
+  }, [organization]);
+
+  // Populate from organization_settings (org_id_number, texts, pdfs) when loaded
   useEffect(() => {
     if (!settings) return;
-    setOrgName(settings.org_name ?? '');
     setOrgIdNumber(settings.org_id_number ?? '');
-    setAdminEmail(settings.admin_email ?? '');
     setHealthText(settings.health_statement_text ?? '');
     setPolicyText(settings.vehicle_policy_text ?? '');
     setHealthPdfUrl((settings as any).health_statement_pdf_url ?? null);
@@ -203,10 +215,15 @@ export default function OrgSettingsPage() {
 
   const handleSaveDetails = async () => {
     try {
+      if (orgId) {
+        await updateOrganization.mutateAsync({
+          id: orgId,
+          name: orgName.trim(),
+          email: adminEmail.trim() || null,
+        });
+      }
       await updateSettings.mutateAsync({
-        org_name: orgName.trim(),
         org_id_number: orgIdNumber.trim(),
-        admin_email: adminEmail.trim(),
         health_statement_text: healthText,
         vehicle_policy_text: policyText,
         health_statement_pdf_url: healthPdfUrl || null,
@@ -288,8 +305,12 @@ export default function OrgSettingsPage() {
           </div>
         </div>
 
-        {isLoading ? (
+        {(orgLoading || settingsLoading) ? (
           <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
+        ) : !orgId ? (
+          <Card className="p-6">
+            <p className="text-muted-foreground text-center">לא שויך ארגון למשתמש. נא ליצור קשר עם מנהל המערכת לשיוך ארגון.</p>
+          </Card>
         ) : (
           <Tabs defaultValue="details">
             <TabsList className="w-full grid grid-cols-4 mb-6">

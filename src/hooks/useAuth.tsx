@@ -1,7 +1,8 @@
-import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
+import { useState, useEffect, createContext, useContext, useCallback, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import type { AppRole, Profile } from '@/types/fleet';
+import { hasPermission as checkPermission, type PermissionKey } from '@/lib/permissions';
 
 interface AuthContextType {
   user: User | null;
@@ -12,6 +13,7 @@ interface AuthContextType {
   isAdmin: boolean;
   isManager: boolean;
   isDriver: boolean;
+  hasPermission: (permission: PermissionKey) => boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
@@ -40,7 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const fetchProfile = async (userId: string) => {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, user_id, full_name, email, phone, org_id, created_at, updated_at')
+      .select('id, user_id, full_name, email, phone, org_id, permissions, created_at, updated_at')
       .eq('user_id', userId)
       .maybeSingle();
 
@@ -113,6 +115,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isManager = roles.includes('admin') || roles.includes('fleet_manager');
   const isDriver = roles.includes('driver');
 
+  const hasPermission = useCallback(
+    (permission: PermissionKey) =>
+      checkPermission(profile, permission, { isAdmin, isManager }),
+    [profile, isAdmin, isManager]
+  );
+
   return (
     <AuthContext.Provider value={{
       user,
@@ -123,6 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAdmin,
       isManager,
       isDriver,
+      hasPermission,
       signIn,
       signUp,
       signOut

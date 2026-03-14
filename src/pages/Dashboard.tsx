@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useDashboardStats, useComplianceAlerts } from '@/hooks/useDashboard';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useAuth } from '@/hooks/useAuth';
+import type { PermissionKey } from '@/lib/permissions';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -20,42 +22,55 @@ import {
   Gauge,
   Settings,
   Calculator,
-  Droplet
+  Droplet,
+  UserCog
 } from 'lucide-react';
 
-const statusCardConfig = [
-  // שורה עליונה: רכבים + נהגים
+const statusCardConfig: Array<{
+  titleKey: 'navigation.fleetManagement' | 'navigation.drivers' | 'navigation.exceptionAlerts' | 'dashboard.replacementVehicle';
+  icon: React.ElementType;
+  theme: 'blue' | 'purple' | 'orange' | 'teal';
+  color: string;
+  link: string;
+  permission?: PermissionKey;
+  getValue: (stats: { totalVehicles?: number; totalDrivers?: number } | null, alertCount?: number) => string | number;
+  alertKey?: 'alert';
+}> = [
   {
-    titleKey: 'navigation.fleetManagement' as const,
+    titleKey: 'navigation.fleetManagement',
     icon: Car,
-    theme: 'blue' as const,
+    theme: 'blue',
     color: 'from-blue-500 to-cyan-400',
     link: '/vehicles',
-    getValue: (stats: { totalVehicles?: number } | null) => stats?.totalVehicles ?? 0,
+    permission: 'vehicles',
+    getValue: (stats) => stats?.totalVehicles ?? 0,
   },
   {
-    titleKey: 'navigation.drivers' as const,
+    titleKey: 'navigation.drivers',
     icon: Users,
-    theme: 'purple' as const,
+    theme: 'purple',
     color: 'from-purple-500 to-indigo-600',
     link: '/drivers',
-    getValue: (stats: { totalDrivers?: number } | null) => stats?.totalDrivers ?? 0,
+    permission: 'drivers',
+    getValue: (stats) => stats?.totalDrivers ?? 0,
   },
   {
-    titleKey: 'navigation.exceptionAlerts' as const,
+    titleKey: 'navigation.exceptionAlerts',
     icon: AlertTriangle,
-    theme: 'orange' as const,
+    theme: 'orange',
     color: 'from-orange-500 to-yellow-400',
     link: '/compliance',
-    getValue: (_: unknown, alertCount?: number) => alertCount ?? 0,
-    alertKey: 'alert' as const,
+    permission: 'compliance',
+    getValue: (_, alertCount) => alertCount ?? 0,
+    alertKey: 'alert',
   },
   {
-    titleKey: 'dashboard.replacementVehicle' as const,
+    titleKey: 'dashboard.replacementVehicle',
     icon: Repeat,
-    theme: 'teal' as const,
+    theme: 'teal',
     color: 'from-teal-400 to-emerald-500',
     link: '/handover/replacement',
+    permission: 'handover',
     getValue: () => '',
   },
 ];
@@ -132,6 +147,7 @@ export default function Dashboard() {
   const [showOdometerDialog, setShowOdometerDialog] = useState(false);
   const { t } = useTranslation();
   const isMobile = useIsMobile();
+  const { hasPermission, isAdmin } = useAuth();
   const totalAlerts = (alerts?.filter(a => a.status === 'expired' || a.status === 'warning').length) ?? 0;
 
   const quickLinks: {
@@ -139,44 +155,61 @@ export default function Dashboard() {
     href: string;
     icon: React.ElementType;
     disabled?: boolean;
+    permission?: PermissionKey;
+    adminOnly?: boolean;
   }[] = [
     {
       title: t('navigation.procedure6Complaints'),
       href: '/procedure6-complaints',
       icon: AlertTriangle,
     },
-    // חשבונאות ודלק ייכנסו כשיתממשקו — כרגע לא מציגים אותם בפעולות מהירות
     {
       title: 'טפסים',
       href: '/forms',
       icon: FileText,
+      permission: 'forms',
     },
     {
       title: 'הגדרות מערכת',
       href: '/admin/settings',
       icon: Settings,
+      adminOnly: true,
     },
     {
       title: t('navigation.reportGeneration', { defaultValue: 'הפקת דוחות' }),
       href: '/reports',
       icon: BarChart3,
+      permission: 'reports',
     },
     {
       title: t('navigation.parkingReports'),
       href: '/reports/scan',
       icon: FileText,
+      permission: 'reports',
     },
     {
       title: t('navigation.accidents'),
       href: '/maintenance/add',
       icon: Plus,
+      permission: 'maintenance',
     },
     {
       title: t('navigation.vehicleDelivery'),
       href: '/handover/delivery',
       icon: Truck,
+      permission: 'handover',
     },
-  ];
+    {
+      title: 'ניהול צוות',
+      href: '/team',
+      icon: UserCog,
+      permission: 'manage_team',
+    },
+  ].filter(
+    (action) =>
+      (action.adminOnly ? isAdmin : true) &&
+      (action.permission ? hasPermission(action.permission) : true)
+  );
 
   return (
     <div className="container py-6 md:py-8 space-y-6 md:space-y-8">
@@ -197,25 +230,27 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-2">
-            {statusCardConfig.map((card) => {
-              const Icon = card.icon;
-              const value = card.alertKey
-                ? card.getValue(stats, totalAlerts)
-                : card.getValue(stats);
-              const title =
-                card.titleKey === 'dashboard.replacementVehicle' ? 'רכב חליפי' : t(card.titleKey);
-              return (
-                <StatusCard
-                  key={card.link}
-                  title={title}
-                  value={value}
-                  icon={Icon}
-                  link={card.link}
-                  theme={card.theme}
-                  color={card.color}
-                />
-              );
-            })}
+            {statusCardConfig
+              .filter((card) => !card.permission || hasPermission(card.permission))
+              .map((card) => {
+                const Icon = card.icon;
+                const value = card.alertKey
+                  ? card.getValue(stats, totalAlerts)
+                  : card.getValue(stats);
+                const title =
+                  card.titleKey === 'dashboard.replacementVehicle' ? 'רכב חליפי' : t(card.titleKey);
+                return (
+                  <StatusCard
+                    key={card.link}
+                    title={title}
+                    value={value}
+                    icon={Icon}
+                    link={card.link}
+                    theme={card.theme}
+                    color={card.color}
+                  />
+                );
+              })}
           </div>
         )}
       </section>

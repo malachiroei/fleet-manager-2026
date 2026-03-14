@@ -6,9 +6,13 @@ export type AssignmentMode = 'permanent' | 'replacement';
 export interface Organization {
   id: string;
   name: string;
+  email?: string | null;
   created_at?: string;
   updated_at?: string;
 }
+
+/** Permission flags stored as JSON in profiles.permissions. Used to hide/show routes and actions. */
+export type ProfilePermissions = Record<string, boolean>;
 
 export interface Profile {
   id: string;
@@ -17,6 +21,8 @@ export interface Profile {
   email: string | null;
   phone: string | null;
   org_id: string | null;
+  /** JSON object of permission keys to boolean. e.g. { "vehicles": true, "manage_team": true } */
+  permissions: ProfilePermissions | null;
   created_at: string;
   updated_at: string;
 }

@@ -1,9 +1,62 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { Organization } from '@/types/fleet';
 
 export interface OrganizationWithUserCount extends Organization {
   user_count: number;
+}
+
+export function useOrganization(orgId?: string | null) {
+  return useQuery({
+    queryKey: ['organization', orgId ?? null],
+    enabled: !!orgId,
+    queryFn: async (): Promise<Organization | null> => {
+      if (!orgId) return null;
+
+      const { data, error } = await supabase
+        .from('organizations')
+        .select('id, name, email, created_at, updated_at')
+        .eq('id', orgId)
+        .maybeSingle();
+
+      if (error) throw error;
+      return (data ?? null) as Organization | null;
+    },
+  });
+}
+
+export function useUpdateOrganization() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      id,
+      name,
+      email,
+    }: {
+      id: string;
+      name?: string;
+      email?: string | null;
+    }) => {
+      const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if (name !== undefined) updates.name = name;
+      if (email !== undefined) updates.email = email;
+
+      const { data, error } = await supabase
+        .from('organizations')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data as Organization;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['organization', data.id] });
+      queryClient.invalidateQueries({ queryKey: ['organizations'] });
+    },
+  });
 }
 
 export function useOrganizations() {
@@ -12,7 +65,7 @@ export function useOrganizations() {
     queryFn: async (): Promise<OrganizationWithUserCount[]> => {
       const { data: orgs, error: orgsError } = await supabase
         .from('organizations')
-        .select('id, name, created_at, updated_at')
+        .select('id, name, email, created_at, updated_at')
         .order('name');
 
       if (orgsError) throw orgsError;

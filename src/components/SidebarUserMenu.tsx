@@ -6,10 +6,11 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/useTheme';
+import { useOrganization } from '@/hooks/useOrganizations';
 import { cn } from '@/lib/utils';
 
 export function SidebarUserMenu() {
-  const { user, signOut, isAdmin } = useAuth();
+  const { user, signOut, isAdmin, profile } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { i18n } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -32,8 +33,10 @@ export function SidebarUserMenu() {
   }, [open]);
 
   const email = user?.email ?? '';
-  const name = user?.user_metadata?.full_name || email.split('@')[0] || 'משתמש';
+  const name = (profile?.full_name?.trim()) || user?.user_metadata?.full_name || email.split('@')[0] || 'משתמש';
   const initials = name.slice(0, 2).toUpperCase();
+  const { data: organization } = useOrganization(profile?.org_id ?? null);
+  const orgName = organization?.name?.trim() ?? '';
 
   const isRtl = i18n.dir() === 'rtl';
   const CaretIcon = isRtl ? ChevronLeft : ChevronRight;
@@ -67,6 +70,11 @@ export function SidebarUserMenu() {
               <div className={cn('min-w-0', isRtl ? 'text-right' : 'text-left')}>
                 <p className="text-sm font-semibold truncate text-white sidebar-user-name">{name}</p>
                 <p className="text-[11px] truncate text-white/50 sidebar-user-email">{email}</p>
+                {orgName ? (
+                  <p className="text-[11px] truncate text-cyan-200/70 sidebar-user-org" title={orgName}>
+                    {orgName}
+                  </p>
+                ) : null}
               </div>
             </div>
             <button
@@ -194,6 +202,11 @@ export function SidebarUserMenu() {
         <div className="min-w-0 flex-1 text-right">
           <p className="text-sm font-semibold leading-tight truncate text-white sidebar-trigger-name">{name}</p>
           <p className="text-[10px] truncate text-white/45 sidebar-trigger-email">{email}</p>
+          {orgName ? (
+            <p className="text-[10px] truncate text-cyan-200/55 sidebar-trigger-org" title={orgName}>
+              {orgName}
+            </p>
+          ) : null}
         </div>
         <CaretIcon className={cn(
           'h-4 w-4 text-white/40 transition-transform',

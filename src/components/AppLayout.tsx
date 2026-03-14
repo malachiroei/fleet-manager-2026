@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useVehicleSpecDirty } from '@/contexts/VehicleSpecDirtyContext';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks/useAuth';
-import { useOrgSettings } from '@/hooks/useOrgSettings';
+import { useOrganization } from '@/hooks/useOrganizations';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { AIChatAssistant } from './AIChatAssistant';
 import { useTheme } from '@/hooks/useTheme';
@@ -23,15 +23,15 @@ export function AppLayout({ children }: AppLayoutProps) {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const { theme, toggleTheme } = useTheme();
-  const { user, signOut } = useAuth();
+  const { user, signOut, profile } = useAuth();
   const email = user?.email ?? '';
-  const name = user?.user_metadata?.full_name || email.split('@')[0] || '';
+  const name = (profile?.full_name?.trim()) || user?.user_metadata?.full_name || email.split('@')[0] || '';
   const initials = (name || email || '?').slice(0, 2).toUpperCase();
   const isRtl = i18n.dir() === 'rtl';
   const { tryNavigate, getIsDirty, getLastPath } = useVehicleSpecDirty();
   const isHomeActive = location.pathname === '/';
-  const { data: orgSettings } = useOrgSettings();
-  const orgName = orgSettings?.org_name?.trim() || '';
+  const { data: organization } = useOrganization(profile?.org_id ?? null);
+  const orgName = organization?.name?.trim() ?? '';
 
   const handleLogout = () => {
     void signOut();
@@ -168,7 +168,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             {t('navigation.fleetManager')}
           </span>
           <span className="block truncate text-[10px] text-cyan-400/55">
-            {orgName || t('navigation.proDashboard')}
+            {orgName || (user ? '—' : t('navigation.proDashboard'))}
           </span>
         </div>
       </div>
