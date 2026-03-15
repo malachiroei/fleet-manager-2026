@@ -100,14 +100,18 @@ function StatusCard({
           : 'shadow-[0_0_15px_rgba(45,212,191,0.55)]';
 
   return (
-    <Link to={link} className="block group cursor-pointer">
+    <Link
+      to={link}
+      className="block group cursor-pointer touch-manipulation min-w-0 relative z-10 min-h-[11rem] sm:min-h-[11rem] md:min-h-[14rem]"
+      style={{ touchAction: 'manipulation', pointerEvents: 'auto' }}
+    >
       <div
         className={`status-card status-card--${theme} relative h-40 sm:h-44 md:h-56 w-full rounded-2xl bg-white/5/80 backdrop-blur-lg border border-white/10 p-3 sm:p-4 flex flex-col items-center justify-between hover:scale-[1.03] hover:-translate-y-1 overflow-hidden transition-all duration-300 ${glowClass}`}
         style={{ pointerEvents: 'none' } as React.CSSProperties}
       >
         {/* השתקפות + גרדיאנט פנימי */}
-        <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-white/[0.07] via-black/40 to-black/80 opacity-80 pointer-events-none" />
-        <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-black/50 via-transparent to-white/[0.03] pointer-events-none" />
+        <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-white/[0.07] via-black/40 to-black/80 opacity-80 pointer-events-none" aria-hidden />
+        <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-black/50 via-transparent to-white/[0.03] pointer-events-none" aria-hidden />
 
         <div className="relative z-10 mt-1 flex flex-col items-center gap-2">
           <div className={`status-card-icon-box inline-flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-2xl bg-gradient-to-br ${color}`}>
@@ -136,7 +140,7 @@ function StatusCard({
           <span className="tracking-wide">כניסה</span>
         </div>
 
-        <div className="status-card-shine pointer-events-none absolute -inset-full h-full w-1/2 z-[5] block transform -skew-x-12 bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-0" />
+        <div className="status-card-shine pointer-events-none absolute -inset-full h-full w-1/2 z-[5] block transform -skew-x-12 bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-0" aria-hidden />
       </div>
     </Link>
   );
@@ -148,8 +152,23 @@ export default function Dashboard() {
   const [showOdometerDialog, setShowOdometerDialog] = useState(false);
   const { t } = useTranslation();
   const isMobile = useIsMobile();
-  const { hasPermission, isAdmin } = useAuth();
+  const { hasPermission, isAdmin, isManager, isDriver, roles: userRoles } = useAuth();
   const totalAlerts = (alerts?.filter(a => a.status === 'expired' || a.status === 'warning').length) ?? 0;
+
+  const isDriverOnly = Boolean(isDriver && !isManager && !isAdmin);
+
+  console.log('Dashboard userRole', {
+    userRoles: userRoles ?? [],
+    userRole: userRoles?.join(', ') ?? '(none)',
+    isAdmin,
+    isManager,
+    isDriver,
+    isDriverOnly,
+  });
+
+  const visibleStatusCards = isDriverOnly
+    ? statusCardConfig.filter((card) => card.link === '/handover/replacement')
+    : statusCardConfig;
 
   const quickLinks: {
     title: string;
@@ -163,6 +182,7 @@ export default function Dashboard() {
       title: t('navigation.procedure6Complaints'),
       href: '/procedure6-complaints',
       icon: AlertTriangle,
+      permission: 'procedure6_complaints',
     },
     {
       title: 'טפסים',
@@ -198,7 +218,7 @@ export default function Dashboard() {
       title: t('navigation.vehicleDelivery'),
       href: '/handover/delivery',
       icon: Truck,
-      permission: 'handover',
+      permission: 'vehicle_delivery',
     },
     {
       title: 'ניהול צוות',
@@ -206,16 +226,25 @@ export default function Dashboard() {
       icon: UserCog,
       permission: 'manage_team',
     },
-  ].filter((action) => (action.adminOnly ? isAdmin : true));
+  ].filter((action) => {
+    if (action.adminOnly && !isAdmin) return false;
+    if (isDriverOnly) {
+      const driverPerms: PermissionKey[] = ['handover', 'vehicle_delivery', 'procedure6_complaints', 'mileage_update'];
+      if (!action.permission) return false;
+      return driverPerms.includes(action.permission) && hasPermission(action.permission);
+    }
+    if (action.permission && !hasPermission(action.permission)) return false;
+    return true;
+  });
 
   return (
-    <div className="container py-6 md:py-8 space-y-6 md:space-y-8">
+    <div className="container py-6 md:py-8 pb-32 sm:pb-8 space-y-6 md:space-y-8 relative z-[1]">
       <div className="rounded-2xl border bg-card p-5 md:p-6">
         <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground">{t('dashboard.title')}</h1>
         <p className="text-sm md:text-base text-muted-foreground mt-1.5">{t('dashboard.subtitle')}</p>
       </div>
 
-      {!isLoading && stats && stats.totalVehicles === 0 && stats.totalDrivers === 0 && (
+      {!isDriverOnly && !isLoading && stats && stats.totalVehicles === 0 && stats.totalDrivers === 0 && (
         <Card className="border-dashed border-2 border-primary/30 bg-primary/5">
           <CardContent className="p-6 md:p-8 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-right">
             <div className="flex-1 space-y-1">
@@ -244,19 +273,19 @@ export default function Dashboard() {
         </Card>
       )}
 
-      <section className="dashboard-status-stage p-6 md:p-10 space-y-6">
+      <section className="dashboard-status-stage p-4 sm:p-6 md:p-10 pb-6 space-y-6 relative z-[20]">
         {isLoading ? (
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-4">
             {[1, 2, 3, 4].map((i) => (
               <Skeleton
                 key={i}
-                className="h-40 w-full rounded-2xl"
+                className="h-40 w-full rounded-2xl min-h-[10rem]"
               />
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-2">
-            {statusCardConfig
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-4">
+            {visibleStatusCards
               .map((card) => {
                 const Icon = card.icon;
                 const value = card.alertKey
@@ -282,14 +311,14 @@ export default function Dashboard() {
 
       {isMobile ? (
         <>
-          <section className="space-y-3">
+          <section className="space-y-3 pb-4">
             <h2 className="text-base font-semibold text-foreground">{t('dashboard.quickActions')}</h2>
-            <div className="grid grid-cols-1 gap-2.5">
+            <div className="grid grid-cols-1 gap-3">
               {quickLinks.map((action, idx) =>
                 action.disabled ? (
-                  <Card key={`${action.title}-${idx}`} className="h-full cursor-not-allowed opacity-55">
-                    <CardContent className="p-3.5 flex items-center gap-3">
-                      <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                  <Card key={`${action.title}-${idx}`} className="h-full cursor-not-allowed opacity-55 touch-manipulation min-h-[48px]">
+                    <CardContent className="p-4 flex items-center gap-3">
+                      <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                         <action.icon className="h-4.5 w-4.5" />
                       </div>
                       <div className="min-w-0 flex-1">
@@ -299,39 +328,42 @@ export default function Dashboard() {
                     </CardContent>
                   </Card>
                 ) : (
-                  <Link key={action.href + idx} to={action.href} className="block">
-                    <Card className="h-full transition-all duration-200 hover:shadow-md">
-                      <CardContent className="p-3.5 flex items-center gap-3">
-                        <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Link key={action.href + idx} to={action.href} className="block touch-manipulation cursor-pointer" style={{ touchAction: 'manipulation' }}>
+                    <Card className="h-full transition-all duration-200 hover:shadow-md min-h-[48px] cursor-pointer">
+                      <CardContent className="p-4 flex items-center gap-3">
+                        <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                           <action.icon className="h-4.5 w-4.5" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium text-foreground truncate">{action.title}</p>
                         </div>
-                        <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+                        <ChevronLeft className="h-4 w-4 text-muted-foreground shrink-0" />
                       </CardContent>
                     </Card>
                   </Link>
                 )
               )}
 
-              <Card className="h-full border-dashed">
-                <CardContent className="p-3.5 flex items-center gap-3">
-                  <div className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                    <Gauge className="h-4.5 w-4.5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-foreground truncate">{t('navigation.mileageUpdate')}</p>
-                    <Button
-                      variant="link"
-                      className="h-auto p-0 text-xs text-muted-foreground"
-                      onClick={() => setShowOdometerDialog(true)}
-                    >
-                      פתיחה מהירה
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+              {hasPermission('mileage_update') && (
+                <Card className="h-full border-dashed touch-manipulation min-h-[48px] cursor-pointer" style={{ touchAction: 'manipulation' }}>
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                      <Gauge className="h-4.5 w-4.5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground truncate">{t('navigation.mileageUpdate')}</p>
+                      <Button
+                        variant="link"
+                        className="h-auto p-0 text-xs text-muted-foreground touch-manipulation cursor-pointer min-h-[44px] min-w-[44px] inline-flex items-center"
+                        style={{ touchAction: 'manipulation' }}
+                        onClick={() => setShowOdometerDialog(true)}
+                      >
+                        פתיחה מהירה
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </section>
         </>
@@ -342,7 +374,7 @@ export default function Dashboard() {
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
               {quickLinks.map((action, idx) =>
                 action.disabled ? (
-                  <Card key={`${action.title}-${idx}`} className="h-full cursor-not-allowed opacity-55">
+                  <Card key={`${action.title}-${idx}`} className="h-full cursor-not-allowed opacity-55 touch-manipulation">
                     <CardContent className="p-4 flex items-center gap-3">
                       <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
                         <action.icon className="h-5 w-5" />
@@ -354,8 +386,8 @@ export default function Dashboard() {
                     </CardContent>
                   </Card>
                 ) : (
-                  <Link key={action.href + idx} to={action.href} className="block">
-                    <Card className="h-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+                  <Link key={action.href + idx} to={action.href} className="block touch-manipulation cursor-pointer" style={{ touchAction: 'manipulation' }}>
+                    <Card className="h-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md min-h-[48px] cursor-pointer">
                       <CardContent className="p-4 flex items-center gap-3">
                         <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
                           <action.icon className="h-5 w-5" />
@@ -373,23 +405,26 @@ export default function Dashboard() {
                 )
               )}
 
-              <Card className="h-full border-dashed">
-                <CardContent className="p-4 h-full flex items-center gap-3">
-                  <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
-                    <Gauge className="h-5 w-5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-foreground truncate">{t('navigation.mileageUpdate')}</p>
-                    <Button
-                      variant="link"
-                      className="h-auto p-0 text-xs text-muted-foreground"
-                      onClick={() => setShowOdometerDialog(true)}
-                    >
-                      פתיחה מהירה
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+              {hasPermission('mileage_update') && (
+                <Card className="h-full border-dashed touch-manipulation min-h-[48px] cursor-pointer" style={{ touchAction: 'manipulation' }}>
+                  <CardContent className="p-4 h-full flex items-center gap-3">
+                    <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+                      <Gauge className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground truncate">{t('navigation.mileageUpdate')}</p>
+                      <Button
+                        variant="link"
+                        className="h-auto p-0 text-xs text-muted-foreground touch-manipulation cursor-pointer min-h-[44px] inline-flex items-center"
+                        style={{ touchAction: 'manipulation' }}
+                        onClick={() => setShowOdometerDialog(true)}
+                      >
+                        פתיחה מהירה
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </section>
         </>

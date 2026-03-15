@@ -10,7 +10,8 @@ import { useOrganization } from '@/hooks/useOrganizations';
 import { cn } from '@/lib/utils';
 
 export function SidebarUserMenu() {
-  const { user, signOut, isAdmin, profile, activeOrgId } = useAuth();
+  const { user, signOut, isAdmin, isManager, isDriver, profile, activeOrgId } = useAuth();
+  const isDriverOnly = Boolean(isDriver && !isManager && !isAdmin);
   const { theme, toggleTheme } = useTheme();
   const { i18n } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -150,33 +151,37 @@ export function SidebarUserMenu() {
               </Link>
             )}
 
-            {/* Org Settings */}
-            <Link
-              to="/admin/org-settings"
-              onClick={() => setOpen(false)}
-              className={cn(
-                'sidebar-menu-item w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors',
-                isRtl ? 'flex-row-reverse text-right' : 'text-left'
-              )}
-            >
-              <Building2 className="h-4 w-4 text-cyan-300 sidebar-menu-icon" />
-              <span className={cn('sidebar-menu-label flex-1', isRtl ? 'text-right' : 'text-left')}>הגדרות ארגון</span>
-              <CaretIcon className="h-3.5 w-3.5 opacity-40 sidebar-menu-caret" />
-            </Link>
+            {/* Org Settings — hidden for driver-only role */}
+            {!isDriverOnly && (
+              <Link
+                to="/admin/org-settings"
+                onClick={() => setOpen(false)}
+                className={cn(
+                  'sidebar-menu-item w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors',
+                  isRtl ? 'flex-row-reverse text-right' : 'text-left'
+                )}
+              >
+                <Building2 className="h-4 w-4 text-cyan-300 sidebar-menu-icon" />
+                <span className={cn('sidebar-menu-label flex-1', isRtl ? 'text-right' : 'text-left')}>הגדרות ארגון</span>
+                <CaretIcon className="h-3.5 w-3.5 opacity-40 sidebar-menu-caret" />
+              </Link>
+            )}
 
-            {/* Team Management — for admins, fleet_managers, or any user with an org */}
-            <Link
-              to="/team"
-              onClick={() => setOpen(false)}
-              className={cn(
-                'sidebar-menu-item w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors',
-                isRtl ? 'flex-row-reverse text-right' : 'text-left'
-              )}
-            >
-              <UserCog className="h-4 w-4 text-cyan-300 sidebar-menu-icon" />
-              <span className={cn('sidebar-menu-label flex-1', isRtl ? 'text-right' : 'text-left')}>ניהול צוות</span>
-              <CaretIcon className="h-3.5 w-3.5 opacity-40 sidebar-menu-caret" />
-            </Link>
+            {/* Team Management — hidden for driver-only role */}
+            {!isDriverOnly && (
+              <Link
+                to="/team"
+                onClick={() => setOpen(false)}
+                className={cn(
+                  'sidebar-menu-item w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors',
+                  isRtl ? 'flex-row-reverse text-right' : 'text-left'
+                )}
+              >
+                <UserCog className="h-4 w-4 text-cyan-300 sidebar-menu-icon" />
+                <span className={cn('sidebar-menu-label flex-1', isRtl ? 'text-right' : 'text-left')}>ניהול צוות</span>
+                <CaretIcon className="h-3.5 w-3.5 opacity-40 sidebar-menu-caret" />
+              </Link>
+            )}
 
             <div className="my-1.5 mx-3 h-px bg-white/8 sidebar-divider" />
 

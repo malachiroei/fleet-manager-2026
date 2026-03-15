@@ -247,9 +247,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     activeOrgInitializedRef.current = false;
   };
 
-  const isAdmin = roles.includes('admin');
-  const isManager = roles.includes('admin') || roles.includes('fleet_manager');
-  const isDriver = roles.includes('driver');
+  const roleLower = (r: string) => String(r).toLowerCase();
+  const isAdmin = roles.some((r) => roleLower(r) === 'admin');
+  const isManager = roles.some((r) => roleLower(r) === 'admin' || roleLower(r) === 'fleet_manager');
+  const isDriver = roles.some((r) => {
+    const lower = roleLower(r);
+    return lower === 'driver' || lower === 'employee' || lower === 'viewer';
+  });
 
   const hasPermission = useCallback(
     (permission: PermissionKey) =>

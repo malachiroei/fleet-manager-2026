@@ -7,7 +7,7 @@
  *
  * Request body: { org_id: string, email: string }
  * Secret: RESEND_API_KEY (npx supabase secrets set RESEND_API_KEY=re_...)
- * Optional: APP_URL (defaults to production URL)
+ * Invite link base URL: always https://fleet-manager-pro.com (no vercel.app).
  */
 
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
@@ -78,7 +78,7 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    const appUrl = (Deno.env.get('APP_URL') ?? APP_URL_DEFAULT).replace(/\/$/, '');
+    const appUrl = APP_URL_DEFAULT.replace(/\/$/, '');
 
     let organizationName = 'הארגון';
     if (supabaseUrl && serviceRoleKey) {

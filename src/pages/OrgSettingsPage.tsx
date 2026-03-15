@@ -23,9 +23,9 @@ import {
 } from '@/hooks/useOrgDocuments';
 
 // ─── PDF Template Upload slot ─────────────────────────────────────
-function PdfUploadSlot({ label, description, currentUrl, onUploaded, slot }: {
+function PdfUploadSlot({ label, description, currentUrl, onUploaded, slot, readOnly }: {
   label: string; description: string; currentUrl: string | null;
-  onUploaded: (url: string) => void; slot: 'health' | 'policy';
+  onUploaded: (url: string) => void; slot: 'health' | 'policy'; readOnly?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -67,26 +67,32 @@ function PdfUploadSlot({ label, description, currentUrl, onUploaded, slot }: {
             <FileCheck className="h-4 w-4 text-green-600 dark:text-green-400 shrink-0" />
             <span className="text-xs text-green-700 dark:text-green-300 truncate">קובץ מועלה</span>
           </div>
-          <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
-            onClick={() => onUploaded('')} title="הסר תבנית">
-            <Trash2 className="h-4 w-4" />
-          </Button>
+          {!readOnly && (
+            <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
+              onClick={() => onUploaded('')} title="הסר תבנית">
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          )}
         </div>
+      ) : readOnly ? (
+        <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">אין תבנית מועלה</div>
       ) : (
-        <Button type="button" variant="outline" size="sm" className="gap-2 w-full"
-          disabled={uploading} onClick={() => inputRef.current?.click()}>
-          {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-          {uploading ? 'מעלה...' : 'העלה PDF'}
-        </Button>
+        <>
+          <Button type="button" variant="outline" size="sm" className="gap-2 w-full"
+            disabled={uploading} onClick={() => inputRef.current?.click()}>
+            {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            {uploading ? 'מעלה...' : 'העלה PDF'}
+          </Button>
+          <input ref={inputRef} type="file" accept="application/pdf" className="hidden" onChange={handleFile} />
+        </>
       )}
-      <input ref={inputRef} type="file" accept="application/pdf" className="hidden" onChange={handleFile} />
     </div>
   );
 }
 
 // ─── Document row ──────────────────────────────────────────────────
-function DocRow({ doc, onEdit, onDelete }: {
-  doc: OrgDocument; onEdit: (d: OrgDocument) => void; onDelete: (id: string) => void;
+function DocRow({ doc, onEdit, onDelete, readOnly }: {
+  doc: OrgDocument; onEdit: (d: OrgDocument) => void; onDelete: (id: string) => void; readOnly?: boolean;
 }) {
   return (
     <div className="flex items-start gap-3 border border-border rounded-xl p-4">
@@ -100,10 +106,12 @@ function DocRow({ doc, onEdit, onDelete }: {
           {doc.file_url && <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1" onClick={(e) => e.stopPropagation()}><ExternalLink className="h-3 w-3" /> קובץ</a>}
         </div>
       </div>
-      <div className="flex gap-1 shrink-0">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(doc)}><Pencil className="h-3.5 w-3.5" /></Button>
-        <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-destructive" onClick={() => onDelete(doc.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
-      </div>
+      {!readOnly && (
+        <div className="flex gap-1 shrink-0">
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(doc)}><Pencil className="h-3.5 w-3.5" /></Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-destructive" onClick={() => onDelete(doc.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -168,7 +176,10 @@ const ORG_DETAILS_EDIT_CODE = '2101';
 
 // ─── Main Page ─────────────────────────────────────────────────────
 export default function OrgSettingsPage() {
-  const { activeOrgId } = useAuth();
+  const { activeOrgId, isAdmin, isManager, isDriver, hasPermission } = useAuth();
+  const isDriverOnly = Boolean(isDriver && !isManager && !isAdmin);
+  const readOnly = isDriverOnly || !hasPermission('admin_access');
+
   const orgId = activeOrgId ?? null;
   const { data: organization, isLoading: orgLoading } = useOrganization(orgId);
   const updateOrganization = useUpdateOrganization();
@@ -322,6 +333,12 @@ export default function OrgSettingsPage() {
             <p className="text-muted-foreground text-center">לא שויך ארגון למשתמש. נא ליצור קשר עם מנהל המערכת לשיוך ארגון.</p>
           </Card>
         ) : (
+          <>
+            {readOnly && (
+              <p className="text-sm text-muted-foreground bg-muted/50 border border-border rounded-lg px-4 py-2.5" role="status">
+                You have read-only access to these settings.
+              </p>
+            )}
           <Tabs defaultValue="details">
             <TabsList className="w-full grid grid-cols-4 mb-6">
               <TabsTrigger value="details" className="gap-1.5 text-xs md:text-sm"><Building2 className="h-3.5 w-3.5 shrink-0 hidden sm:block" />פרטי חברה</TabsTrigger>
@@ -344,7 +361,7 @@ export default function OrgSettingsPage() {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between gap-2">
                         <Label htmlFor="org_name">שם הארגון</Label>
-                        {orgDetailsLocked && (
+                        {!readOnly && orgDetailsLocked && (
                           <Button
                             type="button"
                             variant="outline"
@@ -361,8 +378,9 @@ export default function OrgSettingsPage() {
                         value={orgName}
                         onChange={(e) => setOrgName(e.target.value)}
                         placeholder="חברה בע״מ"
-                        readOnly={orgDetailsLocked}
-                        className={orgDetailsLocked ? 'cursor-not-allowed opacity-80' : ''}
+                        readOnly={readOnly || orgDetailsLocked}
+                        disabled={readOnly}
+                        className={(readOnly || orgDetailsLocked) ? 'cursor-not-allowed opacity-80' : ''}
                       />
                     </div>
                     <div className="space-y-2">
@@ -373,8 +391,9 @@ export default function OrgSettingsPage() {
                         onChange={(e) => setOrgIdNumber(e.target.value)}
                         placeholder="515XXXXXXX"
                         dir="ltr"
-                        readOnly={orgDetailsLocked}
-                        className={orgDetailsLocked ? 'cursor-not-allowed opacity-80' : ''}
+                        readOnly={readOnly || orgDetailsLocked}
+                        disabled={readOnly}
+                        className={(readOnly || orgDetailsLocked) ? 'cursor-not-allowed opacity-80' : ''}
                       />
                     </div>
                   </div>
@@ -387,8 +406,9 @@ export default function OrgSettingsPage() {
                       onChange={(e) => setAdminEmail(e.target.value)}
                       placeholder="admin@company.co.il"
                       dir="ltr"
-                      readOnly={orgDetailsLocked}
-                      className={orgDetailsLocked ? 'cursor-not-allowed opacity-80' : ''}
+                      readOnly={readOnly || orgDetailsLocked}
+                      disabled={readOnly}
+                      className={(readOnly || orgDetailsLocked) ? 'cursor-not-allowed opacity-80' : ''}
                     />
                   </div>
                 </CardContent>
@@ -401,7 +421,7 @@ export default function OrgSettingsPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-2">
-                  <Textarea value={healthText} onChange={(e) => setHealthText(e.target.value)} className="min-h-[200px] font-mono text-sm resize-y" dir="rtl" placeholder="אינני סובל/ת ממחלת עצבים..." />
+                  <Textarea value={healthText} onChange={(e) => setHealthText(e.target.value)} className="min-h-[200px] font-mono text-sm resize-y" dir="rtl" placeholder="אינני סובל/ת ממחלת עצבים..." disabled={readOnly} readOnly={readOnly} />
                   <p className="text-xs text-muted-foreground">{healthText.split('\n').filter(l => l.trim()).length} סעיפים</p>
                 </CardContent>
               </Card>
@@ -413,15 +433,17 @@ export default function OrgSettingsPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-2">
-                  <Textarea value={policyText} onChange={(e) => setPolicyText(e.target.value)} className="min-h-[300px] font-mono text-sm resize-y" dir="rtl" placeholder="הרכב ישמש לצרכי עבודה בלבד..." />
+                  <Textarea value={policyText} onChange={(e) => setPolicyText(e.target.value)} className="min-h-[300px] font-mono text-sm resize-y" dir="rtl" placeholder="הרכב ישמש לצרכי עבודה בלבד..." disabled={readOnly} readOnly={readOnly} />
                   <p className="text-xs text-muted-foreground">{policyText.split('\n').filter(l => l.trim()).length} סעיפים</p>
                 </CardContent>
               </Card>
-              <div className="flex justify-start pb-6">
-                <Button onClick={handleSaveDetails} disabled={updateSettings.isPending} size="lg" className="gap-2 px-8">
-                  {updateSettings.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} שמור הגדרות
-                </Button>
-              </div>
+              {!readOnly && (
+                <div className="flex justify-start pb-6">
+                  <Button onClick={handleSaveDetails} disabled={updateSettings.isPending} size="lg" className="gap-2 px-8">
+                    {updateSettings.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} שמור הגדרות
+                  </Button>
+                </div>
+              )}
             </TabsContent>
 
             {/* TAB 2 — PDF Templates */}
@@ -437,15 +459,17 @@ export default function OrgSettingsPage() {
                   <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-300">
                     <strong>הערה:</strong> כאשר תבנית מועלית — האשף יציג אותה לנהג ויאסוף חתימה נפרדת. ללא תבנית — ייווצר PDF מהטקסט שב"פרטי חברה".
                   </div>
-                  <PdfUploadSlot slot="health" label="הצהרת בריאות — תבנית PDF" description="הנהג יצפה ויחתום דיגיטלית" currentUrl={healthPdfUrl} onUploaded={(u) => setHealthPdfUrl(u || null)} />
-                  <PdfUploadSlot slot="policy" label="נוהל שימוש ברכב — תבנית PDF" description="הנהג יקרא ויאשר בחתימה" currentUrl={policyPdfUrl} onUploaded={(u) => setPolicyPdfUrl(u || null)} />
+                  <PdfUploadSlot slot="health" label="הצהרת בריאות — תבנית PDF" description="הנהג יצפה ויחתום דיגיטלית" currentUrl={healthPdfUrl} onUploaded={(u) => setHealthPdfUrl(u || null)} readOnly={readOnly} />
+                  <PdfUploadSlot slot="policy" label="נוהל שימוש ברכב — תבנית PDF" description="הנהג יקרא ויאשר בחתימה" currentUrl={policyPdfUrl} onUploaded={(u) => setPolicyPdfUrl(u || null)} readOnly={readOnly} />
                 </CardContent>
               </Card>
-              <div className="flex justify-start pb-6">
-                <Button onClick={handleSaveDetails} disabled={updateSettings.isPending} size="lg" className="gap-2 px-8">
-                  {updateSettings.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} שמור קישורי תבניות
-                </Button>
-              </div>
+              {!readOnly && (
+                <div className="flex justify-start pb-6">
+                  <Button onClick={handleSaveDetails} disabled={updateSettings.isPending} size="lg" className="gap-2 px-8">
+                    {updateSettings.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} שמור קישורי תבניות
+                  </Button>
+                </div>
+              )}
             </TabsContent>
 
             {/* TAB 3 — White Labeling */}
@@ -502,12 +526,13 @@ export default function OrgSettingsPage() {
                                   onChange={(e) => setEdit({ custom_label: e.target.value })}
                                   placeholder={lbl.default_label}
                                   className="text-sm h-8"
-                                  disabled={!edit.is_visible}
+                                  disabled={readOnly || !edit.is_visible}
                                 />
                                 <div className="flex justify-center">
                                   <Switch
                                     checked={edit.is_visible}
                                     onCheckedChange={(v) => setEdit({ is_visible: v })}
+                                    disabled={readOnly}
                                   />
                                 </div>
                               </div>
@@ -519,11 +544,13 @@ export default function OrgSettingsPage() {
                   )}
                 </CardContent>
               </Card>
-              <div className="flex justify-start pb-6">
-                <Button onClick={handleSaveLabels} disabled={savingLabels} size="lg" className="gap-2 px-8">
-                  {savingLabels ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} שמור שנויים
-                </Button>
-              </div>
+              {!readOnly && (
+                <div className="flex justify-start pb-6">
+                  <Button onClick={handleSaveLabels} disabled={savingLabels} size="lg" className="gap-2 px-8">
+                    {savingLabels ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} שמור שנויים
+                  </Button>
+                </div>
+              )}
             </TabsContent>
 
             {/* TAB 4 — Dynamic Documents */}
@@ -535,9 +562,11 @@ export default function OrgSettingsPage() {
                       <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-500/10"><FileText className="h-5 w-5 text-green-600 dark:text-green-400" /></div>
                       <div><CardTitle>מסמכים נוספים</CardTitle><CardDescription>טפסים מותאמים — לאשף המסירה או כקישורים עצמאיים לנהג.</CardDescription></div>
                     </div>
-                    <Button size="sm" className="gap-2 shrink-0" onClick={() => { setAddingDoc(true); setEditingDoc(null); }}>
-                      <Plus className="h-4 w-4" /> הוסף מסמך
-                    </Button>
+                    {!readOnly && (
+                      <Button size="sm" className="gap-2 shrink-0" onClick={() => { setAddingDoc(true); setEditingDoc(null); }}>
+                        <Plus className="h-4 w-4" /> הוסף מסמך
+                      </Button>
+                    )}
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -558,7 +587,7 @@ export default function OrgSettingsPage() {
                           {editingDoc?.id === doc.id ? (
                             <DocForm initial={doc} onSave={handleSaveDoc} onCancel={() => setEditingDoc(null)} saving={updateDoc.isPending} />
                           ) : (
-                            <DocRow doc={doc} onEdit={(d) => { setEditingDoc(d); setAddingDoc(false); }} onDelete={handleDeleteDoc} />
+                            <DocRow doc={doc} onEdit={(d) => { setEditingDoc(d); setAddingDoc(false); }} onDelete={handleDeleteDoc} readOnly={readOnly} />
                           )}
                         </React.Fragment>
                       ))}
@@ -569,6 +598,7 @@ export default function OrgSettingsPage() {
             </TabsContent>
 
           </Tabs>
+          </>
         )}
       </div>
     </div>
