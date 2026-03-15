@@ -89,7 +89,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const TopToolsBlock = () => (
     <div
       className={cn(
-        'flex h-8 flex-wrap items-center gap-2 sm:gap-3',
+        'flex h-8 sm:h-9 items-center gap-2 sm:gap-3 shrink-0',
         isRtl ? 'flex-row-reverse' : ''
       )}
     >
@@ -104,14 +104,16 @@ export function AppLayout({ children }: AppLayoutProps) {
         <Building2 className="h-3.5 w-3.5" />
         <span className="hidden sm:inline">ארגון</span>
       </Link>
+      <UserDropdown />
     </div>
   );
 
+  /* Desktop: full inline email + logout */
   const UserInline = () =>
     user ? (
       <div
         className={cn(
-          'flex items-center gap-2 rounded-full bg-black/40 px-3 py-1 text-xs',
+          'hidden sm:flex items-center gap-2 rounded-full bg-black/40 px-3 py-1 text-xs',
           isRtl ? 'flex-row-reverse' : 'flex-row'
         )}
       >
@@ -133,13 +135,55 @@ export function AppLayout({ children }: AppLayoutProps) {
           type="button"
           variant="ghost"
           size="sm"
-          className="h-7 gap-1 px-2 text-red-300 hover:bg-red-500/10 hover:text-red-200"
+          className="h-7 gap-1 px-2 text-red-300 hover:bg-red-500/10 hover:text-red-200 cursor-pointer"
           onClick={handleLogout}
         >
           <LogOut className="h-3.5 w-3.5 shrink-0" />
           <span className="text-[11px] font-medium">התנתקות</span>
         </Button>
       </div>
+    ) : null;
+
+  /* Mobile: dropdown trigger (avatar only); content = email + logout */
+  const UserDropdown = () =>
+    user ? (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="sm:hidden h-9 w-9 rounded-full border border-cyan-400/30 bg-cyan-500/20 text-cyan-200 hover:bg-cyan-500/30 hover:text-cyan-100 cursor-pointer touch-manipulation shrink-0"
+            style={{ touchAction: 'manipulation' }}
+            aria-label={email || 'תפריט משתמש'}
+          >
+            <span className="text-xs font-bold">{initials}</span>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align={isRtl ? 'start' : 'end'}
+          side={isRtl ? 'left' : 'right'}
+          className="min-w-[220px] z-[100]"
+        >
+          <div className={cn('px-2 py-2 border-b border-border', isRtl ? 'text-right' : 'text-left')}>
+            <p className="text-xs font-medium text-foreground truncate" title={email}>
+              {email}
+            </p>
+            {name && name !== email && (
+              <p className="text-[11px] text-muted-foreground truncate" title={name}>
+                {name}
+              </p>
+            )}
+          </div>
+          <DropdownMenuItem
+            className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-500/10 gap-2"
+            onSelect={handleLogout}
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
+            התנתקות
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     ) : null;
 
   const BackButton = () => {
@@ -219,15 +263,15 @@ export function AppLayout({ children }: AppLayoutProps) {
       className="flex min-h-[100dvh] flex-col overflow-x-hidden bg-[#020617]"
       dir={isRtl ? 'rtl' : 'ltr'}
     >
-      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0d1b2e]">
-        <div className="mx-auto flex max-w-[1920px] w-full flex-col gap-1 px-6 py-3">
-          <div className="flex w-full items-center justify-between gap-4">
+      <header className="sticky top-0 z-50 border-b border-white/10 bg-[#0d1b2e] min-h-16 sm:min-h-0">
+        <div className="mx-auto flex max-w-[1920px] w-full flex-col gap-0 sm:gap-1 px-4 sm:px-6 py-3 sm:py-3">
+          <div className="flex w-full items-center justify-between gap-2 min-h-10 sm:min-h-0">
             {/* RTL: פריט ראשון = ימין המסך — בית + מנהל הצי */}
             <BrandAndHome />
             <TopToolsBlock />
           </div>
-          {/* שורה קומפקטית למייל + התנתקות מתחת לכפתורי הכלים */}
-          <div className={cn('flex w-full', isRtl ? 'justify-end' : 'justify-start')}>
+          {/* שורת משתמש — רק בדסקטופ; במובייל המשתמש בתפריט dropdown בשורה הראשונה */}
+          <div className={cn('hidden sm:block pt-1', isRtl ? 'flex w-full justify-end' : 'flex w-full justify-start')}>
             <UserInline />
           </div>
         </div>
