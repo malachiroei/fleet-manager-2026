@@ -41,7 +41,11 @@
     "fleetManagement": "Fleet Management",
     "drivers": "Drivers",
     "manageYourFleet": "Manage your vehicle fleet",
-    "manageDriverRoster": "Manage your driver roster"
+    "manageDriverRoster": "Manage your driver roster",
+    "emptyStateTitle": "No vehicles or drivers in your organization yet",
+    "emptyStateDescription": "Add a vehicle or driver to get started. Dashboard numbers will update automatically.",
+    "addFirstVehicle": "Add first vehicle",
+    "addFirstDriver": "Add first driver"
   },
   "vehicles": {
     "title": "Fleet Management",

@@ -41,7 +41,11 @@
     "fleetManagement": "ניהול הצי",
     "drivers": "נהגים",
     "manageYourFleet": "נהל את צי הרכבים שלך",
-    "manageDriverRoster": "נהל את רשימת הנהגים שלך"
+    "manageDriverRoster": "נהל את רשימת הנהגים שלך",
+    "emptyStateTitle": "עדיין אין רכבים או נהגים בארגון",
+    "emptyStateDescription": "הוסף רכב או נהג כדי להתחיל לנהל את הצי. המספרים בלוח הבקרה יתעדכנו אוטומטית.",
+    "addFirstVehicle": "הוסף רכב ראשון",
+    "addFirstDriver": "הוסף נהג ראשון"
   },
   "vehicles": {
     "title": "ניהול צי",

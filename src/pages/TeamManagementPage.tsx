@@ -29,7 +29,7 @@ import { ArrowRight, Loader2, Mail, UserPlus, Users } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 
 export default function TeamManagementPage() {
-  const { profile, hasPermission, isManager } = useAuth();
+  const { profile, hasPermission, isAdmin, isManager } = useAuth();
   const orgId = profile?.org_id ?? null;
   const { data: members, isLoading } = useTeamMembers(orgId);
   const { data: invitations } = useOrgInvitations(orgId);
@@ -39,7 +39,7 @@ export default function TeamManagementPage() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [invitePermissions, setInvitePermissions] = useState<ProfilePermissions>(getDefaultPermissions());
 
-  const canManageTeam = isManager || hasPermission('manage_team');
+  const canManageTeam = isAdmin || isManager || hasPermission('manage_team') || Boolean(profile?.org_id);
 
   if (!canManageTeam) {
     return <Navigate to="/" replace />;

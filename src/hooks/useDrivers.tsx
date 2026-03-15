@@ -7,112 +7,80 @@ import { useAuth } from '@/hooks/useAuth';
 
 export function useDrivers() {
   const { profile } = useAuth();
-  const orgId = profile?.org_id ?? undefined;
+  const orgId = profile?.org_id ?? null;
 
   return useQuery({
     queryKey: ['drivers', orgId],
+    enabled: orgId != null,
     queryFn: async () => {
-      let query = supabase
+      if (orgId == null) return [] as DriverSummary[];
+      const { data, error } = await supabase
         .from('drivers')
         .select('*')
+        .eq('org_id', orgId)
         .order('full_name');
-      if (orgId != null) {
-        query = query.eq('org_id', orgId);
-      }
-      const { data, error } = await query;
 
       if (error) {
-        let fallbackQuery = supabase
+        const fallback = await supabase
           .from('drivers')
-          .select('id, full_name, id_number, license_expiry, phone, email')
+          .select('id, full_name, id_number, license_expiry, phone, email, address, job_title, department, license_number, health_declaration_date, safety_training_date, regulation_585b_date, license_front_url, license_back_url, health_declaration_url, status')
+          .eq('org_id', orgId)
           .order('full_name');
-        if (orgId != null) {
-          fallbackQuery = fallbackQuery.eq('org_id', orgId);
-        }
-        const fallback = await fallbackQuery;
-
         if (fallback.error) {
           throw new Error(
-            [
-              fallback.error.message,
-              fallback.error.code ? `code=${fallback.error.code}` : null,
-              fallback.error.details ? `details=${fallback.error.details}` : null,
-              fallback.error.hint ? `hint=${fallback.error.hint}` : null,
-            ]
+            [fallback.error.message, fallback.error.code ? `code=${fallback.error.code}` : null, fallback.error.details ? `details=${fallback.error.details}` : null, fallback.error.hint ? `hint=${fallback.error.hint}` : null]
               .filter(Boolean)
               .join(' | ')
           );
         }
-
-        return (fallback.data ?? []).map((row) => {
-          const d = row as Record<string, unknown>;
-          return {
-            id: String(d.id ?? ''),
-            full_name: String(d.full_name ?? ''),
-            id_number: String(d.id_number ?? ''),
-            phone: (d.phone as string) ?? null,
-            email: (d.email as string) ?? null,
-            license_expiry: String(d.license_expiry ?? ''),
-            status: (d.status as DriverSummary['status']) ?? 'valid',
-            address: (d.address as string) ?? null,
-            job_title: (d.job_title as string) ?? null,
-            department: (d.department as string) ?? null,
-            license_number: (d.license_number as string) ?? null,
-            health_declaration_date: (d.health_declaration_date as string) ?? null,
-            safety_training_date: (d.safety_training_date as string) ?? null,
-            regulation_585b_date: (d.regulation_585b_date as string) ?? null,
-            license_front_url: (d.license_front_url as string) ?? null,
-            license_back_url: (d.license_back_url as string) ?? null,
-            health_declaration_url: (d.health_declaration_url as string) ?? null,
-          } satisfies DriverSummary;
-        });
+        return (fallback.data ?? []).map((row) => mapRowToDriverSummary(row)) as DriverSummary[];
       }
 
-      return (data ?? []).map((row) => {
-        const d = row as Record<string, unknown>;
-        return {
-          id: String(d.id ?? ''),
-          full_name: String(d.full_name ?? ''),
-          id_number: String(d.id_number ?? ''),
-          phone: (d.phone as string) ?? null,
-          email: (d.email as string) ?? null,
-          license_expiry: String(d.license_expiry ?? ''),
-          status: (d.status as DriverSummary['status']) ?? 'valid',
-          address: (d.address as string) ?? null,
-          job_title: (d.job_title as string) ?? null,
-          department: (d.department as string) ?? null,
-          license_number: (d.license_number as string) ?? null,
-          health_declaration_date: (d.health_declaration_date as string) ?? null,
-          safety_training_date: (d.safety_training_date as string) ?? null,
-          regulation_585b_date: (d.regulation_585b_date as string) ?? null,
-          license_front_url: (d.license_front_url as string) ?? null,
-          license_back_url: (d.license_back_url as string) ?? null,
-          health_declaration_url: (d.health_declaration_url as string) ?? null,
-        } satisfies DriverSummary;
-      });
-    }
+      return (data ?? []).map((row) => mapRowToDriverSummary(row)) as DriverSummary[];
+    },
   });
+}
+
+function mapRowToDriverSummary(row: Record<string, unknown>): DriverSummary {
+  return {
+    id: String(row.id ?? ''),
+    full_name: String(row.full_name ?? ''),
+    id_number: String(row.id_number ?? ''),
+    phone: (row.phone as string) ?? null,
+    email: (row.email as string) ?? null,
+    license_expiry: String(row.license_expiry ?? ''),
+    status: (row.status as DriverSummary['status']) ?? 'valid',
+    address: (row.address as string) ?? null,
+    job_title: (row.job_title as string) ?? null,
+    department: (row.department as string) ?? null,
+    license_number: (row.license_number as string) ?? null,
+    health_declaration_date: (row.health_declaration_date as string) ?? null,
+    safety_training_date: (row.safety_training_date as string) ?? null,
+    regulation_585b_date: (row.regulation_585b_date as string) ?? null,
+    license_front_url: (row.license_front_url as string) ?? null,
+    license_back_url: (row.license_back_url as string) ?? null,
+    health_declaration_url: (row.health_declaration_url as string) ?? null,
+  };
 }
 
 export function useDriver(id: string) {
   const { profile } = useAuth();
-  const orgId = profile?.org_id ?? undefined;
+  const orgId = profile?.org_id ?? null;
 
   return useQuery({
     queryKey: ['driver', id, orgId],
+    enabled: !!id && orgId != null,
     queryFn: async () => {
-      let query = supabase
+      if (orgId == null) return null;
+      const { data, error } = await supabase
         .from('drivers')
         .select('*')
-        .eq('id', id);
-      if (orgId != null) {
-        query = query.eq('org_id', orgId);
-      }
-      const { data, error } = await query.maybeSingle();
+        .eq('id', id)
+        .eq('org_id', orgId)
+        .maybeSingle();
       if (error) throw error;
       return data as Driver | null;
     },
-    enabled: !!id
   });
 }
 

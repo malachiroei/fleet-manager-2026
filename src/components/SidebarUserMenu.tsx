@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
-  Moon, Sun, LogOut, Building2, Globe, ChevronRight, ChevronLeft, X, User, LayoutDashboard
+  Moon, Sun, LogOut, Building2, Globe, ChevronRight, ChevronLeft, X, User, LayoutDashboard, UserCog
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/useTheme';
@@ -161,6 +161,20 @@ export function SidebarUserMenu() {
             >
               <Building2 className="h-4 w-4 text-cyan-300 sidebar-menu-icon" />
               <span className={cn('sidebar-menu-label flex-1', isRtl ? 'text-right' : 'text-left')}>הגדרות ארגון</span>
+              <CaretIcon className="h-3.5 w-3.5 opacity-40 sidebar-menu-caret" />
+            </Link>
+
+            {/* Team Management — for admins, fleet_managers, or any user with an org */}
+            <Link
+              to="/team"
+              onClick={() => setOpen(false)}
+              className={cn(
+                'sidebar-menu-item w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors',
+                isRtl ? 'flex-row-reverse text-right' : 'text-left'
+              )}
+            >
+              <UserCog className="h-4 w-4 text-cyan-300 sidebar-menu-icon" />
+              <span className={cn('sidebar-menu-label flex-1', isRtl ? 'text-right' : 'text-left')}>ניהול צוות</span>
               <CaretIcon className="h-3.5 w-3.5 opacity-40 sidebar-menu-caret" />
             </Link>
 

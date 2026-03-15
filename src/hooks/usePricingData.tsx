@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { PricingData, Vehicle } from '@/types/fleet';
 import { toast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/useAuth';
 
 const VEHICLES_STORAGE_KEY = 'vehicles_data';
 
@@ -311,8 +312,8 @@ export function useSyncVehiclesFromPricing() {
         updated += 1;
       }
 
-      // Also refresh localStorage cache so per-vehicle cards see fresh data
-      const { data: refreshed } = await supabase.from('vehicles').select('*').eq('is_active', true);
+      // Refresh localStorage cache with this org's vehicles only
+      const { data: refreshed } = await supabase.from('vehicles').select('*').eq('org_id', orgId).eq('is_active', true);
       if (refreshed) saveStoredVehicles(refreshed as Vehicle[]);
 
       return { updated, notFound: notFoundNames.length, notFoundNames, total: vehiclesToSync.length };

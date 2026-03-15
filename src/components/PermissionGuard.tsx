@@ -9,11 +9,22 @@ interface PermissionGuardProps {
 }
 
 /**
- * Renders children only if the current user has the given permission (or is admin/manager).
- * Otherwise redirects to home.
+ * Renders children if the current user can access the route.
+ * Admins and fleet managers (from user_roles) always have access.
+ * Users with an org_id (profile.org_id) are allowed during permissions refactor.
+ * Other users need the specific permission in their profile.
  */
 export function PermissionGuard({ permission, children }: PermissionGuardProps) {
-  const { hasPermission } = useAuth();
+  const { hasPermission, isAdmin, isManager, profile, roles } = useAuth();
+  const roleList = roles?.length ? roles.join(', ') : '(none)';
+  console.log('PermissionGuard', { permission, isAdmin, isManager, userRoles: roleList, profileOrgId: profile?.org_id ?? null });
+
+  if (isAdmin || isManager) {
+    return <>{children}</>;
+  }
+  if (profile?.org_id != null) {
+    return <>{children}</>;
+  }
   if (!hasPermission(permission)) {
     return <Navigate to="/" replace />;
   }

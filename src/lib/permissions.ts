@@ -27,7 +27,9 @@ export const PERMISSION_LABELS: Record<PermissionKey, string> = {
 
 /**
  * Returns true if the profile has the given permission.
- * Admins and fleet_managers (from user_roles) are treated as having all permissions when profile.permissions is missing.
+ * - Admins and fleet_managers (from user_roles) have all permissions.
+ * - When profile.permissions is null or empty, treat as having all permissions so new users
+ *   see the full dashboard and layout like existing users (no "empty" broken UI).
  */
 export function hasPermission(
   profile: Profile | null,
@@ -35,12 +37,13 @@ export function hasPermission(
   roles?: { isAdmin: boolean; isManager: boolean }
 ): boolean {
   if (!profile) return false;
-  const perms = profile.permissions as ProfilePermissions | null | undefined;
-  if (perms && typeof perms[permission] === 'boolean') {
-    return perms[permission] === true;
-  }
   if (roles?.isAdmin || roles?.isManager) return true;
-  return false;
+  const perms = profile.permissions as ProfilePermissions | null | undefined;
+  if (perms && typeof perms === 'object' && Object.keys(perms).length > 0) {
+    if (typeof perms[permission] === 'boolean') return perms[permission] === true;
+    return false;
+  }
+  return true;
 }
 
 export function getDefaultPermissions(): ProfilePermissions {

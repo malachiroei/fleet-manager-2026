@@ -1074,26 +1074,25 @@ export function buildHandoverRecordUrl(vehicleId: string, handoverId: string) {
 
 export function useHandovers(vehicleId?: string) {
   const { profile } = useAuth();
-  const orgId = profile?.org_id ?? undefined;
+  const orgId = profile?.org_id ?? null;
 
   return useQuery({
     queryKey: ['handovers', vehicleId, orgId],
+    enabled: orgId != null,
     queryFn: async () => {
+      if (orgId == null) return [] as VehicleHandover[];
       let query = supabase
         .from('vehicle_handovers')
         .select('*, vehicle:vehicles(*), driver:drivers(*)')
+        .eq('org_id', orgId)
         .order('handover_date', { ascending: false });
-      if (orgId != null) {
-        query = query.eq('org_id', orgId);
-      }
       if (vehicleId) {
         query = query.eq('vehicle_id', vehicleId);
       }
-
       const { data, error } = await query;
       if (error) throw error;
-      return data as VehicleHandover[];
-    }
+      return (data ?? []) as VehicleHandover[];
+    },
   });
 }
 
@@ -1143,20 +1142,20 @@ export function useCreateHandover() {
 
 export function useHandoverHistory() {
   const { profile } = useAuth();
-  const orgId = profile?.org_id ?? undefined;
+  const orgId = profile?.org_id ?? null;
 
   return useQuery({
     queryKey: ['handover-history', orgId],
+    enabled: orgId != null,
     staleTime: 1000 * 60 * 5,
     queryFn: async () => {
-      let handoversQuery = supabase
+      if (orgId == null) return [] as HandoverHistoryItem[];
+      const handoversQuery = supabase
         .from('vehicle_handovers')
         .select('id, vehicle_id, driver_id, handover_type, handover_date, pdf_url, photo_front_url, photo_back_url, photo_right_url, photo_left_url, driver:drivers(full_name), vehicle:vehicles(manufacturer, model, plate_number)')
+        .eq('org_id', orgId)
         .order('handover_date', { ascending: false })
         .limit(300);
-      if (orgId != null) {
-        handoversQuery = handoversQuery.eq('org_id', orgId);
-      }
       const { data: handoversData, error: handoversError } = await handoversQuery;
 
       if (handoversError) {

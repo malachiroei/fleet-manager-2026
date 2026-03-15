@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/client'; // single auth-aware client (anon key + user JWT when signed in)
 import type { Organization } from '@/types/fleet';
 
 export interface OrganizationWithUserCount extends Organization {
@@ -38,6 +38,12 @@ export function useUpdateOrganization() {
       name?: string;
       email?: string | null;
     }) => {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (!session) {
+        throw new Error('Not authenticated. Sign in and try again.');
+      }
+
       const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
       if (name !== undefined) updates.name = name;
       if (email !== undefined) updates.email = email;
@@ -47,9 +53,14 @@ export function useUpdateOrganization() {
         .update(updates)
         .eq('id', id)
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
+      if (data == null) {
+        throw new Error(
+          `Organization not found (id: ${id}). Ensure this id matches your profile org_id and RLS allows update for the current user.`
+        );
+      }
       return data as Organization;
     },
     onSuccess: (data) => {

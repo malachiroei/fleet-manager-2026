@@ -52,6 +52,11 @@ export function useOrgInvitations(orgId: string | null | undefined) {
   });
 }
 
+export interface CreateInvitationResult {
+  invitation: OrgInvitation;
+  emailSent: boolean;
+}
+
 export function useCreateInvitation() {
   const queryClient = useQueryClient();
 
@@ -66,7 +71,7 @@ export function useCreateInvitation() {
       email: string;
       permissions: ProfilePermissions;
       invitedBy: string | null;
-    }) => {
+    }): Promise<CreateInvitationResult> => {
       const { data, error } = await (supabase as any)
         .from('org_invitations')
         .insert({
@@ -79,11 +84,30 @@ export function useCreateInvitation() {
         .single();
 
       if (error) throw error;
-      return data as OrgInvitation;
+      const invitation = data as OrgInvitation;
+
+      let emailSent = false;
+      try {
+        const { error: fnError } = await supabase.functions.invoke('send-invite', {
+          body: { org_id: orgId, email: invitation.email },
+        });
+        emailSent = !fnError;
+      } catch {
+        // Invitation is saved; email failure is non-fatal
+      }
+
+      return { invitation, emailSent };
     },
-    onSuccess: (_, variables) => {
+    onSuccess: (result, variables) => {
       queryClient.invalidateQueries({ queryKey: [...INVITATIONS_QUERY_KEY, variables.orgId] });
-      toast({ title: 'ההזמנה נשמרה' });
+      if (result.emailSent) {
+        toast({ title: 'ההזמנה נשמרה ומייל ההזמנה נשלח' });
+      } else {
+        toast({
+          title: 'ההזמנה נשמרה',
+          description: 'שליחת מייל ההזמנה נכשלה. ניתן לשלוח שוב מאוחר יותר.',
+        });
+      }
     },
     onError: (err: Error) => {
       toast({ title: 'שגיאה בשמירת ההזמנה', description: err.message, variant: 'destructive' });

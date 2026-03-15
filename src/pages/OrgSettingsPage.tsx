@@ -172,7 +172,7 @@ export default function OrgSettingsPage() {
   const orgId = profile?.org_id ?? null;
   const { data: organization, isLoading: orgLoading } = useOrganization(orgId);
   const updateOrganization = useUpdateOrganization();
-  const { data: settings, isLoading: settingsLoading } = useOrgSettings();
+  const { data: settings, isLoading: settingsLoading } = useOrgSettings(orgId);
   const updateSettings = useUpdateOrgSettings();
 
   // Tab 1 state — name & email from organizations; rest from organization_settings
@@ -223,14 +223,18 @@ export default function OrgSettingsPage() {
         });
       }
       await updateSettings.mutateAsync({
+        organization_id: orgId ?? undefined,
         org_id_number: orgIdNumber.trim(),
         health_statement_text: healthText,
         vehicle_policy_text: policyText,
         health_statement_pdf_url: healthPdfUrl || null,
         vehicle_policy_pdf_url: policyPdfUrl || null,
-      } as any);
+      });
       toast.success('הגדרות הארגון נשמרו בהצלחה');
-    } catch { toast.error('שמירה נכשלה'); }
+    } catch (error) {
+      console.error('OrgSettings handleSaveDetails error:', error);
+      toast.error('שמירה נכשלה');
+    }
   };
 
   // Tab 3 — UI Labels
@@ -257,7 +261,10 @@ export default function OrgSettingsPage() {
         }))
       );
       toast.success('שמות מותאמים נשמרו');
-    } catch { toast.error('שמירה נכשלה'); }
+    } catch (error) {
+      console.error('OrgSettings handleSaveLabels error:', error);
+      toast.error('שמירה נכשלה');
+    }
     finally { setSavingLabels(false); }
   };
 
@@ -282,7 +289,10 @@ export default function OrgSettingsPage() {
       }
       setAddingDoc(false); setEditingDoc(null);
       toast.success(editingDoc ? 'מסמך עודכן' : 'מסמך נוסף');
-    } catch { toast.error('שמירה נכשלה'); }
+    } catch (error) {
+      console.error('OrgSettings handleSaveDoc error:', error);
+      toast.error('שמירה נכשלה');
+    }
   };
 
   const handleDeleteDoc = async (id: string) => {

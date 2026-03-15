@@ -33,43 +33,47 @@ export async function fetchActiveDriverAssignments(driverId: string, excludeVehi
 
 export function useActiveDriverVehicleAssignments() {
   const { profile } = useAuth();
-  const orgId = profile?.org_id ?? undefined;
+  const orgId = profile?.org_id ?? null;
 
   return useQuery({
     queryKey: ['active-driver-vehicle-assignments', orgId],
+    enabled: orgId != null,
     queryFn: async () => {
+      if (orgId == null) return [] as ActiveDriverVehicleAssignment[];
+      const { data: vehicleIds, error: vehiclesError } = await supabase
+        .from('vehicles')
+        .select('id')
+        .eq('org_id', orgId);
+      if (vehiclesError) throw vehiclesError;
+      const ids = (vehicleIds ?? []).map((r) => r.id);
+      if (ids.length === 0) return [] as ActiveDriverVehicleAssignment[];
       const { data, error } = await supabase
         .from('driver_vehicle_assignments')
-        .select('id, driver_id, vehicle_id, assigned_at, assigned_by, vehicle:vehicles(id, manufacturer, model, plate_number, org_id)')
+        .select('id, driver_id, vehicle_id, assigned_at, assigned_by, vehicle:vehicles(id, manufacturer, model, plate_number)')
         .is('unassigned_at', null)
         .not('driver_id', 'is', null)
+        .in('vehicle_id', ids)
         .order('assigned_at', { ascending: false });
-
       if (error) throw error;
-      let list = (data ?? []) as (ActiveDriverVehicleAssignment & { vehicle?: { org_id?: string | null } })[];
-      if (orgId != null) {
-        list = list.filter((a) => (a.vehicle as { org_id?: string | null } | null)?.org_id === orgId);
-      }
-      return list as unknown as ActiveDriverVehicleAssignment[];
+      return (data ?? []) as unknown as ActiveDriverVehicleAssignment[];
     },
   });
 }
 
 export function useVehicles() {
   const { profile } = useAuth();
-  const orgId = profile?.org_id ?? undefined;
+  const orgId = profile?.org_id ?? null;
 
   return useQuery({
     queryKey: ['vehicles', orgId],
+    enabled: orgId != null,
     queryFn: async () => {
-      let query = supabase
+      if (orgId == null) return [] as Vehicle[];
+      const { data, error } = await supabase
         .from('vehicles')
         .select('*')
+        .eq('org_id', orgId)
         .order('plate_number');
-      if (orgId != null) {
-        query = query.eq('org_id', orgId);
-      }
-      const { data, error } = await query;
       if (error) throw error;
       return (data ?? []) as Vehicle[];
     },
@@ -88,7 +92,7 @@ export function useVehicle(id: string) {
         .select('*')
         .eq('id', id);
       if (orgId != null) {
-        query = query.eq('org_id', orgId);
+        query = query.or(`org_id.eq.${orgId},org_id.is.null`);
       }
       const { data, error } = await query.maybeSingle();
       if (error) throw error;

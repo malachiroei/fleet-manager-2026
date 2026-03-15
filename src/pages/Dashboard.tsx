@@ -100,9 +100,10 @@ function StatusCard({
           : 'shadow-[0_0_15px_rgba(45,212,191,0.55)]';
 
   return (
-    <Link to={link} className="block group">
+    <Link to={link} className="block group cursor-pointer">
       <div
         className={`status-card status-card--${theme} relative h-40 sm:h-44 md:h-56 w-full rounded-2xl bg-white/5/80 backdrop-blur-lg border border-white/10 p-3 sm:p-4 flex flex-col items-center justify-between hover:scale-[1.03] hover:-translate-y-1 overflow-hidden transition-all duration-300 ${glowClass}`}
+        style={{ pointerEvents: 'none' } as React.CSSProperties}
       >
         {/* השתקפות + גרדיאנט פנימי */}
         <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-white/[0.07] via-black/40 to-black/80 opacity-80 pointer-events-none" />
@@ -135,7 +136,7 @@ function StatusCard({
           <span className="tracking-wide">כניסה</span>
         </div>
 
-        <div className="status-card-shine absolute -inset-full h-full w-1/2 z-[5] block transform -skew-x-12 bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-0" />
+        <div className="status-card-shine pointer-events-none absolute -inset-full h-full w-1/2 z-[5] block transform -skew-x-12 bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-0" />
       </div>
     </Link>
   );
@@ -205,11 +206,7 @@ export default function Dashboard() {
       icon: UserCog,
       permission: 'manage_team',
     },
-  ].filter(
-    (action) =>
-      (action.adminOnly ? isAdmin : true) &&
-      (action.permission ? hasPermission(action.permission) : true)
-  );
+  ].filter((action) => (action.adminOnly ? isAdmin : true));
 
   return (
     <div className="container py-6 md:py-8 space-y-6 md:space-y-8">
@@ -217,6 +214,35 @@ export default function Dashboard() {
         <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground">{t('dashboard.title')}</h1>
         <p className="text-sm md:text-base text-muted-foreground mt-1.5">{t('dashboard.subtitle')}</p>
       </div>
+
+      {!isLoading && stats && stats.totalVehicles === 0 && stats.totalDrivers === 0 && (
+        <Card className="border-dashed border-2 border-primary/30 bg-primary/5">
+          <CardContent className="p-6 md:p-8 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-right">
+            <div className="flex-1 space-y-1">
+              <h2 className="text-lg font-semibold text-foreground">{t('dashboard.emptyStateTitle')}</h2>
+              <p className="text-sm text-muted-foreground">{t('dashboard.emptyStateDescription')}</p>
+            </div>
+            <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
+              {hasPermission('vehicles') && (
+                <Button asChild variant="default" size="sm">
+                  <Link to="/vehicles/add">
+                    <Car className="h-4 w-4 ml-1.5" />
+                    {t('dashboard.addFirstVehicle')}
+                  </Link>
+                </Button>
+              )}
+              {hasPermission('drivers') && (
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/drivers/add">
+                    <Users className="h-4 w-4 ml-1.5" />
+                    {t('dashboard.addFirstDriver')}
+                  </Link>
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <section className="dashboard-status-stage p-6 md:p-10 space-y-6">
         {isLoading ? (
@@ -231,7 +257,6 @@ export default function Dashboard() {
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-2">
             {statusCardConfig
-              .filter((card) => !card.permission || hasPermission(card.permission))
               .map((card) => {
                 const Icon = card.icon;
                 const value = card.alertKey
