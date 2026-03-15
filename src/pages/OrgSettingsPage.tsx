@@ -168,8 +168,8 @@ const ORG_DETAILS_EDIT_CODE = '2101';
 
 // ─── Main Page ─────────────────────────────────────────────────────
 export default function OrgSettingsPage() {
-  const { profile } = useAuth();
-  const orgId = profile?.org_id ?? null;
+  const { activeOrgId } = useAuth();
+  const orgId = activeOrgId ?? null;
   const { data: organization, isLoading: orgLoading } = useOrganization(orgId);
   const updateOrganization = useUpdateOrganization();
   const { data: settings, isLoading: settingsLoading } = useOrgSettings(orgId);

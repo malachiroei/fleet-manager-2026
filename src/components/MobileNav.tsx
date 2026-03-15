@@ -19,8 +19,8 @@ export function MobileNav() {
   const isRtl = i18n.dir() === 'rtl';
   const sheetSide = isRtl ? 'right' : 'left';
   const isDirty = getIsDirty();
-  const { user, profile } = useAuth();
-  const { data: organization } = useOrganization(profile?.org_id ?? null);
+  const { user, profile, activeOrgId } = useAuth();
+  const { data: organization } = useOrganization(activeOrgId ?? null);
   const orgName = organization?.name?.trim() ?? '';
   const email = user?.email ?? '';
 

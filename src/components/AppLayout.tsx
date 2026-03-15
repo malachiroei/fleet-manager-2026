@@ -7,9 +7,17 @@ import { useOrganization } from '@/hooks/useOrganizations';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { AIChatAssistant } from './AIChatAssistant';
 import { useTheme } from '@/hooks/useTheme';
-import { Sun, Moon, Building2, LogOut, Home, ArrowRight } from 'lucide-react';
+import { Sun, Moon, Building2, LogOut, Home, ArrowRight, ChevronDown, Building } from 'lucide-react';
 import { PwaInstallButton } from './PwaInstallButton';
 import { Button } from './ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+} from './ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
 const appLogo = '/og-image.png';
@@ -23,14 +31,14 @@ export function AppLayout({ children }: AppLayoutProps) {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const { theme, toggleTheme } = useTheme();
-  const { user, signOut, profile } = useAuth();
+  const { user, signOut, profile, activeOrgId, memberOrganizations, setActiveOrgId } = useAuth();
   const email = user?.email ?? '';
   const name = (profile?.full_name?.trim()) || user?.user_metadata?.full_name || email.split('@')[0] || '';
   const initials = (name || email || '?').slice(0, 2).toUpperCase();
   const isRtl = i18n.dir() === 'rtl';
   const { tryNavigate, getIsDirty, getLastPath } = useVehicleSpecDirty();
   const isHomeActive = location.pathname === '/';
-  const { data: organization } = useOrganization(profile?.org_id ?? null);
+  const { data: organization } = useOrganization(activeOrgId ?? null);
   const orgName = organization?.name?.trim() ?? '';
 
   const handleLogout = () => {
@@ -48,6 +56,36 @@ export function AppLayout({ children }: AppLayoutProps) {
     </button>
   );
 
+  const OrgSwitcher = () => {
+    if (memberOrganizations.length === 0) return null;
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 border-cyan-400/20 bg-cyan-500/10 px-2.5 text-xs font-medium text-cyan-100 hover:bg-cyan-500/20 hover:text-cyan-100"
+          >
+            <Building className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline max-w-[120px] truncate">
+              {organization?.name ?? (orgName || 'החלף צי')}
+            </span>
+            <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align={isRtl ? 'start' : 'end'} className="min-w-[180px]">
+          <DropdownMenuRadioGroup value={activeOrgId ?? ''} onValueChange={(id) => id && setActiveOrgId(id)}>
+            {memberOrganizations.map((org) => (
+              <DropdownMenuRadioItem key={org.id} value={org.id}>
+                <span className="truncate">{org.name || org.id}</span>
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
+
   const TopToolsBlock = () => (
     <div
       className={cn(
@@ -58,6 +96,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       <PwaInstallButton />
       <ThemeToggle />
       <LanguageSwitcher />
+      <OrgSwitcher />
       <Link
         to="/admin/org-settings"
         className="flex h-8 items-center gap-1.5 rounded-lg border border-cyan-400/20 bg-cyan-500/10 px-2.5 text-xs font-medium text-cyan-100 hover:bg-cyan-500/20"

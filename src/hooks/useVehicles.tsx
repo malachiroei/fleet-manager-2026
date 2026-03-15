@@ -32,8 +32,8 @@ export async function fetchActiveDriverAssignments(driverId: string, excludeVehi
 }
 
 export function useActiveDriverVehicleAssignments() {
-  const { profile } = useAuth();
-  const orgId = profile?.org_id ?? null;
+  const { activeOrgId } = useAuth();
+  const orgId = activeOrgId ?? null;
 
   return useQuery({
     queryKey: ['active-driver-vehicle-assignments', orgId],
@@ -61,8 +61,8 @@ export function useActiveDriverVehicleAssignments() {
 }
 
 export function useVehicles() {
-  const { profile } = useAuth();
-  const orgId = profile?.org_id ?? null;
+  const { activeOrgId } = useAuth();
+  const orgId = activeOrgId ?? null;
 
   return useQuery({
     queryKey: ['vehicles', orgId],
@@ -81,8 +81,8 @@ export function useVehicles() {
 }
 
 export function useVehicle(id: string) {
-  const { profile } = useAuth();
-  const orgId = profile?.org_id ?? undefined;
+  const { activeOrgId } = useAuth();
+  const orgId = activeOrgId ?? undefined;
 
   return useQuery({
     queryKey: ['vehicle', id, orgId],
@@ -104,13 +104,14 @@ export function useVehicle(id: string) {
 
 export function useCreateVehicle() {
   const queryClient = useQueryClient();
-  const { profile } = useAuth();
+  const { activeOrgId, profile } = useAuth();
 
   return useMutation({
     mutationFn: async (newVehicle: Partial<Vehicle>) => {
       const row = { ...newVehicle } as Record<string, unknown>;
-      if (profile?.org_id != null && row.org_id == null) {
-        row.org_id = profile.org_id;
+      const effectiveOrgId = activeOrgId ?? profile?.org_id;
+      if (effectiveOrgId != null && row.org_id == null) {
+        row.org_id = effectiveOrgId;
       }
       const { data, error } = await supabase
         .from('vehicles')

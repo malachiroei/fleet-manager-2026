@@ -6,8 +6,8 @@ import { formatSupabaseError } from '@/lib/supabaseError';
 import { useAuth } from '@/hooks/useAuth';
 
 export function useDrivers() {
-  const { profile } = useAuth();
-  const orgId = profile?.org_id ?? null;
+  const { activeOrgId } = useAuth();
+  const orgId = activeOrgId ?? null;
 
   return useQuery({
     queryKey: ['drivers', orgId],
@@ -64,8 +64,8 @@ function mapRowToDriverSummary(row: Record<string, unknown>): DriverSummary {
 }
 
 export function useDriver(id: string) {
-  const { profile } = useAuth();
-  const orgId = profile?.org_id ?? null;
+  const { activeOrgId } = useAuth();
+  const orgId = activeOrgId ?? null;
 
   return useQuery({
     queryKey: ['driver', id, orgId],
@@ -86,7 +86,7 @@ export function useDriver(id: string) {
 
 export function useCreateDriver() {
   const queryClient = useQueryClient();
-  const { profile } = useAuth();
+  const { activeOrgId, profile } = useAuth();
 
   return useMutation({
     mutationFn: async (driver: Partial<Omit<Driver, 'id' | 'created_at' | 'updated_at' | 'status'>> & {
@@ -95,8 +95,9 @@ export function useCreateDriver() {
       license_expiry: string;
     }) => {
       const row = { ...driver } as Record<string, unknown>;
-      if (profile?.org_id != null && row.org_id == null) {
-        row.org_id = profile.org_id;
+      const effectiveOrgId = activeOrgId ?? profile?.org_id;
+      if (effectiveOrgId != null && row.org_id == null) {
+        row.org_id = effectiveOrgId;
       }
       const { data, error } = await supabase
         .from('drivers')

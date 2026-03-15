@@ -15,7 +15,7 @@ import {
 
 export type AssignmentMode = 'permanent' | 'replacement';
 
-const APP_BASE_URL = 'https://fleet-manager-2026.vercel.app';
+const APP_BASE_URL = 'https://fleet-manager-pro.com';
 const HANDOVER_PHOTOS_BUCKET = 'handover-photos';
 const HANDOVER_ARCHIVE_BUCKET = 'vehicle-documents';
 
@@ -1073,8 +1073,8 @@ export function buildHandoverRecordUrl(vehicleId: string, handoverId: string) {
 }
 
 export function useHandovers(vehicleId?: string) {
-  const { profile } = useAuth();
-  const orgId = profile?.org_id ?? null;
+  const { activeOrgId } = useAuth();
+  const orgId = activeOrgId ?? null;
 
   return useQuery({
     queryKey: ['handovers', vehicleId, orgId],
@@ -1141,8 +1141,8 @@ export function useCreateHandover() {
 }
 
 export function useHandoverHistory() {
-  const { profile } = useAuth();
-  const orgId = profile?.org_id ?? null;
+  const { activeOrgId } = useAuth();
+  const orgId = activeOrgId ?? null;
 
   return useQuery({
     queryKey: ['handover-history', orgId],

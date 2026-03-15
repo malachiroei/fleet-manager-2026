@@ -11,7 +11,7 @@ function resolveFooterVariant(): FooterVariant {
   if (hostname === 'manager-2026-test.vercel.app' || hostname.includes('manager-2026-test')) {
     return 'test';
   }
-  if (hostname === 'fleet-manager-2026.vercel.app' || hostname.includes('fleet-manager-2026')) {
+  if (hostname === 'fleet-manager-pro.com' || hostname.includes('fleet-manager-pro')) {
     return 'source';
   }
   return 'source';

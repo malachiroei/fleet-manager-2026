@@ -121,7 +121,7 @@ serve(async (req) => {
     const resendApiKey        = Deno.env.get('RESEND_API_KEY');
     const supabaseUrl         = Deno.env.get('SUPABASE_URL');
     const serviceRoleKey      = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    const fromEmail           = Deno.env.get('NOTIFY_FROM_EMAIL') ?? 'Fleet Manager <onboarding@resend.dev>';
+    const fromEmail           = Deno.env.get('NOTIFY_FROM_EMAIL') ?? 'Fleet Manager Pro <invites@fleet-manager-pro.com>';
     // FLEET_MANAGER_EMAIL is now a last-resort fallback only — real list comes from system_settings
     const fallbackManagerEmail = Deno.env.get('FLEET_MANAGER_EMAIL') ?? 'malachiroei@gmail.com';
 

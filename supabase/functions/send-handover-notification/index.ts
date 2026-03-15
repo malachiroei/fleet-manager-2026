@@ -94,7 +94,7 @@ serve(async (req) => {
 
   try {
     const resendApiKey = Deno.env.get('RESEND_API_KEY');
-    const fromEmail = Deno.env.get('NOTIFY_FROM_EMAIL') || 'Fleet Manager <onboarding@resend.dev>';
+    const fromEmail = Deno.env.get('NOTIFY_FROM_EMAIL') || 'Fleet Manager Pro <invites@fleet-manager-pro.com>';
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
@@ -193,7 +193,7 @@ serve(async (req) => {
       console.warn('[send-handover-notification] PDF fetch threw error, sending without PDF attachment', pdfError);
     }
 
-    const appBaseUrl = 'https://fleet-manager-2026.vercel.app';
+    const appBaseUrl = 'https://fleet-manager-pro.com';
     const recordUrl = payload.recordUrl || (payload.vehicleId && payload.handoverId
       ? `${appBaseUrl}/vehicles/${payload.vehicleId}#handover-${payload.handoverId}`
       : persistedPdfUrl);

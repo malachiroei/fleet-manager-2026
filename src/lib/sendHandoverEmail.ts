@@ -154,7 +154,7 @@ export async function sendHandoverEmail({
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from:        'Fleet Manager <onboarding@resend.dev>',
+        from:        'Fleet Manager Pro <invites@fleet-manager-pro.com>',
         to:          recipients,
         subject:     `✅ מסמכי מסירת רכב — ${driverName} | ${vehicleLabel} | ${sentAt}`,
         html,

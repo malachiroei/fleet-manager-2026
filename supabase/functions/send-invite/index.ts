@@ -1,18 +1,13 @@
 /**
- * send-invite
+ * send-invite (Resend – production)
  * ────────────────────────────────────────────────────────────────────────────
- * Sends an invitation email to a new team member.
+ * Sends an invitation email via Resend API.
+ * From: Fleet Manager Pro <invites@fleet-manager-pro.com> (verified domain).
+ * Sends to the email provided in the request body.
  *
- * Uses the **same method** as Vehicle Delivery emails:
- *   - Same service: Resend API (https://api.resend.com/emails)
- *   - Same secrets: RESEND_API_KEY, NOTIFY_FROM_EMAIL (see send-handover-notification)
- *   - Same pattern: Supabase Edge Function → Resend (no new setup required)
- *
- * Called by the client after inserting a row into org_invitations.
  * Request body: { org_id: string, email: string }
- *
- * Required env (same as handover): RESEND_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
- * Optional: NOTIFY_FROM_EMAIL, APP_URL
+ * Secret: RESEND_API_KEY (npx supabase secrets set RESEND_API_KEY=re_...)
+ * Optional: APP_URL (defaults to production URL)
  */
 
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
@@ -20,96 +15,100 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const APP_URL_DEFAULT = 'https://fleet-manager-2026.vercel.app';
+const APP_URL_DEFAULT = 'https://fleet-manager-pro.com';
+
+const FROM_EMAIL = 'Fleet Manager Pro <invites@fleet-manager-pro.com>';
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
-  try {
-    const resendApiKey = Deno.env.get('RESEND_API_KEY');
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    const fromEmail = Deno.env.get('NOTIFY_FROM_EMAIL') ?? 'Fleet Manager <onboarding@resend.dev>';
-    const appUrl = Deno.env.get('APP_URL') ?? APP_URL_DEFAULT;
+  console.log('[send-invite] Request received', { method: req.method });
 
-    if (!resendApiKey || !supabaseUrl || !serviceRoleKey) {
+  try {
+    let body: { org_id?: string; email?: string };
+    try {
+      body = (await req.json()) as { org_id?: string; email?: string };
+    } catch (parseErr) {
+      console.error('[send-invite] Invalid JSON body:', parseErr);
+      return new Response(
+        JSON.stringify({ error: 'Invalid JSON body' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    const orgId = typeof body.org_id === 'string' ? body.org_id.trim() : '';
+    const emailRaw = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const email = emailRaw && emailRaw.includes('@') ? emailRaw : '';
+
+    if (!orgId) {
+      return new Response(
+        JSON.stringify({ error: 'Missing org_id' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    if (!email) {
+      return new Response(
+        JSON.stringify({ error: 'Missing or invalid email' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    console.log('[send-invite] Parsed input', {
+      org_id: orgId,
+      to: `${email.slice(0, 2)}***@***`,
+    });
+
+    const resendApiKey = Deno.env.get('RESEND_API_KEY');
+    if (!resendApiKey) {
+      console.error('[send-invite] Missing RESEND_API_KEY');
       return new Response(
         JSON.stringify({
-          error:
-            'Missing required env secrets (RESEND_API_KEY / SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)',
+          error: 'Missing RESEND_API_KEY. Set with: npx supabase secrets set RESEND_API_KEY=re_...',
         }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
-    const body = (await req.json()) as { org_id?: string; email?: string };
-    const orgId = typeof body.org_id === 'string' ? body.org_id.trim() : '';
-    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const appUrl = (Deno.env.get('APP_URL') ?? APP_URL_DEFAULT).replace(/\/$/, '');
 
-    if (!orgId || !email || !email.includes('@')) {
-      return new Response(
-        JSON.stringify({ error: 'Missing or invalid org_id or email' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
+    let organizationName = 'הארגון';
+    if (supabaseUrl && serviceRoleKey) {
+      const supabase = createClient(supabaseUrl, serviceRoleKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      });
+      const { data: orgRow } = await supabase
+        .from('organizations')
+        .select('name')
+        .eq('id', orgId)
+        .maybeSingle();
+      organizationName = (orgRow as { name?: string } | null)?.name?.trim() || organizationName;
     }
 
-    const supabase = createClient(supabaseUrl, serviceRoleKey);
-
-    const { data: orgRow, error: orgError } = await supabase
-      .from('organizations')
-      .select('id, name')
-      .eq('id', orgId)
-      .maybeSingle();
-
-    if (orgError) {
-      throw new Error(`Failed to fetch organization: ${orgError.message}`);
-    }
-
-    const organizationName =
-      (orgRow as { name?: string } | null)?.name?.trim() || 'הארגון';
-
-    const link = appUrl.replace(/\/$/, '');
     const html = `
-<div dir="rtl" style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 560px; margin: 0 auto; background: #f8fafc;">
-  <div style="background: linear-gradient(135deg, #0d1b2e 0%, #1e3a5f 100%); padding: 28px 24px; border-radius: 12px 12px 0 0;">
-    <h1 style="color: #22d3ee; margin: 0 0 6px; font-size: 20px;">הזמנה להצטרף לצוות</h1>
-    <p style="color: rgba(255,255,255,0.7); margin: 0; font-size: 14px;">Fleet Manager Pro</p>
-  </div>
-  <div style="background: #ffffff; padding: 24px; border-radius: 0 0 12px 12px; border: 1px solid #e2e8f0; border-top: none;">
-    <p style="font-size: 16px; color: #1e293b; margin-top: 0;">
-      שלום,
-    </p>
-    <p style="color: #475569; line-height: 1.7;">
-      <strong>${organizationName}</strong> מזמין/ה אותך להצטרף לצוות במערכת ניהול צי הרכבים.
-    </p>
-    <p style="color: #475569; line-height: 1.7;">
-      לחץ/י על הקישור להלן כדי להיכנס לאפליקציה ולהתחיל:
-    </p>
-    <p style="margin: 20px 0;">
-      <a href="${link}" style="display: inline-block; background: linear-gradient(135deg, #0891b2 0%, #06b6d4 100%); color: #fff; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: 600; font-size: 15px;">פתח את האפליקציה</a>
-    </p>
-    <p style="font-size: 13px; color: #64748b;">
-      קישור: <a href="${link}" style="color: #0891b2;">${link}</a>
-    </p>
-    <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
-    <p style="font-size: 12px; color: #94a3b8; margin: 0;">
-      נשלח על ידי Fleet Manager 2026
-    </p>
-  </div>
-</div>
-`.trim();
+<div dir="rtl" style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 560px; margin: 0 auto;">
+  <h1 style="color: #0f172a;">הזמנה להצטרף לצוות</h1>
+  <p><strong>${organizationName}</strong> מזמין/ה אותך להצטרף לצוות.</p>
+  <p>ההזמנה נרשמה עבור: <strong>${email}</strong></p>
+  <p><a href="${appUrl}/auth/callback" style="color: #0891b2;">קבל את ההזמנה ופתח את האפליקציה</a></p>
+  <p style="color: #64748b; font-size: 12px;">Fleet Manager Pro</p>
+</div>`.trim();
 
     const resendPayload = {
-      from: fromEmail,
+      from: FROM_EMAIL,
       to: [email],
       subject: `הזמנה להצטרף ל־${organizationName} — Fleet Manager Pro`,
       html,
     };
+    console.log('[send-invite] Sending to:', email);
 
     const resendResp = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -120,28 +119,39 @@ serve(async (req) => {
       body: JSON.stringify(resendPayload),
     });
 
+    const resendBody = await resendResp.text();
     if (!resendResp.ok) {
-      const errText = await resendResp.text();
-      throw new Error(`Resend API error (${resendResp.status}): ${errText}`);
+      console.error('[send-invite] Resend API error', { status: resendResp.status, body: resendBody });
+      return new Response(
+        JSON.stringify({ error: `Resend API error (${resendResp.status}): ${resendBody}` }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
     }
 
-    const resendResult = (await resendResp.json()) as { id?: string };
+    let resendResult: { id?: string } = {};
+    try {
+      resendResult = JSON.parse(resendBody) as { id?: string };
+    } catch {
+      console.warn('[send-invite] Resend response not JSON:', resendBody?.slice(0, 200));
+    }
+    console.log('[send-invite] Success', { email_id: resendResult.id, sent_to: email });
 
     return new Response(
       JSON.stringify({
         success: true,
         email_id: resendResult.id,
         sent_to: email,
+        invite_for: email,
         organization_name: organizationName,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   } catch (err) {
-    console.error('send-invite error:', err);
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[send-invite] Error:', message);
+    if (err instanceof Error && err.stack) console.error('[send-invite] Stack:', err.stack);
     return new Response(
-      JSON.stringify({
-        error: err instanceof Error ? err.message : 'Unknown error',
-      }),
+      JSON.stringify({ error: message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   }

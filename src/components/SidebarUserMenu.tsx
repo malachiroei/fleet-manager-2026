@@ -10,7 +10,7 @@ import { useOrganization } from '@/hooks/useOrganizations';
 import { cn } from '@/lib/utils';
 
 export function SidebarUserMenu() {
-  const { user, signOut, isAdmin, profile } = useAuth();
+  const { user, signOut, isAdmin, profile, activeOrgId } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { i18n } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -35,7 +35,7 @@ export function SidebarUserMenu() {
   const email = user?.email ?? '';
   const name = (profile?.full_name?.trim()) || user?.user_metadata?.full_name || email.split('@')[0] || 'משתמש';
   const initials = name.slice(0, 2).toUpperCase();
-  const { data: organization } = useOrganization(profile?.org_id ?? null);
+  const { data: organization } = useOrganization(activeOrgId ?? null);
   const orgName = organization?.name?.trim() ?? '';
 
   const isRtl = i18n.dir() === 'rtl';

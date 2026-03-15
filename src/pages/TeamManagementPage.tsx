@@ -1,22 +1,12 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
-import { useTeamMembers, useCreateInvitation, useOrgInvitations } from '@/hooks/useTeam';
-import { PERMISSION_KEYS, PERMISSION_LABELS, getDefaultPermissions } from '@/lib/permissions';
-import type { ProfilePermissions } from '@/types/fleet';
+import { useTeamMembers, useOrgInvitations } from '@/hooks/useTeam';
+import { PERMISSION_LABELS } from '@/lib/permissions';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { SimpleInviteModal } from '@/components/SimpleInviteModal';
 import {
   Table,
   TableBody,
@@ -28,18 +18,18 @@ import {
 import { ArrowRight, Loader2, Mail, UserPlus, Users } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 
+/**
+ * Team management: list members and pending invitations. Invite via SimpleInviteModal only.
+ */
 export default function TeamManagementPage() {
-  const { profile, hasPermission, isAdmin, isManager } = useAuth();
-  const orgId = profile?.org_id ?? null;
+  const { profile, activeOrgId, hasPermission, isAdmin, isManager } = useAuth();
+  const queryClient = useQueryClient();
+  const orgId = activeOrgId ?? null;
   const { data: members, isLoading } = useTeamMembers(orgId);
   const { data: invitations } = useOrgInvitations(orgId);
-  const createInvitation = useCreateInvitation();
-
   const [modalOpen, setModalOpen] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [invitePermissions, setInvitePermissions] = useState<ProfilePermissions>(getDefaultPermissions());
 
-  const canManageTeam = isAdmin || isManager || hasPermission('manage_team') || Boolean(profile?.org_id);
+  const canManageTeam = isAdmin || isManager || hasPermission('manage_team') || Boolean(activeOrgId ?? profile?.org_id);
 
   if (!canManageTeam) {
     return <Navigate to="/" replace />;
@@ -56,29 +46,6 @@ export default function TeamManagementPage() {
       </div>
     );
   }
-
-  const handleInviteSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const email = inviteEmail.trim();
-    if (!email) return;
-    try {
-      await createInvitation.mutateAsync({
-        orgId,
-        email,
-        permissions: invitePermissions,
-        invitedBy: profile?.user_id ?? null,
-      });
-      setModalOpen(false);
-      setInviteEmail('');
-      setInvitePermissions(getDefaultPermissions());
-    } catch {
-      // toast handled in hook
-    }
-  };
-
-  const togglePermission = (key: keyof ProfilePermissions, value: boolean) => {
-    setInvitePermissions((prev) => ({ ...prev, [key]: value }));
-  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -127,7 +94,7 @@ export default function TeamManagementPage() {
                   {members && members.length === 0 && (!invitations || invitations.length === 0) ? (
                     <TableRow>
                       <TableCell colSpan={3} className="text-center text-muted-foreground py-8">
-                        אין חברי צוות. הזמן חבר צוות כדי להתחיל.
+                        אין חברי צוות.
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -172,56 +139,14 @@ export default function TeamManagementPage() {
         </Card>
       </div>
 
-      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-        <DialogContent className="sm:max-w-md" dir="rtl">
-          <DialogHeader>
-            <DialogTitle>הזמנת חבר צוות</DialogTitle>
-            <DialogDescription>
-              הזן אימייל ובחר הרשאות. ההזמנה תישמר וניתן לשלוח קישור הצטרפות למשתמש.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleInviteSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="invite-email">אימייל</Label>
-              <Input
-                id="invite-email"
-                type="email"
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="user@company.com"
-                dir="ltr"
-                required
-              />
-            </div>
-            <div className="space-y-3">
-              <Label>הרשאות</Label>
-              <div className="grid grid-cols-2 gap-3 rounded-lg border p-3">
-                {PERMISSION_KEYS.map((key) => (
-                  <label
-                    key={key}
-                    className="flex items-center justify-between gap-2 cursor-pointer"
-                  >
-                    <span className="text-sm">{PERMISSION_LABELS[key]}</span>
-                    <Switch
-                      checked={!!invitePermissions[key]}
-                      onCheckedChange={(v) => togglePermission(key, v)}
-                    />
-                  </label>
-                ))}
-              </div>
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>
-                ביטול
-              </Button>
-              <Button type="submit" disabled={createInvitation.isPending || !inviteEmail.trim()}>
-                {createInvitation.isPending && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
-                שמור הזמנה
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <SimpleInviteModal
+        key={modalOpen ? 'open' : 'closed'}
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        orgId={orgId}
+        invitedBy={profile?.user_id ?? null}
+        onSuccess={() => queryClient.invalidateQueries({ queryKey: ['org-invitations', orgId] })}
+      />
     </div>
   );
 }

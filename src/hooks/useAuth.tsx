@@ -1,8 +1,15 @@
-import { useState, useEffect, createContext, useContext, useCallback, ReactNode } from 'react';
+import { useState, useEffect, useRef, createContext, useContext, useCallback, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import type { AppRole, Profile } from '@/types/fleet';
 import { hasPermission as checkPermission, type PermissionKey } from '@/lib/permissions';
+
+const ACTIVE_ORG_STORAGE_KEY = 'fleet-manager-active-org';
+
+export interface MemberOrganization {
+  id: string;
+  name: string;
+}
 
 interface AuthContextType {
   user: User | null;
@@ -13,7 +20,13 @@ interface AuthContextType {
   isAdmin: boolean;
   isManager: boolean;
   isDriver: boolean;
+  /** All organizations the user is a member of (from org_members). */
+  memberOrganizations: MemberOrganization[];
+  /** Currently active org for dashboard data (selected switcher or profile.org_id). */
+  activeOrgId: string | null;
+  setActiveOrgId: (orgId: string | null) => void;
   hasPermission: (permission: PermissionKey) => boolean;
+  refreshProfile: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
@@ -27,6 +40,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [roles, setRoles] = useState<AppRole[]>([]);
+  const [memberOrganizations, setMemberOrganizations] = useState<MemberOrganization[]>([]);
+  const [_activeOrgId, setActiveOrgIdState] = useState<string | null>(null);
+  const inviteCheckDoneRef = useRef(false);
+  const activeOrgInitializedRef = useRef(false);
+
+  const setActiveOrgId = useCallback((orgId: string | null) => {
+    setActiveOrgIdState(orgId);
+    if (orgId != null) {
+      try {
+        localStorage.setItem(ACTIVE_ORG_STORAGE_KEY, orgId);
+      } catch {
+        // ignore
+      }
+    } else {
+      try {
+        localStorage.removeItem(ACTIVE_ORG_STORAGE_KEY);
+      } catch {
+        // ignore
+      }
+    }
+  }, []);
+
+  const activeOrgId = _activeOrgId ?? profile?.org_id ?? null;
 
   const fetchUserRoles = async (userId: string) => {
     const { data, error } = await supabase
@@ -53,6 +89,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const fetchMemberOrganizations = useCallback(async (userId: string, fallbackOrgId?: string | null) => {
+    const { data: rows, error: memError } = await supabase
+      .from('org_members')
+      .select('org_id')
+      .eq('user_id', userId);
+    let orgIds = memError || !rows?.length ? [] : rows.map((r: { org_id: string }) => r.org_id);
+    if (orgIds.length === 0 && fallbackOrgId) {
+      orgIds = [fallbackOrgId];
+    }
+    if (orgIds.length === 0) {
+      setMemberOrganizations([]);
+      return;
+    }
+    const { data: orgs, error: orgError } = await supabase
+      .from('organizations')
+      .select('id, name')
+      .in('id', orgIds);
+    if (orgError || !orgs?.length) {
+      setMemberOrganizations([]);
+      return;
+    }
+    setMemberOrganizations((orgs as { id: string; name: string }[]).sort((a, b) => (a.name || '').localeCompare(b.name || '')));
+  }, []);
+
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
@@ -63,10 +123,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setTimeout(() => {
             fetchUserRoles(session.user.id);
             fetchProfile(session.user.id);
+            fetchMemberOrganizations(session.user.id);
           }, 0);
         } else {
           setRoles([]);
           setProfile(null);
+          setMemberOrganizations([]);
+          setActiveOrgIdState(null);
+          activeOrgInitializedRef.current = false;
         }
         setLoading(false);
       }
@@ -79,12 +143,81 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (session?.user) {
         fetchUserRoles(session.user.id);
         fetchProfile(session.user.id);
+        fetchMemberOrganizations(session.user.id);
       }
       setLoading(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
+
+  const refreshProfile = useCallback(async () => {
+    if (user?.id) await fetchProfile(user.id);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.email || inviteCheckDoneRef.current) return;
+    inviteCheckDoneRef.current = true;
+    (async () => {
+      const email = user.email?.trim().toLowerCase();
+      if (!email) return;
+      const { data: invitations, error: listError } = await (supabase as any)
+        .from('org_invitations')
+        .select('id, org_id, permissions')
+        .eq('email', email)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (listError || !invitations?.length) return;
+      const inv = invitations[0] as { id: string; org_id: string; permissions: unknown };
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({
+          org_id: inv.org_id,
+          permissions: inv.permissions ?? {},
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', user.id);
+      if (updateError) return;
+      await supabase.from('org_members').insert({ user_id: user.id, org_id: inv.org_id });
+      setActiveOrgId(inv.org_id);
+      await (supabase as any).from('org_invitations').delete().eq('id', inv.id);
+      await fetchProfile(user.id);
+      await fetchMemberOrganizations(user.id);
+    })();
+  }, [user?.id, user?.email]);
+
+  useEffect(() => {
+    if (!user) {
+      inviteCheckDoneRef.current = false;
+      activeOrgInitializedRef.current = false;
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user?.id || !profile?.org_id) return;
+    if (memberOrganizations.length > 0) return;
+    fetchMemberOrganizations(user.id, profile.org_id);
+  }, [user?.id, profile?.org_id, memberOrganizations.length, fetchMemberOrganizations]);
+
+  useEffect(() => {
+    if (!user || memberOrganizations.length === 0) return;
+    if (activeOrgInitializedRef.current) return;
+    activeOrgInitializedRef.current = true;
+    let stored: string | null = null;
+    try {
+      stored = localStorage.getItem(ACTIVE_ORG_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+    const validStored = stored && memberOrganizations.some((o) => o.id === stored);
+    if (validStored) {
+      setActiveOrgIdState(stored);
+    } else if (profile?.org_id && memberOrganizations.some((o) => o.id === profile.org_id)) {
+      setActiveOrgIdState(profile.org_id);
+    } else if (memberOrganizations.length > 0) {
+      setActiveOrgIdState(memberOrganizations[0].id);
+    }
+  }, [user, profile?.org_id, memberOrganizations]);
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -109,6 +242,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
     setRoles([]);
     setProfile(null);
+    setMemberOrganizations([]);
+    setActiveOrgIdState(null);
+    activeOrgInitializedRef.current = false;
   };
 
   const isAdmin = roles.includes('admin');
@@ -131,7 +267,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAdmin,
       isManager,
       isDriver,
+      memberOrganizations,
+      activeOrgId,
+      setActiveOrgId,
       hasPermission,
+      refreshProfile,
       signIn,
       signUp,
       signOut

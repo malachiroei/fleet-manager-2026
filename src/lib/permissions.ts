@@ -10,6 +10,9 @@ export const PERMISSION_KEYS = [
   'compliance',
   'maintenance',
   'manage_team',
+  'edit_rights',
+  'delete_rights',
+  'admin_access',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -23,6 +26,9 @@ export const PERMISSION_LABELS: Record<PermissionKey, string> = {
   compliance: 'התראות ותקינות',
   maintenance: 'תחזוקה',
   manage_team: 'ניהול צוות',
+  edit_rights: 'זכויות עריכה',
+  delete_rights: 'זכויות מחיקה',
+  admin_access: 'גישת מנהל',
 };
 
 /**
