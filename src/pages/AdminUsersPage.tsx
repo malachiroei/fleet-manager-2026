@@ -35,7 +35,7 @@ export default function AdminUsersPage() {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, full_name, email, status')
+        .select('*')
         .neq('status', 'active')
         .order('created_at', { ascending: true });
 
@@ -98,7 +98,7 @@ export default function AdminUsersPage() {
     queryFn: async (): Promise<PendingUser[]> => {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, full_name, email, status')
+        .select('*')
         .neq('status', 'active')
         .order('created_at', { ascending: true });
 
