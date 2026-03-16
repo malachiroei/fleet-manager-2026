@@ -71,9 +71,9 @@ export function useTeamMembersForSwitcher(orgId: string | null | undefined) {
       const { data, error } = await supabase
         .from('profiles')
         .select('id, full_name, email, org_id, status')
-        // For main admin, also include specific emails regardless of org_id
+        // Include all profiles in this org, plus key hierarchy emails regardless of org
         .or(
-          `org_id.eq.${orgId},email.in.(ravidmalachi@gmail.com,roeima21@gmail.com,malachiroei1@gmail.com)`
+          `org_id.eq.${orgId},email.in.(malachiroei@gmail.com,ravidmalachi@gmail.com,roeima21@gmail.com)`
         )
         .order('full_name');
 

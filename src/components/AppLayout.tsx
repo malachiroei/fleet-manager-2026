@@ -103,29 +103,43 @@ export function AppLayout({ children }: AppLayoutProps) {
   );
 
   const OrgSwitcher = () => {
-    // Hide switcher for locked driver accounts
-    if (isDriverRoei || isRavid) return null;
-    if (memberOrganizations.length === 0) return null;
+    // Hide switcher רק עבור משתמש קצה (Roei)
+    if (isDriverRoei) return null;
+
+    // אם אין ארגונים משויכים בכלל, נסתיר רק למשתמשים רגילים – אבל לא למנהל הראשי ולא לרביד
+    if (memberOrganizations.length === 0 && !isMainAdmin && !isRavid) return null;
     // For the org list at the top: for main admin, prefer only the primary org "רביד צי רכבים"
     const orgItems = isMainAdmin
       ? memberOrganizations.filter((org) => (org.name || '').trim() === 'רביד צי רכבים')
       : memberOrganizations;
 
-    // Team members view: for main admin, show only specific people; for others, keep previous behavior
+    // Team members view:
+    // - For main admin: רק רביד (sub-admin)
+    // - עבור משתמשים אחרים (כולל רביד): כל מי שנמצא באותו org חוץ מעצמם
     let visibleMembers = teamMembers.filter(
-      (m) =>
-        m.email &&
-        m.email.toLowerCase() !== email &&
-        m.email.toLowerCase() !== 'malachiroei@gmail.com'
+      (m) => m.email && m.email.toLowerCase() !== email
     );
     // Remove any member that duplicates the org-level "רביד צי רכבים"
     visibleMembers = visibleMembers.filter((m) => (m.full_name || '').trim() !== 'רביד צי רכבים');
 
     if (isMainAdmin) {
-      const allowedEmails = new Set(['ravidmalachi@gmail.com', 'malachiroei1@gmail.com']);
+      const allowedEmails = new Set(['ravidmalachi@gmail.com']);
       visibleMembers = visibleMembers.filter(
         (m) => m.email && allowedEmails.has(m.email.toLowerCase())
       );
+    }
+
+    // Safety net: when logged in as Ravid and no members found, ensure Roei appears
+    if (isRavid && visibleMembers.length === 0) {
+      visibleMembers = [
+        {
+          id: 'synthetic-roeima21',
+          full_name: 'ROEIMA21',
+          email: 'roeima21@gmail.com',
+          org_id: profile?.org_id ?? null,
+          source: 'profile',
+        },
+      ] as any;
     }
     console.log('DEBUG SWITCHER:', {
       activeOrgId,
@@ -410,7 +424,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       className="flex min-h-[100dvh] flex-col overflow-x-hidden bg-[#020617]"
       dir={isRtl ? 'rtl' : 'ltr'}
     >
-      {isMainAdmin && viewAsEmail && (
+      {(isMainAdmin || isRavid) && viewAsEmail && (
         <div className="sticky top-0 z-50 w-full bg-amber-500 text-black shadow-md">
           <div className="mx-auto flex max-w-[1920px] items-center justify-between px-4 py-2 text-xs sm:text-sm">
             <span className="font-medium">
