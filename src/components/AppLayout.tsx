@@ -67,13 +67,18 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   const OrgSwitcher = () => {
     if (memberOrganizations.length === 0) return null;
-    const filteredMembers = teamMembers.filter((m) => m.email && m.email !== user?.email);
+    const visibleMembers = teamMembers.filter(
+      (m) =>
+        m.email &&
+        m.email.toLowerCase() !== (user?.email ?? '').toLowerCase()
+    );
     console.log('DEBUG SWITCHER:', {
       activeOrgId,
       teamMembersCount: teamMembers.length,
-      filteredCount: filteredMembers.length,
+      visibleCount: visibleMembers.length,
       emails: teamMembers.map((m) => m.email),
     });
+    console.log('VISIBLE MEMBERS:', visibleMembers);
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -90,19 +95,22 @@ export function AppLayout({ children }: AppLayoutProps) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align={isRtl ? 'start' : 'end'} className="min-w-[220px]">
-          <DropdownMenuRadioGroup value={activeOrgId ?? ''} onValueChange={(id) => id && setActiveOrgId(id)}>
+          <DropdownMenuRadioGroup
+            value={activeOrgId ?? ''}
+            onValueChange={(id) => id && setActiveOrgId(id)}
+          >
             {memberOrganizations.map((org) => (
               <DropdownMenuRadioItem key={org.id} value={org.id}>
                 <span className="truncate">{org.name || org.id}</span>
               </DropdownMenuRadioItem>
             ))}
           </DropdownMenuRadioGroup>
-          {filteredMembers.length > 0 ? (
+          {visibleMembers.length > 0 ? (
             <>
               <DropdownMenuItem disabled className="mt-2 text-[11px] font-semibold opacity-80">
                 תצוגה כחבר צוות
               </DropdownMenuItem>
-              {filteredMembers.map((member) => (
+              {visibleMembers.map((member) => (
                 <DropdownMenuItem key={member.id} className="text-xs">
                   <div className="flex flex-col">
                     <span className="font-medium truncate">
@@ -115,6 +123,10 @@ export function AppLayout({ children }: AppLayoutProps) {
                 </DropdownMenuItem>
               ))}
             </>
+          ) : teamMembers.length > 0 ? (
+            <DropdownMenuItem disabled className="mt-2 text-[11px] opacity-70">
+              אין חברי צוות נוספים לארגון זה
+            </DropdownMenuItem>
           ) : (
             <DropdownMenuItem disabled className="mt-2 text-[11px] opacity-70">
               אין חברי צוות לארגון זה
