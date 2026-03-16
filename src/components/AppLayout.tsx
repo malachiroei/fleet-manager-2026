@@ -398,14 +398,12 @@ export function AppLayout({ children }: AppLayoutProps) {
         isRtl ? 'flex-row-reverse' : ''
       )}
     >
-      {/* Mobile: Org switcher + settings gear + user */}
+      {/* Mobile: רק גלגל שיניים (תפריט הגדרות) בשורה העליונה */}
       <div className="flex items-center gap-2 sm:hidden">
-        <OrgSwitcher />
         <MobileSettingsMenu />
-        <UserDropdown />
       </div>
 
-      {/* Desktop: full tools row */}
+      {/* Desktop: שורת הכלים המלאה כמו קודם */}
       <div className="hidden sm:flex items-center gap-3">
         <PwaInstallButton />
         <ThemeToggle />
@@ -433,6 +431,25 @@ export function AppLayout({ children }: AppLayoutProps) {
       </div>
     </div>
   );
+
+  const MobileUserRow = () =>
+    user ? (
+      <div className="flex sm:hidden w-full items-center justify-between gap-2 pt-1">
+        <div className="flex items-center gap-2 min-w-0">
+          <div
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-500/20 text-[10px] font-bold text-cyan-200"
+            title={name || email}
+          >
+            {initials}
+          </div>
+          {email && (
+            <span className="max-w-[160px] truncate text-[11px] text-white/70" title={email}>
+              {email}
+            </span>
+          )}
+        </div>
+      </div>
+    ) : null;
 
   /* Desktop: full inline email + logout */
   const UserInline = () =>
@@ -616,12 +633,13 @@ export function AppLayout({ children }: AppLayoutProps) {
       )}
       <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0d1b2e] min-h-[4.25rem] sm:min-h-0">
         <div className="mx-auto flex max-w-[1920px] w-full flex-col gap-0 sm:gap-1 px-4 sm:px-6 py-3 sm:py-3">
-          <div className="flex w-full items-center justify-between gap-3 sm:gap-4 min-h-10 sm:min-h-0">
-            {/* RTL: פריט ראשון = ימין המסך — בית + מנהל הצי */}
+          {/* Row 1: לוגו + בית + גלגל שיניים */}
+          <div className="flex w-full items-center justify-between gap-2 sm:gap-4 min-h-10 sm:min-h-0">
             <BrandAndHome />
             <TopToolsBlock />
           </div>
-          {/* שורת משתמש — רק בדסקטופ; במובייל המשתמש בתפריט dropdown בשורה הראשונה */}
+          {/* Row 2: מידע משתמש במובייל + שורת משתמש בדסקטופ */}
+          <MobileUserRow />
           <div className={cn('hidden sm:block pt-1', isRtl ? 'flex w-full justify-end' : 'flex w-full justify-start')}>
             <UserInline />
           </div>
