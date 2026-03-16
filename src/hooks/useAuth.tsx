@@ -62,7 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const activeOrgId = _activeOrgId ?? profile?.org_id ?? null;
+  const activeOrgId = _activeOrgId ?? null;
 
   const fetchUserRoles = async (userId: string) => {
     const { data, error } = await supabase
@@ -194,12 +194,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   useEffect(() => {
-    if (!user?.id || !profile?.org_id) return;
-    if (memberOrganizations.length > 0) return;
-    fetchMemberOrganizations(user.id, profile.org_id);
-  }, [user?.id, profile?.org_id, memberOrganizations.length, fetchMemberOrganizations]);
-
-  useEffect(() => {
     if (!user || memberOrganizations.length === 0) return;
     if (activeOrgInitializedRef.current) return;
     activeOrgInitializedRef.current = true;
@@ -212,12 +206,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const validStored = stored && memberOrganizations.some((o) => o.id === stored);
     if (validStored) {
       setActiveOrgIdState(stored);
-    } else if (profile?.org_id && memberOrganizations.some((o) => o.id === profile.org_id)) {
-      setActiveOrgIdState(profile.org_id);
-    } else if (memberOrganizations.length > 0) {
-      setActiveOrgIdState(memberOrganizations[0].id);
+    } else {
+      // Default to "personal" dashboard (no active org) when nothing was stored
+      setActiveOrgIdState(null);
     }
-  }, [user, profile?.org_id, memberOrganizations]);
+  }, [user, memberOrganizations]);
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
