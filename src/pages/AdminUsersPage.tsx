@@ -19,11 +19,9 @@ import { toast } from '@/hooks/use-toast';
 
 interface PendingUser {
   id: string;
-  user_id: string;
   full_name: string;
   email: string | null;
   status: string;
-  org_id: string | null;
 }
 
 export default function AdminUsersPage() {
@@ -37,7 +35,7 @@ export default function AdminUsersPage() {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, user_id, full_name, email, status, org_id')
+        .select('id, full_name, email, status')
         .neq('status', 'active')
         .order('created_at', { ascending: true });
 
@@ -100,7 +98,7 @@ export default function AdminUsersPage() {
     queryFn: async (): Promise<PendingUser[]> => {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, user_id, full_name, email, status, org_id')
+        .select('id, full_name, email, status')
         .neq('status', 'active')
         .order('created_at', { ascending: true });
 

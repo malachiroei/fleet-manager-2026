@@ -245,9 +245,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             user_id: userId,
             full_name: fullName,
             email: userEmail,
-            phone: null,
-            org_id: null,
-            permissions: {},
             status: 'pending_approval',
           });
 
