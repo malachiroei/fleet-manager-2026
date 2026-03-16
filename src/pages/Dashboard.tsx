@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useDashboardStats, useComplianceAlerts } from '@/hooks/useDashboard';
@@ -11,7 +10,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import QuickOdometerDialog from '@/components/QuickOdometerDialog';
-import { supabase } from '@/integrations/supabase/client';
 import { 
   Car, 
   Users, 
@@ -174,35 +172,8 @@ export default function Dashboard() {
       );
 
   const isMainAdmin = email === 'malachiroei@gmail.com' && isAdmin;
-
-  const pendingUsersQuery = useQuery({
-    queryKey: ['admin-pending-users-count'],
-    enabled: isMainAdmin,
-    refetchInterval: 5000,
-    placeholderData: 0,
-    queryFn: async () => {
-      try {
-        const { count, error } = await supabase
-          .from('profiles')
-          .select('id', { count: 'exact', head: true })
-          .eq('status', 'pending_approval');
-
-        if (error) {
-          console.error('pendingUsersQuery error:', error);
-          return 0;
-        }
-        return count ?? 0;
-      } catch (err) {
-        console.error('pendingUsersQuery exception:', err);
-        return 0;
-      }
-    },
-  });
-
-  const pendingUsersCount =
-    typeof pendingUsersQuery.data === 'number' && Number.isFinite(pendingUsersQuery.data)
-      ? pendingUsersQuery.data
-      : 0;
+  // Temporary: disable pending users badge logic to rule out crashes
+  const pendingUsersCount = 0;
 
   console.log('Dashboard userRole', {
     userRoles: userRoles ?? [],
@@ -222,7 +193,8 @@ export default function Dashboard() {
     ? statusCardConfig.filter((card) => card.link === '/handover/replacement')
     : statusCardConfig;
 
-  const quickLinks: {
+  // Base quick actions; filtering happens afterwards
+  const baseQuickLinks: {
     title: string;
     href: string;
     icon: React.ElementType;
@@ -284,9 +256,10 @@ export default function Dashboard() {
       href: '/admin/users',
       icon: Users,
       adminOnly: true,
-      showPendingBadge: pendingUsersCount > 0,
     },
-  ].filter((action) => {
+  ];
+
+  const quickLinks = baseQuickLinks.filter((action) => {
     const showAllActionsForAdmin = !viewAsEmail && isMainAdmin;
 
     // Admin-only items: only show for main admin (malachiroei)
@@ -388,12 +361,7 @@ export default function Dashboard() {
             <div className="grid grid-cols-1 gap-3">
               {Array.isArray(quickLinks) && quickLinks.length > 0 && quickLinks.map((action, idx) =>
                 action.disabled ? (
-                  <Card key={`${action.title}-${idx}`} className="relative h-full cursor-not-allowed opacity-55 touch-manipulation min-h-[48px]">
-                    {action.showPendingBadge && (
-                      <div className="absolute -top-1 -left-1 sm:-top-1 sm:-right-1 rounded-full bg-red-600 text-[10px] font-bold px-1.5 py-0.5 text-white shadow-sm">
-                        {pendingUsersCount}
-                      </div>
-                    )}
+                  <Card key={`${action.title}-${idx}`} className="h-full cursor-not-allowed opacity-55 touch-manipulation min-h-[48px]">
                     <CardContent className="p-4 flex items-center gap-3">
                       <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                         <action.icon className="h-4.5 w-4.5" />
@@ -406,12 +374,7 @@ export default function Dashboard() {
                   </Card>
                 ) : (
                   <Link key={action.href + idx} to={action.href} className="block touch-manipulation cursor-pointer" style={{ touchAction: 'manipulation' }}>
-                    <Card className="relative h-full transition-all duration-200 hover:shadow-md min-h-[48px] cursor-pointer">
-                      {action.showPendingBadge && (
-                        <div className="absolute -top-1 -left-1 sm:-top-1 sm:-right-1 rounded-full bg-red-600 text-[10px] font-bold px-1.5 py-0.5 text-white shadow-sm">
-                          {pendingUsersCount}
-                        </div>
-                      )}
+                    <Card className="h-full transition-all duration-200 hover:shadow-md min-h-[48px] cursor-pointer">
                       <CardContent className="p-4 flex items-center gap-3">
                         <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                           <action.icon className="h-4.5 w-4.5" />
@@ -456,12 +419,7 @@ export default function Dashboard() {
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
               {Array.isArray(quickLinks) && quickLinks.length > 0 && quickLinks.map((action, idx) =>
                 action.disabled ? (
-                  <Card key={`${action.title}-${idx}`} className="relative h-full cursor-not-allowed opacity-55 touch-manipulation">
-                    {action.showPendingBadge && (
-                      <div className="absolute -top-1 -right-1 rounded-full bg-red-600 text-[10px] font-bold px-1.5 py-0.5 text-white shadow-sm">
-                        {pendingUsersCount}
-                      </div>
-                    )}
+                  <Card key={`${action.title}-${idx}`} className="h-full cursor-not-allowed opacity-55 touch-manipulation">
                     <CardContent className="p-4 flex items-center gap-3">
                       <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
                         <action.icon className="h-5 w-5" />
@@ -474,12 +432,7 @@ export default function Dashboard() {
                   </Card>
                 ) : (
                   <Link key={action.href + idx} to={action.href} className="block touch-manipulation cursor-pointer" style={{ touchAction: 'manipulation' }}>
-                    <Card className="relative h-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md min-h-[48px] cursor-pointer">
-                      {action.showPendingBadge && (
-                        <div className="absolute -top-1 -right-1 rounded-full bg-red-600 text-[10px] font-bold px-1.5 py-0.5 text-white shadow-sm">
-                          {pendingUsersCount}
-                        </div>
-                      )}
+                    <Card className="h-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md min-h-[48px] cursor-pointer">
                       <CardContent className="p-4 flex items-center gap-3">
                         <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
                           <action.icon className="h-5 w-5" />
