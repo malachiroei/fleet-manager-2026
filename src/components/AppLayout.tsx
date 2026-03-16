@@ -98,6 +98,14 @@ export function AppLayout({ children }: AppLayoutProps) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align={isRtl ? 'start' : 'end'} className="min-w-[220px]">
+          {viewAsEmail && (
+            <DropdownMenuItem
+              onClick={() => setViewAsEmail(null)}
+              className="text-xs font-semibold text-emerald-200 bg-emerald-950/60 cursor-pointer mb-1"
+            >
+              חזרה לתצוגת מנהל
+            </DropdownMenuItem>
+          )}
           <DropdownMenuRadioGroup
             value={activeOrgId ?? ''}
             onValueChange={(id) => id && setActiveOrgId(id)}
@@ -113,14 +121,6 @@ export function AppLayout({ children }: AppLayoutProps) {
               <DropdownMenuItem disabled className="mt-2 text-[11px] font-semibold opacity-80">
                 תצוגה כחבר צוות
               </DropdownMenuItem>
-              {viewAsEmail && (
-                <DropdownMenuItem
-                  onClick={() => setViewAsEmail(null)}
-                  className="text-xs font-semibold text-emerald-200 bg-emerald-950/40 cursor-pointer"
-                >
-                  חזרה לתצוגת מנהל
-                </DropdownMenuItem>
-              )}
               {visibleMembers.map((member) => (
                 <DropdownMenuItem
                   key={member.id}
@@ -329,7 +329,24 @@ export function AppLayout({ children }: AppLayoutProps) {
       className="flex min-h-[100dvh] flex-col overflow-x-hidden bg-[#020617]"
       dir={isRtl ? 'rtl' : 'ltr'}
     >
-      <header className="sticky top-0 z-50 border-b border-white/10 bg-[#0d1b2e] min-h-16 sm:min-h-0">
+      {viewAsEmail && (
+        <div className="sticky top-0 z-50 w-full bg-amber-500/90 text-black shadow-md">
+          <div className="mx-auto flex max-w-[1920px] items-center justify-between px-4 py-2 text-xs sm:text-sm">
+            <span className="font-medium">
+              אתה נמצא כרגע בתצוגת נהג: <span className="font-bold">{viewAsEmail}</span>
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 text-xs font-semibold border-black/40 bg-black/5 hover:bg-black/10"
+              onClick={() => setViewAsEmail(null)}
+            >
+              חזור לתצוגת מנהל
+            </Button>
+          </div>
+        </div>
+      )}
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0d1b2e] min-h-16 sm:min-h-0">
         <div className="mx-auto flex max-w-[1920px] w-full flex-col gap-0 sm:gap-1 px-4 sm:px-6 py-3 sm:py-3">
           <div className="flex w-full items-center justify-between gap-2 min-h-10 sm:min-h-0">
             {/* RTL: פריט ראשון = ימין המסך — בית + מנהל הצי */}
