@@ -4,6 +4,7 @@ import { useVehicleSpecDirty } from '@/contexts/VehicleSpecDirtyContext';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrganization } from '@/hooks/useOrganizations';
+import { useTeamMembers } from '@/hooks/useTeam';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { AIChatAssistant } from './AIChatAssistant';
 import { useTheme } from '@/hooks/useTheme';
@@ -40,6 +41,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const isHomeActive = location.pathname === '/';
   const { data: organization } = useOrganization(activeOrgId ?? null);
   const orgName = organization?.name?.trim() ?? '';
+  const { data: teamMembers = [] } = useTeamMembers(activeOrgId ?? null);
 
   const handleLogout = () => {
     void signOut();
@@ -81,6 +83,23 @@ export function AppLayout({ children }: AppLayoutProps) {
               </DropdownMenuRadioItem>
             ))}
           </DropdownMenuRadioGroup>
+          {teamMembers.length > 0 && (
+            <>
+              <DropdownMenuItem disabled className="mt-2 text-[11px] font-semibold opacity-80">
+                תצוגה כחבר צוות
+              </DropdownMenuItem>
+              {teamMembers.map((member) => (
+                <DropdownMenuItem key={member.id} className="text-xs">
+                  <div className="flex flex-col">
+                    <span className="font-medium truncate">{member.full_name || member.email || 'חבר צוות'}</span>
+                    {member.email && (
+                      <span className="text-[11px] text-muted-foreground truncate">{member.email}</span>
+                    )}
+                  </div>
+                </DropdownMenuItem>
+              ))}
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     );

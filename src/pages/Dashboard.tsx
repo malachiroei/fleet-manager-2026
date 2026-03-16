@@ -237,12 +237,24 @@ export default function Dashboard() {
       permission: 'manage_team',
     },
   ].filter((action) => {
-    if (action.adminOnly && !isAdmin) return false;
+    const canBypassPermissions = isSystemAdmin || effectiveIsAdmin;
+
+    // Admin-only items: only show for real/admin-equivalent users
+    if (action.adminOnly && !canBypassPermissions) return false;
+
+    // System/admin users always see all non-disabled actions, regardless of profile permissions JSON
+    if (canBypassPermissions) {
+      return !action.disabled;
+    }
+
+    // Driver-only view: restrict to a small subset of actions + require permission
     if (isDriverOnly) {
       const driverPerms: PermissionKey[] = ['handover', 'vehicle_delivery', 'procedure6_complaints', 'mileage_update'];
       if (!action.permission) return false;
       return driverPerms.includes(action.permission) && hasPermission(action.permission);
     }
+
+    // Normal users: require the corresponding permission if defined
     if (action.permission && !hasPermission(action.permission)) return false;
     return true;
   });
