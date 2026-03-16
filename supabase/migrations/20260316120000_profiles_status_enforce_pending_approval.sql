@@ -21,8 +21,13 @@ DECLARE
   inv_org_id uuid;
   inv_permissions jsonb;
 BEGIN
-    INSERT INTO public.profiles (user_id, full_name, email)
-    VALUES (NEW.id, COALESCE(NEW.raw_user_meta_data->>'full_name', 'משתמש חדש'), NEW.email);
+    INSERT INTO public.profiles (user_id, full_name, email, status)
+    VALUES (
+      NEW.id,
+      COALESCE(NEW.raw_user_meta_data->>'full_name', 'משתמש חדש'),
+      NEW.email,
+      'pending_approval'
+    );
 
     SELECT oi.org_id, oi.permissions
     INTO inv_org_id, inv_permissions
