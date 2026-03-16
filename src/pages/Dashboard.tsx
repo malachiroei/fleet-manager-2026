@@ -362,7 +362,7 @@ export default function Dashboard() {
           <section className="space-y-3 pb-4">
             <h2 className="text-base font-semibold text-foreground">{t('dashboard.quickActions')}</h2>
             <div className="grid grid-cols-1 gap-3">
-              {Array.isArray(quickLinks) && quickLinks.length > 0 && quickLinks.map((action, idx) =>
+              {quickLinks.map((action, idx) =>
                 action.disabled ? (
                   <Card key={`${action.title}-${idx}`} className="h-full cursor-not-allowed opacity-55 touch-manipulation min-h-[48px]">
                     <CardContent className="p-4 flex items-center gap-3">
@@ -420,7 +420,7 @@ export default function Dashboard() {
           <section className="space-y-3">
             <h2 className="text-lg font-semibold text-foreground">{t('dashboard.quickActions')}</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-              {Array.isArray(quickLinks) && quickLinks.length > 0 && quickLinks.map((action, idx) =>
+              {quickLinks.map((action, idx) =>
                 action.disabled ? (
                   <Card key={`${action.title}-${idx}`} className="h-full cursor-not-allowed opacity-55 touch-manipulation">
                     <CardContent className="p-4 flex items-center gap-3">
