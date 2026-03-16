@@ -136,7 +136,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       ] as any;
     }
 
-    return (
+  return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -153,7 +153,7 @@ export function AppLayout({ children }: AppLayoutProps) {
           <div className="px-3 py-2 border-b border-border text-xs">
             <div className="font-semibold truncate">{name || email}</div>
             <div className="text-[11px] text-muted-foreground truncate">{email}</div>
-          </div>
+                </div>
 
           {/* Org select / view-as */}
           {orgItems.length > 0 && (
@@ -406,8 +406,8 @@ export function AppLayout({ children }: AppLayoutProps) {
       {/* Desktop: שורת הכלים המלאה כמו קודם */}
       <div className="hidden sm:flex items-center gap-3">
         <PwaInstallButton />
-        <ThemeToggle />
-        <LanguageSwitcher />
+            <ThemeToggle />
+            <LanguageSwitcher />
         <OrgSwitcher />
         <Link
           to="/admin/org-settings"
@@ -675,7 +675,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         )}
       </main>
 
-      <AIChatAssistant />
+      {profile?.status === 'active' && <AIChatAssistant />}
     </div>
   );
 }
