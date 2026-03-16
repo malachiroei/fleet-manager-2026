@@ -28,7 +28,7 @@ export default function AdminUsersPage() {
   const { profile, loading, isAdmin } = useAuth();
   const queryClient = useQueryClient();
 
-  const isMainAdmin = profile?.email === 'malachiroei@gmail.com' && isAdmin;
+  const isMainAdmin = profile?.email === 'malachiroei@gmail.com';
 
   const pendingQuery = useQuery({
     queryKey: ['admin-pending-users'],

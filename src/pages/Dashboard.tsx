@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useDashboardStats, useComplianceAlerts } from '@/hooks/useDashboard';
@@ -26,6 +27,7 @@ import {
   Droplet,
   UserCog
 } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 
 const statusCardConfig: Array<{
   titleKey: 'navigation.fleetManagement' | 'navigation.drivers' | 'navigation.exceptionAlerts' | 'dashboard.replacementVehicle';
@@ -177,8 +179,27 @@ export default function Dashboard() {
           !isManager &&
           !isSystemAdmin
       );
-  // Temporary: disable pending users badge logic to rule out crashes
-  const pendingUsersCount = 0;
+
+  const { data: pendingUsersCount = 0 } = useQuery({
+    queryKey: ['pending-users-count'],
+    enabled: isMainAdmin,
+    placeholderData: 0,
+    refetchInterval: 5000,
+    queryFn: async (): Promise<number> => {
+      try {
+        const { count, error } = await supabase
+          .from('profiles')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'pending_approval');
+
+        if (error) throw error;
+        return typeof count === 'number' && Number.isFinite(count) ? count : 0;
+      } catch (err) {
+        console.error('Failed to load pending users count', err);
+        return 0;
+      }
+    },
+  });
 
   console.log('Dashboard userRole', {
     userRoles: userRoles ?? [],
@@ -261,6 +282,7 @@ export default function Dashboard() {
       href: '/admin/users',
       icon: Users,
       adminOnly: true,
+      showPendingBadge: true,
     },
   ];
 
@@ -368,8 +390,13 @@ export default function Dashboard() {
                         <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                           <action.icon className="h-4.5 w-4.5" />
                         </div>
-                        <div className="min-w-0 flex-1">
+                        <div className="min-w-0 flex-1 flex items-center justify-between gap-2">
                           <p className="text-sm font-medium text-foreground truncate">{action.title}</p>
+                          {action.showPendingBadge && pendingUsersCount > 0 && (
+                            <span className="inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full bg-red-500 text-[11px] font-semibold text-white px-2">
+                              {pendingUsersCount}
+                            </span>
+                          )}
                         </div>
                         <ChevronLeft className="h-4 w-4 text-muted-foreground shrink-0" />
                       </CardContent>
@@ -426,13 +453,20 @@ export default function Dashboard() {
                         <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
                           <action.icon className="h-5 w-5" />
                         </div>
-                        <div className="min-w-0 flex-1">
+                      <div className="min-w-0 flex-1 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
                           <p className="text-sm font-medium text-foreground truncate">{action.title}</p>
                           <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
                             כניסה
                             <ChevronLeft className="h-3.5 w-3.5" />
                           </span>
                         </div>
+                        {action.showPendingBadge && pendingUsersCount > 0 && (
+                          <span className="inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full bg-red-500 text-[11px] font-semibold text-white px-2">
+                            {pendingUsersCount}
+                          </span>
+                        )}
+                      </div>
                       </CardContent>
                     </Card>
                   </Link>
