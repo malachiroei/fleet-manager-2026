@@ -303,7 +303,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const BrandAndHome = () => (
     <div
       className={cn(
-        'flex min-w-0 items-center gap-2 sm:gap-3',
+        'flex min-w-0 items-center gap-4 sm:gap-6',
         isRtl ? 'flex-row' : 'flex-row-reverse'
       )}
     >
@@ -350,7 +350,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       dir={isRtl ? 'rtl' : 'ltr'}
     >
       {viewAsEmail && (
-        <div className="sticky top-0 z-50 w-full bg-amber-500/90 text-black shadow-md">
+        <div className="sticky top-0 z-50 w-full bg-amber-500 text-black shadow-md">
           <div className="mx-auto flex max-w-[1920px] items-center justify-between px-4 py-2 text-xs sm:text-sm">
             <span className="font-medium">
               אתה נמצא כרגע בתצוגת נהג: <span className="font-bold">{viewAsEmail}</span>
@@ -358,7 +358,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             <Button
               size="sm"
               variant="outline"
-              className="h-7 px-2 text-xs font-semibold border-black/40 bg-black/5 hover:bg-black/10"
+              className="h-7 px-3 text-xs font-semibold border-black/40 bg-black/80 text-amber-50 hover:bg-black/90"
               onClick={() => setViewAsEmail(null)}
             >
               חזור לתצוגת מנהל
