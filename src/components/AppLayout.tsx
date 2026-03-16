@@ -45,24 +45,6 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { data: teamMembers = [], error: teamMembersError } = useTeamMembersForSwitcher(activeOrgId ?? null as any);
   const { viewAsEmail, setViewAsEmail } = useViewAs();
 
-  // Global block for accounts awaiting approval – even before impersonation or header
-  if (profile?.status === 'pending_approval') {
-    return (
-      <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-[#020617] text-center px-6">
-        <div className="max-w-md rounded-2xl border border-amber-400/40 bg-amber-950/40 px-6 py-8 shadow-lg">
-          <h1 className="text-xl font-semibold text-amber-50 mb-2">
-            חשבונך ממתין לאישור מנהל
-          </h1>
-          <p className="text-sm text-amber-100/90 leading-relaxed">
-            חשבונך נוצר בהצלחה, אך עדיין ממתין לאישור מנהל המערכת.
-            <br />
-            תקבל הודעה ברגע שתוכל להיכנס ולהשתמש במערכת.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   useEffect(() => {
     console.log('TeamMembers for Org:', activeOrgId, {
       teamMembers,
