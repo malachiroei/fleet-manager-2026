@@ -38,6 +38,7 @@ import FormsPage from "./pages/FormsPage";
 import VehicleHandoverWizard from './pages/VehicleHandoverWizard';
 import TransfersPage from './pages/TransfersPage';
 import { ThemeProvider } from '@/hooks/useTheme';
+import { ViewAsProvider } from '@/contexts/ViewAsContext';
 import Footer from "@/components/layout/Footer";
 import { VehicleSpecDirtyProvider } from "@/contexts/VehicleSpecDirtyContext";
 import { PermissionGuard } from "@/components/PermissionGuard";
@@ -128,14 +129,16 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
-          <AppErrorBoundary>
-            <div className="flex min-h-screen flex-col">
-              <div className="flex-1">
-                <AppRoutes />
+          <ViewAsProvider>
+            <AppErrorBoundary>
+              <div className="flex min-h-screen flex-col">
+                <div className="flex-1">
+                  <AppRoutes />
+                </div>
+                <Footer />
               </div>
-              <Footer />
-            </div>
-          </AppErrorBoundary>
+            </AppErrorBoundary>
+          </ViewAsProvider>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

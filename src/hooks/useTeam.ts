@@ -75,6 +75,8 @@ export function useTeamMembersForSwitcher(orgId: string | null | undefined) {
 
       if (error) throw error;
 
+      console.log('RAW DATA FROM DB (team-members-switcher):', { orgId, data });
+
       const profiles = (data ?? []) as { id: string; full_name: string | null; email: string | null }[];
 
       const profileSummaries: TeamMemberSummary[] = profiles.map((p) => ({

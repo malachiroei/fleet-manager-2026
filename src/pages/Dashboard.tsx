@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useDashboardStats, useComplianceAlerts } from '@/hooks/useDashboard';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useAuth } from '@/hooks/useAuth';
+import { useViewAs } from '@/contexts/ViewAsContext';
 import type { PermissionKey } from '@/lib/permissions';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -153,20 +154,27 @@ export default function Dashboard() {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
   const { user, hasPermission, isAdmin, isManager, isDriver, roles: userRoles, loading } = useAuth();
+  const { viewAsEmail } = useViewAs();
   const totalAlerts = (alerts?.filter(a => a.status === 'expired' || a.status === 'warning').length) ?? 0;
 
   const email = user?.email || '';
   const isSystemAdmin = ['malachiroei@gmail.com', 'ravidmalachi@gmail.com'].includes(email);
   const isOwner = email === 'malachiroei@gmail.com';
   const effectiveIsAdmin = isOwner || isAdmin;
-  const isDriverOnly = Boolean(
-    (isDriver || userRoles?.includes('viewer')) && !effectiveIsAdmin && !isManager && !isSystemAdmin
-  );
+  const isDriverOnly = viewAsEmail
+    ? true
+    : Boolean(
+        (isDriver || userRoles?.includes('viewer')) &&
+          !effectiveIsAdmin &&
+          !isManager &&
+          !isSystemAdmin
+      );
 
   console.log('Dashboard userRole', {
     userRoles: userRoles ?? [],
     userRole: userRoles?.join(', ') ?? '(none)',
     email: email || '(no email)',
+    viewAsEmail,
     isSystemAdmin,
     isAdmin,
     effectiveIsAdmin,

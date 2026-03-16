@@ -1,6 +1,7 @@
 import { ReactNode, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useVehicleSpecDirty } from '@/contexts/VehicleSpecDirtyContext';
+import { useViewAs } from '@/contexts/ViewAsContext';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrganization } from '@/hooks/useOrganizations';
@@ -42,6 +43,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { data: organization } = useOrganization(activeOrgId ?? null);
   const orgName = organization?.name?.trim() ?? '';
   const { data: teamMembers = [], error: teamMembersError } = useTeamMembersForSwitcher(activeOrgId ?? null as any);
+  const { viewAsEmail, setViewAsEmail } = useViewAs();
 
   useEffect(() => {
     console.log('TeamMembers for Org:', activeOrgId, {
@@ -70,7 +72,8 @@ export function AppLayout({ children }: AppLayoutProps) {
     const visibleMembers = teamMembers.filter(
       (m) =>
         m.email &&
-        m.email.toLowerCase() !== (user?.email ?? '').toLowerCase()
+        m.email.toLowerCase() !== (user?.email ?? '').toLowerCase() &&
+        m.email.toLowerCase() !== 'malachiroei@gmail.com'
     );
     console.log('DEBUG SWITCHER:', {
       activeOrgId,
@@ -110,8 +113,20 @@ export function AppLayout({ children }: AppLayoutProps) {
               <DropdownMenuItem disabled className="mt-2 text-[11px] font-semibold opacity-80">
                 תצוגה כחבר צוות
               </DropdownMenuItem>
+              {viewAsEmail && (
+                <DropdownMenuItem
+                  onClick={() => setViewAsEmail(null)}
+                  className="text-xs font-semibold text-emerald-200 bg-emerald-950/40 cursor-pointer"
+                >
+                  חזרה לתצוגת מנהל
+                </DropdownMenuItem>
+              )}
               {visibleMembers.map((member) => (
-                <DropdownMenuItem key={member.id} className="text-xs">
+                <DropdownMenuItem
+                  key={member.id}
+                  className="text-xs cursor-pointer"
+                  onClick={() => member.email && setViewAsEmail(member.email)}
+                >
                   <div className="flex flex-col">
                     <span className="font-medium truncate">
                       {member.full_name || member.email || 'חבר צוות'}
