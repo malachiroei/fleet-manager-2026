@@ -219,16 +219,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = async (email: string, password: string, fullName: string) => {
     const redirectUrl = `${window.location.origin}/`;
-    
-    const { error } = await supabase.auth.signUp({
+
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         emailRedirectTo: redirectUrl,
-        data: { full_name: fullName }
-      }
+        data: { full_name: fullName },
+      },
     });
-    return { error };
+
+    if (error) {
+      return { error };
+    }
+
+    try {
+      const userId = data.user?.id;
+      const userEmail = (data.user?.email ?? email).toLowerCase();
+
+      if (userId) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert({
+            user_id: userId,
+            full_name: fullName,
+            email: userEmail,
+            phone: null,
+            org_id: null,
+            permissions: {},
+            status: 'pending_approval',
+          });
+
+        if (profileError) {
+          console.error('Failed to create pending profile after signUp', profileError);
+        }
+      }
+    } catch (e) {
+      console.error('Unexpected error while creating profile after signUp', e);
+    }
+
+    return { error: null };
   };
 
   const signOut = async () => {

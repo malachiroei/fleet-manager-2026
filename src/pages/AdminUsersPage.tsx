@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Navigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -27,8 +28,69 @@ interface PendingUser {
 export default function AdminUsersPage() {
   const { profile, loading, isAdmin } = useAuth();
   const queryClient = useQueryClient();
+  const [manualEmail, setManualEmail] = useState('');
 
   const isMainAdmin = (profile?.email ?? '').toLowerCase() === 'malachiroei@gmail.com';
+
+  const handleForceRefresh = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, user_id, full_name, email, status, org_id')
+        .neq('status', 'active')
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      queryClient.setQueryData(['admin-pending-users'], (data ?? []) as PendingUser[]);
+      void pendingQuery.refetch();
+    } catch (err) {
+      console.error('Force refresh of profiles failed', err);
+    }
+  };
+
+  const handleManualSync = async () => {
+    const email = manualEmail.trim().toLowerCase();
+    if (!email) return;
+
+    try {
+      const { data: authUsers, error: authError } = await (supabase as any).auth.admin.listUsers();
+      if (authError) throw authError;
+
+      const match = (authUsers?.users ?? []).find(
+        (u: any) => (u.email ?? '').toLowerCase() === email
+      );
+
+      if (!match) {
+        console.warn('No auth user found for email', email);
+        return;
+      }
+
+      const { error: upsertError } = await supabase
+        .from('profiles')
+        .upsert(
+          {
+            user_id: match.id,
+            full_name: match.user_metadata?.full_name ?? email,
+            email,
+            phone: null,
+            org_id: null,
+            permissions: {},
+            status: 'pending_approval',
+          },
+          { onConflict: 'user_id' }
+        );
+
+      if (upsertError) {
+        console.error('Manual sync upsert failed', upsertError);
+        return;
+      }
+
+      setManualEmail('');
+      await pendingQuery.refetch();
+    } catch (err) {
+      console.error('Manual sync from auth failed', err);
+    }
+  };
 
   const pendingQuery = useQuery({
     queryKey: ['admin-pending-users'],
@@ -38,7 +100,7 @@ export default function AdminUsersPage() {
       const { data, error } = await supabase
         .from('profiles')
         .select('id, user_id, full_name, email, status, org_id')
-        .eq('status', 'pending_approval')
+        .neq('status', 'active')
         .order('created_at', { ascending: true });
 
       if (error) throw error;
@@ -97,7 +159,7 @@ export default function AdminUsersPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">ניהול משתמשים</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          משתמשים הממתינים לאישור מנהל המערכת.
+          כל המשתמשים שאינם במצב פעיל (כולל ממתינים לאישור).
         </p>
       </div>
 
@@ -106,6 +168,45 @@ export default function AdminUsersPage() {
           <CardTitle className="flex items-center gap-2">
             משתמשים בהמתנת אישור
           </CardTitle>
+          <div className="flex items-center justify-between mt-2">
+            <p className="text-xs text-muted-foreground">
+              סה״כ רשומות נטענו: {pendingQuery.data?.length ?? 0}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 px-3 text-xs"
+              onClick={handleForceRefresh}
+              disabled={pendingQuery.isLoading}
+            >
+              רענן נתונים בכוח
+            </Button>
+          </div>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-muted-foreground">
+              כלי חירום: סנכרון משתמשים מ-Auth לפי אימייל.
+            </p>
+            <div className="flex gap-2">
+              <Input
+                type="email"
+                dir="ltr"
+                className="h-8 w-52 text-xs"
+                placeholder="user@example.com"
+                value={manualEmail}
+                onChange={(e) => setManualEmail(e.target.value)}
+              />
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 px-3 text-xs"
+                onClick={handleManualSync}
+                disabled={pendingQuery.isLoading || !manualEmail.trim()}
+              >
+                סנכרון משתמשים מ-Auth
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {pendingQuery.isLoading ? (
