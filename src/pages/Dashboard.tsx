@@ -155,15 +155,21 @@ export default function Dashboard() {
   const { user, hasPermission, isAdmin, isManager, isDriver, roles: userRoles, loading } = useAuth();
   const totalAlerts = (alerts?.filter(a => a.status === 'expired' || a.status === 'warning').length) ?? 0;
 
-  const isSystemAdmin = ['ravidmalachi@gmail.com'].includes(user?.email || '');
-  const isDriverOnly = Boolean((isDriver || userRoles?.includes('viewer')) && !isAdmin && !isManager && !isSystemAdmin);
+  const email = user?.email || '';
+  const isSystemAdmin = ['malachiroei@gmail.com', 'ravidmalachi@gmail.com'].includes(email);
+  const isOwner = email === 'malachiroei@gmail.com';
+  const effectiveIsAdmin = isOwner || isAdmin;
+  const isDriverOnly = Boolean(
+    (isDriver || userRoles?.includes('viewer')) && !effectiveIsAdmin && !isManager && !isSystemAdmin
+  );
 
   console.log('Dashboard userRole', {
     userRoles: userRoles ?? [],
     userRole: userRoles?.join(', ') ?? '(none)',
-    email: user?.email ?? '(no email)',
+    email: email || '(no email)',
     isSystemAdmin,
     isAdmin,
+    effectiveIsAdmin,
     isManager,
     isDriver,
     loadingAuth: loading,
