@@ -67,7 +67,13 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   const OrgSwitcher = () => {
     if (memberOrganizations.length === 0) return null;
-    console.log('DEBUG SWITCHER:', { activeOrgId, teamMembersCount: teamMembers.length });
+    const filteredMembers = teamMembers.filter((m) => m.email && m.email !== user?.email);
+    console.log('DEBUG SWITCHER:', {
+      activeOrgId,
+      teamMembersCount: teamMembers.length,
+      filteredCount: filteredMembers.length,
+      emails: teamMembers.map((m) => m.email),
+    });
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -91,12 +97,12 @@ export function AppLayout({ children }: AppLayoutProps) {
               </DropdownMenuRadioItem>
             ))}
           </DropdownMenuRadioGroup>
-          {teamMembers.length > 0 ? (
+          {filteredMembers.length > 0 ? (
             <>
               <DropdownMenuItem disabled className="mt-2 text-[11px] font-semibold opacity-80">
                 תצוגה כחבר צוות
               </DropdownMenuItem>
-              {teamMembers.map((member) => (
+              {filteredMembers.map((member) => (
                 <DropdownMenuItem key={member.id} className="text-xs">
                   <div className="flex flex-col">
                     <span className="font-medium truncate">
