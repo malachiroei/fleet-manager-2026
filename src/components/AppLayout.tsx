@@ -67,6 +67,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   const OrgSwitcher = () => {
     if (memberOrganizations.length === 0) return null;
+    console.log('DEBUG SWITCHER:', { activeOrgId, teamMembersCount: teamMembers.length });
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -82,7 +83,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             <ChevronDown className="h-3.5 w-3.5 opacity-70" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align={isRtl ? 'start' : 'end'} className="min-w-[180px]">
+        <DropdownMenuContent align={isRtl ? 'start' : 'end'} className="min-w-[220px]">
           <DropdownMenuRadioGroup value={activeOrgId ?? ''} onValueChange={(id) => id && setActiveOrgId(id)}>
             {memberOrganizations.map((org) => (
               <DropdownMenuRadioItem key={org.id} value={org.id}>
@@ -90,7 +91,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               </DropdownMenuRadioItem>
             ))}
           </DropdownMenuRadioGroup>
-          {teamMembers.length > 0 && (isAdmin || isManager) && (
+          {teamMembers.length > 0 ? (
             <>
               <DropdownMenuItem disabled className="mt-2 text-[11px] font-semibold opacity-80">
                 תצוגה כחבר צוות
@@ -100,7 +101,6 @@ export function AppLayout({ children }: AppLayoutProps) {
                   <div className="flex flex-col">
                     <span className="font-medium truncate">
                       {member.full_name || member.email || 'חבר צוות'}
-                      {member.source === 'invitation' ? ' (הזמנה)' : ''}
                     </span>
                     {member.email && (
                       <span className="text-[11px] text-muted-foreground truncate">{member.email}</span>
@@ -109,6 +109,10 @@ export function AppLayout({ children }: AppLayoutProps) {
                 </DropdownMenuItem>
               ))}
             </>
+          ) : (
+            <DropdownMenuItem disabled className="mt-2 text-[11px] opacity-70">
+              אין חברי צוות לארגון זה
+            </DropdownMenuItem>
           )}
         </DropdownMenuContent>
       </DropdownMenu>
