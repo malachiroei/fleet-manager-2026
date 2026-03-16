@@ -32,7 +32,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const { theme, toggleTheme } = useTheme();
-  const { user, signOut, profile, activeOrgId, memberOrganizations, setActiveOrgId } = useAuth();
+  const { user, signOut, profile, activeOrgId, memberOrganizations, setActiveOrgId, isAdmin, isManager } = useAuth();
   const email = user?.email ?? '';
   const name = (profile?.full_name?.trim()) || user?.user_metadata?.full_name || email.split('@')[0] || '';
   const initials = (name || email || '?').slice(0, 2).toUpperCase();
@@ -90,7 +90,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               </DropdownMenuRadioItem>
             ))}
           </DropdownMenuRadioGroup>
-          {teamMembers.length > 0 && (
+          {teamMembers.length > 0 && (isAdmin || isManager) && (
             <>
               <DropdownMenuItem disabled className="mt-2 text-[11px] font-semibold opacity-80">
                 תצוגה כחבר צוות

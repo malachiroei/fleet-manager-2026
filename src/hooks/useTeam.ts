@@ -67,24 +67,15 @@ export function useTeamMembersForSwitcher(orgId: string | null | undefined) {
     queryFn: async (): Promise<TeamMemberSummary[]> => {
       if (!orgId) return [];
 
-      const [profilesRes, invitationsRes] = await Promise.all([
-        supabase
-          .from('profiles')
-          .select('id, full_name, email')
-          .eq('org_id', orgId)
-          .order('full_name'),
-        (supabase as any)
-          .from('org_invitations')
-          .select('id, email')
-          .eq('org_id', orgId)
-          .order('created_at', { ascending: false }),
-      ]);
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, email, org_id')
+        .eq('org_id', orgId)
+        .order('full_name');
 
-      if (profilesRes.error) throw profilesRes.error;
-      if (invitationsRes.error) throw invitationsRes.error;
+      if (error) throw error;
 
-      const profiles = (profilesRes.data ?? []) as { id: string; full_name: string | null; email: string | null }[];
-      const invitations = (invitationsRes.data ?? []) as { id: string; email: string | null }[];
+      const profiles = (data ?? []) as { id: string; full_name: string | null; email: string | null }[];
 
       const profileSummaries: TeamMemberSummary[] = profiles.map((p) => ({
         id: p.id,
@@ -93,15 +84,7 @@ export function useTeamMembersForSwitcher(orgId: string | null | undefined) {
         source: 'profile',
       }));
 
-      const invitationSummaries: TeamMemberSummary[] = invitations.map((inv) => ({
-        id: `inv-${inv.id}`,
-        full_name: inv.email || 'הזמנה',
-        email: inv.email ?? null,
-        source: 'invitation',
-      }));
-
-      const all = [...profileSummaries, ...invitationSummaries];
-      return all.sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
+      return profileSummaries.sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
     },
   });
 }
