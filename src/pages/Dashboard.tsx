@@ -178,6 +178,7 @@ export default function Dashboard() {
   const pendingUsersQuery = useQuery({
     queryKey: ['admin-pending-users-count'],
     enabled: isMainAdmin,
+    refetchInterval: 5000,
     queryFn: async () => {
       const { count, error } = await supabase
         .from('profiles')
@@ -274,9 +275,9 @@ export default function Dashboard() {
       showPendingBadge: pendingUsersCount > 0,
     },
   ].filter((action) => {
-    const showAllActionsForAdmin = !viewAsEmail && (isSystemAdmin || effectiveIsAdmin);
+    const showAllActionsForAdmin = !viewAsEmail && isMainAdmin;
 
-    // Admin-only items: only show for admin / system admin users
+    // Admin-only items: only show for main admin (malachiroei)
     if (action.adminOnly && !showAllActionsForAdmin) return false;
 
     // When impersonating (viewAsEmail), always respect driver/permissions rules
