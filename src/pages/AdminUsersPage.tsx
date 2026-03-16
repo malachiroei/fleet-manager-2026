@@ -91,6 +91,7 @@ export default function AdminUsersPage() {
     }
   };
 
+  // Main admin only: fetch ALL non-active profiles. Do NOT filter by org_id.
   const pendingQuery = useQuery({
     queryKey: ['admin-pending-users'],
     enabled: isMainAdmin,
