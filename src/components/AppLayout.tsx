@@ -366,9 +366,9 @@ export function AppLayout({ children }: AppLayoutProps) {
           </div>
         </div>
       )}
-      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0d1b2e] min-h-16 sm:min-h-0">
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0d1b2e] min-h-[4.25rem] sm:min-h-0">
         <div className="mx-auto flex max-w-[1920px] w-full flex-col gap-0 sm:gap-1 px-4 sm:px-6 py-3 sm:py-3">
-          <div className="flex w-full items-center justify-between gap-2 min-h-10 sm:min-h-0">
+          <div className="flex w-full items-center justify-between gap-3 sm:gap-4 min-h-10 sm:min-h-0">
             {/* RTL: פריט ראשון = ימין המסך — בית + מנהל הצי */}
             <BrandAndHome />
             <TopToolsBlock />
