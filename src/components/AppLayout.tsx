@@ -34,7 +34,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { t, i18n } = useTranslation();
   const { theme, toggleTheme } = useTheme();
   const { user, signOut, profile, activeOrgId, memberOrganizations, setActiveOrgId, isAdmin, isManager } = useAuth();
-  const email = user?.email ?? '';
+  const email = (user?.email ?? '').toLowerCase();
   const name = (profile?.full_name?.trim()) || user?.user_metadata?.full_name || email.split('@')[0] || '';
   const initials = (name || email || '?').slice(0, 2).toUpperCase();
   const isRtl = i18n.dir() === 'rtl';
@@ -71,19 +71,35 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   const OrgSwitcher = () => {
     if (memberOrganizations.length === 0) return null;
-    const visibleMembers = teamMembers.filter(
+    const isMainAdmin = email === 'malachiroei@gmail.com';
+    // For the org list at the top: for main admin, prefer only the primary org "רביד צי רכבים"
+    const orgItems = isMainAdmin
+      ? memberOrganizations.filter((org) => (org.name || '').trim() === 'רביד צי רכבים')
+      : memberOrganizations;
+
+    // Team members view: for main admin, show only specific people; for others, keep previous behavior
+    let visibleMembers = teamMembers.filter(
       (m) =>
         m.email &&
-        m.email.toLowerCase() !== (user?.email ?? '').toLowerCase() &&
+        m.email.toLowerCase() !== email &&
         m.email.toLowerCase() !== 'malachiroei@gmail.com'
     );
+    // Remove any member that duplicates the org-level "רביד צי רכבים"
+    visibleMembers = visibleMembers.filter((m) => (m.full_name || '').trim() !== 'רביד צי רכבים');
+
+    if (isMainAdmin) {
+      const allowedEmails = new Set(['ravidmalachi@gmail.com', 'malachiroei1@gmail.com']);
+      visibleMembers = visibleMembers.filter(
+        (m) => m.email && allowedEmails.has(m.email.toLowerCase())
+      );
+    }
     console.log('DEBUG SWITCHER:', {
       activeOrgId,
       teamMembersCount: teamMembers.length,
       visibleCount: visibleMembers.length,
       emails: teamMembers.map((m) => m.email),
+      orgItems: orgItems.map((o) => o.name),
     });
-    console.log('VISIBLE MEMBERS:', visibleMembers);
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -112,7 +128,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             value={activeOrgId ?? ''}
             onValueChange={(id) => id && setActiveOrgId(id)}
           >
-            {memberOrganizations.map((org) => (
+            {orgItems.map((org) => (
               <DropdownMenuRadioItem key={org.id} value={org.id}>
                 <span className="truncate">{org.name || org.id}</span>
               </DropdownMenuRadioItem>
@@ -128,8 +144,12 @@ export function AppLayout({ children }: AppLayoutProps) {
                   key={member.id}
                   className="text-xs cursor-pointer"
                 onClick={() => {
+                  // CRITICAL: viewAsEmail drives the orange banner; always set it from member.email
                   setViewAsEmail(member.email ?? null);
-                  setActiveOrgId(member.org_id as any);
+                  // Also align org to the member's org when available
+                  if (member.org_id) {
+                    setActiveOrgId(member.org_id as any);
+                  }
                 }}
                 >
                   <div className="flex flex-col">
