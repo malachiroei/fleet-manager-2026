@@ -69,7 +69,7 @@ export function useTeamMembersForSwitcher(orgId: string | null | undefined) {
 
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, full_name, email, org_id')
+        .select('id, full_name, email, org_id, status')
         .eq('org_id', orgId)
         .order('full_name');
 
