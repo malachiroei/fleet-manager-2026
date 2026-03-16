@@ -11,6 +11,7 @@ export interface TeamMemberSummary {
   id: string;
   full_name: string;
   email: string | null;
+  org_id?: string | null;
   source: 'profile' | 'invitation';
 }
 
@@ -77,12 +78,13 @@ export function useTeamMembersForSwitcher(orgId: string | null | undefined) {
 
       console.log('RAW DATA FROM DB (team-members-switcher):', { orgId, data });
 
-      const profiles = (data ?? []) as { id: string; full_name: string | null; email: string | null }[];
+      const profiles = (data ?? []) as { id: string; full_name: string | null; email: string | null; org_id: string | null }[];
 
       const profileSummaries: TeamMemberSummary[] = profiles.map((p) => ({
         id: p.id,
         full_name: p.full_name || p.email || 'חבר צוות',
         email: p.email ?? null,
+        org_id: p.org_id ?? null,
         source: 'profile',
       }));
 

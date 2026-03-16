@@ -145,7 +145,14 @@ export function AppLayout({ children }: AppLayoutProps) {
                 <DropdownMenuItem
                   key={member.id}
                   className="text-xs cursor-pointer"
-                  onClick={() => member.email && setViewAsEmail(member.email)}
+                onClick={() => {
+                  if (member.email) {
+                    setViewAsEmail(member.email);
+                  }
+                  if (member.org_id) {
+                    setActiveOrgId(member.org_id);
+                  }
+                }}
                 >
                   <div className="flex flex-col">
                     <span className="font-medium truncate">
