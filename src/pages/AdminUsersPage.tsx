@@ -28,11 +28,12 @@ export default function AdminUsersPage() {
   const { profile, loading, isAdmin } = useAuth();
   const queryClient = useQueryClient();
 
-  const isMainAdmin = profile?.email === 'malachiroei@gmail.com';
+  const isMainAdmin = (profile?.email ?? '').toLowerCase() === 'malachiroei@gmail.com';
 
   const pendingQuery = useQuery({
     queryKey: ['admin-pending-users'],
     enabled: isMainAdmin,
+    refetchInterval: 5000,
     queryFn: async (): Promise<PendingUser[]> => {
       const { data, error } = await supabase
         .from('profiles')
