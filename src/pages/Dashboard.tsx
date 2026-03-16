@@ -152,14 +152,17 @@ export default function Dashboard() {
   const [showOdometerDialog, setShowOdometerDialog] = useState(false);
   const { t } = useTranslation();
   const isMobile = useIsMobile();
-  const { hasPermission, isAdmin, isManager, isDriver, roles: userRoles } = useAuth();
+  const { user, hasPermission, isAdmin, isManager, isDriver, roles: userRoles } = useAuth();
   const totalAlerts = (alerts?.filter(a => a.status === 'expired' || a.status === 'warning').length) ?? 0;
 
-  const isDriverOnly = Boolean(isDriver && !isManager && !isAdmin);
+  const isSystemAdmin = ['roeima21@gmail.com', 'ravid@example.com'].includes(user?.email || '');
+  const isDriverOnly = Boolean(isDriver && !isManager && !isAdmin && !isSystemAdmin);
 
   console.log('Dashboard userRole', {
     userRoles: userRoles ?? [],
     userRole: userRoles?.join(', ') ?? '(none)',
+    email: user?.email ?? '(no email)',
+    isSystemAdmin,
     isAdmin,
     isManager,
     isDriver,

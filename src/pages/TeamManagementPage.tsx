@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
-import { useTeamMembers, useOrgInvitations } from '@/hooks/useTeam';
+import { useTeamMembers, useOrgInvitations, useApproveMember } from '@/hooks/useTeam';
 import { PERMISSION_LABELS } from '@/lib/permissions';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -28,6 +28,7 @@ export default function TeamManagementPage() {
   const { data: members, isLoading } = useTeamMembers(orgId);
   const { data: invitations } = useOrgInvitations(orgId);
   const [modalOpen, setModalOpen] = useState(false);
+  const approveMember = useApproveMember();
 
   const canManageTeam = isAdmin || isManager || hasPermission('manage_team') || Boolean(activeOrgId ?? profile?.org_id);
 
@@ -88,12 +89,13 @@ export default function TeamManagementPage() {
                     <TableHead>שם</TableHead>
                     <TableHead>אימייל</TableHead>
                     <TableHead className="text-center">הרשאות</TableHead>
+                    <TableHead className="text-center">סטטוס</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {members && members.length === 0 && (!invitations || invitations.length === 0) ? (
                     <TableRow>
-                      <TableCell colSpan={3} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
                         אין חברי צוות.
                       </TableCell>
                     </TableRow>
@@ -111,6 +113,28 @@ export default function TeamManagementPage() {
                                   .join(', ') || '—'
                               : 'כל ההרשאות'}
                           </TableCell>
+                          <TableCell className="text-center text-xs">
+                            {m.status === 'pending_approval' ? (
+                              <div className="flex items-center justify-center gap-2">
+                                <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                                  ממתין לאישור
+                                </span>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 px-2 text-[11px]"
+                                  disabled={approveMember.isPending}
+                                  onClick={() => approveMember.mutate({ profileId: m.id })}
+                                >
+                                  אישור
+                                </Button>
+                              </div>
+                            ) : (
+                              <span className="inline-flex items-center justify-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+                                פעיל
+                              </span>
+                            )}
+                          </TableCell>
                         </TableRow>
                       ))}
                       {invitations?.map((inv) => (
@@ -127,6 +151,11 @@ export default function TeamManagementPage() {
                                   .map(([k]) => PERMISSION_LABELS[k as keyof typeof PERMISSION_LABELS] ?? k)
                                   .join(', ') || '—'
                               : '—'}
+                          </TableCell>
+                          <TableCell className="text-center text-xs">
+                            <span className="inline-flex items-center justify-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                              הזמנה פתוחה
+                            </span>
                           </TableCell>
                         </TableRow>
                       ))}

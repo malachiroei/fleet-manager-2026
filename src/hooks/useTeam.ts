@@ -146,3 +146,29 @@ export function useUpdateProfilePermissions() {
     },
   });
 }
+
+export function useApproveMember() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ profileId }: { profileId: string }) => {
+      const { data, error } = await (supabase as any)
+        .from('profiles')
+        .update({ status: 'active', updated_at: new Date().toISOString() })
+        .eq('id', profileId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data as Profile;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: TEAM_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ['organization', data.org_id] });
+      toast({ title: 'המשתמש אושר בהצלחה' });
+    },
+    onError: (err: Error) => {
+      toast({ title: 'שגיאה באישור משתמש', description: err.message, variant: 'destructive' });
+    },
+  });
+}
