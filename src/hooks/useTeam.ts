@@ -7,6 +7,13 @@ import { toast } from '@/hooks/use-toast';
 const TEAM_QUERY_KEY = ['team-members'] as const;
 const INVITATIONS_QUERY_KEY = ['org-invitations'] as const;
 
+export interface TeamMemberSummary {
+  id: string;
+  full_name: string;
+  email: string | null;
+  source: 'profile' | 'invitation';
+}
+
 export function useTeamMembers(orgId: string | null | undefined) {
   return useQuery({
     queryKey: [...TEAM_QUERY_KEY, orgId ?? null],
@@ -15,7 +22,8 @@ export function useTeamMembers(orgId: string | null | undefined) {
       if (!orgId) return [];
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, user_id, full_name, email, phone, org_id, permissions, status, created_at, updated_at')
+        // Keep this select minimal and aligned with actual columns to avoid 400 errors
+        .select('id, full_name, email, org_id, status')
         .eq('org_id', orgId)
         .order('full_name');
 
@@ -48,6 +56,52 @@ export function useOrgInvitations(orgId: string | null | undefined) {
 
       if (error) throw error;
       return (data ?? []) as OrgInvitation[];
+    },
+  });
+}
+
+export function useTeamMembersForSwitcher(orgId: string | null | undefined) {
+  return useQuery({
+    queryKey: ['team-members-switcher', orgId ?? null],
+    enabled: !!orgId,
+    queryFn: async (): Promise<TeamMemberSummary[]> => {
+      if (!orgId) return [];
+
+      const [profilesRes, invitationsRes] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select('id, full_name, email')
+          .eq('org_id', orgId)
+          .order('full_name'),
+        (supabase as any)
+          .from('org_invitations')
+          .select('id, email')
+          .eq('org_id', orgId)
+          .order('created_at', { ascending: false }),
+      ]);
+
+      if (profilesRes.error) throw profilesRes.error;
+      if (invitationsRes.error) throw invitationsRes.error;
+
+      const profiles = (profilesRes.data ?? []) as { id: string; full_name: string | null; email: string | null }[];
+      const invitations = (invitationsRes.data ?? []) as { id: string; email: string | null }[];
+
+      const profileSummaries: TeamMemberSummary[] = profiles.map((p) => ({
+        id: p.id,
+        full_name: p.full_name || p.email || 'חבר צוות',
+        email: p.email ?? null,
+        source: 'profile',
+      }));
+
+      const invitationSummaries: TeamMemberSummary[] = invitations.map((inv) => ({
+        id: `inv-${inv.id}`,
+        full_name: inv.email || 'הזמנה',
+        email: inv.email ?? null,
+        source: 'invitation',
+      }));
+
+      const all = [...profileSummaries, ...invitationSummaries];
+      return all.sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
     },
   });
 }

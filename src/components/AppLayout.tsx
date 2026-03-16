@@ -1,10 +1,10 @@
-import { ReactNode } from 'react';
+import { ReactNode, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useVehicleSpecDirty } from '@/contexts/VehicleSpecDirtyContext';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrganization } from '@/hooks/useOrganizations';
-import { useTeamMembers } from '@/hooks/useTeam';
+import { useTeamMembersForSwitcher } from '@/hooks/useTeam';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { AIChatAssistant } from './AIChatAssistant';
 import { useTheme } from '@/hooks/useTheme';
@@ -41,7 +41,14 @@ export function AppLayout({ children }: AppLayoutProps) {
   const isHomeActive = location.pathname === '/';
   const { data: organization } = useOrganization(activeOrgId ?? null);
   const orgName = organization?.name?.trim() ?? '';
-  const { data: teamMembers = [] } = useTeamMembers(activeOrgId ?? null);
+  const { data: teamMembers = [], error: teamMembersError } = useTeamMembersForSwitcher(activeOrgId ?? null as any);
+
+  useEffect(() => {
+    console.log('TeamMembers for Org:', activeOrgId, {
+      teamMembers,
+      teamMembersError,
+    });
+  }, [activeOrgId, teamMembers, teamMembersError]);
 
   const handleLogout = () => {
     void signOut();
@@ -91,7 +98,10 @@ export function AppLayout({ children }: AppLayoutProps) {
               {teamMembers.map((member) => (
                 <DropdownMenuItem key={member.id} className="text-xs">
                   <div className="flex flex-col">
-                    <span className="font-medium truncate">{member.full_name || member.email || 'חבר צוות'}</span>
+                    <span className="font-medium truncate">
+                      {member.full_name || member.email || 'חבר צוות'}
+                      {member.source === 'invitation' ? ' (הזמנה)' : ''}
+                    </span>
                     {member.email && (
                       <span className="text-[11px] text-muted-foreground truncate">{member.email}</span>
                     )}

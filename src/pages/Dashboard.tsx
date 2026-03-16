@@ -237,13 +237,13 @@ export default function Dashboard() {
       permission: 'manage_team',
     },
   ].filter((action) => {
-    const canBypassPermissions = isSystemAdmin || effectiveIsAdmin;
+    const showAllActions = isSystemAdmin || effectiveIsAdmin;
 
-    // Admin-only items: only show for real/admin-equivalent users
-    if (action.adminOnly && !canBypassPermissions) return false;
+    // Admin-only items: only show for admin / system admin users
+    if (action.adminOnly && !showAllActions) return false;
 
-    // System/admin users always see all non-disabled actions, regardless of profile permissions JSON
-    if (canBypassPermissions) {
+    // For system/admin users, show all non-disabled actions regardless of permissions JSON
+    if (showAllActions) {
       return !action.disabled;
     }
 
