@@ -58,6 +58,16 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   const isMainAdmin = email === 'malachiroei@gmail.com';
   const isDriverRoei = email === 'roeima21@gmail.com';
+  const isRavid = email === 'ravidmalachi@gmail.com';
+
+  // Ensure main admin is always on the main admin org when not impersonating
+  useEffect(() => {
+    if (!isMainAdmin) return;
+    if (viewAsEmail) return; // when impersonating, org follows the impersonated user
+    if (activeOrgId !== '857f2311-2ec5-4d13-8e32-dacd450a9a77') {
+      setActiveOrgId('857f2311-2ec5-4d13-8e32-dacd450a9a77');
+    }
+  }, [isMainAdmin, viewAsEmail, activeOrgId, setActiveOrgId]);
 
   // Ensure Roei (driver-only) is always locked to his org and cannot switch orgs
   useEffect(() => {
@@ -67,6 +77,15 @@ export function AppLayout({ children }: AppLayoutProps) {
       setActiveOrgId(targetOrgId);
     }
   }, [isDriverRoei, profile?.org_id, activeOrgId, setActiveOrgId]);
+
+  // Ensure Ravid is locked to his org and cannot switch orgs
+  useEffect(() => {
+    if (!isRavid) return;
+    const targetOrgId = profile?.org_id as string | null | undefined;
+    if (targetOrgId && activeOrgId !== targetOrgId) {
+      setActiveOrgId(targetOrgId);
+    }
+  }, [isRavid, profile?.org_id, activeOrgId, setActiveOrgId]);
 
   const handleLogout = () => {
     void signOut();
@@ -84,7 +103,8 @@ export function AppLayout({ children }: AppLayoutProps) {
   );
 
   const OrgSwitcher = () => {
-    if (isDriverRoei) return null;
+    // Hide switcher for locked driver accounts
+    if (isDriverRoei || isRavid) return null;
     if (memberOrganizations.length === 0) return null;
     // For the org list at the top: for main admin, prefer only the primary org "רביד צי רכבים"
     const orgItems = isMainAdmin
@@ -390,7 +410,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       className="flex min-h-[100dvh] flex-col overflow-x-hidden bg-[#020617]"
       dir={isRtl ? 'rtl' : 'ltr'}
     >
-      {viewAsEmail && (
+      {isMainAdmin && viewAsEmail && (
         <div className="sticky top-0 z-50 w-full bg-amber-500 text-black shadow-md">
           <div className="mx-auto flex max-w-[1920px] items-center justify-between px-4 py-2 text-xs sm:text-sm">
             <span className="font-medium">
