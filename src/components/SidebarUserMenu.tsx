@@ -151,6 +151,24 @@ export function SidebarUserMenu() {
               </Link>
             )}
 
+            {/* User Management - only for main system admin */}
+            {isAdmin && profile?.email === 'malachiroei@gmail.com' && (
+              <Link
+                to="/admin/users"
+                onClick={() => setOpen(false)}
+                className={cn(
+                  'sidebar-menu-item w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors',
+                  isRtl ? 'flex-row-reverse text-right' : 'text-left'
+                )}
+              >
+                <User className="h-4 w-4 text-cyan-300 sidebar-menu-icon" />
+                <span className={cn('sidebar-menu-label flex-1', isRtl ? 'text-right' : 'text-left')}>
+                  ניהול משתמשים
+                </span>
+                <CaretIcon className="h-3.5 w-3.5 opacity-40 sidebar-menu-caret" />
+              </Link>
+            )}
+
             {/* Org Settings — hidden for driver-only role */}
             {!isDriverOnly && (
               <Link
