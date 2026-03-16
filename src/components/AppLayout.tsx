@@ -102,48 +102,159 @@ export function AppLayout({ children }: AppLayoutProps) {
     </button>
   );
 
-  const MobileSettingsMenu = () => (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="flex sm:hidden h-8 w-8 rounded-lg border border-cyan-400/30 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20 hover:text-white"
-        >
-          <Settings className="h-4 w-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align={isRtl ? 'start' : 'end'} className="min-w-[180px]">
-        <DropdownMenuItem asChild className="cursor-pointer">
-          <button type="button" className="w-full flex items-center justify-between text-xs">
-            <span>שפה</span>
-            <span className="ml-2">
-              <LanguageSwitcher />
-            </span>
-          </button>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild className="cursor-pointer">
-          <button
+  const MobileSettingsMenu = () => {
+    // ארגונים זמינים (כמו ב-OrgSwitcher)
+    const orgItems = isMainAdmin
+      ? memberOrganizations.filter((org) => (org.name || '').trim() === 'רביד צי רכבים')
+      : memberOrganizations;
+
+    // חברי צוות זמינים (אותה לוגיקה כמו OrgSwitcher)
+    let mobileMembers = teamMembers.filter(
+      (m) =>
+        m.email &&
+        m.email.toLowerCase() !== email &&
+        m.email.toLowerCase() !== 'malachiroei@gmail.com'
+    );
+    mobileMembers = mobileMembers.filter((m) => (m.full_name || '').trim() !== 'רביד צי רכבים');
+
+    if (isMainAdmin) {
+      const allowedEmails = new Set(['ravidmalachi@gmail.com']);
+      mobileMembers = mobileMembers.filter(
+        (m) => m.email && allowedEmails.has(m.email.toLowerCase())
+      );
+    }
+
+    if (isRavid && mobileMembers.length === 0) {
+      mobileMembers = [
+        {
+          id: 'synthetic-roeima21',
+          full_name: 'ROEIMA21',
+          email: 'roeima21@gmail.com',
+          org_id: profile?.org_id ?? null,
+          source: 'profile',
+        },
+      ] as any;
+    }
+
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
             type="button"
-            onClick={toggleTheme}
-            className="w-full flex items-center justify-between text-xs"
+            variant="ghost"
+            size="icon"
+            className="flex sm:hidden h-8 w-8 rounded-lg border border-cyan-400/30 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20 hover:text-white"
           >
-            <span>מצב תצוגה</span>
-            <span className="ml-2 flex items-center justify-center">
-              {theme === 'dark' ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-            </span>
-          </button>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild className="cursor-pointer">
-          <Link to="/admin/org-settings" className="w-full flex items-center justify-between text-xs">
-            <span>ארגון</span>
-            <Building2 className="h-3.5 w-3.5" />
-          </Link>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+            <Settings className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align={isRtl ? 'start' : 'end'} className="min-w-[220px]">
+          {/* User info */}
+          <div className="px-3 py-2 border-b border-border text-xs">
+            <div className="font-semibold truncate">{name || email}</div>
+            <div className="text-[11px] text-muted-foreground truncate">{email}</div>
+          </div>
+
+          {/* Org select / view-as */}
+          {orgItems.length > 0 && (
+            <div className="py-1">
+              <div className="px-3 pb-1 text-[11px] font-semibold text-muted-foreground">
+                הארגון הנוכחי
+              </div>
+              {orgItems.map((org) => (
+                <DropdownMenuItem
+                  key={org.id}
+                  className="text-xs cursor-pointer"
+                  onClick={() => {
+                    if (isMainAdmin && org.id === '857f2311-2ec5-4d13-8e32-dacd450a9a77') {
+                      setViewAsEmail(null);
+                      setActiveOrgId('857f2311-2ec5-4d13-8e32-dacd450a9a77');
+                    } else {
+                      setActiveOrgId(org.id);
+                    }
+                  }}
+                >
+                  <span className="truncate">{org.name || org.id}</span>
+                </DropdownMenuItem>
+              ))}
+            </div>
+          )}
+
+          {mobileMembers.length > 0 && (
+            <div className="py-1 border-t border-border mt-1">
+              <div className="px-3 pb-1 text-[11px] font-semibold text-muted-foreground">
+                תצוגה כחבר צוות
+              </div>
+              {mobileMembers.map((member) => (
+                <DropdownMenuItem
+                  key={member.id}
+                  className="text-xs cursor-pointer"
+                  onClick={() => {
+                    setViewAsEmail(member.email ?? null);
+                    if (member.org_id) {
+                      setActiveOrgId(member.org_id as any);
+                    }
+                  }}
+                >
+                  <div className="flex flex-col">
+                    <span className="font-medium truncate">
+                      {member.full_name || member.email || 'חבר צוות'}
+                    </span>
+                    {member.email && (
+                      <span className="text-[11px] text-muted-foreground truncate">
+                        {member.email}
+                      </span>
+                    )}
+                  </div>
+                </DropdownMenuItem>
+              ))}
+            </div>
+          )}
+
+          {/* Language / theme / org */}
+          <div className="py-1 border-t border-border mt-1">
+            <DropdownMenuItem asChild className="cursor-pointer">
+              <button type="button" className="w-full flex items-center justify-between text-xs">
+                <span>שפה</span>
+                <span className="ml-2">
+                  <LanguageSwitcher />
+                </span>
+              </button>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild className="cursor-pointer">
+              <button
+                type="button"
+                onClick={toggleTheme}
+                className="w-full flex items-center justify-between text-xs"
+              >
+                <span>מצב תצוגה</span>
+                <span className="ml-2 flex items-center justify-center">
+                  {theme === 'dark' ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+                </span>
+              </button>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild className="cursor-pointer">
+              <Link to="/admin/org-settings" className="w-full flex items-center justify-between text-xs">
+                <span>ארגון</span>
+                <Building2 className="h-3.5 w-3.5" />
+              </Link>
+            </DropdownMenuItem>
+          </div>
+
+          {/* Logout */}
+          <div className="py-1 border-t border-border mt-1">
+            <DropdownMenuItem
+              className="text-xs text-red-500 cursor-pointer"
+              onClick={handleLogout}
+            >
+              <LogOut className="h-3.5 w-3.5 mr-2" />
+              התנתקות
+            </DropdownMenuItem>
+          </div>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
 
   const OrgSwitcher = () => {
     // Hide switcher רק עבור משתמש קצה (Roei)
