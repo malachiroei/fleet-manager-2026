@@ -180,17 +180,28 @@ export default function Dashboard() {
     enabled: isMainAdmin,
     refetchInterval: 5000,
     queryFn: async () => {
-      const { count, error } = await supabase
-        .from('profiles')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'pending_approval');
+      try {
+        const { count, error } = await supabase
+          .from('profiles')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'pending_approval');
 
-      if (error) throw error;
-      return count ?? 0;
+        if (error) {
+          console.error('pendingUsersQuery error:', error);
+          return 0;
+        }
+        return count ?? 0;
+      } catch (err) {
+        console.error('pendingUsersQuery exception:', err);
+        return 0;
+      }
     },
   });
 
-  const pendingUsersCount = pendingUsersQuery.data ?? 0;
+  const pendingUsersCount =
+    typeof pendingUsersQuery.data === 'number' && Number.isFinite(pendingUsersQuery.data)
+      ? pendingUsersQuery.data
+      : 0;
 
   console.log('Dashboard userRole', {
     userRoles: userRoles ?? [],
