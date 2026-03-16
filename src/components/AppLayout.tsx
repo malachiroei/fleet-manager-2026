@@ -142,10 +142,10 @@ export function AppLayout({ children }: AppLayoutProps) {
             value={activeOrgId ?? ''}
             onValueChange={(id) => {
               if (!id) return;
-              if (isMainAdmin && id === MAIN_ADMIN_ORG_ID) {
-                // Reset to admin view and main admin org
+              if (isMainAdmin && id === '857f2311-2ec5-4d13-8e32-dacd450a9a77') {
+                // Manual override: reset to admin view and main admin org
                 setViewAsEmail(null);
-                setActiveOrgId(MAIN_ADMIN_ORG_ID);
+                setActiveOrgId('857f2311-2ec5-4d13-8e32-dacd450a9a77');
               } else {
                 setActiveOrgId(id);
               }
@@ -401,10 +401,10 @@ export function AppLayout({ children }: AppLayoutProps) {
               variant="outline"
               className="h-7 px-3 text-xs font-semibold border-black/40 bg-black/80 text-amber-50 hover:bg-black/90"
               onClick={() => {
-                // Reset impersonation and org to admin defaults when main admin
+                // Manual override: reset impersonation and org to admin defaults for main admin
                 if (isMainAdmin) {
                   setViewAsEmail(null);
-                  setActiveOrgId(MAIN_ADMIN_ORG_ID);
+                  setActiveOrgId('857f2311-2ec5-4d13-8e32-dacd450a9a77');
                 } else {
                   setViewAsEmail(null);
                 }
