@@ -152,11 +152,11 @@ export default function Dashboard() {
   const [showOdometerDialog, setShowOdometerDialog] = useState(false);
   const { t } = useTranslation();
   const isMobile = useIsMobile();
-  const { user, hasPermission, isAdmin, isManager, isDriver, roles: userRoles } = useAuth();
+  const { user, hasPermission, isAdmin, isManager, isDriver, roles: userRoles, loading } = useAuth();
   const totalAlerts = (alerts?.filter(a => a.status === 'expired' || a.status === 'warning').length) ?? 0;
 
-  const isSystemAdmin = ['roeima21@gmail.com', 'ravid@example.com'].includes(user?.email || '');
-  const isDriverOnly = Boolean(isDriver && !isManager && !isAdmin && !isSystemAdmin);
+  const isSystemAdmin = ['ravidmalachi@gmail.com'].includes(user?.email || '');
+  const isDriverOnly = Boolean((isDriver || userRoles?.includes('viewer')) && !isAdmin && !isManager && !isSystemAdmin);
 
   console.log('Dashboard userRole', {
     userRoles: userRoles ?? [],
@@ -166,10 +166,11 @@ export default function Dashboard() {
     isAdmin,
     isManager,
     isDriver,
+    loadingAuth: loading,
     isDriverOnly,
   });
 
-  const visibleStatusCards = isDriverOnly
+  const visibleStatusCards = (!loading && isDriverOnly)
     ? statusCardConfig.filter((card) => card.link === '/handover/replacement')
     : statusCardConfig;
 
