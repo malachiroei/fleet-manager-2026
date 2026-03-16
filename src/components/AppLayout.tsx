@@ -128,12 +128,8 @@ export function AppLayout({ children }: AppLayoutProps) {
                   key={member.id}
                   className="text-xs cursor-pointer"
                 onClick={() => {
-                  if (member.email) {
-                    setViewAsEmail(member.email);
-                  }
-                  if (member.org_id) {
-                    setActiveOrgId(member.org_id);
-                  }
+                  setViewAsEmail(member.email ?? null);
+                  setActiveOrgId(member.org_id as any);
                 }}
                 >
                   <div className="flex flex-col">

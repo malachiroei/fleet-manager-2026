@@ -259,31 +259,8 @@ export default function Dashboard() {
     },
   ];
 
-  const quickLinks =
-    isMainAdmin && !viewAsEmail
-      ? baseQuickLinks
-      : baseQuickLinks.filter((action) => {
-          const showAllActionsForAdmin = !viewAsEmail && isMainAdmin;
-
-          // Admin-only items: only show for main admin (malachiroei)
-          if (action.adminOnly && !showAllActionsForAdmin) return false;
-
-          // When impersonating (viewAsEmail), always respect driver/permissions rules
-          if (viewAsEmail || isDriverOnly) {
-            const driverPerms: PermissionKey[] = ['handover', 'vehicle_delivery', 'procedure6_complaints', 'mileage_update'];
-            if (!action.permission) return false;
-            return driverPerms.includes(action.permission) && hasPermission(action.permission);
-          }
-
-          // For non-impersonating admins/system admins, show all non-disabled actions regardless of permissions JSON
-          if (showAllActionsForAdmin) {
-            return !action.disabled;
-          }
-
-          // Normal users: require the corresponding permission if defined
-          if (action.permission && !hasPermission(action.permission)) return false;
-          return true;
-        });
+  // Emergency: always use all quick actions, especially for main admin.
+  const quickLinks = baseQuickLinks;
 
   return (
     <div className="container py-6 md:py-8 pb-32 sm:pb-8 space-y-6 md:space-y-8 relative z-[1]">
