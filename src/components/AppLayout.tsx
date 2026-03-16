@@ -9,7 +9,7 @@ import { useTeamMembersForSwitcher } from '@/hooks/useTeam';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { AIChatAssistant } from './AIChatAssistant';
 import { useTheme } from '@/hooks/useTheme';
-import { Sun, Moon, Building2, LogOut, Home, ArrowRight, ChevronDown, Building } from 'lucide-react';
+import { Sun, Moon, Building2, LogOut, Home, ArrowRight, ChevronDown, Building, Settings } from 'lucide-react';
 import { PwaInstallButton } from './PwaInstallButton';
 import { Button } from './ui/button';
 import {
@@ -100,6 +100,49 @@ export function AppLayout({ children }: AppLayoutProps) {
     >
       {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
     </button>
+  );
+
+  const MobileSettingsMenu = () => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="flex sm:hidden h-8 w-8 rounded-lg border border-cyan-400/30 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20 hover:text-white"
+        >
+          <Settings className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align={isRtl ? 'start' : 'end'} className="min-w-[180px]">
+        <DropdownMenuItem asChild className="cursor-pointer">
+          <button type="button" className="w-full flex items-center justify-between text-xs">
+            <span>שפה</span>
+            <span className="ml-2">
+              <LanguageSwitcher />
+            </span>
+          </button>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild className="cursor-pointer">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="w-full flex items-center justify-between text-xs"
+          >
+            <span>מצב תצוגה</span>
+            <span className="ml-2 flex items-center justify-center">
+              {theme === 'dark' ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+            </span>
+          </button>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild className="cursor-pointer">
+          <Link to="/admin/org-settings" className="w-full flex items-center justify-between text-xs">
+            <span>ארגון</span>
+            <Building2 className="h-3.5 w-3.5" />
+          </Link>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 
   const OrgSwitcher = () => {
@@ -240,35 +283,43 @@ export function AppLayout({ children }: AppLayoutProps) {
   const TopToolsBlock = () => (
     <div
       className={cn(
-        'flex h-8 sm:h-9 items-center gap-3 sm:gap-4 shrink-0',
+        'flex items-center gap-2 sm:gap-3 shrink-0',
         isRtl ? 'flex-row-reverse' : ''
       )}
     >
-      <PwaInstallButton />
-      <ThemeToggle />
-      <div className="hidden sm:block">
-        <LanguageSwitcher />
+      {/* Mobile: Org switcher + settings gear + user */}
+      <div className="flex items-center gap-2 sm:hidden">
+        <OrgSwitcher />
+        <MobileSettingsMenu />
+        <UserDropdown />
       </div>
-      <OrgSwitcher />
-      <Link
-        to="/admin/org-settings"
-        className="hidden sm:flex h-8 items-center gap-1.5 rounded-lg border border-cyan-400/20 bg-cyan-500/10 px-2.5 text-xs font-medium text-cyan-100 hover:bg-cyan-500/20"
-      >
-        <Building2 className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">ארגון</span>
-      </Link>
-      {viewAsEmail && (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="hidden sm:inline-flex h-7 gap-1 px-2 text-[11px] font-semibold border-emerald-400/60 bg-emerald-500/20 text-emerald-50 hover:bg-emerald-500/30 hover:text-white"
-          onClick={() => setViewAsEmail(null)}
+
+      {/* Desktop: full tools row */}
+      <div className="hidden sm:flex items-center gap-3">
+        <PwaInstallButton />
+        <ThemeToggle />
+        <LanguageSwitcher />
+        <OrgSwitcher />
+        <Link
+          to="/admin/org-settings"
+          className="flex h-8 items-center gap-1.5 rounded-lg border border-cyan-400/20 bg-cyan-500/10 px-2.5 text-xs font-medium text-cyan-100 hover:bg-cyan-500/20"
         >
-          חזרה לתצוגת מנהל
-        </Button>
-      )}
-      <UserDropdown />
+          <Building2 className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">ארגון</span>
+        </Link>
+        {viewAsEmail && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1 px-2 text-[11px] font-semibold border-emerald-400/60 bg-emerald-500/20 text-emerald-50 hover:bg-emerald-500/30 hover:text-white"
+            onClick={() => setViewAsEmail(null)}
+          >
+            חזרה לתצוגת מנהל
+          </Button>
+        )}
+        <UserDropdown />
+      </div>
     </div>
   );
 
