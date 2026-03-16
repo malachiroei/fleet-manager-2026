@@ -15,7 +15,7 @@ export function useTeamMembers(orgId: string | null | undefined) {
       if (!orgId) return [];
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, user_id, full_name, email, phone, org_id, permissions, created_at, updated_at')
+        .select('id, user_id, full_name, email, phone, org_id, permissions, status, created_at, updated_at')
         .eq('org_id', orgId)
         .order('full_name');
 

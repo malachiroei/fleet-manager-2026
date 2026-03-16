@@ -281,12 +281,29 @@ export function AppLayout({ children }: AppLayoutProps) {
         key={location.pathname + location.search}
         className="relative flex-1 overflow-y-auto bg-transparent px-6 py-6"
       >
-        {location.pathname !== '/' && (
-          <div className={cn('mb-4 flex', isRtl ? 'justify-start' : 'justify-end')}>
-            <BackButton />
+        {profile?.status === 'pending_approval' ? (
+          <div className="flex min-h-[60vh] items-center justify-center">
+            <div className="max-w-lg w-full rounded-2xl border border-yellow-400/40 bg-yellow-950/40 px-6 py-8 text-center shadow-lg">
+              <h2 className="text-xl font-semibold text-yellow-100 mb-2">
+                החשבון שלך ממתין לאישור מנהל
+              </h2>
+              <p className="text-sm text-yellow-100/85 mb-4 leading-relaxed">
+                חשבונך נוצר בהצלחה, אך עדיין ממתין לאישור מנהל המערכת.
+                <br />
+                תקבל הודעת דוא״ל ברגע שהחשבון יאושר ותוכל להתחבר למערכת המלאה.
+              </p>
+            </div>
           </div>
+        ) : (
+          <>
+            {location.pathname !== '/' && (
+              <div className={cn('mb-4 flex', isRtl ? 'justify-start' : 'justify-end')}>
+                <BackButton />
+              </div>
+            )}
+            {children}
+          </>
         )}
-        {children}
       </main>
 
       <AIChatAssistant />
