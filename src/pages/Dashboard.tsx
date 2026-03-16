@@ -158,6 +158,7 @@ export default function Dashboard() {
   const { user, hasPermission, isAdmin, isManager, isDriver, roles: userRoles, loading } = useAuth();
   const { viewAsEmail } = useViewAs();
   const totalAlerts = (alerts?.filter(a => a.status === 'expired' || a.status === 'warning').length) ?? 0;
+  const isStatsLoading = isLoading || !stats;
 
   const email = user?.email || '';
   const isSystemAdmin = ['malachiroei@gmail.com', 'ravidmalachi@gmail.com'].includes(email);
@@ -302,7 +303,7 @@ export default function Dashboard() {
         <p className="text-sm md:text-base text-muted-foreground mt-1.5">{t('dashboard.subtitle')}</p>
       </div>
 
-      {!isDriverOnly && !isLoading && stats && stats.totalVehicles === 0 && stats.totalDrivers === 0 && (
+      {!isDriverOnly && !isStatsLoading && stats && stats.totalVehicles === 0 && stats.totalDrivers === 0 && (
         <Card className="border-dashed border-2 border-primary/30 bg-primary/5">
           <CardContent className="p-6 md:p-8 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-right">
             <div className="flex-1 space-y-1">
@@ -332,7 +333,7 @@ export default function Dashboard() {
       )}
 
       <section className="dashboard-status-stage p-4 sm:p-6 md:p-10 pb-6 space-y-6 relative z-[20]">
-        {isLoading ? (
+        {isStatsLoading ? (
           <div className="grid grid-cols-2 sm:grid-cols-2 gap-4 sm:gap-4">
             {[1, 2, 3, 4].map((i) => (
               <Skeleton

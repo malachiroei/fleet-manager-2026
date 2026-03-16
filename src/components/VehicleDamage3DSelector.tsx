@@ -156,7 +156,7 @@ export default function VehicleDamage3DSelector({ value, onChange }: VehicleDama
                 <div className="pointer-events-none absolute inset-y-0 right-0 w-5 rounded-full bg-cyan-300/35 blur-[1px]" />
               )}
               {activeSide === 'left' && (
-                <div className="pointer-events-none absolute inset-y-0 left-0 w-5 rounded-full bg-cyan-300/35 blur-[1px]" />
+                <div className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-cyan-400/40 blur-sm" />
               )}
               {activeSide === 'front' && (
                 <div className="pointer-events-none absolute left-1/2 top-[45px] h-6 w-36 -translate-x-1/2 rounded-full bg-cyan-300/35 blur-[1px]" />

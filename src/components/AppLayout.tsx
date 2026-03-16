@@ -45,16 +45,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { data: teamMembers = [], error: teamMembersError } = useTeamMembersForSwitcher(activeOrgId ?? null as any);
   const { viewAsEmail, setViewAsEmail } = useViewAs();
 
-  useEffect(() => {
-    console.log('TeamMembers for Org:', activeOrgId, {
-      teamMembers,
-      teamMembersError,
-    });
-  }, [activeOrgId, teamMembers, teamMembersError]);
-
-  console.log('CURRENT PROFILE STATUS:', profile?.status);
-
-  // CRITICAL: Block full app chrome for users awaiting approval
+  // Global block for accounts awaiting approval – even before impersonation or header
   if (profile?.status === 'pending_approval') {
     return (
       <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-[#020617] text-center px-6">
@@ -71,6 +62,15 @@ export function AppLayout({ children }: AppLayoutProps) {
       </div>
     );
   }
+
+  useEffect(() => {
+    console.log('TeamMembers for Org:', activeOrgId, {
+      teamMembers,
+      teamMembersError,
+    });
+  }, [activeOrgId, teamMembers, teamMembersError]);
+
+  console.log('CURRENT PROFILE STATUS:', profile?.status);
 
   const handleLogout = () => {
     void signOut();
@@ -190,6 +190,17 @@ export function AppLayout({ children }: AppLayoutProps) {
         <Building2 className="h-3.5 w-3.5" />
         <span className="hidden sm:inline">ארגון</span>
       </Link>
+      {viewAsEmail && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="hidden sm:inline-flex h-7 gap-1 px-2 text-[11px] font-semibold border-emerald-400/60 bg-emerald-500/20 text-emerald-50 hover:bg-emerald-500/30 hover:text-white"
+          onClick={() => setViewAsEmail(null)}
+        >
+          חזרה לתצוגת מנהל
+        </Button>
+      )}
       <UserDropdown />
     </div>
   );

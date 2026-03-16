@@ -23,7 +23,7 @@ export interface Profile {
   org_id: string | null;
   /** JSON object of permission keys to boolean. e.g. { "vehicles": true, "manage_team": true } */
   permissions: ProfilePermissions | null;
-  status: 'pending_approval' | 'active';
+  status: string;
   created_at: string;
   updated_at: string;
 }
