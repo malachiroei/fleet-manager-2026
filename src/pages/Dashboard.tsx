@@ -264,9 +264,13 @@ export default function Dashboard() {
 
   return (
     <div className="container py-6 md:py-8 pb-32 sm:pb-8 space-y-6 md:space-y-8 relative z-[1]">
-      <div className="rounded-2xl border bg-card p-5 md:p-6">
-        <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground">{t('dashboard.title')}</h1>
-        <p className="text-sm md:text-base text-muted-foreground mt-1.5">{t('dashboard.subtitle')}</p>
+      <div className="rounded-2xl border bg-card p-4 md:p-6">
+        <h1 className="hidden sm:block text-2xl md:text-3xl font-bold tracking-tight text-foreground">
+          {t('dashboard.title')}
+        </h1>
+        <p className="text-xs sm:text-sm md:text-base text-muted-foreground mt-0.5 sm:mt-1.5">
+          {t('dashboard.subtitle')}
+        </p>
       </div>
 
       {!isDriverOnly && !isStatsLoading && stats && stats.totalVehicles === 0 && stats.totalDrivers === 0 && (

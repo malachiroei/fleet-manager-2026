@@ -28,6 +28,8 @@ interface AppLayoutProps {
   children: ReactNode;
 }
 
+const MAIN_ADMIN_ORG_ID = '857f2311-2ec5-4d13-8e32-dacd450a9a77';
+
 export function AppLayout({ children }: AppLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -54,6 +56,18 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   console.log('CURRENT PROFILE STATUS:', profile?.status);
 
+  const isMainAdmin = email === 'malachiroei@gmail.com';
+  const isDriverRoei = email === 'roeima21@gmail.com';
+
+  // Ensure Roei (driver-only) is always locked to his org and cannot switch orgs
+  useEffect(() => {
+    if (!isDriverRoei) return;
+    const targetOrgId = profile?.org_id as string | null | undefined;
+    if (targetOrgId && activeOrgId !== targetOrgId) {
+      setActiveOrgId(targetOrgId);
+    }
+  }, [isDriverRoei, profile?.org_id, activeOrgId, setActiveOrgId]);
+
   const handleLogout = () => {
     void signOut();
   };
@@ -70,8 +84,8 @@ export function AppLayout({ children }: AppLayoutProps) {
   );
 
   const OrgSwitcher = () => {
+    if (isDriverRoei) return null;
     if (memberOrganizations.length === 0) return null;
-    const isMainAdmin = email === 'malachiroei@gmail.com';
     // For the org list at the top: for main admin, prefer only the primary org "רביד צי רכבים"
     const orgItems = isMainAdmin
       ? memberOrganizations.filter((org) => (org.name || '').trim() === 'רביד צי רכבים')
@@ -126,7 +140,16 @@ export function AppLayout({ children }: AppLayoutProps) {
           )}
           <DropdownMenuRadioGroup
             value={activeOrgId ?? ''}
-            onValueChange={(id) => id && setActiveOrgId(id)}
+            onValueChange={(id) => {
+              if (!id) return;
+              if (isMainAdmin && id === MAIN_ADMIN_ORG_ID) {
+                // Reset to admin view and main admin org
+                setViewAsEmail(null);
+                setActiveOrgId(MAIN_ADMIN_ORG_ID);
+              } else {
+                setActiveOrgId(id);
+              }
+            }}
           >
             {orgItems.map((org) => (
               <DropdownMenuRadioItem key={org.id} value={org.id}>
@@ -180,17 +203,19 @@ export function AppLayout({ children }: AppLayoutProps) {
   const TopToolsBlock = () => (
     <div
       className={cn(
-        'flex h-8 sm:h-9 items-center gap-2 sm:gap-3 shrink-0',
+        'flex h-8 sm:h-9 items-center gap-3 sm:gap-4 shrink-0',
         isRtl ? 'flex-row-reverse' : ''
       )}
     >
       <PwaInstallButton />
       <ThemeToggle />
-      <LanguageSwitcher />
+      <div className="hidden sm:block">
+        <LanguageSwitcher />
+      </div>
       <OrgSwitcher />
       <Link
         to="/admin/org-settings"
-        className="flex h-8 items-center gap-1.5 rounded-lg border border-cyan-400/20 bg-cyan-500/10 px-2.5 text-xs font-medium text-cyan-100 hover:bg-cyan-500/20"
+        className="hidden sm:flex h-8 items-center gap-1.5 rounded-lg border border-cyan-400/20 bg-cyan-500/10 px-2.5 text-xs font-medium text-cyan-100 hover:bg-cyan-500/20"
       >
         <Building2 className="h-3.5 w-3.5" />
         <span className="hidden sm:inline">ארגון</span>
@@ -375,7 +400,15 @@ export function AppLayout({ children }: AppLayoutProps) {
               size="sm"
               variant="outline"
               className="h-7 px-3 text-xs font-semibold border-black/40 bg-black/80 text-amber-50 hover:bg-black/90"
-              onClick={() => setViewAsEmail(null)}
+              onClick={() => {
+                // Reset impersonation and org to admin defaults when main admin
+                if (isMainAdmin) {
+                  setViewAsEmail(null);
+                  setActiveOrgId(MAIN_ADMIN_ORG_ID);
+                } else {
+                  setViewAsEmail(null);
+                }
+              }}
             >
               חזור לתצוגת מנהל
             </Button>
