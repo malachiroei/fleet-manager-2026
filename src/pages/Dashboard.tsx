@@ -245,21 +245,21 @@ export default function Dashboard() {
       permission: 'manage_team',
     },
   ].filter((action) => {
-    const showAllActions = isSystemAdmin || effectiveIsAdmin;
+    const showAllActionsForAdmin = !viewAsEmail && (isSystemAdmin || effectiveIsAdmin);
 
     // Admin-only items: only show for admin / system admin users
-    if (action.adminOnly && !showAllActions) return false;
+    if (action.adminOnly && !showAllActionsForAdmin) return false;
 
-    // For system/admin users, show all non-disabled actions regardless of permissions JSON
-    if (showAllActions) {
-      return !action.disabled;
-    }
-
-    // Driver-only view: restrict to a small subset of actions + require permission
-    if (isDriverOnly) {
+    // When impersonating (viewAsEmail), always respect driver/permissions rules
+    if (viewAsEmail || isDriverOnly) {
       const driverPerms: PermissionKey[] = ['handover', 'vehicle_delivery', 'procedure6_complaints', 'mileage_update'];
       if (!action.permission) return false;
       return driverPerms.includes(action.permission) && hasPermission(action.permission);
+    }
+
+    // For non-impersonating admins/system admins, show all non-disabled actions regardless of permissions JSON
+    if (showAllActionsForAdmin) {
+      return !action.disabled;
     }
 
     // Normal users: require the corresponding permission if defined
