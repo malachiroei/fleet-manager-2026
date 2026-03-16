@@ -117,7 +117,10 @@ export function AppLayout({ children }: AppLayoutProps) {
     // - For main admin: רק רביד (sub-admin)
     // - עבור משתמשים אחרים (כולל רביד): כל מי שנמצא באותו org חוץ מעצמם
     let visibleMembers = teamMembers.filter(
-      (m) => m.email && m.email.toLowerCase() !== email
+      (m) =>
+        m.email &&
+        m.email.toLowerCase() !== email && // לא להציג את המשתמש עצמו
+        m.email.toLowerCase() !== 'malachiroei@gmail.com' // לא להציג את רועי כ"חבר צוות" אצל רביד או אחרים
     );
     // Remove any member that duplicates the org-level "רביד צי רכבים"
     visibleMembers = visibleMembers.filter((m) => (m.full_name || '').trim() !== 'רביד צי רכבים');

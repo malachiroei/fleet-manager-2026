@@ -162,16 +162,21 @@ export default function Dashboard() {
   const isSystemAdmin = ['malachiroei@gmail.com', 'ravidmalachi@gmail.com'].includes(email);
   const isOwner = email === 'malachiroei@gmail.com';
   const effectiveIsAdmin = isOwner || isAdmin;
+  // Treat this email as main admin regardless of role flags,
+  // so that View-as על רביד לא ייחשב כ"נהג בלבד".
+  const isMainAdmin = email === 'malachiroei@gmail.com';
+  // Driver-only:
+  // - כשמתחברים כנהג / Viewer ללא הרשאות אדמין/מנהל.
+  // - כשרביד (sub-admin) נמצא בתצוגה כ-ROEI (viewAsEmail פעיל, אבל לא isMainAdmin).
+  // - כשמנהל ראשי בתצוגה כ-Ravid -> עדיין רואים דשבורד מלא (לא driver-only).
   const isDriverOnly = viewAsEmail
-    ? true
+    ? !isMainAdmin // main admin in view-as mode ≠ driver-only; others (כמו רביד) בתצוגה כנהג כן.
     : Boolean(
         (isDriver || userRoles?.includes('viewer')) &&
           !effectiveIsAdmin &&
           !isManager &&
           !isSystemAdmin
       );
-
-  const isMainAdmin = email === 'malachiroei@gmail.com' && isAdmin;
   // Temporary: disable pending users badge logic to rule out crashes
   const pendingUsersCount = 0;
 
