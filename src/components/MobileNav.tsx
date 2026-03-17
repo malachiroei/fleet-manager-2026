@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
-import { Home, Menu } from 'lucide-react';
+import { Home, Menu, User } from 'lucide-react';
 import { useVehicleSpecDirty } from '@/contexts/VehicleSpecDirtyContext';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrganization } from '@/hooks/useOrganizations';
@@ -19,7 +19,7 @@ export function MobileNav() {
   const isRtl = i18n.dir() === 'rtl';
   const sheetSide = isRtl ? 'right' : 'left';
   const isDirty = getIsDirty();
-  const { user, profile, activeOrgId } = useAuth();
+  const { user, profile, activeOrgId, isAdmin } = useAuth();
   const { data: organization } = useOrganization(activeOrgId ?? null);
   const orgName = organization?.name?.trim() ?? '';
   const email = user?.email ?? '';
@@ -75,6 +75,29 @@ export function MobileNav() {
                 </Button>
               </Link>
             </nav>
+            {isAdmin && (profile?.email ?? '').toLowerCase() === 'malachiroei@gmail.com' && (
+              <nav className="px-1">
+                <Link
+                  to="/admin/users"
+                  onClick={() => setOpen(false)}
+                  className="block"
+                >
+                  <Button
+                    variant={location.pathname === '/admin/users' ? 'default' : 'ghost'}
+                    className={cn(
+                      'w-full gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                      isRtl ? 'flex-row-reverse justify-end text-right' : 'justify-start text-left',
+                      location.pathname === '/admin/users'
+                        ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-400/40'
+                        : 'text-white/70 hover:bg-cyan-500/10 hover:text-white'
+                    )}
+                  >
+                    <User className="h-5 w-5" />
+                    ניהול משתמשים
+                  </Button>
+                </Link>
+              </nav>
+            )}
             <p className="mx-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-center text-xs text-white/50">
               שאר הפריטים — בפעולות מהירות בדשבורד. מצב כהה, שפה, התנתקות — בשורת הכותרת.
             </p>

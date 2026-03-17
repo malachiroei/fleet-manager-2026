@@ -38,6 +38,7 @@ import ReportsPage from "./pages/ReportsPage";
 import FormsPage from "./pages/FormsPage";
 import VehicleHandoverWizard from './pages/VehicleHandoverWizard';
 import TransfersPage from './pages/TransfersPage';
+import ReportMileagePage from "./pages/ReportMileagePage";
 import { ThemeProvider } from '@/hooks/useTheme';
 import { ViewAsProvider } from '@/contexts/ViewAsContext';
 import Footer from "@/components/layout/Footer";
@@ -110,6 +111,7 @@ function AppRoutes() {
       <Route path="/handover/return" element={<ProtectedRoute><VehicleReturnPage /></ProtectedRoute>} />
       <Route path="/handover/replacement" element={<ProtectedRoute><ReplacementVehicleHubPage /></ProtectedRoute>} />
       <Route path="/handover/wizard" element={<ProtectedRoute><VehicleHandoverWizard /></ProtectedRoute>} />
+      <Route path="/report-mileage" element={<ProtectedRoute><ReportMileagePage /></ProtectedRoute>} />
       <Route path="/admin/settings" element={<ProtectedRoute><AdminSettingsPage /></ProtectedRoute>} />
       <Route path="/admin/dashboard" element={<ProtectedRoute><AdminDashboardPage /></ProtectedRoute>} />
       <Route path="/admin/users" element={<ProtectedRoute><AdminUsersPage /></ProtectedRoute>} />

@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import type { Profile } from '@/types/fleet';
 import type { ProfilePermissions } from '@/types/fleet';
 import { toast } from '@/hooks/use-toast';
+import { getDefaultPermissions } from '@/lib/permissions';
 
 const TEAM_QUERY_KEY = ['team-members'] as const;
 const INVITATIONS_QUERY_KEY = ['org-invitations'] as const;
@@ -121,7 +122,7 @@ export function useCreateInvitation() {
         .insert({
           org_id: orgId,
           email: email.trim().toLowerCase(),
-          permissions,
+          permissions: { ...permissions, report_mileage: true },
           invited_by: invitedBy,
         })
         .select()
@@ -196,9 +197,22 @@ export function useApproveMember() {
 
   return useMutation({
     mutationFn: async ({ profileId }: { profileId: string }) => {
+      const { data: existing, error: existingError } = await (supabase as any)
+        .from('profiles')
+        .select('permissions')
+        .eq('id', profileId)
+        .maybeSingle();
+      if (existingError) throw existingError;
+
+      const currentPerms = (existing as any)?.permissions as Record<string, boolean> | null | undefined;
+      const nextPerms =
+        currentPerms && typeof currentPerms === 'object' && Object.keys(currentPerms).length > 0
+          ? { ...currentPerms, report_mileage: true }
+          : { ...getDefaultPermissions(), report_mileage: true };
+
       const { data, error } = await (supabase as any)
         .from('profiles')
-        .update({ status: 'active', updated_at: new Date().toISOString() })
+        .update({ status: 'active', permissions: nextPerms, updated_at: new Date().toISOString() })
         .eq('id', profileId)
         .select()
         .single();

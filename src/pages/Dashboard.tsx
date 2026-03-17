@@ -155,18 +155,17 @@ export default function Dashboard() {
   const [showOdometerDialog, setShowOdometerDialog] = useState(false);
   const { t } = useTranslation();
   const isMobile = useIsMobile();
-  const { user, hasPermission, isAdmin, isManager, isDriver, roles: userRoles, loading } = useAuth();
+  const { user, profile, hasPermission, isAdmin, isManager, isDriver, roles: userRoles, loading } = useAuth();
   const { viewAsEmail } = useViewAs();
   const totalAlerts = (alerts?.filter(a => a.status === 'expired' || a.status === 'warning').length) ?? 0;
   const isStatsLoading = isLoading || !stats;
 
   const email = user?.email || '';
+  const isMainAdmin = email.toLowerCase() === 'malachiroei@gmail.com';
   const isSystemAdmin = ['malachiroei@gmail.com', 'ravidmalachi@gmail.com'].includes(email);
-  const isOwner = email === 'malachiroei@gmail.com';
+  const isOwner = isMainAdmin;
   const effectiveIsAdmin = isOwner || isAdmin;
-  // Treat this email as main admin regardless of role flags,
-  // so that View-as על רביד לא ייחשב כ"נהג בלבד".
-  const isMainAdmin = email === 'malachiroei@gmail.com';
+  // Treat this email as main admin regardless of role flags.
   // Driver-only:
   // - כשמתחברים כנהג / Viewer ללא הרשאות אדמין/מנהל.
   // - כשרביד (sub-admin) נמצא בתצוגה כ-ROEI (viewAsEmail פעיל, אבל לא isMainAdmin).
@@ -230,6 +229,12 @@ export default function Dashboard() {
     showPendingBadge?: boolean;
   }[] = [
     {
+      title: 'דווח קילומטראז׳',
+      href: '/report-mileage',
+      icon: Gauge,
+      permission: 'report_mileage',
+    },
+    {
       title: t('navigation.procedure6Complaints'),
       href: '/procedure6-complaints',
       icon: AlertTriangle,
@@ -287,7 +292,12 @@ export default function Dashboard() {
   ];
 
   // Emergency: always use all quick actions, especially for main admin.
-  const quickLinks = baseQuickLinks;
+  // But keep "Report Mileage" strictly behind its permission flag.
+  const canReportMileage = profile?.permissions?.report_mileage === true;
+  const quickLinks = baseQuickLinks.filter((a) => {
+    if (a.href === '/report-mileage') return canReportMileage;
+    return true;
+  });
 
   return (
     <div className="container py-6 md:py-8 pb-32 sm:pb-8 space-y-6 md:space-y-8 relative z-[1]">
@@ -392,7 +402,7 @@ export default function Dashboard() {
                         </div>
                         <div className="min-w-0 flex-1 flex items-center justify-between gap-2">
                           <p className="text-sm font-medium text-foreground truncate">{action.title}</p>
-                          {action.showPendingBadge && pendingUsersCount > 0 && (
+                          {isMainAdmin && action.showPendingBadge && pendingUsersCount > 0 && (
                             <span className="inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full bg-red-500 text-[11px] font-semibold text-white px-2">
                               {pendingUsersCount}
                             </span>
@@ -461,7 +471,7 @@ export default function Dashboard() {
                             <ChevronLeft className="h-3.5 w-3.5" />
                           </span>
                         </div>
-                        {action.showPendingBadge && pendingUsersCount > 0 && (
+                        {isMainAdmin && action.showPendingBadge && pendingUsersCount > 0 && (
                           <span className="inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full bg-red-500 text-[11px] font-semibold text-white px-2">
                             {pendingUsersCount}
                           </span>

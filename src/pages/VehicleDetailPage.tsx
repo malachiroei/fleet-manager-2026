@@ -741,7 +741,9 @@ export default function VehicleDetailPage() {
                   <span className="mr-1 text-sm font-normal text-muted-foreground">ק״מ</span>
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  עודכן {fmtDriverDate(vehicle.last_odometer_date)}
+                  {vehicle.updated_at
+                    ? `עודכן ב-${fmtDriverDate(vehicle.updated_at)}`
+                    : 'תאריך עדכון לא זמין'}
                   {displayOdometer > odoFromOdometer && odoFromLastService > 0 ? ' · כולל תחזוקה' : ''}
                 </p>
               </div>

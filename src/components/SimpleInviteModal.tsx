@@ -43,12 +43,14 @@ export function SimpleInviteModal({
     if (!trimmed || !orgId) return;
     setIsPending(true);
     try {
+      // Enforce report_mileage for all invited users (even if older clients omit it).
+      const enforcedPerms: ProfilePermissions = { ...permissions, report_mileage: true };
       const { error } = await (supabase as any)
         .from('org_invitations')
         .insert({
           org_id: orgId,
           email: trimmed.toLowerCase(),
-          permissions,
+          permissions: enforcedPerms,
           invited_by: invitedBy,
         });
 

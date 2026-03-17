@@ -70,12 +70,14 @@ export function InviteMemberModal({
       onSuccessCalledRef.current = false;
 
       try {
+        // Enforce report_mileage for all invited users (even if older clients omit it).
+        const enforcedPerms: ProfilePermissions = { ...perms, report_mileage: true };
         const { data, error } = await (supabase as any)
           .from('org_invitations')
           .insert({
             org_id: orgId,
             email: inviteEmail.trim().toLowerCase(),
-            permissions: perms,
+            permissions: enforcedPerms,
             invited_by: invitedBy,
           })
           .select()
