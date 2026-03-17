@@ -136,6 +136,21 @@ export default function ReportMileagePage() {
         // ignore
       }
 
+      // Send notification email (direct invoke; DB trigger not required)
+      try {
+        await supabase.functions.invoke('send-mileage-notification', {
+          body: {
+            to: 'malachiroei@gmail.com',
+            subject: `עדכון קילומטראז' - ${selectedVehicle.plate_number}`,
+            odometerReading: odometerValue,
+            reportUrl: photoUrl,
+          },
+        });
+      } catch (notifyErr) {
+        // Non-fatal: mileage is already saved
+        console.error('[send-mileage-notification] failed:', notifyErr);
+      }
+
       // Invalidate vehicle queries so Vehicle Detail "מד אוץ" card refreshes
       queryClient.invalidateQueries({ queryKey: ['vehicle', selectedVehicle.id] });
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
