@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from 'react';
  import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Progress } from '@/components/ui/progress';
 import { supabase } from '@/integrations/supabase/client';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import PricingDataUploader from '@/components/PricingDataUploader';
@@ -80,6 +82,16 @@ export default function AdminSettingsPage() {
     const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
     const [isBackingUpSettings, setIsBackingUpSettings] = useState(false);
     const [isRestoringSettings, setIsRestoringSettings] = useState(false);
+    const [isUpdateAvailableOpen, setIsUpdateAvailableOpen] = useState(false);
+    const [isUpdateProgressOpen, setIsUpdateProgressOpen] = useState(false);
+    const [updateTargetVersion, setUpdateTargetVersion] = useState<string>('');
+    const [updateProgressValue, setUpdateProgressValue] = useState<number>(0);
+    const [updateProgressStage, setUpdateProgressStage] = useState<string>(''); // status text inside modal
+    const [isSimulatingUpdate, setIsSimulatingUpdate] = useState(false);
+    const CURRENT_VERSION_FALLBACK = '2.1.0';
+    const VERSION_MANIFEST_RAW_URL =
+      (import.meta.env.VITE_VERSION_MANIFEST_RAW_URL as string | undefined) ??
+      'https://raw.githubusercontent.com/fleet-manager-pro/fleet-manager/main/version_manifest.json';
     const lastUpdateDate = '18/03/2026';
     const restoreInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -319,14 +331,97 @@ export default function AdminSettingsPage() {
     const checkForUpdates = async () => {
       setIsCheckingUpdates(true);
       try {
-        // Placeholder for now: UI-only action (no backend integration requested).
-        await new Promise((resolve) => setTimeout(resolve, 800));
-        toast.success('אין עדכונים זמינים כרגע');
+        type VersionManifest = { version: string; releaseDate?: string };
+
+        const parseSemver = (v: string): number[] | null => {
+          const parts = String(v).split('.').map((x) => parseInt(x, 10));
+          if (parts.length < 3) return null;
+          if (parts.some((n) => Number.isNaN(n))) return null;
+          return parts.slice(0, 3);
+        };
+
+        const compareSemver = (a: string, b: string) => {
+          const pa = parseSemver(a);
+          const pb = parseSemver(b);
+          if (!pa || !pb) return 0;
+          for (let i = 0; i < 3; i += 1) {
+            if (pa[i] > pb[i]) return 1;
+            if (pa[i] < pb[i]) return -1;
+          }
+          return 0;
+        };
+
+        const getLocalManifestVersion = async (): Promise<string> => {
+          try {
+            const res = await fetch('/version_manifest.json', { cache: 'no-store' });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const json = (await res.json()) as Partial<VersionManifest>;
+            if (json?.version) return String(json.version);
+          } catch (e) {
+            console.warn('checkForUpdates: failed to fetch local version manifest', e);
+          }
+          return CURRENT_VERSION_FALLBACK;
+        };
+
+        if (!VERSION_MANIFEST_RAW_URL) {
+          toast.error('חסר VITE_VERSION_MANIFEST_RAW_URL — הגדר/י את ה-raw URL של version_manifest ב-GitHub');
+          return;
+        }
+
+        const localVersion = await getLocalManifestVersion();
+        const latestRes = await fetch(VERSION_MANIFEST_RAW_URL, { cache: 'no-store' });
+        if (!latestRes.ok) throw new Error(`HTTP ${latestRes.status}`);
+        const latestManifest = (await latestRes.json()) as Partial<VersionManifest>;
+
+        const latestVersion = latestManifest?.version ? String(latestManifest.version) : '';
+        if (!latestVersion) throw new Error('Latest manifest missing "version"');
+
+        const cmp = compareSemver(latestVersion, localVersion);
+        if (cmp > 0) {
+          setUpdateTargetVersion(latestVersion);
+          setIsUpdateAvailableOpen(true);
+        } else {
+          toast.success('אין עדכונים זמינים כרגע');
+        }
       } catch (err) {
         console.error(err);
-        toast.error('בדיקת עדכונים נכשלה');
+        const message = err instanceof Error ? err.message : 'שגיאה לא ידועה';
+        toast.error(`בדיקת עדכונים נכשלה: ${message}`);
       } finally {
         setIsCheckingUpdates(false);
+      }
+    };
+
+    const startUpdateSimulation = async () => {
+      // Simulated process for Vercel — in the future this will guide the admin to pull latest code.
+      setIsUpdateAvailableOpen(false);
+      setIsUpdateProgressOpen(true);
+      setIsSimulatingUpdate(true);
+      setUpdateProgressValue(0);
+
+      const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      try {
+        setUpdateProgressStage('מוריד עדכונים...');
+        setUpdateProgressValue(25);
+        await sleep(700);
+
+        setUpdateProgressStage('שומר הגדרות...');
+        setUpdateProgressValue(60);
+        await backupSettings();
+
+        setUpdateProgressStage('מפעיל מחדש...');
+        setUpdateProgressValue(90);
+        await sleep(800);
+
+        setUpdateProgressValue(100);
+        // Simulate update by reloading. Future: instruct admin to pull latest code.
+        window.location.reload();
+      } catch (err) {
+        console.error(err);
+        toast.error('Error: עדכון נכשל');
+      } finally {
+        setIsSimulatingUpdate(false);
       }
     };
 
@@ -630,6 +725,48 @@ export default function AdminSettingsPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Update Available Modal */}
+          <Dialog open={isUpdateAvailableOpen} onOpenChange={setIsUpdateAvailableOpen}>
+            <DialogContent dir="rtl" className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>
+                  גרסה חדשה זמינה ({updateTargetVersion})! הנתונים שלך מוגנים ב-100%. האם לעדכן עכשיו?
+                </DialogTitle>
+                <DialogDescription>פעולה זו תתבצע בסימולציה ב-Vercel כרגע.</DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="mt-2">
+                <Button variant="outline" onClick={() => setIsUpdateAvailableOpen(false)} disabled={isSimulatingUpdate}>
+                  לא עכשיו
+                </Button>
+                <Button onClick={startUpdateSimulation} disabled={isSimulatingUpdate}>
+                  עדכן
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Update Progress Modal */}
+          <Dialog
+            open={isUpdateProgressOpen}
+            onOpenChange={(open) => {
+              if (!open && isSimulatingUpdate) return;
+              setIsUpdateProgressOpen(open);
+            }}
+          >
+            <DialogContent dir="rtl" className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>עדכון מערכת</DialogTitle>
+                <DialogDescription>{updateProgressStage}</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <Progress value={updateProgressValue} className="h-2" />
+                <p className="text-xs text-muted-foreground">
+                  מוריד/שומר/מפעיל מחדש: סימולציה ב-Vercel (בעתיד זה יכוון לפעולת משיכת הקוד מה-GitHub).
+                </p>
+              </div>
+            </DialogContent>
+          </Dialog>
        </main>
      </div>
    );
