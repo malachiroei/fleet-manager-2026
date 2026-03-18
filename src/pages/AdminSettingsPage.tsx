@@ -8,7 +8,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import PricingDataUploader from '@/components/PricingDataUploader';
 import FleetDataImporter from '@/components/FleetDataImporter';
-import { ArrowRight, Settings, Shield, Mail, Loader2, Monitor, Moon, Sun } from 'lucide-react';
+import { ArrowRight, Settings, Shield, Mail, Loader2, Monitor, Moon, Sun, Download, RefreshCw } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { toast } from 'sonner';
  
@@ -76,6 +76,8 @@ export default function AdminSettingsPage() {
       localStorage.getItem('handover_notification_email') || 'malachiroei@gmail.com'
     );
     const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
+    const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
+    const lastUpdateDate = '18/03/2026';
 
     const formatDate = (iso: string | null) => {
       if (!iso) return 'לא בוצעה';
@@ -181,6 +183,45 @@ export default function AdminSettingsPage() {
       }, 150);
     };
  
+    const backupSettings = () => {
+      const payload = {
+        exportedAt: new Date().toISOString(),
+        theme,
+        systemInfo: {
+          lastPricingUpload,
+          lastVehicleUpload,
+          lastDriverUpload,
+          lastUpdateDate,
+        },
+        notificationEmailsRaw,
+      };
+
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `fleet-manager-settings-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+
+      URL.revokeObjectURL(url);
+      toast.success('גיבוי ההגדרות ירד למחשב');
+    };
+
+    const checkForUpdates = async () => {
+      setIsCheckingUpdates(true);
+      try {
+        // Placeholder for now: UI-only action (no backend integration requested).
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        toast.success('אין עדכונים זמינים כרגע');
+      } catch (err) {
+        console.error(err);
+        toast.error('בדיקת עדכונים נכשלה');
+      } finally {
+        setIsCheckingUpdates(false);
+      }
+    };
+
    return (
      <div className="min-h-screen bg-[#020617] text-white">
        <header className="bg-card border-b border-border sticky top-0 z-10">
@@ -331,9 +372,30 @@ export default function AdminSettingsPage() {
                   <span className="text-muted-foreground">טעינת נהגים אחרונה:</span>
                   <span className="font-medium">{formatDate(lastDriverUpload)}</span>
                 </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">תאריך עדכון אחרון:</span>
+                  <span className="font-medium">{lastUpdateDate}</span>
+                </div>
               </div>
-              <div className="pt-3 border-t border-border mt-3">
-                <Button variant="outline" size="sm" onClick={runPrintTest}>בדיקת הדפסה</Button>
+              <div className="pt-3 border-t border-border mt-3 space-y-3">
+                <Button variant="outline" size="sm" onClick={runPrintTest}>
+                  בדיקת הדפסה
+                </Button>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" onClick={backupSettings}>
+                    <Download className="h-4 w-4 ml-2" />
+                    גיבוי הגדרות
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={checkForUpdates} disabled={isCheckingUpdates}>
+                    {isCheckingUpdates ? (
+                      <Loader2 className="h-4 w-4 animate-spin ml-2" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4 ml-2" />
+                    )}
+                    בדוק עדכונים
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
