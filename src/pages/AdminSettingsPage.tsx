@@ -200,45 +200,79 @@ export default function AdminSettingsPage() {
 
       const includedParts: string[] = [];
       const skippedParts: string[] = [];
+      const failures: Record<string, string> = {};
 
-      const fetchTable = async (tableName: string) => {
-        console.log(`[Backup] Attempting fetch table '${tableName}'`);
-        try {
-          const { data, error } = await (supabase as any).from(tableName).select('*');
-
-          if (error) {
-            console.log(`[Backup] Failed '${tableName}':`, error);
-            skippedParts.push(tableName);
-            return;
-          }
-
-          const rows = Array.isArray(data) ? data : data ? [data] : [];
-          backupPayload[tableName] = rows;
-          includedParts.push(tableName);
-          console.log(`[Backup] Fetched '${tableName}' rows=${rows.length}`);
-        } catch (e) {
-          console.log(`[Backup] Exception '${tableName}' fetch failed:`, e);
-          skippedParts.push(tableName);
-        }
-      };
-
-      // Try common table names used by this project.
-      // If a table doesn't exist in your environment, it will be skipped.
-      const candidateTables = [
-        // Legacy / spec-guess
-        'app_settings',
-        'organization_configs',
-        // Known tables used by hooks/admin logic
-        'ui_settings',
-        'system_settings',
-        'ui_customization',
+      // Tables actually referenced in the repo for settings/config:
+      // - ui_settings (useOrgSettings)
+      // - ui_customization (useUiLabels)
+      // - system_settings (AdminSettingsPage + sendHandoverEmail)
+      // - organizations (used as label/config source in useUiLabels)
+      const tableStrategies: Array<{ tableName: string; selectVariants: string[] }> = [
+        {
+          tableName: 'system_settings',
+          selectVariants: ['key,value,updated_at', 'key,value', 'key'],
+        },
+        {
+          tableName: 'ui_settings',
+          selectVariants: [
+            'id,org_id,org_name,org_id_number,admin_email,health_statement_text,vehicle_policy_text,health_statement_pdf_url,vehicle_policy_pdf_url,updated_at',
+            'id,org_id,org_name,org_id_number,admin_email,updated_at',
+            'id,org_id',
+          ],
+        },
+        {
+          tableName: 'ui_customization',
+          selectVariants: [
+            'id,key,default_label,custom_label,is_visible,group_name,updated_at',
+            'id,key,custom_label,is_visible,group_name,updated_at',
+            'id,key',
+          ],
+        },
+        {
+          tableName: 'organizations',
+          selectVariants: ['id,custom_labels,settings,updated_at', 'id,custom_labels,settings', 'id'],
+        },
       ];
 
-      for (const tableName of candidateTables) {
-        await fetchTable(tableName);
+      const fetchTable = async (tableName: string, selectVariants: string[]) => {
+        console.log(`[Backup] Start table '${tableName}'`);
+        let lastErrorMessage = '';
+
+        for (const select of selectVariants) {
+          console.log(`[Backup] Attempt fetch '${tableName}' with select(${select})`);
+          try {
+            const { data, error } = await (supabase as any).from(tableName).select(select);
+            if (error) {
+              lastErrorMessage = typeof error?.message === 'string' ? error.message : JSON.stringify(error);
+              console.log(`[Backup] Failed '${tableName}' select(${select})`, error);
+              continue;
+            }
+
+            const rows = Array.isArray(data) ? data : data ? [data] : [];
+            backupPayload[tableName] = rows;
+            includedParts.push(tableName);
+            console.log(`[Backup] Success '${tableName}' rows=${rows.length}`);
+            return;
+          } catch (e) {
+            lastErrorMessage = e instanceof Error ? e.message : String(e);
+            console.log(`[Backup] Exception '${tableName}' select(${select})`, e);
+            continue;
+          }
+        }
+
+        const reason = lastErrorMessage
+          ? `All select variants failed. Last error: ${lastErrorMessage}`
+          : `All select variants failed: ${selectVariants.join(' | ')}`;
+        failures[tableName] = reason;
+        skippedParts.push(tableName);
+        console.log(`[Backup] Giving up '${tableName}':`, reason);
+      };
+
+      for (const s of tableStrategies) {
+        await fetchTable(s.tableName, s.selectVariants);
       }
 
-      return { backupPayload, includedParts, skippedParts };
+      return { backupPayload, includedParts, skippedParts, failures };
     };
 
     const backupSettings = async () => {
@@ -246,7 +280,7 @@ export default function AdminSettingsPage() {
       try {
         const dateStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
-        const { backupPayload, includedParts, skippedParts } = await fetchBackupPayload();
+        const { backupPayload, includedParts, skippedParts, failures } = await fetchBackupPayload();
         const blob = new Blob([JSON.stringify(backupPayload, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
 
@@ -258,9 +292,16 @@ export default function AdminSettingsPage() {
         URL.revokeObjectURL(url);
 
         if (includedParts.length === 0) {
-          toast.error('Error: גיבוי נכשל (לא ניתן לקרוא אף טבלה)');
+          const failedList = Object.entries(failures)
+            .map(([tableName, reason]) => `${tableName}: ${reason}`)
+            .join(' | ');
+          toast.error(`Error: גיבוי נכשל (לא ניתן לקרוא אף טבלה). ${failedList}`);
         } else if (skippedParts.length > 0) {
           toast.success(`Success: גיבוי ירד למחשב. הושמטו: ${skippedParts.join(', ')}`);
+          const failedList = Object.entries(failures)
+            .map(([tableName, reason]) => `${tableName}: ${reason}`)
+            .join(' | ');
+          if (failedList) toast.error(`Failures: ${failedList}`);
         } else {
           toast.success('Success: גיבוי ירד למחשב');
         }
@@ -328,9 +369,11 @@ export default function AdminSettingsPage() {
           if (!Array.isArray(rows) || rows.length === 0) return;
           try {
             const rowsArr = rows as any[];
-            const inferredConflict = inferOnConflict(rowsArr);
-            const conflictTarget =
-              tableName === 'system_settings' ? inferredConflict ?? 'key' : inferredConflict ?? undefined;
+            let conflictTarget: string | undefined;
+            if (tableName === 'system_settings') conflictTarget = 'key';
+            if (tableName === 'ui_customization') conflictTarget = 'key';
+            if (tableName === 'organizations') conflictTarget = 'id';
+            if (!conflictTarget) conflictTarget = inferOnConflict(rowsArr) ?? undefined;
 
             const upsertResult = conflictTarget
               ? await (supabase as any).from(tableName).upsert(rowsArr, { onConflict: conflictTarget })
@@ -344,16 +387,10 @@ export default function AdminSettingsPage() {
           }
         };
 
-        // Restore using table names that may appear in the backup file
-        const candidateTables = [
-          'app_settings',
-          'organization_configs',
-          'ui_settings',
-          'system_settings',
-          'ui_customization',
-        ];
+        // Restore only tables that this page backs up.
+        const tablesToRestore = ['system_settings', 'ui_settings', 'ui_customization', 'organizations'];
 
-        for (const tableName of candidateTables) {
+        for (const tableName of tablesToRestore) {
           await tryUpsertTable(tableName, backup[tableName]);
         }
 
