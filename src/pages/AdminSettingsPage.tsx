@@ -214,6 +214,7 @@ export default function AdminSettingsPage() {
       }
 
       return {
+        appIdentifier: 'fleet-manager-pro',
         exportedAt: new Date().toISOString(),
         lastUpdateDate,
         theme,
@@ -263,6 +264,7 @@ export default function AdminSettingsPage() {
     };
 
     const isValidFleetManagerBackup = (value: unknown): value is {
+      appIdentifier: string;
       exportedAt: string;
       lastUpdateDate: string;
       app_settings: unknown[];
@@ -272,6 +274,8 @@ export default function AdminSettingsPage() {
     } => {
       if (!value || typeof value !== 'object') return false;
       const obj = value as any;
+
+      if (obj.appIdentifier !== 'fleet-manager-pro') return false;
 
       if (typeof obj.exportedAt !== 'string') return false;
       if (Number.isNaN(Date.parse(obj.exportedAt))) return false;
@@ -308,7 +312,7 @@ export default function AdminSettingsPage() {
         }
 
         if (!isValidFleetManagerBackup(parsed)) {
-          toast.error('Error: קובץ הגיבוי אינו תקין או אינו של Fleet Manager');
+          toast.error('Error: קובץ הגיבוי אינו תקין או חסר מזהה אפליקציה. בצע גיבוי חדש מהמערכת.');
           return;
         }
 
@@ -321,30 +325,24 @@ export default function AdminSettingsPage() {
 
         const tasks: Array<Promise<any>> = [];
 
-        const appOnConflict = inferOnConflict(appSettings);
-        tasks.push(
-          appOnConflict
-            ? (supabase as any).from('app_settings').upsert(appSettings, { onConflict: appOnConflict })
-            : (supabase as any).from('app_settings').upsert(appSettings),
-        );
+        if (appSettings.length > 0) {
+          const appOnConflict = inferOnConflict(appSettings) ?? 'id';
+          tasks.push((supabase as any).from('app_settings').upsert(appSettings, { onConflict: appOnConflict }));
+        }
 
-        const orgOnConflict = inferOnConflict(organizationConfigs);
-        tasks.push(
-          orgOnConflict
-            ? (supabase as any).from('organization_configs').upsert(organizationConfigs, { onConflict: orgOnConflict })
-            : (supabase as any).from('organization_configs').upsert(organizationConfigs),
-        );
-
-        if (Array.isArray(uiSettings)) {
-          const uiOnConflict = inferOnConflict(uiSettings);
+        if (organizationConfigs.length > 0) {
+          const orgOnConflict = inferOnConflict(organizationConfigs) ?? 'id';
           tasks.push(
-            uiOnConflict
-              ? (supabase as any).from('ui_settings').upsert(uiSettings, { onConflict: uiOnConflict })
-              : (supabase as any).from('ui_settings').upsert(uiSettings),
+            (supabase as any).from('organization_configs').upsert(organizationConfigs, { onConflict: orgOnConflict }),
           );
         }
 
-        if (Array.isArray(systemSettings)) {
+        if (Array.isArray(uiSettings) && uiSettings.length > 0) {
+          const uiOnConflict = inferOnConflict(uiSettings) ?? 'id';
+          tasks.push((supabase as any).from('ui_settings').upsert(uiSettings, { onConflict: uiOnConflict }));
+        }
+
+        if (Array.isArray(systemSettings) && systemSettings.length > 0) {
           // system_settings uses `key` in this codebase (see notification_emails logic).
           const sysOnConflict = inferOnConflict(systemSettings) ?? 'key';
           tasks.push((supabase as any).from('system_settings').upsert(systemSettings, { onConflict: sysOnConflict }));
