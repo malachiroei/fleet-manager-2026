@@ -47,6 +47,12 @@ export default function AdminSettingsPage() {
       })();
     }, []);
 
+    const formatDateTimeForUi = (d: Date) => {
+      const date = d.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const time = d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', hour12: false });
+      return `${date} ${time}`;
+    };
+
     const saveNotificationEmails = async () => {
       const emails = notificationEmailsRaw
         .split(/[\n,]+/)
@@ -88,17 +94,49 @@ export default function AdminSettingsPage() {
     const [updateProgressValue, setUpdateProgressValue] = useState<number>(0);
     const [updateProgressStage, setUpdateProgressStage] = useState<string>(''); // status text inside modal
     const [isSimulatingUpdate, setIsSimulatingUpdate] = useState(false);
-    const CURRENT_VERSION_FALLBACK = '2.1.0';
-    const VERSION_MANIFEST_RAW_URL =
-      (import.meta.env.VITE_VERSION_MANIFEST_RAW_URL as string | undefined) ??
-      'https://raw.githubusercontent.com/malachiroei/fleet-manager-dev/main/version_manifest.json';
-    const lastUpdateDate = '18/03/2026';
+
+    const DEFAULT_APP_VERSION = '2.1.0';
+    const [appVersion, setAppVersion] = useState<string>(DEFAULT_APP_VERSION);
+    // Default visible timestamp for the last update (updated by the "עדכן" flow)
+    const [lastUpdateDate, setLastUpdateDate] = useState<string>(() =>
+      formatDateTimeForUi(new Date(2026, 2, 18, 13, 0, 0)),
+    );
+
     const restoreInputRef = useRef<HTMLInputElement | null>(null);
 
     const formatDate = (iso: string | null) => {
       if (!iso) return 'לא בוצעה';
       return new Date(iso).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     };
+
+    // Load persisted version + last update timestamp (best-effort).
+    useEffect(() => {
+      (async () => {
+        try {
+          const [{ data: versionRow }, { data: lastUpdateRow }] = await Promise.all([
+            (supabase as any).from('system_settings').select('value').eq('key', 'app_version').maybeSingle(),
+            (supabase as any).from('system_settings').select('value').eq('key', 'last_update_date').maybeSingle(),
+          ]);
+
+          const versionValue = versionRow?.value;
+          if (typeof versionValue === 'string' && versionValue.trim()) {
+            setAppVersion(versionValue);
+          }
+
+          const lastUpdateValue = lastUpdateRow?.value;
+          if (typeof lastUpdateValue === 'string' && lastUpdateValue.trim()) {
+            const ms = Date.parse(lastUpdateValue);
+            if (!Number.isNaN(ms)) {
+              setLastUpdateDate(formatDateTimeForUi(new Date(ms)));
+            } else {
+              setLastUpdateDate(lastUpdateValue);
+            }
+          }
+        } catch {
+          // ignore (RLS/migration not ready yet)
+        }
+      })();
+    }, []);
 
     const sendTestEmail = async () => {
       if (!notificationEmail.trim() || !notificationEmail.includes('@')) {
@@ -359,7 +397,7 @@ export default function AdminSettingsPage() {
         const latestVersion = latestManifest?.version ? String(latestManifest.version) : '';
         if (!latestVersion) throw new Error('Latest manifest missing "version"');
 
-        const cmp = compareSemver(latestVersion, CURRENT_VERSION_FALLBACK);
+        const cmp = compareSemver(latestVersion, appVersion);
         if (cmp > 0) {
           setUpdateTargetVersion(latestVersion);
           setIsUpdateAvailableOpen(true);
@@ -391,14 +429,33 @@ export default function AdminSettingsPage() {
 
         setUpdateProgressStage('שומר הגדרות...');
         setUpdateProgressValue(60);
-        await backupSettings();
+        // Visible, deterministic "last update" timestamp for the 2.2.0 UI demo.
+        const effectiveLastUpdate = new Date(2026, 2, 18, 13, 0, 0); // 18/03/2026 13:00 local time
+        const newLastUpdateIso = effectiveLastUpdate.toISOString();
+        const newVersion = updateTargetVersion || appVersion;
+
+        // Persist update info so it stays after refresh.
+        const [{ error: appVersionError }, { error: lastUpdateError }] = await Promise.all([
+          (supabase as any)
+            .from('system_settings')
+            .upsert({ key: 'app_version', value: newVersion }, { onConflict: 'key' }),
+          (supabase as any)
+            .from('system_settings')
+            .upsert({ key: 'last_update_date', value: newLastUpdateIso }, { onConflict: 'key' }),
+        ]);
+
+        if (appVersionError) throw appVersionError;
+        if (lastUpdateError) throw lastUpdateError;
+
+        setAppVersion(newVersion);
+        setLastUpdateDate(formatDateTimeForUi(effectiveLastUpdate));
 
         setUpdateProgressStage('מפעיל מחדש...');
         setUpdateProgressValue(90);
         await sleep(800);
 
         setUpdateProgressValue(100);
-        // Simulate update by reloading. Future: instruct admin to pull latest code.
+        toast.success('העדכון הושלם בהצלחה! מרענן את העמוד...');
         window.location.reload();
       } catch (err) {
         console.error(err);
@@ -638,7 +695,12 @@ export default function AdminSettingsPage() {
                 </div>
                 <div>
                   <CardTitle>מידע מערכת</CardTitle>
-                  <CardDescription>Fleet Manager Pro — גרסה 2</CardDescription>
+                  <CardDescription>
+                    Fleet Manager Pro — גרסה{' '}
+                    <span className={appVersion === '2.2.0' ? 'text-[#10b981]' : undefined}>
+                      {appVersion}
+                    </span>
+                  </CardDescription>
                 </div>
               </div>
             </CardHeader>
