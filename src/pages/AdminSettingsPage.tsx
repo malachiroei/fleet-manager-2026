@@ -1,4 +1,5 @@
- import { useState, useEffect } from 'react';
+import type { ChangeEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
  import { Link } from 'react-router-dom';
  import { Button } from '@/components/ui/button';
  import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,7 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import PricingDataUploader from '@/components/PricingDataUploader';
 import FleetDataImporter from '@/components/FleetDataImporter';
-import { ArrowRight, Settings, Shield, Mail, Loader2, Monitor, Moon, Sun, Download, RefreshCw } from 'lucide-react';
+import { ArrowRight, Settings, Shield, Mail, Loader2, Monitor, Moon, Sun, Download, RefreshCw, RotateCcw } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { toast } from 'sonner';
  
@@ -78,7 +79,9 @@ export default function AdminSettingsPage() {
     const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
     const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
     const [isBackingUpSettings, setIsBackingUpSettings] = useState(false);
+    const [isRestoringSettings, setIsRestoringSettings] = useState(false);
     const lastUpdateDate = '18/03/2026';
+    const restoreInputRef = useRef<HTMLInputElement | null>(null);
 
     const formatDate = (iso: string | null) => {
       if (!iso) return 'לא בוצעה';
@@ -259,6 +262,122 @@ export default function AdminSettingsPage() {
       }
     };
 
+    const isValidFleetManagerBackup = (value: unknown): value is {
+      exportedAt: string;
+      lastUpdateDate: string;
+      app_settings: unknown[];
+      organization_configs: unknown[];
+      ui_settings?: unknown[] | null;
+      system_settings?: unknown[] | null;
+    } => {
+      if (!value || typeof value !== 'object') return false;
+      const obj = value as any;
+
+      if (typeof obj.exportedAt !== 'string') return false;
+      if (Number.isNaN(Date.parse(obj.exportedAt))) return false;
+
+      if (typeof obj.lastUpdateDate !== 'string') return false;
+      if (!/^\d{2}\/\d{2}\/\d{4}$/.test(obj.lastUpdateDate)) return false;
+
+      if (!Array.isArray(obj.app_settings)) return false;
+      if (!Array.isArray(obj.organization_configs)) return false;
+
+      return true;
+    };
+
+    const inferOnConflict = (rows: any[] | null | undefined): string | undefined => {
+      if (!rows || rows.length === 0) return undefined;
+      const first = rows[0];
+      if (!first || typeof first !== 'object') return undefined;
+      const keys = Object.keys(first);
+      if (keys.includes('id')) return 'id';
+      if (keys.includes('key')) return 'key';
+      return undefined;
+    };
+
+    const restoreSettingsFromFile = async (file: File) => {
+      setIsRestoringSettings(true);
+      try {
+        const raw = await file.text();
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          toast.error('Error: קובץ ה-JSON אינו תקין');
+          return;
+        }
+
+        if (!isValidFleetManagerBackup(parsed)) {
+          toast.error('Error: קובץ הגיבוי אינו תקין או אינו של Fleet Manager');
+          return;
+        }
+
+        const backup = parsed;
+
+        const appSettings = backup.app_settings ?? [];
+        const organizationConfigs = backup.organization_configs ?? [];
+        const uiSettings = (backup as any).ui_settings ?? null;
+        const systemSettings = (backup as any).system_settings ?? null;
+
+        const tasks: Array<Promise<any>> = [];
+
+        const appOnConflict = inferOnConflict(appSettings);
+        tasks.push(
+          appOnConflict
+            ? (supabase as any).from('app_settings').upsert(appSettings, { onConflict: appOnConflict })
+            : (supabase as any).from('app_settings').upsert(appSettings),
+        );
+
+        const orgOnConflict = inferOnConflict(organizationConfigs);
+        tasks.push(
+          orgOnConflict
+            ? (supabase as any).from('organization_configs').upsert(organizationConfigs, { onConflict: orgOnConflict })
+            : (supabase as any).from('organization_configs').upsert(organizationConfigs),
+        );
+
+        if (Array.isArray(uiSettings)) {
+          const uiOnConflict = inferOnConflict(uiSettings);
+          tasks.push(
+            uiOnConflict
+              ? (supabase as any).from('ui_settings').upsert(uiSettings, { onConflict: uiOnConflict })
+              : (supabase as any).from('ui_settings').upsert(uiSettings),
+          );
+        }
+
+        if (Array.isArray(systemSettings)) {
+          // system_settings uses `key` in this codebase (see notification_emails logic).
+          const sysOnConflict = inferOnConflict(systemSettings) ?? 'key';
+          tasks.push((supabase as any).from('system_settings').upsert(systemSettings, { onConflict: sysOnConflict }));
+        }
+
+        const results = await Promise.all(tasks);
+        const errors = results
+          .map((r) => (r as any)?.error)
+          .filter(Boolean);
+        if (errors.length > 0) throw errors[0];
+
+        toast.success('ההגדרות שוחזרו בהצלחה! מרענן את העמוד...');
+        setTimeout(() => window.location.reload(), 700);
+      } catch (err) {
+        console.error(err);
+        toast.error('Error: שחזור ההגדרות נכשל');
+      } finally {
+        setIsRestoringSettings(false);
+      }
+    };
+
+    const handleRestoreButtonClick = () => {
+      restoreInputRef.current?.click();
+    };
+
+    const handleRestoreFilePicked = async (e: ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      // Clear value so picking the same file again triggers change event.
+      e.target.value = '';
+      await restoreSettingsFromFile(file);
+    };
+
    return (
      <div className="min-h-screen bg-[#020617] text-white">
        <header className="bg-card border-b border-border sticky top-0 z-10">
@@ -428,6 +547,19 @@ export default function AdminSettingsPage() {
                     )}
                     גיבוי הגדרות
                   </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRestoreButtonClick}
+                    disabled={isRestoringSettings || isBackingUpSettings}
+                  >
+                    {isRestoringSettings ? (
+                      <Loader2 className="h-4 w-4 animate-spin ml-2" />
+                    ) : (
+                      <RotateCcw className="h-4 w-4 ml-2" />
+                    )}
+                    שחזור הגדרות
+                  </Button>
                   <Button variant="outline" size="sm" onClick={checkForUpdates} disabled={isCheckingUpdates}>
                     {isCheckingUpdates ? (
                       <Loader2 className="h-4 w-4 animate-spin ml-2" />
@@ -437,6 +569,14 @@ export default function AdminSettingsPage() {
                     בדוק עדכונים
                   </Button>
                 </div>
+
+                <input
+                  ref={restoreInputRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={handleRestoreFilePicked}
+                />
               </div>
             </CardContent>
           </Card>
