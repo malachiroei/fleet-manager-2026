@@ -202,40 +202,42 @@ export default function AdminSettingsPage() {
       const skippedParts: string[] = [];
       const failures: Record<string, string> = {};
 
-      // Tables actually referenced in the repo for settings/config:
-      // - ui_settings (useOrgSettings)
-      // - ui_customization (useUiLabels)
-      // - system_settings (AdminSettingsPage + sendHandoverEmail)
-      // - organizations (used as label/config source in useUiLabels)
-      const tableStrategies: Array<{ tableName: string; selectVariants: string[] }> = [
+      // Tables that we KNOW exist and are used in this app:
+      // - vehicles, drivers (core entities)
+      // - maintenance_logs (contains odometer_reading; treated as "odometer_logs" in backup)
+      // - organizations (fleet/org name used in AppLayout)
+      const tableStrategies: Array<{
+        tableName: string;
+        jsonKey: string;
+        selectVariants: string[];
+        // Conflict target suggestion for restore (not used during backup)
+        conflictTarget?: string;
+      }> = [
         {
-          tableName: 'system_settings',
-          selectVariants: ['key,value,updated_at', 'key,value', 'key'],
+          tableName: 'vehicles',
+          jsonKey: 'vehicles',
+          selectVariants: ['*'],
         },
         {
-          tableName: 'ui_settings',
-          selectVariants: [
-            'id,org_id,org_name,org_id_number,admin_email,health_statement_text,vehicle_policy_text,health_statement_pdf_url,vehicle_policy_pdf_url,updated_at',
-            'id,org_id,org_name,org_id_number,admin_email,updated_at',
-            'id,org_id',
-          ],
+          tableName: 'drivers',
+          jsonKey: 'drivers',
+          selectVariants: ['*'],
         },
         {
-          tableName: 'ui_customization',
-          selectVariants: [
-            'id,key,default_label,custom_label,is_visible,group_name,updated_at',
-            'id,key,custom_label,is_visible,group_name,updated_at',
-            'id,key',
-          ],
+          tableName: 'maintenance_logs',
+          // Backup key name requested by the user
+          jsonKey: 'odometer_logs',
+          selectVariants: ['*', 'id,vehicle_id,service_date,service_type,odometer_reading,garage_name,cost,notes,invoice_url,created_by,created_at'],
         },
         {
           tableName: 'organizations',
-          selectVariants: ['id,custom_labels,settings,updated_at', 'id,custom_labels,settings', 'id'],
+          jsonKey: 'organizations',
+          selectVariants: ['id,name,updated_at', 'id,name'],
         },
       ];
 
-      const fetchTable = async (tableName: string, selectVariants: string[]) => {
-        console.log(`[Backup] Start table '${tableName}'`);
+      const fetchTable = async (tableName: string, jsonKey: string, selectVariants: string[]) => {
+        console.log(`[Backup] Start table '${tableName}' (jsonKey='${jsonKey}')`);
         let lastErrorMessage = '';
 
         for (const select of selectVariants) {
@@ -249,8 +251,8 @@ export default function AdminSettingsPage() {
             }
 
             const rows = Array.isArray(data) ? data : data ? [data] : [];
-            backupPayload[tableName] = rows;
-            includedParts.push(tableName);
+            backupPayload[jsonKey] = rows;
+            includedParts.push(jsonKey);
             console.log(`[Backup] Success '${tableName}' rows=${rows.length}`);
             return;
           } catch (e) {
@@ -263,13 +265,14 @@ export default function AdminSettingsPage() {
         const reason = lastErrorMessage
           ? `All select variants failed. Last error: ${lastErrorMessage}`
           : `All select variants failed: ${selectVariants.join(' | ')}`;
+
         failures[tableName] = reason;
-        skippedParts.push(tableName);
-        console.log(`[Backup] Giving up '${tableName}':`, reason);
+        skippedParts.push(jsonKey);
+        console.log(`[Backup] Giving up '${tableName}' (jsonKey='${jsonKey}'):`, reason);
       };
 
       for (const s of tableStrategies) {
-        await fetchTable(s.tableName, s.selectVariants);
+        await fetchTable(s.tableName, s.jsonKey, s.selectVariants);
       }
 
       return { backupPayload, includedParts, skippedParts, failures };
@@ -370,9 +373,10 @@ export default function AdminSettingsPage() {
           try {
             const rowsArr = rows as any[];
             let conflictTarget: string | undefined;
-            if (tableName === 'system_settings') conflictTarget = 'key';
-            if (tableName === 'ui_customization') conflictTarget = 'key';
+            if (tableName === 'maintenance_logs') conflictTarget = 'id';
             if (tableName === 'organizations') conflictTarget = 'id';
+            if (tableName === 'vehicles') conflictTarget = 'id';
+            if (tableName === 'drivers') conflictTarget = 'id';
             if (!conflictTarget) conflictTarget = inferOnConflict(rowsArr) ?? undefined;
 
             const upsertResult = conflictTarget
@@ -387,12 +391,11 @@ export default function AdminSettingsPage() {
           }
         };
 
-        // Restore only tables that this page backs up.
-        const tablesToRestore = ['system_settings', 'ui_settings', 'ui_customization', 'organizations'];
-
-        for (const tableName of tablesToRestore) {
-          await tryUpsertTable(tableName, backup[tableName]);
-        }
+        // Restore only the tables that Backup exports.
+        await tryUpsertTable('vehicles', backup.vehicles);
+        await tryUpsertTable('drivers', backup.drivers);
+        await tryUpsertTable('maintenance_logs', backup.odometer_logs);
+        await tryUpsertTable('organizations', backup.organizations);
 
         if (restoredParts.length > 0) {
           toast.success('ההגדרות שוחזרו בהצלחה! מרענן את העמוד...');
