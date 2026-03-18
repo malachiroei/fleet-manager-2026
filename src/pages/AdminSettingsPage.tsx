@@ -202,28 +202,41 @@ export default function AdminSettingsPage() {
       const skippedParts: string[] = [];
 
       const fetchTable = async (tableName: string) => {
+        console.log(`[Backup] Attempting fetch table '${tableName}'`);
         try {
           const { data, error } = await (supabase as any).from(tableName).select('*');
-          if (error) throw error;
 
-          const rows = data ?? [];
-          if (!Array.isArray(rows)) throw new Error(`${tableName}: unexpected data shape`);
+          if (error) {
+            console.log(`[Backup] Failed '${tableName}':`, error);
+            skippedParts.push(tableName);
+            return;
+          }
 
+          const rows = Array.isArray(data) ? data : data ? [data] : [];
           backupPayload[tableName] = rows;
           includedParts.push(tableName);
+          console.log(`[Backup] Fetched '${tableName}' rows=${rows.length}`);
         } catch (e) {
-          console.warn(`backupSettings: ${tableName} fetch failed`, e);
+          console.log(`[Backup] Exception '${tableName}' fetch failed:`, e);
           skippedParts.push(tableName);
         }
       };
 
-      // Required by the spec
-      await fetchTable('app_settings');
-      await fetchTable('organization_configs');
+      // Try common table names used by this project.
+      // If a table doesn't exist in your environment, it will be skipped.
+      const candidateTables = [
+        // Legacy / spec-guess
+        'app_settings',
+        'organization_configs',
+        // Known tables used by hooks/admin logic
+        'ui_settings',
+        'system_settings',
+        'ui_customization',
+      ];
 
-      // Optional but useful for restoring UI/behavior
-      await fetchTable('ui_settings');
-      await fetchTable('system_settings');
+      for (const tableName of candidateTables) {
+        await fetchTable(tableName);
+      }
 
       return { backupPayload, includedParts, skippedParts };
     };
@@ -331,10 +344,18 @@ export default function AdminSettingsPage() {
           }
         };
 
-        await tryUpsertTable('app_settings', backup.app_settings);
-        await tryUpsertTable('organization_configs', backup.organization_configs);
-        await tryUpsertTable('ui_settings', backup.ui_settings);
-        await tryUpsertTable('system_settings', backup.system_settings);
+        // Restore using table names that may appear in the backup file
+        const candidateTables = [
+          'app_settings',
+          'organization_configs',
+          'ui_settings',
+          'system_settings',
+          'ui_customization',
+        ];
+
+        for (const tableName of candidateTables) {
+          await tryUpsertTable(tableName, backup[tableName]);
+        }
 
         if (restoredParts.length > 0) {
           toast.success('ההגדרות שוחזרו בהצלחה! מרענן את העמוד...');
