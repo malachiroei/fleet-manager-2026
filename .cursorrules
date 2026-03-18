@@ -1,0 +1,21 @@
+# Fleet Manager Pro - Critical Development Rules
+
+## 1. Multi-Tenancy & Data Isolation (HIGHEST PRIORITY)
+- This application serves multiple organizations. Every table includes an `org_id` column.
+- **NEVER** perform any SELECT, UPDATE, DELETE, or INSERT without strictly enforcing the `org_id` filter.
+- **CONSTRAINT:** Always use `.eq('org_id', profile.org_id)` in Supabase queries.
+- **STRICT RULE:** If you are unsure about the organization context for a change, YOU MUST STOP AND ASK: "Roei, which organization/user context should this apply to?"
+
+## 2. Protected UI Components
+- Keep the Footer (Test/Production) visible and fixed at all times.
+- Focus on `@VehicleHandoverWizard.tsx` for handover logic, but ensure it respects the `org_id` silo.
+
+## 3. Team Management & Permissions
+- When editing `TeamManagementPage`, ensure all interactive elements (Switches/Checkboxes) are properly bound to a functional state with `onChange` handlers.
+- New users/invites must be automatically assigned the `org_id` of the inviter.
+
+## 4. Operational Guidelines
+- Always prioritize editing ONLY the relevant file.
+- Use `inline` edits (Ctrl+K) for small changes.
+- Do not re-read the entire codebase unless explicitly requested.
+- If a change affects global logic, explain how you will prevent data leakage between organizations before proceeding.

@@ -1,0 +1,2 @@
+
+ALTER TABLE public.pricing_data DROP CONSTRAINT IF EXISTS pricing_data_manufacturer_code_model_code_year_key;

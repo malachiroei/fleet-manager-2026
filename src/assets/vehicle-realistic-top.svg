@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 520" role="img" aria-labelledby="title desc">
+  <title id="title">Realistic Top Car</title>
+  <desc id="desc">A realistic top-view vehicle illustration with metallic body and neon accents.</desc>
+  <defs>
+    <radialGradient id="shadowGlow" cx="50%" cy="56%" r="48%">
+      <stop offset="0%" stop-color="#1dd3ff" stop-opacity="0.26"/>
+      <stop offset="62%" stop-color="#0e3c63" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#000814" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="bodyMain" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#f6fbff"/>
+      <stop offset="30%" stop-color="#dbe8f8"/>
+      <stop offset="60%" stop-color="#b8cbe3"/>
+      <stop offset="100%" stop-color="#7f97b8"/>
+    </linearGradient>
+    <linearGradient id="bodyEdge" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#8ca6c3"/>
+      <stop offset="50%" stop-color="#f3f9ff"/>
+      <stop offset="100%" stop-color="#8ca6c3"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#1c3d5d"/>
+      <stop offset="100%" stop-color="#0f2238"/>
+    </linearGradient>
+    <linearGradient id="glassReflection" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#88d7ff" stop-opacity="0.4"/>
+      <stop offset="45%" stop-color="#88d7ff" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#88d7ff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="tailLight" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#0cc7ff" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#0cc7ff" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#0cc7ff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="softBlur" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="8"/>
+    </filter>
+    <filter id="metalShadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="16" stdDeviation="16" flood-color="#020817" flood-opacity="0.52"/>
+      <feDropShadow dx="0" dy="3" stdDeviation="2" flood-color="#d8ebff" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <ellipse cx="450" cy="285" rx="335" ry="175" fill="url(#shadowGlow)"/>
+  <ellipse cx="450" cy="337" rx="310" ry="44" fill="#021125" opacity="0.52" filter="url(#softBlur)"/>
+
+  <g filter="url(#metalShadow)">
+    <path d="M269 82c42-30 85-41 181-41s139 11 181 41c45 33 80 84 95 134 17 56 17 120 0 176-15 50-50 101-95 134-42 30-85 41-181 41s-139-11-181-41c-45-33-80-84-95-134-17-56-17-120 0-176 15-50 50-101 95-134Z" fill="url(#bodyMain)"/>
+    <path d="M300 98c36-24 78-34 150-34s114 10 150 34c40 27 69 70 81 113 16 55 16 117 0 172-12 43-41 86-81 113-36 24-78 34-150 34s-114-10-150-34c-40-27-69-70-81-113-16-55-16-117 0-172 12-43 41-86 81-113Z" fill="none" stroke="url(#bodyEdge)" stroke-width="6" stroke-opacity="0.75"/>
+
+    <path d="M366 127c24-11 52-16 84-16s60 5 84 16c26 12 44 32 51 54 9 30 9 56 0 86-7 22-25 42-51 54-24 11-52 16-84 16s-60-5-84-16c-26-12-44-32-51-54-9-30-9-56 0-86 7-22 25-42 51-54Z" fill="url(#glass)"/>
+    <path d="M356 344c24-11 52-16 94-16s70 5 94 16c26 12 46 33 54 56 8 24 8 44 0 68-8 23-28 44-54 56-24 11-52 16-94 16s-70-5-94-16c-26-12-46-33-54-56-8-24-8-44 0-68 8-23 28-44 54-56Z" fill="url(#glass)"/>
+
+    <path d="M380 139h140c24 0 43 19 43 43v88c0 24-19 43-43 43H380c-24 0-43-19-43-43v-88c0-24 19-43 43-43Z" fill="url(#glassReflection)"/>
+    <path d="M380 359h140c24 0 43 19 43 43v74c0 24-19 43-43 43H380c-24 0-43-19-43-43v-74c0-24 19-43 43-43Z" fill="url(#glassReflection)" opacity="0.52"/>
+
+    <path d="M313 226h-54c-17 0-31-14-31-31v-17c0-17 14-31 31-31h54c17 0 31 14 31 31v17c0 17-14 31-31 31Z" fill="#5f7997"/>
+    <path d="M641 226h54c17 0 31-14 31-31v-17c0-17-14-31-31-31h-54c-17 0-31 14-31 31v17c0 17 14 31 31 31Z" fill="#5f7997"/>
+
+    <path d="M313 356h-54c-17 0-31-14-31-31v-17c0-17 14-31 31-31h54c17 0 31 14 31 31v17c0 17-14 31-31 31Z" fill="#556e8b"/>
+    <path d="M641 356h54c17 0 31-14 31-31v-17c0-17-14-31-31-31h-54c-17 0-31 14-31 31v17c0 17 14 31 31 31Z" fill="#556e8b"/>
+  </g>
+
+  <rect x="365" y="90" width="170" height="10" rx="5" fill="url(#tailLight)"/>
+  <rect x="365" y="420" width="170" height="10" rx="5" fill="url(#tailLight)"/>
+</svg>
