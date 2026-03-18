@@ -3,8 +3,25 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+
+type SupabaseClientType = ReturnType<typeof createClient<Database>>;
+
+const createMissingSupabaseClient = (message: string): SupabaseClientType => {
+  // Prevents app from crashing at import-time when env vars are missing.
+  const missingError = new Error(message);
+  return new Proxy(
+    {},
+    {
+      get() {
+        return () => {
+          throw missingError;
+        };
+      },
+    }
+  ) as unknown as SupabaseClientType;
+};
 
 // Log current Supabase env configuration (without exposing full key)
 if (typeof window !== 'undefined') {
@@ -21,10 +38,16 @@ if (typeof window !== 'undefined') {
   });
 }
 
-export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: {
-    storage: localStorage,
-    persistSession: true,
-    autoRefreshToken: true,
-  }
-});
+const shouldInitSupabase = Boolean(SUPABASE_URL) && Boolean(SUPABASE_ANON_KEY);
+
+export const supabase: SupabaseClientType = shouldInitSupabase
+  ? createClient<Database>(SUPABASE_URL as string, SUPABASE_ANON_KEY as string, {
+      auth: {
+        storage: typeof window !== 'undefined' ? localStorage : undefined,
+        persistSession: true,
+        autoRefreshToken: true,
+      },
+    })
+  : createMissingSupabaseClient(
+      'Supabase client not initialized: missing VITE_SUPABASE_URL and/or VITE_SUPABASE_ANON_KEY in environment.'
+    );
