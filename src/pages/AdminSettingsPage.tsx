@@ -91,7 +91,7 @@ export default function AdminSettingsPage() {
     const CURRENT_VERSION_FALLBACK = '2.1.0';
     const VERSION_MANIFEST_RAW_URL =
       (import.meta.env.VITE_VERSION_MANIFEST_RAW_URL as string | undefined) ??
-      'https://raw.githubusercontent.com/fleet-manager-pro/fleet-manager-dev/main/version_manifest.json';
+      'https://raw.githubusercontent.com/malachiroei/fleet-manager-dev/main/version_manifest.json';
     const lastUpdateDate = '18/03/2026';
     const restoreInputRef = useRef<HTMLInputElement | null>(null);
 
