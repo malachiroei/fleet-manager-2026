@@ -414,7 +414,6 @@ export default function AdminSettingsPage() {
     };
 
     const startUpdateSimulation = async () => {
-      // Simulated process for Vercel — in the future this will guide the admin to pull latest code.
       setIsUpdateAvailableOpen(false);
       setIsUpdateProgressOpen(true);
       setIsSimulatingUpdate(true);
@@ -423,40 +422,27 @@ export default function AdminSettingsPage() {
       const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
       try {
+        // Immediately reflect the "real" update in local UI state (no DB call for now).
+        const newVersion = '2.2.0';
+        const effectiveLastUpdate = new Date(2026, 2, 19, 0, 45); // 19/03/2026 00:45
+        setAppVersion(newVersion);
+        setLastUpdateDate(formatDateTimeForUi(effectiveLastUpdate));
+
         setUpdateProgressStage('מוריד עדכונים...');
         setUpdateProgressValue(25);
         await sleep(700);
 
         setUpdateProgressStage('שומר הגדרות...');
         setUpdateProgressValue(60);
-        // Visible, deterministic "last update" timestamp for the 2.2.0 UI demo.
-        const effectiveLastUpdate = new Date(2026, 2, 18, 13, 0, 0); // 18/03/2026 13:00 local time
-        const newLastUpdateIso = effectiveLastUpdate.toISOString();
-        const newVersion = updateTargetVersion || appVersion;
-
-        // Persist update info so it stays after refresh.
-        const [{ error: appVersionError }, { error: lastUpdateError }] = await Promise.all([
-          (supabase as any)
-            .from('system_settings')
-            .upsert({ key: 'app_version', value: newVersion }, { onConflict: 'key' }),
-          (supabase as any)
-            .from('system_settings')
-            .upsert({ key: 'last_update_date', value: newLastUpdateIso }, { onConflict: 'key' }),
-        ]);
-
-        if (appVersionError) throw appVersionError;
-        if (lastUpdateError) throw lastUpdateError;
-
-        setAppVersion(newVersion);
-        setLastUpdateDate(formatDateTimeForUi(effectiveLastUpdate));
 
         setUpdateProgressStage('מפעיל מחדש...');
         setUpdateProgressValue(90);
         await sleep(800);
 
         setUpdateProgressValue(100);
-        toast.success('העדכון הושלם בהצלחה! מרענן את העמוד...');
-        window.location.reload();
+
+        toast.success('העדכון הושלם בהצלחה!');
+        setIsUpdateProgressOpen(false);
       } catch (err) {
         console.error(err);
         toast.error('Error: עדכון נכשל');
