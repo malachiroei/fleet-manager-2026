@@ -77,6 +77,7 @@ export default function AdminSettingsPage() {
     );
     const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
     const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
+    const [isBackingUpSettings, setIsBackingUpSettings] = useState(false);
     const lastUpdateDate = '18/03/2026';
 
     const formatDate = (iso: string | null) => {
@@ -183,29 +184,65 @@ export default function AdminSettingsPage() {
       }, 150);
     };
  
-    const backupSettings = () => {
-      const payload = {
+    const fetchBackupPayload = async () => {
+      const [{ data: appSettings, error: appSettingsError }, { data: organizationConfigs, error: organizationConfigsError }] =
+        await Promise.all([
+          (supabase as any).from('app_settings').select('*'),
+          (supabase as any).from('organization_configs').select('*'),
+        ]);
+
+      if (appSettingsError) throw appSettingsError;
+      if (organizationConfigsError) throw organizationConfigsError;
+
+      let uiSettings: any[] | null = null;
+      try {
+        const { data: uiSettingsData, error: uiSettingsError } = await (supabase as any).from('ui_settings').select('*');
+        if (!uiSettingsError) uiSettings = uiSettingsData ?? [];
+      } catch (e) {
+        console.warn('backupSettings: ui_settings fetch failed', e);
+      }
+
+      let systemSettings: any[] | null = null;
+      try {
+        const { data, error } = await (supabase as any).from('system_settings').select('*');
+        if (!error) systemSettings = data ?? [];
+      } catch (e) {
+        console.warn('backupSettings: system_settings fetch failed', e);
+      }
+
+      return {
         exportedAt: new Date().toISOString(),
+        lastUpdateDate,
         theme,
-        systemInfo: {
-          lastPricingUpload,
-          lastVehicleUpload,
-          lastDriverUpload,
-          lastUpdateDate,
-        },
-        notificationEmailsRaw,
+        app_settings: appSettings ?? [],
+        organization_configs: organizationConfigs ?? [],
+        ui_settings: uiSettings,
+        system_settings: systemSettings,
       };
+    };
 
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
+    const backupSettings = async () => {
+      setIsBackingUpSettings(true);
+      try {
+        const dateStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `fleet-manager-settings-backup-${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
+        const backupPayload = await fetchBackupPayload();
+        const blob = new Blob([JSON.stringify(backupPayload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
 
-      URL.revokeObjectURL(url);
-      toast.success('גיבוי ההגדרות ירד למחשב');
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `fleet_manager_backup_${dateStr}.json`;
+        a.click();
+
+        URL.revokeObjectURL(url);
+        toast.success('Success: גיבוי ההגדרות ירד למחשב');
+      } catch (err) {
+        console.error(err);
+        toast.error('Error: גיבוי ההגדרות נכשל');
+      } finally {
+        setIsBackingUpSettings(false);
+      }
     };
 
     const checkForUpdates = async () => {
@@ -383,8 +420,12 @@ export default function AdminSettingsPage() {
                 </Button>
 
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" size="sm" onClick={backupSettings}>
-                    <Download className="h-4 w-4 ml-2" />
+                  <Button variant="outline" size="sm" onClick={backupSettings} disabled={isBackingUpSettings}>
+                    {isBackingUpSettings ? (
+                      <Loader2 className="h-4 w-4 animate-spin ml-2" />
+                    ) : (
+                      <Download className="h-4 w-4 ml-2" />
+                    )}
                     גיבוי הגדרות
                   </Button>
                   <Button variant="outline" size="sm" onClick={checkForUpdates} disabled={isCheckingUpdates}>
