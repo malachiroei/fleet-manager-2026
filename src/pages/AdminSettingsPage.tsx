@@ -188,41 +188,44 @@ export default function AdminSettingsPage() {
     };
  
     const fetchBackupPayload = async () => {
-      const [{ data: appSettings, error: appSettingsError }, { data: organizationConfigs, error: organizationConfigsError }] =
-        await Promise.all([
-          (supabase as any).from('app_settings').select('*'),
-          (supabase as any).from('organization_configs').select('*'),
-        ]);
+      const appIdentifier = 'fleet-manager-pro';
+      const version = '2.0';
 
-      if (appSettingsError) throw appSettingsError;
-      if (organizationConfigsError) throw organizationConfigsError;
-
-      let uiSettings: any[] | null = null;
-      try {
-        const { data: uiSettingsData, error: uiSettingsError } = await (supabase as any).from('ui_settings').select('*');
-        if (!uiSettingsError) uiSettings = uiSettingsData ?? [];
-      } catch (e) {
-        console.warn('backupSettings: ui_settings fetch failed', e);
-      }
-
-      let systemSettings: any[] | null = null;
-      try {
-        const { data, error } = await (supabase as any).from('system_settings').select('*');
-        if (!error) systemSettings = data ?? [];
-      } catch (e) {
-        console.warn('backupSettings: system_settings fetch failed', e);
-      }
-
-      return {
-        appIdentifier: 'fleet-manager-pro',
+      const backupPayload: any = {
+        metadata: { appIdentifier, version },
         exportedAt: new Date().toISOString(),
         lastUpdateDate,
         theme,
-        app_settings: appSettings ?? [],
-        organization_configs: organizationConfigs ?? [],
-        ui_settings: uiSettings,
-        system_settings: systemSettings,
       };
+
+      const includedParts: string[] = [];
+      const skippedParts: string[] = [];
+
+      const fetchTable = async (tableName: string) => {
+        try {
+          const { data, error } = await (supabase as any).from(tableName).select('*');
+          if (error) throw error;
+
+          const rows = data ?? [];
+          if (!Array.isArray(rows)) throw new Error(`${tableName}: unexpected data shape`);
+
+          backupPayload[tableName] = rows;
+          includedParts.push(tableName);
+        } catch (e) {
+          console.warn(`backupSettings: ${tableName} fetch failed`, e);
+          skippedParts.push(tableName);
+        }
+      };
+
+      // Required by the spec
+      await fetchTable('app_settings');
+      await fetchTable('organization_configs');
+
+      // Optional but useful for restoring UI/behavior
+      await fetchTable('ui_settings');
+      await fetchTable('system_settings');
+
+      return { backupPayload, includedParts, skippedParts };
     };
 
     const backupSettings = async () => {
@@ -230,7 +233,7 @@ export default function AdminSettingsPage() {
       try {
         const dateStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
-        const backupPayload = await fetchBackupPayload();
+        const { backupPayload, includedParts, skippedParts } = await fetchBackupPayload();
         const blob = new Blob([JSON.stringify(backupPayload, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
 
@@ -240,7 +243,14 @@ export default function AdminSettingsPage() {
         a.click();
 
         URL.revokeObjectURL(url);
-        toast.success('Success: גיבוי ההגדרות ירד למחשב');
+
+        if (includedParts.length === 0) {
+          toast.error('Error: גיבוי נכשל (לא ניתן לקרוא אף טבלה)');
+        } else if (skippedParts.length > 0) {
+          toast.success(`Success: גיבוי ירד למחשב. הושמטו: ${skippedParts.join(', ')}`);
+        } else {
+          toast.success('Success: גיבוי ירד למחשב');
+        }
       } catch (err) {
         console.error(err);
         toast.error('Error: גיבוי ההגדרות נכשל');
@@ -263,30 +273,10 @@ export default function AdminSettingsPage() {
       }
     };
 
-    const isValidFleetManagerBackup = (value: unknown): value is {
-      appIdentifier: string;
-      exportedAt: string;
-      lastUpdateDate: string;
-      app_settings: unknown[];
-      organization_configs: unknown[];
-      ui_settings?: unknown[] | null;
-      system_settings?: unknown[] | null;
-    } => {
+    const isValidFleetManagerBackup = (value: unknown): value is { metadata: { appIdentifier: string } } => {
       if (!value || typeof value !== 'object') return false;
       const obj = value as any;
-
-      if (obj.appIdentifier !== 'fleet-manager-pro') return false;
-
-      if (typeof obj.exportedAt !== 'string') return false;
-      if (Number.isNaN(Date.parse(obj.exportedAt))) return false;
-
-      if (typeof obj.lastUpdateDate !== 'string') return false;
-      if (!/^\d{2}\/\d{2}\/\d{4}$/.test(obj.lastUpdateDate)) return false;
-
-      if (!Array.isArray(obj.app_settings)) return false;
-      if (!Array.isArray(obj.organization_configs)) return false;
-
-      return true;
+      return obj?.metadata?.appIdentifier === 'fleet-manager-pro';
     };
 
     const inferOnConflict = (rows: any[] | null | undefined): string | undefined => {
@@ -312,50 +302,51 @@ export default function AdminSettingsPage() {
         }
 
         if (!isValidFleetManagerBackup(parsed)) {
-          toast.error('Error: קובץ הגיבוי אינו תקין או חסר מזהה אפליקציה. בצע גיבוי חדש מהמערכת.');
+          toast.error('Error: קובץ הגיבוי אינו תקין (metadata.appIdentifier לא תקין). בצע גיבוי חדש מהמערכת.');
           return;
         }
 
-        const backup = parsed;
+        const backup = parsed as any;
 
-        const appSettings = backup.app_settings ?? [];
-        const organizationConfigs = backup.organization_configs ?? [];
-        const uiSettings = (backup as any).ui_settings ?? null;
-        const systemSettings = (backup as any).system_settings ?? null;
+        const restoredParts: string[] = [];
+        const failedParts: string[] = [];
 
-        const tasks: Array<Promise<any>> = [];
+        const tryUpsertTable = async (tableName: string, rows: unknown) => {
+          if (!Array.isArray(rows) || rows.length === 0) return;
+          try {
+            const rowsArr = rows as any[];
+            const inferredConflict = inferOnConflict(rowsArr);
+            const conflictTarget =
+              tableName === 'system_settings' ? inferredConflict ?? 'key' : inferredConflict ?? undefined;
 
-        if (appSettings.length > 0) {
-          const appOnConflict = inferOnConflict(appSettings) ?? 'id';
-          tasks.push((supabase as any).from('app_settings').upsert(appSettings, { onConflict: appOnConflict }));
+            const upsertResult = conflictTarget
+              ? await (supabase as any).from(tableName).upsert(rowsArr, { onConflict: conflictTarget })
+              : await (supabase as any).from(tableName).upsert(rowsArr);
+
+            if ((upsertResult as any)?.error) throw (upsertResult as any).error;
+            restoredParts.push(tableName);
+          } catch (e) {
+            console.error(`restoreSettingsFromFile: failed ${tableName}`, e);
+            failedParts.push(tableName);
+          }
+        };
+
+        await tryUpsertTable('app_settings', backup.app_settings);
+        await tryUpsertTable('organization_configs', backup.organization_configs);
+        await tryUpsertTable('ui_settings', backup.ui_settings);
+        await tryUpsertTable('system_settings', backup.system_settings);
+
+        if (restoredParts.length > 0) {
+          toast.success('ההגדרות שוחזרו בהצלחה! מרענן את העמוד...');
+          toast.success(`שוחזרו בהצלחה: ${restoredParts.join(', ')}`);
+          setTimeout(() => window.location.reload(), 700);
+        } else {
+          toast.error('Error: לא שוחזרו נתונים');
         }
 
-        if (organizationConfigs.length > 0) {
-          const orgOnConflict = inferOnConflict(organizationConfigs) ?? 'id';
-          tasks.push(
-            (supabase as any).from('organization_configs').upsert(organizationConfigs, { onConflict: orgOnConflict }),
-          );
+        if (failedParts.length > 0) {
+          toast.error(`שגיאה בשחזור עבור: ${failedParts.join(', ')}`);
         }
-
-        if (Array.isArray(uiSettings) && uiSettings.length > 0) {
-          const uiOnConflict = inferOnConflict(uiSettings) ?? 'id';
-          tasks.push((supabase as any).from('ui_settings').upsert(uiSettings, { onConflict: uiOnConflict }));
-        }
-
-        if (Array.isArray(systemSettings) && systemSettings.length > 0) {
-          // system_settings uses `key` in this codebase (see notification_emails logic).
-          const sysOnConflict = inferOnConflict(systemSettings) ?? 'key';
-          tasks.push((supabase as any).from('system_settings').upsert(systemSettings, { onConflict: sysOnConflict }));
-        }
-
-        const results = await Promise.all(tasks);
-        const errors = results
-          .map((r) => (r as any)?.error)
-          .filter(Boolean);
-        if (errors.length > 0) throw errors[0];
-
-        toast.success('ההגדרות שוחזרו בהצלחה! מרענן את העמוד...');
-        setTimeout(() => window.location.reload(), 700);
       } catch (err) {
         console.error(err);
         toast.error('Error: שחזור ההגדרות נכשל');
