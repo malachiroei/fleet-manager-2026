@@ -36,8 +36,9 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { user, signOut, profile, activeOrgId, memberOrganizations, setActiveOrgId, isAdmin, isManager } = useAuth();
   const email = (user?.email ?? '').toLowerCase();
   const appStatus = String(import.meta.env.VITE_APP_STATUS ?? '').toLowerCase();
-  const showWorkBanner =
-    appStatus === 'staging' || appStatus === 'development' || appStatus === 'dev' || appStatus === 'local';
+  // If the env var isn't set (common on new Vercel projects), default to "show" so it can't be missed.
+  // Explicitly hide only for production-like statuses.
+  const showWorkBanner = !['prod', 'production', 'source'].includes(appStatus) || !appStatus;
   const name = (profile?.full_name?.trim()) || user?.user_metadata?.full_name || email.split('@')[0] || '';
   const initials = (name || email || '?').slice(0, 2).toUpperCase();
   const isRtl = i18n.dir() === 'rtl';
@@ -656,15 +657,15 @@ export function AppLayout({ children }: AppLayoutProps) {
       dir={isRtl ? 'rtl' : 'ltr'}
     >
       {showWorkBanner && (
-        <div className="sticky top-0 z-[60] w-full border-b border-orange-300/30 bg-orange-500/20 text-orange-200 font-bold shadow-sm">
-          <div className="mx-auto flex max-w-[1920px] items-center px-4 py-2 text-sm sm:text-base">
-            גרסת עבודה - פיתוח
+        <div className="fixed left-0 right-0 top-0 z-[70] h-16 bg-red-600 animate-pulse border-b border-red-400/60 shadow-md">
+          <div className="mx-auto flex max-w-[1920px] h-full items-center justify-center px-4 sm:px-6">
+            <span className="font-extrabold text-2xl text-white">גרסת עבודה - פיתוח</span>
           </div>
         </div>
       )}
       {(isMainAdmin || isRavid) && viewAsEmail && (
         <div
-          className={`sticky z-50 w-full bg-amber-500 text-black shadow-md ${showWorkBanner ? 'top-9' : 'top-0'}`}
+          className={`sticky z-50 w-full bg-amber-500 text-black shadow-md ${showWorkBanner ? 'top-16' : 'top-0'}`}
         >
           <div className="mx-auto flex max-w-[1920px] items-center justify-between px-4 py-2 text-xs sm:text-sm">
             <span className="font-medium">
@@ -692,7 +693,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       )}
       <header
         className={`sticky z-40 border-b border-white/10 bg-[#0d1b2e] min-h-[4.25rem] sm:min-h-0 ${
-          showWorkBanner ? 'top-9' : 'top-0'
+          showWorkBanner ? 'top-16' : 'top-0'
         }`}
       >
         <div className="mx-auto flex max-w-[1920px] w-full flex-col gap-0 sm:gap-1 px-4 sm:px-6 py-3 sm:py-3">
