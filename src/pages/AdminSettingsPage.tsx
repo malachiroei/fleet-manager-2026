@@ -351,25 +351,7 @@ export default function AdminSettingsPage() {
           return 0;
         };
 
-        const getLocalManifestVersion = async (): Promise<string> => {
-          try {
-            const res = await fetch('/version_manifest.json', { cache: 'no-store' });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const json = (await res.json()) as Partial<VersionManifest>;
-            if (json?.version) return String(json.version);
-          } catch (e) {
-            console.warn('checkForUpdates: failed to fetch local version manifest', e);
-          }
-          return CURRENT_VERSION_FALLBACK;
-        };
-
-        if (!VERSION_MANIFEST_RAW_URL) {
-          toast.error('חסר VITE_VERSION_MANIFEST_RAW_URL — הגדר/י את ה-raw URL של version_manifest ב-GitHub');
-          return;
-        }
-
-        const localVersion = await getLocalManifestVersion();
-        const cacheBustedUrl = `${VERSION_MANIFEST_RAW_URL}${VERSION_MANIFEST_RAW_URL.includes('?') ? '&' : '?'}t=${Date.now()}`;
+        const cacheBustedUrl = `/version_manifest.json?t=${Date.now()}`;
         const latestRes = await fetch(cacheBustedUrl, { cache: 'no-store' });
         if (!latestRes.ok) throw new Error(`HTTP ${latestRes.status}`);
         const latestManifest = (await latestRes.json()) as Partial<VersionManifest>;
@@ -377,7 +359,7 @@ export default function AdminSettingsPage() {
         const latestVersion = latestManifest?.version ? String(latestManifest.version) : '';
         if (!latestVersion) throw new Error('Latest manifest missing "version"');
 
-        const cmp = compareSemver(latestVersion, localVersion);
+        const cmp = compareSemver(latestVersion, CURRENT_VERSION_FALLBACK);
         if (cmp > 0) {
           setUpdateTargetVersion(latestVersion);
           setIsUpdateAvailableOpen(true);
