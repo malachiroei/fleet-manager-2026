@@ -369,7 +369,8 @@ export default function AdminSettingsPage() {
         }
 
         const localVersion = await getLocalManifestVersion();
-        const latestRes = await fetch(VERSION_MANIFEST_RAW_URL, { cache: 'no-store' });
+        const cacheBustedUrl = `${VERSION_MANIFEST_RAW_URL}${VERSION_MANIFEST_RAW_URL.includes('?') ? '&' : '?'}t=${Date.now()}`;
+        const latestRes = await fetch(cacheBustedUrl, { cache: 'no-store' });
         if (!latestRes.ok) throw new Error(`HTTP ${latestRes.status}`);
         const latestManifest = (await latestRes.json()) as Partial<VersionManifest>;
 
