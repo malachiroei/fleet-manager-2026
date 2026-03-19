@@ -1,24 +1,28 @@
 import type { FC } from 'react';
 
-type FooterVariant = 'test' | 'source';
+type FooterVariant = 'test' | 'source' | null;
 
 function resolveFooterVariant(): FooterVariant {
-  const envTarget = String(import.meta.env.VITE_DEPLOY_TARGET ?? '').toLowerCase();
-  if (envTarget === 'test') return 'test';
-  if (envTarget === 'source' || envTarget === 'prod' || envTarget === 'production') return 'source';
-
   const hostname = window.location.hostname.toLowerCase();
+  const envTarget = String(import.meta.env.VITE_DEPLOY_TARGET ?? '').toLowerCase();
+
+  if (envTarget === 'test') return 'test';
   if (hostname === 'manager-2026-test.vercel.app' || hostname.includes('manager-2026-test')) {
     return 'test';
   }
-  if (hostname === 'fleet-manager-pro.com' || hostname.includes('fleet-manager-pro')) {
+
+  /** באנר אדום "גרסת מקור" — רק בדומיין המדויק (לא apex, לא Vercel preview) */
+  if (hostname === 'www.fleet-manager-pro.com') {
     return 'source';
   }
-  return 'source';
+
+  return null;
 }
 
 const Footer: FC = () => {
   const variant = resolveFooterVariant();
+  if (variant === null) return null;
+
   const isTest = variant === 'test';
 
   return (

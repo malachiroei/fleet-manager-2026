@@ -16,6 +16,9 @@
   "rewrites": [
     { "source": "/favicon.ico", "destination": "/app-icon-512.png" },
     { "source": "/favicon.png", "destination": "/app-icon-512.png" },
-    { "source": "/(.*)", "destination": "/" }
+    {
+      "source": "/((?!assets/).*)",
+      "destination": "/"
+    }
   ]
 }

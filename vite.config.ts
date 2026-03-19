@@ -4,6 +4,17 @@ import path from "path";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
+  base: mode === "production" ? "https://fleet-manager-dev.vercel.app/" : "/",
+  build: {
+    assetsDir: "assets",
+    rollupOptions: {
+      output: {
+        entryFileNames: "assets/[name].js",
+        chunkFileNames: "assets/[name].js",
+        assetFileNames: "assets/[name][extname]",
+      },
+    },
+  },
   server: {
     host: "::",
     port: 8080,

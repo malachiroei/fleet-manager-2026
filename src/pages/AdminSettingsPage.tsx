@@ -1,7 +1,7 @@
- import { useState, useEffect } from 'react';
- import { Link } from 'react-router-dom';
- import { Button } from '@/components/ui/button';
- import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/integrations/supabase/client';
@@ -13,8 +13,7 @@ import { ArrowRight, Settings, Shield, Mail, Loader2, Monitor, Moon, Sun } from 
 import { useTheme } from '@/hooks/useTheme';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
- 
-const VERSION_MANIFEST_URL = 'https://fleet-manager-dev.vercel.app/version_manifest.json';
+import { FLEET_VERSION_JSON_URL } from '@/constants/fleetUpdate';
 const BACKUP_TABLES = [
   'organizations',
   'org_members',
@@ -239,7 +238,7 @@ export default function AdminSettingsPage() {
     const checkForUpdates = async () => {
       setIsCheckingUpdates(true);
       try {
-        const res = await fetch(VERSION_MANIFEST_URL, { cache: 'no-store' });
+        const res = await fetch(FLEET_VERSION_JSON_URL, { cache: 'no-store' });
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }
@@ -249,7 +248,7 @@ export default function AdminSettingsPage() {
         setLastUpdateCheckLabel(checkedAt);
 
         if (!latest) {
-          toast.error('version_manifest.json לא מכיל שדה version');
+          toast.error('v.json לא מכיל שדה version');
           return;
         }
 

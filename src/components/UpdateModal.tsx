@@ -10,6 +10,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { clearServiceWorkerAndCaches } from '@/lib/registerServiceWorker';
+import { FLEET_FORCE_UPDATE_PRO_URL } from '@/constants/fleetUpdate';
 
 export type UpdateManifest = {
   version?: string;
@@ -71,8 +73,8 @@ export function UpdateModal({
       onVersionApplied?.(nextVersion);
     }
 
-    // Force hard refresh from the deployment host.
-    window.location.href = window.location.href;
+    await clearServiceWorkerAndCaches().catch(() => {});
+    window.location.assign(FLEET_FORCE_UPDATE_PRO_URL);
   };
 
   return (
