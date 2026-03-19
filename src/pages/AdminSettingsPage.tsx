@@ -21,19 +21,25 @@ export default function AdminSettingsPage() {
     const lastVehicleUpload = localStorage.getItem('last_vehicle_upload');
     const lastDriverUpload = localStorage.getItem('last_driver_upload');
     const showDevTools = (() => {
+      if (typeof window === 'undefined') return false;
+      const host = (window.location.hostname || '').toLowerCase();
+      const isAllowedHost =
+        host.includes('localhost') ||
+        host.includes('127.0.0.1') ||
+        (host.includes('vercel.app') && (host.includes('dev') || host.includes('staging')));
+
+      // Safety: never show dev/admin tools in production hostnames.
+      // (Prevents enabling via localStorage flag in prod.)
+      if (!isAllowedHost) return false;
+
       try {
         const flag = localStorage.getItem('fleet-manager-dev-tools');
         if (flag === '1' || flag === 'true') return true;
       } catch {
         // ignore
       }
-      if (typeof window === 'undefined') return false;
-      const host = (window.location.hostname || '').toLowerCase();
-      return (
-        host.includes('localhost') ||
-        host.includes('127.0.0.1') ||
-        (host.includes('vercel.app') && (host.includes('dev') || host.includes('staging')))
-      );
+
+      return true;
     })();
 
     // ── notification_emails — stored in system_settings table ─────────────────

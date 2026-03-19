@@ -40,20 +40,26 @@ export function AppLayout({ children }: AppLayoutProps) {
   // Explicitly hide only for production-like statuses.
   const showWorkBanner = !['prod', 'production', 'source'].includes(appStatus) || !appStatus;
   const shouldShowDevTools = (() => {
+    if (typeof window === 'undefined') return false;
+    const host = (window.location.hostname || '').toLowerCase();
+    const isAllowedHost =
+      host.includes('localhost') ||
+      host.includes('127.0.0.1') ||
+      (host.includes('vercel.app') && host.includes('dev')) ||
+      (host.includes('vercel.app') && host.includes('staging'))
+    ;
+
+    // Safety: never show dev/admin tools on production hostnames.
+    if (!isAllowedHost) return false;
+
     try {
       const flag = localStorage.getItem('fleet-manager-dev-tools');
       if (flag === '1' || flag === 'true') return true;
     } catch {
       // ignore
     }
-    if (typeof window === 'undefined') return false;
-    const host = (window.location.hostname || '').toLowerCase();
-    return (
-      host.includes('localhost') ||
-      host.includes('127.0.0.1') ||
-      (host.includes('vercel.app') && host.includes('dev')) ||
-      (host.includes('vercel.app') && host.includes('staging'))
-    );
+
+    return true;
   })();
   const name = (profile?.full_name?.trim()) || user?.user_metadata?.full_name || email.split('@')[0] || '';
   const initials = (name || email || '?').slice(0, 2).toUpperCase();
