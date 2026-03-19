@@ -14,8 +14,10 @@
     }
   ],
   "rewrites": [
+    { "source": "/v.json", "destination": "/v.json" },
+    { "source": "/version_manifest.json", "destination": "/v.json" },
     { "source": "/favicon.ico", "destination": "/app-icon-512.png" },
     { "source": "/favicon.png", "destination": "/app-icon-512.png" },
-    { "source": "/(.*)", "destination": "/" }
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

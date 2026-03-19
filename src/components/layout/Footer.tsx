@@ -44,7 +44,10 @@ const Footer: FC = () => {
         isTest ? 'bg-emerald-500' : 'bg-red-600'
       }`}
     >
-      {isTest ? 'גרסת טסט' : 'גרסת מקור'}
+      <div className="leading-tight">
+        {(isTest ? 'גרסת טסט' : 'גרסת מקור') + ` • v2.3.1`}
+      </div>
+      <div className="leading-tight text-[10px] mt-0.5">עודכן לאחרונה: 19/03/2026 21:25</div>
     </footer>
   );
 };

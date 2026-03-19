@@ -42,26 +42,10 @@ export function AppLayout({ children }: AppLayoutProps) {
   const shouldShowDevTools = (() => {
     if (typeof window === 'undefined') return false;
     const host = (window.location.hostname || '').toLowerCase();
-    const isAllowedHost =
-      host.includes('localhost') ||
-      host.includes('127.0.0.1') ||
-      (host.includes('vercel.app') && host.includes('dev')) ||
-      (host.includes('vercel.app') && host.includes('staging'))
-    ;
-
-    // Safety: never show dev/admin tools on production hostnames.
-    if (!isAllowedHost) return false;
-
-    try {
-      const flag = localStorage.getItem('fleet-manager-dev-tools');
-      if (flag === '1' || flag === 'true') return true;
-    } catch {
-      // ignore
-    }
-
-    return true;
+    // Dev tools banner appears ONLY on dev/test hosts.
+    // Requirements: hostname contains `dev` OR `localhost`.
+    return host.includes('localhost') || host.includes('dev');
   })();
-  const currentVersion = import.meta.env.VITE_APP_VERSION || '2.2.1';
   const name = (profile?.full_name?.trim()) || user?.user_metadata?.full_name || email.split('@')[0] || '';
   const initials = (name || email || '?').slice(0, 2).toUpperCase();
   const isRtl = i18n.dir() === 'rtl';
@@ -667,10 +651,10 @@ export function AppLayout({ children }: AppLayoutProps) {
             {t('navigation.fleetManager')}
           </span>
           <span className="block truncate text-[10px] text-cyan-400/55">
-            {orgName || (user ? '—' : t('navigation.proDashboard'))}
+            {orgName || 'הצי הראשי - רועי'}
           </span>
-          <span className="block truncate text-xs text-muted-foreground">
-            גרסה {currentVersion}
+          <span className="block truncate text-xs text-orange-400">
+            גרסה v2.3.1
           </span>
         </div>
       </div>

@@ -372,7 +372,7 @@ export default function OrgSettingsPage() {
   const checkForUpdates = async () => {
     setIsCheckingUpdates(true);
     try {
-      const res = await fetch(`/version_manifest.json?t=${Date.now()}`, { cache: 'no-store' });
+      const res = await fetch(`/v.json?t=${Date.now()}`, { cache: 'no-store' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as { version?: unknown };
       const latest = typeof json.version === 'string' ? json.version : '';

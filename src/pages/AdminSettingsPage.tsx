@@ -14,6 +14,7 @@ import FleetDataImporter from '@/components/FleetDataImporter';
 import { ArrowRight, Settings, Shield, Mail, Loader2, Monitor, Moon, Sun, Download, RefreshCw, RotateCcw } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { toast } from 'sonner';
+import { version as codeVersion } from '@/constants/version';
  
 export default function AdminSettingsPage() {
     const { theme, setTheme } = useTheme();
@@ -249,7 +250,7 @@ export default function AdminSettingsPage() {
     useEffect(() => {
       (async () => {
         try {
-          const res = await fetch(`/version_manifest.json?t=${Date.now()}`, { cache: 'no-store' });
+          const res = await fetch(`/v.json?t=${Date.now()}`, { cache: 'no-store' });
           if (!res.ok) return;
           const json = (await res.json()) as { version?: unknown };
           if (typeof json.version === 'string' && json.version.trim()) {
@@ -512,7 +513,7 @@ export default function AdminSettingsPage() {
           return 0;
         };
 
-        const cacheBustedUrl = `/version_manifest.json?t=${Date.now()}`;
+        const cacheBustedUrl = `/v.json?t=${Date.now()}`;
         const latestRes = await fetch(cacheBustedUrl, { cache: 'no-store' });
         if (!latestRes.ok) throw new Error(`HTTP ${latestRes.status}`);
         const latestManifest = (await latestRes.json()) as Partial<VersionManifest>;
@@ -620,7 +621,7 @@ export default function AdminSettingsPage() {
     const openPublishModal = async () => {
       setIsPublishing(false);
       try {
-        const cacheBustedUrlManifest = `/version_manifest.json?t=${Date.now()}`;
+        const cacheBustedUrlManifest = `/v.json?t=${Date.now()}`;
         const cacheBustedUrlPending = `/pending_changes.json?t=${Date.now()}`;
 
         const [manifestRes, pendingRes] = await Promise.all([
@@ -665,11 +666,11 @@ export default function AdminSettingsPage() {
       const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
       try {
-        const manifestRes = await fetch(`/version_manifest.json?t=${Date.now()}`, { cache: 'no-store' });
+        const manifestRes = await fetch(`/v.json?t=${Date.now()}`, { cache: 'no-store' });
         if (!manifestRes.ok) throw new Error(`manifest fetch failed: HTTP ${manifestRes.status}`);
         const manifestJson = (await manifestRes.json()) as Record<string, unknown>;
 
-        setPublishProgressStage('מעדכן version_manifest.json...');
+        setPublishProgressStage('מעדכן v.json...');
         setPublishProgressValue(35);
         await sleep(400);
 
@@ -694,8 +695,8 @@ export default function AdminSettingsPage() {
         await sleep(500);
 
         // Download artifacts (browser cannot directly write into repo/static files)
-        downloadJsonFile('version_manifest.json', newManifest);
-        downloadJsonFile('public_version_manifest.json', newManifest);
+        downloadJsonFile('v.json', newManifest);
+        downloadJsonFile('public_v.json', newManifest);
         downloadJsonFile('pending_changes.json', clearedPending);
         downloadJsonFile('public_pending_changes.json', clearedPending);
 
@@ -946,8 +947,8 @@ export default function AdminSettingsPage() {
                   <CardTitle>מידע מערכת</CardTitle>
                   <CardDescription>
                     Fleet Manager Pro — גרסה{' '}
-                    <span className={appVersion === latestManifestVersion ? 'text-[#10b981]' : undefined}>
-                      {appVersion}
+                    <span className={codeVersion === latestManifestVersion ? 'text-[#10b981]' : undefined}>
+                      {codeVersion}
                     </span>
                   </CardDescription>
                 </div>
@@ -1130,7 +1131,7 @@ export default function AdminSettingsPage() {
                   <div className="space-y-3">
                     <Progress value={publishProgressValue} className="h-2" />
                     <p className="text-xs text-muted-foreground">
-                      היישום יכין את הקבצים המעודכנים (version_manifest.json + pending_changes.json) להורדה במחשב.
+                      היישום יכין את הקבצים המעודכנים (v.json + pending_changes.json) להורדה במחשב.
                     </p>
                   </div>
                 </DialogContent>
