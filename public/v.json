@@ -1,7 +1,7 @@
 {
-    "version": "2.3.1",
-    "releaseDate": "19/03/2026",
-    "releaseTime": "21:25",
-    "description": "ניקוי שולחן לגרסה 2.3.1",
-    "changelog": "ניקוי שולחן לגרסה 2.3.1."
+    "version": "2.4.2",
+    "releaseDate": "18/03/2026",
+    "releaseTime": "23:30",
+    "description": "עדכון: ניווט לשרת הטסט + ניקוי SW/Cache",
+    "changelog": "כפתור עדכן → fleet-manager-dev עם ?updated=true; נכסי build עם base מלא לטסט."
   }
