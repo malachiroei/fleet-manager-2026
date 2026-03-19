@@ -8,6 +8,12 @@ import { Progress } from '@/components/ui/progress';
 import { Upload, FileSpreadsheet, Loader2, Check, AlertCircle, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
+import { supabase } from '@/integrations/supabase/client';
+
+interface PricingDataUploaderProps {
+  orgId?: string | null;
+  onPricingUploadSaved?: (iso: string) => void;
+}
 
 interface ParsedRow {
   manufacturer_code: string;
@@ -165,7 +171,7 @@ function extractRow(values: string[], colMap: Record<string, number>): ParsedRow
   };
 }
 
-export default function PricingDataUploader() {
+export default function PricingDataUploader({ orgId, onPricingUploadSaved }: PricingDataUploaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadMutation = useUploadPricingData();
   const syncMutation = useSyncVehiclesFromPricing();
@@ -177,6 +183,20 @@ export default function PricingDataUploader() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStartTime, setUploadStartTime] = useState<number | null>(null);
   const [estimatedTimeLeft, setEstimatedTimeLeft] = useState<string>('');
+
+  const saveUploadTimestamp = async (iso: string) => {
+    localStorage.setItem('last_pricing_upload', iso);
+    if (orgId) {
+      const { error } = await (supabase as any)
+        .from('system_settings')
+        .upsert(
+          { key: `last_pricing_upload_${orgId}`, value: iso },
+          { onConflict: 'key' }
+        );
+      if (error) throw error;
+    }
+    onPricingUploadSaved?.(iso);
+  };
 
   const parseCSV = (text: string): ParsedRow[] => {
     const lines = text.trim().split(/\r?\n/);
@@ -260,33 +280,30 @@ export default function PricingDataUploader() {
   const handleUpload = async () => {
     if (parsedRows.length === 0) { toast.error('אין נתונים להעלאה'); return; }
     setUploadProgress(0);
-    setUploadStartTime(Date.now());
+    const startedAt = Date.now();
+    setUploadStartTime(startedAt);
     setEstimatedTimeLeft('מחשב...');
     try {
-      // Simulate progress based on chunk processing
-      const totalChunks = Math.ceil(parsedRows.length / 1000);
-      let completedChunks = 0;
-      
-      const progressInterval = setInterval(() => {
-        if (uploadStartTime) {
-          const elapsed = (Date.now() - (uploadStartTime || Date.now())) / 1000;
-          const progress = Math.min(uploadProgress + 2, 95);
+      await uploadMutation.mutateAsync({
+        rows: parsedRows,
+        onProgress: (progress) => {
           setUploadProgress(progress);
-          if (progress > 10) {
+          const elapsed = (Date.now() - startedAt) / 1000;
+          if (progress > 5) {
             const totalEstimate = (elapsed / progress) * 100;
             const remaining = Math.max(0, totalEstimate - elapsed);
-            setEstimatedTimeLeft(remaining < 60 ? `${Math.ceil(remaining)} שניות` : `${Math.ceil(remaining / 60)} דקות`);
+            setEstimatedTimeLeft(
+              remaining < 60 ? `${Math.ceil(remaining)} שניות` : `${Math.ceil(remaining / 60)} דקות`
+            );
           }
-        }
-      }, 500);
-
-      await uploadMutation.mutateAsync(parsedRows);
-      clearInterval(progressInterval);
+        },
+      });
       setUploadProgress(100);
       setEstimatedTimeLeft('');
       
       // Save last upload timestamp
-      localStorage.setItem('last_pricing_upload', new Date().toISOString());
+      const nowIso = new Date().toISOString();
+      await saveUploadTimestamp(nowIso);
       refetchCount();
       
       setTimeout(() => {

@@ -178,7 +178,13 @@ export function useUploadPricingData() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (rows: Omit<PricingData, 'id' | 'created_at' | 'updated_at'>[]) => {
+    mutationFn: async ({
+      rows,
+      onProgress,
+    }: {
+      rows: Omit<PricingData, 'id' | 'created_at' | 'updated_at'>[];
+      onProgress?: (percent: number) => void;
+    }) => {
       if (rows.length === 0) return { insertedCount: 0 };
 
       // Delete existing data first
@@ -188,9 +194,11 @@ export function useUploadPricingData() {
         .neq('id', '00000000-0000-0000-0000-000000000000');
 
       if (deleteError) throw deleteError;
+      onProgress?.(5);
 
       const chunkSize = 1000;
       let insertedCount = 0;
+      const totalChunks = Math.max(1, Math.ceil(rows.length / chunkSize));
 
       for (let index = 0; index < rows.length; index += chunkSize) {
         const chunk = rows.slice(index, index + chunkSize);
@@ -200,8 +208,12 @@ export function useUploadPricingData() {
 
         if (error) throw error;
         insertedCount += chunk.length;
+        const completedChunks = Math.floor(index / chunkSize) + 1;
+        const ratio = completedChunks / totalChunks;
+        onProgress?.(Math.min(95, Math.round(5 + ratio * 90)));
       }
 
+      onProgress?.(100);
       return { insertedCount };
     },
     onSuccess: (data) => {

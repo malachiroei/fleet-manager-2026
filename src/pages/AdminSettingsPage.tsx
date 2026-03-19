@@ -11,6 +11,7 @@ import FleetDataImporter from '@/components/FleetDataImporter';
 import { UpdateModal, type UpdateManifest } from '@/components/UpdateModal';
 import { ArrowRight, Settings, Shield, Mail, Loader2, Monitor, Moon, Sun } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
+import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
  
 const VERSION_MANIFEST_URL = 'https://fleet-manager-dev.vercel.app/version_manifest.json';
@@ -33,7 +34,10 @@ const BACKUP_TABLES = [
 
 export default function AdminSettingsPage() {
     const { theme, setTheme } = useTheme();
-    const lastPricingUpload = localStorage.getItem('last_pricing_upload');
+    const { activeOrgId } = useAuth();
+    const [lastPricingUpload, setLastPricingUpload] = useState<string | null>(
+      localStorage.getItem('last_pricing_upload')
+    );
     const lastVehicleUpload = localStorage.getItem('last_vehicle_upload');
     const lastDriverUpload = localStorage.getItem('last_driver_upload');
     const envVersion = (import.meta as any).env?.VITE_APP_VERSION || '2';
@@ -73,6 +77,27 @@ export default function AdminSettingsPage() {
         }
       })();
     }, []);
+
+    useEffect(() => {
+      if (!activeOrgId) return;
+      (async () => {
+        try {
+          const { data, error } = await (supabase as any)
+            .from('system_settings')
+            .select('value')
+            .eq('key', `last_pricing_upload_${activeOrgId}`)
+            .maybeSingle();
+          if (error) throw error;
+          const value = typeof data?.value === 'string' ? data.value : null;
+          if (value) {
+            setLastPricingUpload(value);
+            localStorage.setItem('last_pricing_upload', value);
+          }
+        } catch {
+          // fallback to localStorage value
+        }
+      })();
+    }, [activeOrgId]);
 
     const saveNotificationEmails = async () => {
       const emails = notificationEmailsRaw
@@ -302,7 +327,10 @@ export default function AdminSettingsPage() {
  
        <main className="container py-6 space-y-6">
          {/* Pricing Data Uploader */}
-          <PricingDataUploader />
+          <PricingDataUploader
+            orgId={activeOrgId ?? null}
+            onPricingUploadSaved={(iso) => setLastPricingUpload(iso)}
+          />
 
           {/* Fleet Data Importer */}
           <FleetDataImporter />
