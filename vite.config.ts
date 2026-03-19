@@ -8,9 +8,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   
   return {
-    // ב-production: כל ה-scriptים וה-styles ב-index נטענים עם URL מלא לשרת הטסט (Vite base).
-    // ב-dev נשאר '/' כדי ש־npm run dev ימשיך לעבוד מקומית.
-    base: mode === 'production' ? 'https://fleet-manager-dev.vercel.app/' : '/',
+    base: '/',
     server: {
       host: "::",
       port: 8080,
@@ -23,11 +21,13 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [react()],
     build: {
+      outDir: 'dist',
+      assetsDir: 'assets',
       rollupOptions: {
         output: {
-          entryFileNames: "assets/[name]-orange-[hash].js",
-          chunkFileNames: "assets/[name]-orange-[hash].js",
-          assetFileNames: "assets/[name]-orange-[hash][extname]",
+          entryFileNames: "assets/[name].js",
+          chunkFileNames: "assets/[name].js",
+          assetFileNames: "assets/[name][extname]",
         },
       },
     },
