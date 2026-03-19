@@ -61,6 +61,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
     return true;
   })();
+  const currentVersion = import.meta.env.VITE_APP_VERSION || '2.2.1';
   const name = (profile?.full_name?.trim()) || user?.user_metadata?.full_name || email.split('@')[0] || '';
   const initials = (name || email || '?').slice(0, 2).toUpperCase();
   const isRtl = i18n.dir() === 'rtl';
@@ -667,6 +668,9 @@ export function AppLayout({ children }: AppLayoutProps) {
           </span>
           <span className="block truncate text-[10px] text-cyan-400/55">
             {orgName || (user ? '—' : t('navigation.proDashboard'))}
+          </span>
+          <span className="block truncate text-xs text-muted-foreground">
+            גרסה {currentVersion}
           </span>
         </div>
       </div>
