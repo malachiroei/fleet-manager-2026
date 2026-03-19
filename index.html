@@ -30,6 +30,11 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <!-- Empty-ish title so home screen shows icon only where OS allows -->
     <meta name="apple-mobile-web-app-title" content="&#x2060;" />
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
+      }
+    </script>
   </head>
 
   <body>

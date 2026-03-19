@@ -177,6 +177,7 @@ const ORG_DETAILS_EDIT_CODE = '2101';
 
 // ─── Main Page ─────────────────────────────────────────────────────
 export default function OrgSettingsPage() {
+  const DEV_MANIFEST_URL = 'https://fleet-manager-dev.vercel.app/v.json';
   const { activeOrgId, isAdmin, isManager, isDriver, hasPermission } = useAuth();
   const isDriverOnly = Boolean(isDriver && !isManager && !isAdmin);
   const readOnly = isDriverOnly || !hasPermission('admin_access');
@@ -372,7 +373,7 @@ export default function OrgSettingsPage() {
   const checkForUpdates = async () => {
     setIsCheckingUpdates(true);
     try {
-      const res = await fetch(`/v.json?t=${Date.now()}`, { cache: 'no-store' });
+      const res = await fetch(`${DEV_MANIFEST_URL}?t=${Date.now()}`, { cache: 'no-store' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as { version?: unknown };
       const latest = typeof json.version === 'string' ? json.version : '';

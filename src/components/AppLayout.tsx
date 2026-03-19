@@ -653,8 +653,8 @@ export function AppLayout({ children }: AppLayoutProps) {
           <span className="block truncate text-[10px] text-cyan-400/55">
             {orgName || 'הצי הראשי - רועי'}
           </span>
-          <span className="block truncate text-xs text-orange-400">
-            גרסה v2.3.1
+          <span className="block truncate text-xs" style={{ color: 'orange' }}>
+            גרסה v2.4.2
           </span>
         </div>
       </div>

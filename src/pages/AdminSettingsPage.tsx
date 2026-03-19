@@ -15,8 +15,10 @@ import { ArrowRight, Settings, Shield, Mail, Loader2, Monitor, Moon, Sun, Downlo
 import { useTheme } from '@/hooks/useTheme';
 import { toast } from 'sonner';
 import { version as codeVersion } from '@/constants/version';
+import { updateAppFromTestDeploy } from '@/lib/testDeployUpdate';
  
 export default function AdminSettingsPage() {
+    const DEV_MANIFEST_URL = 'https://fleet-manager-dev.vercel.app/v.json';
     const { theme, setTheme } = useTheme();
     const [lastPricingUpload, setLastPricingUpload] = useState<string | null>(localStorage.getItem('last_pricing_upload'));
     const lastVehicleUpload = localStorage.getItem('last_vehicle_upload');
@@ -250,7 +252,7 @@ export default function AdminSettingsPage() {
     useEffect(() => {
       (async () => {
         try {
-          const res = await fetch(`/v.json?t=${Date.now()}`, { cache: 'no-store' });
+          const res = await fetch(`${DEV_MANIFEST_URL}?t=${Date.now()}`, { cache: 'no-store' });
           if (!res.ok) return;
           const json = (await res.json()) as { version?: unknown };
           if (typeof json.version === 'string' && json.version.trim()) {
@@ -513,7 +515,7 @@ export default function AdminSettingsPage() {
           return 0;
         };
 
-        const cacheBustedUrl = `/v.json?t=${Date.now()}`;
+        const cacheBustedUrl = `${DEV_MANIFEST_URL}?t=${Date.now()}`;
         const latestRes = await fetch(cacheBustedUrl, { cache: 'no-store' });
         if (!latestRes.ok) throw new Error(`HTTP ${latestRes.status}`);
         const latestManifest = (await latestRes.json()) as Partial<VersionManifest>;
@@ -546,9 +548,9 @@ export default function AdminSettingsPage() {
       const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
       try {
-        // Immediately reflect the "real" update in local UI state (no DB call for now).
-        const newVersion = '2.2.0';
-        const effectiveLastUpdate = new Date(2026, 2, 19, 0, 45); // 19/03/2026 00:45
+        // Immediately reflect the target version in local state לפני מעבר לשרת הטסט
+        const newVersion = updateTargetVersion.trim() || appVersion;
+        const effectiveLastUpdate = new Date();
         setAppVersion(newVersion);
         setLastUpdateDate(formatDateTimeForUi(effectiveLastUpdate));
         try {
@@ -571,8 +573,10 @@ export default function AdminSettingsPage() {
 
         setUpdateProgressValue(100);
 
-        toast.success('העדכון הושלם בהצלחה!');
+        toast.success('העדכון הושלם בהצלחה! מעביר לשרת הטסט לטעינת קבצים מעודכנים...');
         setIsUpdateProgressOpen(false);
+
+        await updateAppFromTestDeploy();
       } catch (err) {
         console.error(err);
         toast.error('Error: עדכון נכשל');
@@ -621,7 +625,7 @@ export default function AdminSettingsPage() {
     const openPublishModal = async () => {
       setIsPublishing(false);
       try {
-        const cacheBustedUrlManifest = `/v.json?t=${Date.now()}`;
+        const cacheBustedUrlManifest = `${DEV_MANIFEST_URL}?t=${Date.now()}`;
         const cacheBustedUrlPending = `/pending_changes.json?t=${Date.now()}`;
 
         const [manifestRes, pendingRes] = await Promise.all([
@@ -666,7 +670,7 @@ export default function AdminSettingsPage() {
       const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
       try {
-        const manifestRes = await fetch(`/v.json?t=${Date.now()}`, { cache: 'no-store' });
+        const manifestRes = await fetch(`${DEV_MANIFEST_URL}?t=${Date.now()}`, { cache: 'no-store' });
         if (!manifestRes.ok) throw new Error(`manifest fetch failed: HTTP ${manifestRes.status}`);
         const manifestJson = (await manifestRes.json()) as Record<string, unknown>;
 

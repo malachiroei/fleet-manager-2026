@@ -45,9 +45,8 @@ const Footer: FC = () => {
       }`}
     >
       <div className="leading-tight">
-        {(isTest ? 'גרסת טסט' : 'גרסת מקור') + ` • v2.3.1`}
+        {isTest ? 'גרסת טסט' : 'גרסת מקור'}
       </div>
-      <div className="leading-tight text-[10px] mt-0.5">עודכן לאחרונה: 19/03/2026 21:25</div>
     </footer>
   );
 };
