@@ -296,10 +296,18 @@ export default function PricingDataUploader() {
       const uploadedAtIso = new Date().toISOString();
       localStorage.setItem('last_pricing_upload', uploadedAtIso);
       try {
-        const { error } = await supabase
-          .from('system_settings')
-          .upsert({ key: 'last_pricing_upload_date', value: uploadedAtIso }, { onConflict: 'key' });
-        if (error) throw error;
+        const upserts = await Promise.all([
+          supabase.from('system_settings').upsert(
+            { key: 'last_pricing_upload_date', value: uploadedAtIso },
+            { onConflict: 'key' },
+          ),
+          supabase.from('system_settings').upsert(
+            { key: 'last_pricing_upload', value: uploadedAtIso },
+            { onConflict: 'key' },
+          ),
+        ]);
+        const anyError = upserts.map((r) => (r as any).error).find(Boolean);
+        if (anyError) throw anyError;
       } catch (e) {
         console.warn('PricingDataUploader: failed saving last_pricing_upload_date', e);
         toast.warning('העלאה הצליחה, אבל שמירת התאריך למערכת נכשלה');

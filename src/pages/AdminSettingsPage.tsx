@@ -20,6 +20,21 @@ export default function AdminSettingsPage() {
     const [lastPricingUpload, setLastPricingUpload] = useState<string | null>(localStorage.getItem('last_pricing_upload'));
     const lastVehicleUpload = localStorage.getItem('last_vehicle_upload');
     const lastDriverUpload = localStorage.getItem('last_driver_upload');
+    const showDevTools = (() => {
+      try {
+        const flag = localStorage.getItem('fleet-manager-dev-tools');
+        if (flag === '1' || flag === 'true') return true;
+      } catch {
+        // ignore
+      }
+      if (typeof window === 'undefined') return false;
+      const host = (window.location.hostname || '').toLowerCase();
+      return (
+        host.includes('localhost') ||
+        host.includes('127.0.0.1') ||
+        (host.includes('vercel.app') && (host.includes('dev') || host.includes('staging')))
+      );
+    })();
 
     // ── notification_emails — stored in system_settings table ─────────────────
     const [notificationEmailsRaw, setNotificationEmailsRaw] = useState('malachiroei@gmail.com');
@@ -63,15 +78,18 @@ export default function AdminSettingsPage() {
         try {
           const { data, error } = await (supabase as any)
             .from('system_settings')
-            .select('value')
-            .eq('key', 'last_pricing_upload_date')
-            .maybeSingle();
+            .select('key,value')
+            .in('key', ['last_pricing_upload_date', 'last_pricing_upload']);
 
           if (error) throw error;
-          const v = data?.value;
-          if (typeof v === 'string' && v.trim()) {
-            setLastPricingUpload(v);
-            localStorage.setItem('last_pricing_upload', v);
+          const rows = Array.isArray(data) ? data : [];
+          const picked =
+            rows.find((r: any) => r?.key === 'last_pricing_upload_date')?.value ??
+            rows.find((r: any) => r?.key === 'last_pricing_upload')?.value;
+
+          if (typeof picked === 'string' && picked.trim()) {
+            setLastPricingUpload(picked);
+            localStorage.setItem('last_pricing_upload', picked);
           }
         } catch (e) {
           // best-effort; localStorage fallback already exists
@@ -141,11 +159,26 @@ export default function AdminSettingsPage() {
     const [isPublishing, setIsPublishing] = useState(false);
 
     const DEFAULT_APP_VERSION = '2.1.0';
-    const [appVersion, setAppVersion] = useState<string>(DEFAULT_APP_VERSION);
+    const [appVersion, setAppVersion] = useState<string>(() => {
+      try {
+        return localStorage.getItem('fleet-manager-app_version') || DEFAULT_APP_VERSION;
+      } catch {
+        return DEFAULT_APP_VERSION;
+      }
+    });
     // Default visible timestamp for the last update (updated by the "עדכן" flow)
-    const [lastUpdateDate, setLastUpdateDate] = useState<string>(() =>
-      formatDateTimeForUi(new Date(2026, 2, 18, 13, 0, 0)),
-    );
+    const [lastUpdateDate, setLastUpdateDate] = useState<string>(() => {
+      try {
+        const iso = localStorage.getItem('fleet-manager-last_update_date_iso');
+        if (iso) {
+          const ms = Date.parse(iso);
+          if (!Number.isNaN(ms)) return formatDateTimeForUi(new Date(ms));
+        }
+      } catch {
+        // ignore
+      }
+      return formatDateTimeForUi(new Date(2026, 2, 18, 13, 0, 0));
+    });
 
     const [latestManifestVersion, setLatestManifestVersion] = useState<string>(DEFAULT_APP_VERSION);
 
@@ -163,6 +196,24 @@ export default function AdminSettingsPage() {
     useEffect(() => {
       (async () => {
         try {
+          // Prefer local persistence (prevents resetting to older versions after simplified update).
+          try {
+            const localVersion = localStorage.getItem('fleet-manager-app_version');
+            const localLastIso = localStorage.getItem('fleet-manager-last_update_date_iso');
+            if (localVersion && localLastIso) {
+              setAppVersion(localVersion);
+              const ms = Date.parse(localLastIso);
+              if (!Number.isNaN(ms)) {
+                setLastUpdateDate(formatDateTimeForUi(new Date(ms)));
+              } else {
+                setLastUpdateDate(localLastIso);
+              }
+              return;
+            }
+          } catch {
+            // ignore localStorage issues
+          }
+
           const [{ data: versionRow }, { data: lastUpdateRow }] = await Promise.all([
             (supabase as any).from('system_settings').select('value').eq('key', 'app_version').maybeSingle(),
             (supabase as any).from('system_settings').select('value').eq('key', 'last_update_date').maybeSingle(),
@@ -493,6 +544,12 @@ export default function AdminSettingsPage() {
         const effectiveLastUpdate = new Date(2026, 2, 19, 0, 45); // 19/03/2026 00:45
         setAppVersion(newVersion);
         setLastUpdateDate(formatDateTimeForUi(effectiveLastUpdate));
+        try {
+          localStorage.setItem('fleet-manager-app_version', newVersion);
+          localStorage.setItem('fleet-manager-last_update_date_iso', effectiveLastUpdate.toISOString());
+        } catch {
+          // ignore
+        }
 
         setUpdateProgressStage('מוריד עדכונים...');
         setUpdateProgressValue(25);
@@ -944,7 +1001,7 @@ export default function AdminSettingsPage() {
                     )}
                     בדוק עדכונים
                   </Button>
-                  {process.env.NODE_ENV === 'development' && (
+                  {showDevTools && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -1015,7 +1072,7 @@ export default function AdminSettingsPage() {
             </DialogContent>
           </Dialog>
 
-          {process.env.NODE_ENV === 'development' && (
+          {showDevTools && (
             <>
               {/* Publish Version Confirm Modal */}
               <Dialog open={isPublishConfirmOpen} onOpenChange={setIsPublishConfirmOpen}>
