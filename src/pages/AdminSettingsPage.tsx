@@ -12,11 +12,23 @@ import { ArrowRight, Settings, Shield, Mail, Loader2, Monitor, Moon, Sun } from 
 import { useTheme } from '@/hooks/useTheme';
 import { toast } from 'sonner';
  
+type VersionManifest = {
+  version?: string;
+  released_at?: string;
+  notes?: string;
+};
+
+const VERSION_MANIFEST_URL = 'https://fleet-manager-dev.vercel.app/version_manifest.json';
+
 export default function AdminSettingsPage() {
     const { theme, setTheme } = useTheme();
     const lastPricingUpload = localStorage.getItem('last_pricing_upload');
     const lastVehicleUpload = localStorage.getItem('last_vehicle_upload');
     const lastDriverUpload = localStorage.getItem('last_driver_upload');
+    const currentVersion = (import.meta as any).env?.VITE_APP_VERSION || '2';
+
+    const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
+    const [lastUpdateCheckLabel, setLastUpdateCheckLabel] = useState<string | null>(null);
 
     // ── notification_emails — stored in system_settings table ─────────────────
     const [notificationEmailsRaw, setNotificationEmailsRaw] = useState('malachiroei@gmail.com');
@@ -180,6 +192,38 @@ export default function AdminSettingsPage() {
         printWindow.print();
       }, 150);
     };
+
+    const checkForUpdates = async () => {
+      setIsCheckingUpdates(true);
+      try {
+        const res = await fetch(VERSION_MANIFEST_URL, { cache: 'no-store' });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const manifest = (await res.json()) as VersionManifest;
+        const latest = (manifest.version ?? '').trim();
+        const checkedAt = new Date().toLocaleString('he-IL');
+        setLastUpdateCheckLabel(checkedAt);
+
+        if (!latest) {
+          toast.error('version_manifest.json לא מכיל שדה version');
+          return;
+        }
+
+        if (String(latest) === String(currentVersion)) {
+          toast.success(`אין עדכון חדש. גרסה נוכחית: ${currentVersion}`);
+          return;
+        }
+
+        toast.message('נמצא עדכון חדש', {
+          description: `נוכחי: ${currentVersion} · חדש: ${latest}${manifest.released_at ? ` · שוחרר: ${manifest.released_at}` : ''}`,
+        });
+      } catch (err: any) {
+        toast.error(`בדיקת עדכונים נכשלה: ${err?.message ?? err}`);
+      } finally {
+        setIsCheckingUpdates(false);
+      }
+    };
  
    return (
      <div className="min-h-screen bg-[#020617] text-white">
@@ -313,7 +357,7 @@ export default function AdminSettingsPage() {
                 </div>
                 <div>
                   <CardTitle>מידע מערכת</CardTitle>
-                  <CardDescription>Fleet Manager Pro — גרסה 2</CardDescription>
+                  <CardDescription>Fleet Manager Pro — גרסה {currentVersion}</CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -333,7 +377,43 @@ export default function AdminSettingsPage() {
                 </div>
               </div>
               <div className="pt-3 border-t border-border mt-3">
-                <Button variant="outline" size="sm" onClick={runPrintTest}>בדיקת הדפסה</Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => toast.info('בקרוב: גיבוי נתונים')}
+                  >
+                    גיבוי
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => toast.info('בקרוב: שחזור נתונים')}
+                  >
+                    שחזור
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={checkForUpdates}
+                    disabled={isCheckingUpdates}
+                  >
+                    {isCheckingUpdates ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin ml-2" />
+                        בודק...
+                      </>
+                    ) : (
+                      'בדוק עדכונים'
+                    )}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={runPrintTest}>בדיקת הדפסה</Button>
+                </div>
+                {lastUpdateCheckLabel && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    בדיקת עדכונים אחרונה: <span dir="ltr">{lastUpdateCheckLabel}</span>
+                  </p>
+                )}
               </div>
             </CardContent>
           </Card>
