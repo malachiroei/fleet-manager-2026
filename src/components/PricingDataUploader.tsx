@@ -293,26 +293,9 @@ export default function PricingDataUploader() {
       setUploadProgress(100);
       setEstimatedTimeLeft('');
       
-      // Save last upload timestamp (local + Supabase for all users)
+      // Save last upload timestamp (local only, to avoid RLS/schema mismatches)
       const uploadedAtIso = new Date().toISOString();
       localStorage.setItem('last_pricing_upload', uploadedAtIso);
-      try {
-        const upserts = await Promise.all([
-          supabase.from('system_settings').upsert(
-            { key: 'last_pricing_upload_date', value: uploadedAtIso },
-            { onConflict: 'key' },
-          ),
-          supabase.from('system_settings').upsert(
-            { key: 'last_pricing_upload', value: uploadedAtIso },
-            { onConflict: 'key' },
-          ),
-        ]);
-        const anyError = upserts.map((r) => (r as any).error).find(Boolean);
-        if (anyError) throw anyError;
-      } catch (e) {
-        console.warn('PricingDataUploader: failed saving last_pricing_upload_date', e);
-        toast.warning('העלאה הצליחה, אבל שמירת התאריך למערכת נכשלה');
-      }
 
       // Notify AdminSettings page in the same tab (instant UI refresh)
       window.dispatchEvent(new CustomEvent('pricing-uploaded', { detail: { iso: uploadedAtIso } }));

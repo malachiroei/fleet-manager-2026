@@ -228,10 +228,11 @@ export function useUploadPricingData() {
 export function useSyncVehiclesFromPricing() {
   const queryClient = useQueryClient();
   const { activeOrgId } = useAuth();
-  const orgId = activeOrgId ?? null;
 
   return useMutation({
     mutationFn: async () => {
+      // Resolve inside mutation to avoid stale/undefined references at runtime.
+      const orgId = activeOrgId ?? null;
       if (!orgId) {
         throw new Error('orgId חסר — ודא שהמשתמש משויך לארגון (activeOrgId)');
       }
