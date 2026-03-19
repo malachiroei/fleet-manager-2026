@@ -8,6 +8,7 @@ import { Progress } from '@/components/ui/progress';
 import { Upload, FileSpreadsheet, Loader2, Check, AlertCircle, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
+import { supabase } from '@/integrations/supabase/client';
 
 interface ParsedRow {
   manufacturer_code: string;
@@ -270,25 +271,25 @@ export default function PricingDataUploader() {
     setUploadStartTime(Date.now());
     setEstimatedTimeLeft('מחשב...');
     try {
-      // Simulate progress based on chunk processing
-      const totalChunks = Math.ceil(parsedRows.length / 1000);
-      let completedChunks = 0;
-      
-      const progressInterval = setInterval(() => {
-        if (uploadStartTime) {
-          const elapsed = (Date.now() - (uploadStartTime || Date.now())) / 1000;
-          const progress = Math.min(uploadProgress + 2, 95);
-          setUploadProgress(progress);
-          if (progress > 10) {
-            const totalEstimate = (elapsed / progress) * 100;
-            const remaining = Math.max(0, totalEstimate - elapsed);
+      const startMs = Date.now();
+
+      await uploadMutation.mutateAsync({
+        rows: parsedRows,
+        onProgress: ({ inserted, total, phase }) => {
+          // Phase-aware progress: deleting -> small bump; inserting -> proportional.
+          const base = phase === 'deleting' ? 2 : 5;
+          const pct = total > 0 ? Math.min(99, Math.round(base + (inserted / total) * (100 - base))) : base;
+          setUploadProgress(pct);
+
+          const elapsedSec = (Date.now() - startMs) / 1000;
+          if (pct > 5 && elapsedSec > 1) {
+            const totalEstimate = (elapsedSec / pct) * 100;
+            const remaining = Math.max(0, totalEstimate - elapsedSec);
             setEstimatedTimeLeft(remaining < 60 ? `${Math.ceil(remaining)} שניות` : `${Math.ceil(remaining / 60)} דקות`);
           }
-        }
-      }, 500);
+        },
+      });
 
-      await uploadMutation.mutateAsync(parsedRows);
-      clearInterval(progressInterval);
       setUploadProgress(100);
       setEstimatedTimeLeft('');
       
