@@ -656,7 +656,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       className="flex min-h-[100dvh] flex-col overflow-x-hidden bg-[#020617]"
       dir={isRtl ? 'rtl' : 'ltr'}
     >
-      {showWorkBanner && (
+      {process.env.NODE_ENV === 'development' && showWorkBanner && (
         <div className="fixed left-0 right-0 top-0 z-[70] h-16 bg-red-600 animate-pulse border-b border-red-400/60 shadow-md">
           <div className="mx-auto flex max-w-[1920px] h-full items-center justify-center px-4 sm:px-6">
             <span className="font-extrabold text-2xl text-white">גרסת עבודה - פיתוח</span>

@@ -17,7 +17,7 @@ import { toast } from 'sonner';
  
 export default function AdminSettingsPage() {
     const { theme, setTheme } = useTheme();
-    const lastPricingUpload = localStorage.getItem('last_pricing_upload');
+    const [lastPricingUpload, setLastPricingUpload] = useState<string | null>(localStorage.getItem('last_pricing_upload'));
     const lastVehicleUpload = localStorage.getItem('last_vehicle_upload');
     const lastDriverUpload = localStorage.getItem('last_driver_upload');
 
@@ -45,6 +45,42 @@ export default function AdminSettingsPage() {
           setIsLoadingEmails(false);
         }
       })();
+    }, []);
+
+    // ── last_pricing_upload_date — stored in system_settings (shared for all users) ─────────
+    useEffect(() => {
+      const handlePricingUploaded = (event: Event) => {
+        const detail = (event as CustomEvent<{ iso?: string }>).detail;
+        if (detail?.iso && typeof detail.iso === 'string') {
+          setLastPricingUpload(detail.iso);
+          localStorage.setItem('last_pricing_upload', detail.iso);
+        }
+      };
+
+      window.addEventListener('pricing-uploaded', handlePricingUploaded);
+
+      (async () => {
+        try {
+          const { data, error } = await (supabase as any)
+            .from('system_settings')
+            .select('value')
+            .eq('key', 'last_pricing_upload_date')
+            .maybeSingle();
+
+          if (error) throw error;
+          const v = data?.value;
+          if (typeof v === 'string' && v.trim()) {
+            setLastPricingUpload(v);
+            localStorage.setItem('last_pricing_upload', v);
+          }
+        } catch (e) {
+          // best-effort; localStorage fallback already exists
+        }
+      })();
+
+      return () => {
+        window.removeEventListener('pricing-uploaded', handlePricingUploaded);
+      };
     }, []);
 
     const formatDateTimeForUi = (d: Date) => {
@@ -95,6 +131,15 @@ export default function AdminSettingsPage() {
     const [updateProgressStage, setUpdateProgressStage] = useState<string>(''); // status text inside modal
     const [isSimulatingUpdate, setIsSimulatingUpdate] = useState(false);
 
+    // ── Version Release System (Admin) ───────────────────────────────────────────
+    const [isPublishConfirmOpen, setIsPublishConfirmOpen] = useState(false);
+    const [isPublishProgressOpen, setIsPublishProgressOpen] = useState(false);
+    const [publishNextVersion, setPublishNextVersion] = useState<string>('');
+    const [pendingChanges, setPendingChanges] = useState<string[]>([]);
+    const [publishProgressValue, setPublishProgressValue] = useState<number>(0);
+    const [publishProgressStage, setPublishProgressStage] = useState<string>('');
+    const [isPublishing, setIsPublishing] = useState(false);
+
     const DEFAULT_APP_VERSION = '2.1.0';
     const [appVersion, setAppVersion] = useState<string>(DEFAULT_APP_VERSION);
     // Default visible timestamp for the last update (updated by the "עדכן" flow)
@@ -102,11 +147,16 @@ export default function AdminSettingsPage() {
       formatDateTimeForUi(new Date(2026, 2, 18, 13, 0, 0)),
     );
 
+    const [latestManifestVersion, setLatestManifestVersion] = useState<string>(DEFAULT_APP_VERSION);
+
     const restoreInputRef = useRef<HTMLInputElement | null>(null);
 
     const formatDate = (iso: string | null) => {
       if (!iso) return 'לא בוצעה';
-      return new Date(iso).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const d = new Date(iso);
+      const date = d.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const time = d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', hour12: false });
+      return `${date} ${time}`;
     };
 
     // Load persisted version + last update timestamp (best-effort).
@@ -134,6 +184,22 @@ export default function AdminSettingsPage() {
           }
         } catch {
           // ignore (RLS/migration not ready yet)
+        }
+      })();
+    }, []);
+
+    // Load latest version manifest for "latest version" coloring
+    useEffect(() => {
+      (async () => {
+        try {
+          const res = await fetch(`/version_manifest.json?t=${Date.now()}`, { cache: 'no-store' });
+          if (!res.ok) return;
+          const json = (await res.json()) as { version?: unknown };
+          if (typeof json.version === 'string' && json.version.trim()) {
+            setLatestManifestVersion(json.version);
+          }
+        } catch {
+          // best-effort only
         }
       })();
     }, []);
@@ -451,6 +517,140 @@ export default function AdminSettingsPage() {
       }
     };
 
+    const downloadJsonFile = (filename: string, obj: unknown) => {
+      const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    const parseSemverParts = (v: string): number[] | null => {
+      const parts = String(v).split('.').map((x) => parseInt(x, 10));
+      if (parts.length < 3) return null;
+      if (parts.some((n) => Number.isNaN(n))) return null;
+      return parts.slice(0, 3);
+    };
+
+    const computeNextPatchVersion = (v: string): string => {
+      const parts = parseSemverParts(v);
+      if (!parts) return '0.0.1';
+      const [major, minor, patch] = parts;
+      return `${major}.${minor}.${patch + 1}`;
+    };
+
+    const formatReleaseDate = (d: Date) => {
+      const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const yyyy = d.getFullYear();
+      return `${dd}/${mm}/${yyyy}`;
+    };
+
+    const formatReleaseTime = (d: Date) => {
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      return `${hh}:${mm}`;
+    };
+
+    const openPublishModal = async () => {
+      setIsPublishing(false);
+      try {
+        const cacheBustedUrlManifest = `/version_manifest.json?t=${Date.now()}`;
+        const cacheBustedUrlPending = `/pending_changes.json?t=${Date.now()}`;
+
+        const [manifestRes, pendingRes] = await Promise.all([
+          fetch(cacheBustedUrlManifest, { cache: 'no-store' }),
+          fetch(cacheBustedUrlPending, { cache: 'no-store' }),
+        ]);
+
+        if (!manifestRes.ok) throw new Error(`manifest fetch failed: HTTP ${manifestRes.status}`);
+        if (!pendingRes.ok) throw new Error(`pending fetch failed: HTTP ${pendingRes.status}`);
+
+        const manifestJson = (await manifestRes.json()) as { version?: unknown };
+        const currentVersion = typeof manifestJson?.version === 'string' ? manifestJson.version : appVersion;
+
+        const pendingJson = (await pendingRes.json()) as { changes?: unknown };
+        const changesRaw = pendingJson?.changes;
+        const changes =
+          Array.isArray(changesRaw) ? changesRaw.map((x) => String(x)).filter((s) => s.trim()) : [];
+
+        if (changes.length === 0) {
+          toast.error('אין שינויים ממתינים לפרסום (pending_changes.json ריק).');
+          return;
+        }
+
+        const next = computeNextPatchVersion(currentVersion);
+        setPendingChanges(changes);
+        setPublishNextVersion(next);
+        setIsPublishConfirmOpen(true);
+      } catch (e) {
+        console.error(e);
+        const message = e instanceof Error ? e.message : 'שגיאה לא ידועה';
+        toast.error(`שגיאה בטעינת נתוני הפרסום: ${message}`);
+      }
+    };
+
+    const publishRelease = async () => {
+      setIsPublishConfirmOpen(false);
+      setIsPublishProgressOpen(true);
+      setIsPublishing(true);
+      setPublishProgressValue(0);
+      setPublishProgressStage('מכין פרסום...');
+
+      const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      try {
+        const manifestRes = await fetch(`/version_manifest.json?t=${Date.now()}`, { cache: 'no-store' });
+        if (!manifestRes.ok) throw new Error(`manifest fetch failed: HTTP ${manifestRes.status}`);
+        const manifestJson = (await manifestRes.json()) as Record<string, unknown>;
+
+        setPublishProgressStage('מעדכן version_manifest.json...');
+        setPublishProgressValue(35);
+        await sleep(400);
+
+        const now = new Date();
+        const releaseDate = formatReleaseDate(now);
+        const releaseTime = formatReleaseTime(now);
+        const description = `Release: ${publishNextVersion}. ${pendingChanges.slice(0, 5).join(' | ')}${pendingChanges.length > 5 ? '...' : ''}`;
+
+        const newManifest = {
+          ...manifestJson,
+          version: publishNextVersion,
+          releaseDate,
+          releaseTime,
+          description,
+        };
+
+        // Clear file for next cycle
+        const clearedPending = { changes: [] as string[] };
+
+        setPublishProgressStage('מוריד קבצי פרסום...');
+        setPublishProgressValue(75);
+        await sleep(500);
+
+        // Download artifacts (browser cannot directly write into repo/static files)
+        downloadJsonFile('version_manifest.json', newManifest);
+        downloadJsonFile('public_version_manifest.json', newManifest);
+        downloadJsonFile('pending_changes.json', clearedPending);
+        downloadJsonFile('public_pending_changes.json', clearedPending);
+
+        setPublishProgressStage('בוצע!');
+        setPublishProgressValue(100);
+        toast.success('הגרסה פורסמה (קבצי עדכון הוכנו להורדה).');
+
+        setIsPublishProgressOpen(false);
+        setPendingChanges([]);
+      } catch (e) {
+        console.error(e);
+        const message = e instanceof Error ? e.message : 'שגיאה לא ידועה';
+        toast.error(`פרסום נכשל: ${message}`);
+      } finally {
+        setIsPublishing(false);
+      }
+    };
+
     const isValidFleetManagerBackup = (value: unknown): value is { metadata: { appIdentifier: string } } => {
       if (!value || typeof value !== 'object') return false;
       const obj = value as any;
@@ -683,7 +883,7 @@ export default function AdminSettingsPage() {
                   <CardTitle>מידע מערכת</CardTitle>
                   <CardDescription>
                     Fleet Manager Pro — גרסה{' '}
-                    <span className={appVersion === '2.2.0' ? 'text-[#10b981]' : undefined}>
+                    <span className={appVersion === latestManifestVersion ? 'text-[#10b981]' : undefined}>
                       {appVersion}
                     </span>
                   </CardDescription>
@@ -744,6 +944,22 @@ export default function AdminSettingsPage() {
                     )}
                     בדוק עדכונים
                   </Button>
+                  {process.env.NODE_ENV === 'development' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={openPublishModal}
+                      disabled={
+                        isCheckingUpdates ||
+                        isBackingUpSettings ||
+                        isRestoringSettings ||
+                        isSimulatingUpdate ||
+                        isPublishing
+                      }
+                    >
+                      פרסם גרסה חדשה
+                    </Button>
+                  )}
                 </div>
 
                 <input
@@ -798,6 +1014,66 @@ export default function AdminSettingsPage() {
               </div>
             </DialogContent>
           </Dialog>
+
+          {process.env.NODE_ENV === 'development' && (
+            <>
+              {/* Publish Version Confirm Modal */}
+              <Dialog open={isPublishConfirmOpen} onOpenChange={setIsPublishConfirmOpen}>
+                <DialogContent dir="rtl" className="sm:max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>פרסום גרסה חדשה</DialogTitle>
+                    <DialogDescription>
+                      גרסה חדשה זמינה: <strong>{publishNextVersion}</strong>
+                    </DialogDescription>
+                  </DialogHeader>
+
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold">צ׳יינג׳לוג (pending_changes):</p>
+                    <ul className="list-disc list-inside text-sm">
+                      {pendingChanges.map((c, idx) => (
+                        <li key={`${idx}-${c}`}>{c}</li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <DialogFooter className="mt-4">
+                    <Button
+                      variant="outline"
+                      onClick={() => setIsPublishConfirmOpen(false)}
+                      disabled={isPublishing}
+                    >
+                      ביטול
+                    </Button>
+                    <Button onClick={publishRelease} disabled={isPublishing}>
+                      פרסם
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+
+              {/* Publish Version Progress Modal */}
+              <Dialog
+                open={isPublishProgressOpen}
+                onOpenChange={(open) => {
+                  if (!open && isPublishing) return;
+                  setIsPublishProgressOpen(open);
+                }}
+              >
+                <DialogContent dir="rtl" className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>פרסום גרסה</DialogTitle>
+                    <DialogDescription>{publishProgressStage}</DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-3">
+                    <Progress value={publishProgressValue} className="h-2" />
+                    <p className="text-xs text-muted-foreground">
+                      היישום יכין את הקבצים המעודכנים (version_manifest.json + pending_changes.json) להורדה במחשב.
+                    </p>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </>
+          )}
        </main>
      </div>
    );

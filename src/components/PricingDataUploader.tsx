@@ -292,8 +292,21 @@ export default function PricingDataUploader() {
       setUploadProgress(100);
       setEstimatedTimeLeft('');
       
-      // Save last upload timestamp
-      localStorage.setItem('last_pricing_upload', new Date().toISOString());
+      // Save last upload timestamp (local + Supabase for all users)
+      const uploadedAtIso = new Date().toISOString();
+      localStorage.setItem('last_pricing_upload', uploadedAtIso);
+      try {
+        const { error } = await supabase
+          .from('system_settings')
+          .upsert({ key: 'last_pricing_upload_date', value: uploadedAtIso }, { onConflict: 'key' });
+        if (error) throw error;
+      } catch (e) {
+        console.warn('PricingDataUploader: failed saving last_pricing_upload_date', e);
+        toast.warning('העלאה הצליחה, אבל שמירת התאריך למערכת נכשלה');
+      }
+
+      // Notify AdminSettings page in the same tab (instant UI refresh)
+      window.dispatchEvent(new CustomEvent('pricing-uploaded', { detail: { iso: uploadedAtIso } }));
       refetchCount();
       
       setTimeout(() => {

@@ -1,0 +1,5 @@
+{
+  "changes": [
+    "Implemented Admin Version Release System (pending_changes + publish new version modal)."
+  ]
+}
