@@ -4,31 +4,15 @@
  import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import PricingDataUploader from '@/components/PricingDataUploader';
 import FleetDataImporter from '@/components/FleetDataImporter';
+import { UpdateModal, type UpdateManifest } from '@/components/UpdateModal';
 import { ArrowRight, Settings, Shield, Mail, Loader2, Monitor, Moon, Sun } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { toast } from 'sonner';
  
-type VersionManifest = {
-  version?: string;
-  released_at?: string;
-  notes?: string;
-  changelog?: string[] | string;
-  update_url?: string;
-  download_url?: string;
-};
-
 const VERSION_MANIFEST_URL = 'https://fleet-manager-dev.vercel.app/version_manifest.json';
 const BACKUP_TABLES = [
   'organizations',
@@ -52,12 +36,16 @@ export default function AdminSettingsPage() {
     const lastPricingUpload = localStorage.getItem('last_pricing_upload');
     const lastVehicleUpload = localStorage.getItem('last_vehicle_upload');
     const lastDriverUpload = localStorage.getItem('last_driver_upload');
-    const currentVersion = (import.meta as any).env?.VITE_APP_VERSION || '2';
+    const envVersion = (import.meta as any).env?.VITE_APP_VERSION || '2';
+    const [currentVersion, setCurrentVersion] = useState<string>(() => {
+      const persisted = localStorage.getItem('fleet_installed_version');
+      return (persisted && persisted.trim()) || envVersion;
+    });
 
     const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
     const [lastUpdateCheckLabel, setLastUpdateCheckLabel] = useState<string | null>(null);
     const [updateModalOpen, setUpdateModalOpen] = useState(false);
-    const [availableUpdate, setAvailableUpdate] = useState<VersionManifest | null>(null);
+    const [availableUpdate, setAvailableUpdate] = useState<UpdateManifest | null>(null);
     const [isBackingUp, setIsBackingUp] = useState(false);
 
     // ── notification_emails — stored in system_settings table ─────────────────
@@ -230,7 +218,7 @@ export default function AdminSettingsPage() {
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }
-        const manifest = (await res.json()) as VersionManifest;
+        const manifest = (await res.json()) as UpdateManifest;
         const latest = (manifest.version ?? '').trim();
         const checkedAt = new Date().toLocaleString('he-IL');
         setLastUpdateCheckLabel(checkedAt);
@@ -294,22 +282,6 @@ export default function AdminSettingsPage() {
       }
     };
 
-    const openUpdateNow = () => {
-      const url = availableUpdate?.update_url || availableUpdate?.download_url;
-      if (url) {
-        window.open(url, '_blank', 'noopener,noreferrer');
-        return;
-      }
-      window.location.reload();
-    };
-
-    const changelogLines = (() => {
-      const raw = availableUpdate?.changelog ?? availableUpdate?.notes;
-      if (!raw) return [];
-      if (Array.isArray(raw)) return raw;
-      return String(raw).split('\n').map((line) => line.trim()).filter(Boolean);
-    })();
- 
    return (
      <div className="min-h-screen bg-[#020617] text-white">
        <header className="bg-card border-b border-border sticky top-0 z-10">
@@ -511,36 +483,13 @@ export default function AdminSettingsPage() {
             </CardContent>
           </Card>
 
-          <Dialog open={updateModalOpen} onOpenChange={setUpdateModalOpen}>
-            <DialogContent className="sm:max-w-xl" dir="rtl">
-              <DialogHeader>
-                <DialogTitle>נמצא עדכון חדש למערכת</DialogTitle>
-                <DialogDescription>
-                  גרסה נוכחית: {currentVersion} · גרסה חדשה: {availableUpdate?.version ?? 'לא ידוע'}
-                  {availableUpdate?.released_at ? ` · תאריך שחרור: ${availableUpdate.released_at}` : ''}
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="space-y-2 max-h-[45vh] overflow-y-auto rounded-md border border-border p-3 bg-background/40">
-                {changelogLines.length > 0 ? (
-                  <ul className="list-disc pr-5 space-y-1 text-sm">
-                    {changelogLines.map((line, idx) => (
-                      <li key={`${idx}-${line.slice(0, 24)}`}>{line}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-muted-foreground">לא סופק changelog בקובץ manifest.</p>
-                )}
-              </div>
-
-              <DialogFooter className="gap-2 sm:justify-start">
-                <Button variant="outline" onClick={() => setUpdateModalOpen(false)}>
-                  סגור
-                </Button>
-                <Button onClick={openUpdateNow}>Update Now</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <UpdateModal
+            open={updateModalOpen}
+            onOpenChange={setUpdateModalOpen}
+            currentVersion={currentVersion}
+            manifest={availableUpdate}
+            onVersionApplied={(version) => setCurrentVersion(version)}
+          />
        </main>
      </div>
    );
