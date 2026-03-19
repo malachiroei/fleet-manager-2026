@@ -4,6 +4,14 @@
  import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import PricingDataUploader from '@/components/PricingDataUploader';
@@ -16,9 +24,28 @@ type VersionManifest = {
   version?: string;
   released_at?: string;
   notes?: string;
+  changelog?: string[] | string;
+  update_url?: string;
+  download_url?: string;
 };
 
 const VERSION_MANIFEST_URL = 'https://fleet-manager-dev.vercel.app/version_manifest.json';
+const BACKUP_TABLES = [
+  'organizations',
+  'org_members',
+  'profiles',
+  'user_roles',
+  'vehicles',
+  'drivers',
+  'mileage_logs',
+  'maintenance_logs',
+  'vehicle_handovers',
+  'org_invitations',
+  'organization_settings',
+  'org_documents',
+  'system_settings',
+  'ui_customization',
+] as const;
 
 export default function AdminSettingsPage() {
     const { theme, setTheme } = useTheme();
@@ -29,6 +56,9 @@ export default function AdminSettingsPage() {
 
     const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
     const [lastUpdateCheckLabel, setLastUpdateCheckLabel] = useState<string | null>(null);
+    const [updateModalOpen, setUpdateModalOpen] = useState(false);
+    const [availableUpdate, setAvailableUpdate] = useState<VersionManifest | null>(null);
+    const [isBackingUp, setIsBackingUp] = useState(false);
 
     // ── notification_emails — stored in system_settings table ─────────────────
     const [notificationEmailsRaw, setNotificationEmailsRaw] = useState('malachiroei@gmail.com');
@@ -215,15 +245,70 @@ export default function AdminSettingsPage() {
           return;
         }
 
-        toast.message('נמצא עדכון חדש', {
-          description: `נוכחי: ${currentVersion} · חדש: ${latest}${manifest.released_at ? ` · שוחרר: ${manifest.released_at}` : ''}`,
-        });
+        setAvailableUpdate(manifest);
+        setUpdateModalOpen(true);
       } catch (err: any) {
         toast.error(`בדיקת עדכונים נכשלה: ${err?.message ?? err}`);
       } finally {
         setIsCheckingUpdates(false);
       }
     };
+
+    const performBackup = async () => {
+      setIsBackingUp(true);
+      try {
+        const backup: Record<string, unknown> = {
+          meta: {
+            exported_at: new Date().toISOString(),
+            app_version: currentVersion,
+            source: window.location.origin,
+          },
+          tables: {} as Record<string, unknown[]>,
+        };
+
+        for (const table of BACKUP_TABLES) {
+          const { data, error } = await (supabase as any).from(table).select('*');
+          if (error) {
+            throw new Error(`Table ${table}: ${error.message}`);
+          }
+          (backup.tables as Record<string, unknown[]>)[table] = (data ?? []) as unknown[];
+        }
+
+        const json = JSON.stringify(backup, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `fleet-backup-${stamp}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+
+        toast.success('הגיבוי נשמר בהצלחה');
+      } catch (err: any) {
+        toast.error(`הגיבוי נכשל: ${err?.message ?? err}`);
+      } finally {
+        setIsBackingUp(false);
+      }
+    };
+
+    const openUpdateNow = () => {
+      const url = availableUpdate?.update_url || availableUpdate?.download_url;
+      if (url) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+        return;
+      }
+      window.location.reload();
+    };
+
+    const changelogLines = (() => {
+      const raw = availableUpdate?.changelog ?? availableUpdate?.notes;
+      if (!raw) return [];
+      if (Array.isArray(raw)) return raw;
+      return String(raw).split('\n').map((line) => line.trim()).filter(Boolean);
+    })();
  
    return (
      <div className="min-h-screen bg-[#020617] text-white">
@@ -381,9 +466,17 @@ export default function AdminSettingsPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => toast.info('בקרוב: גיבוי נתונים')}
+                    onClick={performBackup}
+                    disabled={isBackingUp}
                   >
-                    גיבוי
+                    {isBackingUp ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin ml-2" />
+                        מגבה...
+                      </>
+                    ) : (
+                      'גיבוי'
+                    )}
                   </Button>
                   <Button
                     variant="outline"
@@ -417,6 +510,37 @@ export default function AdminSettingsPage() {
               </div>
             </CardContent>
           </Card>
+
+          <Dialog open={updateModalOpen} onOpenChange={setUpdateModalOpen}>
+            <DialogContent className="sm:max-w-xl" dir="rtl">
+              <DialogHeader>
+                <DialogTitle>נמצא עדכון חדש למערכת</DialogTitle>
+                <DialogDescription>
+                  גרסה נוכחית: {currentVersion} · גרסה חדשה: {availableUpdate?.version ?? 'לא ידוע'}
+                  {availableUpdate?.released_at ? ` · תאריך שחרור: ${availableUpdate.released_at}` : ''}
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-2 max-h-[45vh] overflow-y-auto rounded-md border border-border p-3 bg-background/40">
+                {changelogLines.length > 0 ? (
+                  <ul className="list-disc pr-5 space-y-1 text-sm">
+                    {changelogLines.map((line, idx) => (
+                      <li key={`${idx}-${line.slice(0, 24)}`}>{line}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground">לא סופק changelog בקובץ manifest.</p>
+                )}
+              </div>
+
+              <DialogFooter className="gap-2 sm:justify-start">
+                <Button variant="outline" onClick={() => setUpdateModalOpen(false)}>
+                  סגור
+                </Button>
+                <Button onClick={openUpdateNow}>Update Now</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
        </main>
      </div>
    );
