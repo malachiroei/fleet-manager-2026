@@ -15,7 +15,9 @@ import { ArrowRight, Settings, Shield, Mail, Loader2, Monitor, Moon, Sun, Downlo
 import { useTheme } from '@/hooks/useTheme';
 import { toast } from 'sonner';
 import { version as codeVersion } from '@/constants/version';
-import { updateAppFromTestDeploy } from '@/lib/testDeployUpdate';
+import { triggerServiceWorkerUpdateCheck } from '@/lib/pwaServiceWorkerControl';
+import { hidePwaUpdateModal, showPwaUpdateModal } from '@/lib/pwaUpdateModalBridge';
+import { parseManifestChanges } from '@/lib/pwaManifest';
  
 export default function AdminSettingsPage() {
     const DEV_MANIFEST_URL = 'https://fleet-manager-dev.vercel.app/v.json';
@@ -151,13 +153,6 @@ export default function AdminSettingsPage() {
     const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
     const [isBackingUpSettings, setIsBackingUpSettings] = useState(false);
     const [isRestoringSettings, setIsRestoringSettings] = useState(false);
-    const [isUpdateAvailableOpen, setIsUpdateAvailableOpen] = useState(false);
-    const [isUpdateProgressOpen, setIsUpdateProgressOpen] = useState(false);
-    const [updateTargetVersion, setUpdateTargetVersion] = useState<string>('');
-    const [updateProgressValue, setUpdateProgressValue] = useState<number>(0);
-    const [updateProgressStage, setUpdateProgressStage] = useState<string>(''); // status text inside modal
-    const [isSimulatingUpdate, setIsSimulatingUpdate] = useState(false);
-
     // ── Version Release System (Admin) ───────────────────────────────────────────
     const [isPublishConfirmOpen, setIsPublishConfirmOpen] = useState(false);
     const [isPublishProgressOpen, setIsPublishProgressOpen] = useState(false);
@@ -223,23 +218,27 @@ export default function AdminSettingsPage() {
             // ignore localStorage issues
           }
 
-          const [{ data: versionRow }, { data: lastUpdateRow }] = await Promise.all([
+          const [versionRes, lastUpdateRes] = await Promise.all([
             (supabase as any).from('system_settings').select('value').eq('key', 'app_version').maybeSingle(),
             (supabase as any).from('system_settings').select('value').eq('key', 'last_update_date').maybeSingle(),
           ]);
 
-          const versionValue = versionRow?.value;
-          if (typeof versionValue === 'string' && versionValue.trim()) {
-            setAppVersion(versionValue);
+          if (!versionRes?.error) {
+            const versionValue = versionRes?.data?.value;
+            if (typeof versionValue === 'string' && versionValue.trim()) {
+              setAppVersion(versionValue);
+            }
           }
 
-          const lastUpdateValue = lastUpdateRow?.value;
-          if (typeof lastUpdateValue === 'string' && lastUpdateValue.trim()) {
-            const ms = Date.parse(lastUpdateValue);
-            if (!Number.isNaN(ms)) {
-              setLastUpdateDate(formatDateTimeForUi(new Date(ms)));
-            } else {
-              setLastUpdateDate(lastUpdateValue);
+          if (!lastUpdateRes?.error) {
+            const lastUpdateValue = lastUpdateRes?.data?.value;
+            if (typeof lastUpdateValue === 'string' && lastUpdateValue.trim()) {
+              const ms = Date.parse(lastUpdateValue);
+              if (!Number.isNaN(ms)) {
+                setLastUpdateDate(formatDateTimeForUi(new Date(ms)));
+              } else {
+                setLastUpdateDate(lastUpdateValue);
+              }
             }
           }
         } catch {
@@ -495,7 +494,11 @@ export default function AdminSettingsPage() {
     const checkForUpdates = async () => {
       setIsCheckingUpdates(true);
       try {
-        type VersionManifest = { version: string; releaseDate?: string };
+        type VersionManifest = { version: string; releaseDate?: string; changes?: unknown };
+
+        // חייב להתאים לגרסה שבאמת רצה בדפדפן (מהבילד), לא ל-appVersion מ-localStorage —
+        // אחרת מופיע מודאל עדכון למרות שהמסך כבר מציג את codeVersion מהבילד.
+        const normalize = (v: string) => v.replace(/^v/, "").trim();
 
         const parseSemver = (v: string): number[] | null => {
           const parts = String(v).split('.').map((x) => parseInt(x, 10));
@@ -519,69 +522,47 @@ export default function AdminSettingsPage() {
         const latestRes = await fetch(cacheBustedUrl, { cache: 'no-store' });
         if (!latestRes.ok) throw new Error(`HTTP ${latestRes.status}`);
         const latestManifest = (await latestRes.json()) as Partial<VersionManifest>;
+        const manifestChanges = parseManifestChanges(latestManifest);
 
         const latestVersion = latestManifest?.version ? String(latestManifest.version) : '';
         if (!latestVersion) throw new Error('Latest manifest missing "version"');
 
-        const cmp = compareSemver(latestVersion, appVersion);
-        if (cmp > 0) {
-          setUpdateTargetVersion(latestVersion);
-          setIsUpdateAvailableOpen(true);
+        const latestNormalized = normalize(latestVersion);
+        const currentNormalized = normalize(codeVersion);
+
+        // אם הגרסה מהשרת זהה לגרסה הנוכחית בבילד — לסגור את מודאל ה-PWA.
+        if (latestNormalized === currentNormalized) {
+          hidePwaUpdateModal();
+          toast.success("אין עדכונים זמינים כרגע");
         } else {
-          toast.success('אין עדכונים זמינים כרגע');
+          const cmp = compareSemver(latestNormalized, currentNormalized);
+          if (cmp > 0) {
+            try {
+              showPwaUpdateModal({
+                targetVersion: latestNormalized,
+                changes: manifestChanges,
+              });
+            } catch (e) {
+              console.warn("showPwaUpdateModal failed", e);
+            }
+            toast.success(`זמינה גרסה ${latestNormalized}. אשר עדכון בחלון שמופיע`);
+          } else {
+            hidePwaUpdateModal();
+            toast.success("אין עדכונים זמינים כרגע");
+          }
         }
       } catch (err) {
         console.error(err);
         const message = err instanceof Error ? err.message : 'שגיאה לא ידועה';
         toast.error(`בדיקת עדכונים נכשלה: ${message}`);
       } finally {
-        setIsCheckingUpdates(false);
-      }
-    };
-
-    const startUpdateSimulation = async () => {
-      setIsUpdateAvailableOpen(false);
-      setIsUpdateProgressOpen(true);
-      setIsSimulatingUpdate(true);
-      setUpdateProgressValue(0);
-
-      const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-      try {
-        // Immediately reflect the target version in local state לפני מעבר לשרת הטסט
-        const newVersion = updateTargetVersion.trim() || appVersion;
-        const effectiveLastUpdate = new Date();
-        setAppVersion(newVersion);
-        setLastUpdateDate(formatDateTimeForUi(effectiveLastUpdate));
+        // תמיד מנסים לבדוק SW — גם אם v.json/DB נכשלו; תהליך PWA לא תלוי ב-Supabase
         try {
-          localStorage.setItem('fleet-manager-app_version', newVersion);
-          localStorage.setItem('fleet-manager-last_update_date_iso', effectiveLastUpdate.toISOString());
-        } catch {
-          // ignore
+          await triggerServiceWorkerUpdateCheck();
+        } catch (swErr) {
+          console.warn("triggerServiceWorkerUpdateCheck:", swErr);
         }
-
-        setUpdateProgressStage('מוריד עדכונים...');
-        setUpdateProgressValue(25);
-        await sleep(700);
-
-        setUpdateProgressStage('שומר הגדרות...');
-        setUpdateProgressValue(60);
-
-        setUpdateProgressStage('מפעיל מחדש...');
-        setUpdateProgressValue(90);
-        await sleep(800);
-
-        setUpdateProgressValue(100);
-
-        toast.success('העדכון הושלם בהצלחה! מעביר לשרת הטסט לטעינת קבצים מעודכנים...');
-        setIsUpdateProgressOpen(false);
-
-        await updateAppFromTestDeploy();
-      } catch (err) {
-        console.error(err);
-        toast.error('Error: עדכון נכשל');
-      } finally {
-        setIsSimulatingUpdate(false);
+        setIsCheckingUpdates(false);
       }
     };
 
@@ -689,6 +670,7 @@ export default function AdminSettingsPage() {
           releaseDate,
           releaseTime,
           description,
+          changes: pendingChanges.length > 0 ? pendingChanges : [],
         };
 
         // Clear file for next cycle
@@ -1021,7 +1003,6 @@ export default function AdminSettingsPage() {
                         isCheckingUpdates ||
                         isBackingUpSettings ||
                         isRestoringSettings ||
-                        isSimulatingUpdate ||
                         isPublishing
                       }
                     >
@@ -1040,48 +1021,6 @@ export default function AdminSettingsPage() {
               </div>
             </CardContent>
           </Card>
-
-          {/* Update Available Modal */}
-          <Dialog open={isUpdateAvailableOpen} onOpenChange={setIsUpdateAvailableOpen}>
-            <DialogContent dir="rtl" className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>
-                  גרסה חדשה זמינה ({updateTargetVersion})! הנתונים שלך מוגנים ב-100%. האם לעדכן עכשיו?
-                </DialogTitle>
-                <DialogDescription>פעולה זו תתבצע בסימולציה ב-Vercel כרגע.</DialogDescription>
-              </DialogHeader>
-              <DialogFooter className="mt-2">
-                <Button variant="outline" onClick={() => setIsUpdateAvailableOpen(false)} disabled={isSimulatingUpdate}>
-                  לא עכשיו
-                </Button>
-                <Button onClick={startUpdateSimulation} disabled={isSimulatingUpdate}>
-                  עדכן
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          {/* Update Progress Modal */}
-          <Dialog
-            open={isUpdateProgressOpen}
-            onOpenChange={(open) => {
-              if (!open && isSimulatingUpdate) return;
-              setIsUpdateProgressOpen(open);
-            }}
-          >
-            <DialogContent dir="rtl" className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>עדכון מערכת</DialogTitle>
-                <DialogDescription>{updateProgressStage}</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-3">
-                <Progress value={updateProgressValue} className="h-2" />
-                <p className="text-xs text-muted-foreground">
-                  מוריד/שומר/מפעיל מחדש: סימולציה ב-Vercel (בעתיד זה יכוון לפעולת משיכת הקוד מה-GitHub).
-                </p>
-              </div>
-            </DialogContent>
-          </Dialog>
 
           {showDevTools && (
             <>

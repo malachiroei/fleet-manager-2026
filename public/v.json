@@ -1,7 +1,11 @@
 {
-    "version": "2.4.4",
-    "releaseDate": "19/03/2026",
-    "releaseTime": "14:00",
-    "description": "Infrastructure check: Removed rocket emoji and fixed automatic update mechanism",
-    "changelog": "Infrastructure check: Removed rocket emoji and fixed automatic update mechanism"
-  }
+  "version": "2.4.9",
+  "releaseDate": "20/03/2026",
+  "releaseTime": "20:00",
+  "description": "Release 2.4.9: VitePWA registerType prompt + injectManifest, SW ללא skipWaiting ב-install",
+  "changelog": "בניית sw דרך vite-plugin-pwa; מניעת עדכון אוטומטי במקור",
+  "changes": [
+    "בדיקה סופית של חסימת עדכון אוטומטי 🛑",
+    "צבע ירוק"
+  ]
+}

@@ -23,6 +23,7 @@ import {
 import { cn } from '@/lib/utils';
 import { appLogo } from '@/components/BrandLogo';
 import { supabase } from '@/integrations/supabase/client';
+import { version as appVersionLabel } from '@/constants/version';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -653,8 +654,8 @@ export function AppLayout({ children }: AppLayoutProps) {
           <span className="block truncate text-[10px] text-cyan-400/55">
             {orgName || 'הצי הראשי - רועי'}
           </span>
-          <span className="block truncate text-xs" style={{ color: 'orange' }}>
-            גרסה v2.4.4
+          <span className="block truncate text-xs font-semibold text-green-400 drop-shadow-sm">
+            גרסה v{appVersionLabel}
           </span>
         </div>
       </div>

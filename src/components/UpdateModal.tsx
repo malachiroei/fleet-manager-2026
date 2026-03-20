@@ -1,4 +1,5 @@
 import { useRegisterSW } from "@/lib/pwaPromptRegister";
+import { hidePwaUpdateModal } from "@/lib/pwaUpdateModalBridge";
 import {
   Dialog,
   DialogContent,
@@ -10,39 +11,69 @@ import {
 import { Button } from "@/components/ui/button";
 
 /**
- * מצב "prompt": אין עדכון אוטומטי של SW.
- * כפתור "עדכן עכשיו" קורא **רק** ל-updateServiceWorker(true).
+ * מצב "prompt": needRefresh מ-useRegisterSW הוא הדגל היחיד ל-open של המודאל.
+ * אין skipWaiting עד לחיצה על "עדכן עכשיו" → updateServiceWorker(true).
  */
 export function UpdateModal() {
   const {
-    needRefresh: [needRefresh, setNeedRefresh],
+    needRefresh: [needRefresh],
+    updatePromptDetails,
     updateServiceWorker,
-  } = useRegisterSW({ immediate: true });
+  } = useRegisterSW({
+    immediate: false,
+    onRegisteredSW() {
+      // אין registration.update() אוטומטי
+    },
+  });
+
+  const { changes, targetVersion } = updatePromptDetails;
 
   return (
-    <Dialog open={needRefresh} onOpenChange={(open) => !open && setNeedRefresh(false)}>
-      <DialogContent dir="rtl" className="sm:max-w-md">
+    <Dialog
+      open={needRefresh}
+      onOpenChange={(open) => {
+        if (!open) hidePwaUpdateModal();
+      }}
+    >
+      <DialogContent dir="rtl" className="sm:max-w-md border-cyan-500/30 bg-[#0b1220] text-white">
         <DialogHeader>
-          <DialogTitle>גרסה חדשה זמינה</DialogTitle>
-          <DialogDescription>
-            יש גרסה מעודכנת של האפליקציה. תוכל לעדכן עכשיו או להמשיך לעבוד — העדכון לא יוחל אוטומטית.
+          <DialogTitle className="text-cyan-100">
+            גרסה חדשה זמינה
+            {targetVersion ? <span className="text-cyan-400"> ({targetVersion})</span> : null}
+          </DialogTitle>
+          <DialogDescription className="text-white/70">
+            יש גרסה מעודכנת של האפליקציה. תוכל לעדכן עכשיו או להמשיך לעבוד — העדכון לא יוחל עד שתאשר.
           </DialogDescription>
         </DialogHeader>
+
+        {changes.length > 0 ? (
+          <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 px-3 py-2.5">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-cyan-300/90">
+              מה חדש בגרסה
+            </p>
+            <ul className="list-disc list-inside space-y-1.5 text-sm text-white/90 pe-1">
+              {changes.map((line, i) => (
+                <li key={`${i}-${line.slice(0, 24)}`}>{line}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
         <DialogFooter className="mt-2 flex flex-row flex-wrap gap-2 sm:justify-start">
-          <Button type="button" variant="outline" onClick={() => setNeedRefresh(false)}>
+          <Button type="button" variant="outline" onClick={() => hidePwaUpdateModal()}>
             לא עכשיו
           </Button>
           <Button
             type="button"
+            className="bg-cyan-600 hover:bg-cyan-500 text-white"
             onClick={() => {
-              // מניעת לופ: מסירים סימוני עדכון/מודאל לפני שמפעילים skipWaiting
               try {
                 sessionStorage.removeItem("pwa-modal-for-version");
                 sessionStorage.removeItem("pwa-waiting-reload");
               } catch {
                 // ignore
               }
-              setNeedRefresh(false);
+              hidePwaUpdateModal();
               void updateServiceWorker(true);
             }}
           >

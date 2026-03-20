@@ -48,8 +48,7 @@ export function registerServiceWorker() {
           });
         });
 
-        // בדיקת עדכון רכה אחרי טעינה (לא מפעילה skipWaiting)
-        void registration.update();
+        // אין registration.update() אוטומטי — רק אחרי פעולת משתמש (ראה pwaServiceWorkerControl)
       })
       .catch(() => {
         /* dev / אין sw.js */
