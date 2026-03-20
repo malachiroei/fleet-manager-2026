@@ -45,37 +45,11 @@ import Footer from "@/components/layout/Footer";
 import { VehicleSpecDirtyProvider } from "@/contexts/VehicleSpecDirtyContext";
 import { PermissionGuard } from "@/components/PermissionGuard";
 import {
-  updateAppFromTestDeploy,
   purgeAllClientStorageThisOrigin,
   FLEET_MANAGER_PRO_ORIGIN,
 } from "@/lib/testDeployUpdate";
+import { UpdateAvailabilityNotifier } from "@/components/UpdateAvailabilityNotifier";
 const queryClient = new QueryClient();
-
-/** ניקוי SW + Cache Storage ומעבר לשרת הטסט (טעינת סקריפטים/סטיילים עם base המלא) */
-const updateApp = updateAppFromTestDeploy;
-
-/** תמיד בודקים מול מניפסט בשרת הטסט (לא תלוי בדומיין שבו רצה האפליקציה) */
-const VERSION_MANIFEST_URL = 'https://fleet-manager-dev.vercel.app/v.json';
-
-const TARGET_MIN_VERSION = '2.4.2';
-
-const parseSemver = (v: string): number[] | null => {
-  const parts = String(v).split('.').map((x) => parseInt(x, 10));
-  if (parts.length < 3) return null;
-  if (parts.some((n) => Number.isNaN(n))) return null;
-  return parts.slice(0, 3);
-};
-
-const isBelowTargetVersion = (v: string, target: string): boolean => {
-  const a = parseSemver(v);
-  const b = parseSemver(target);
-  if (!a || !b) return false;
-  for (let i = 0; i < 3; i += 1) {
-    if (a[i] < b[i]) return true;
-    if (a[i] > b[i]) return false;
-  }
-  return false;
-};
 
 /** נטען בדומיין הטסט: מנקה מטמון/SW/localStorage ומחזיר למקור (pro.com) */
 function ForceUpdateProHandler() {
@@ -88,33 +62,6 @@ function ForceUpdateProHandler() {
         await purgeAllClientStorageThisOrigin();
       } finally {
         window.location.replace(`${FLEET_MANAGER_PRO_ORIGIN}/`);
-      }
-    })();
-  }, []);
-
-  return null;
-}
-
-function EmergencyCacheBuster() {
-  useEffect(() => {
-    (async () => {
-      try {
-        const action = new URLSearchParams(window.location.search).get('action');
-        if (action === 'force_update_pro') return;
-
-        const res = await fetch(`${VERSION_MANIFEST_URL}?t=${Date.now()}`, { cache: 'no-store' });
-        if (!res.ok) return;
-        const manifest = (await res.json()) as { version?: unknown };
-        const version = typeof manifest.version === 'string' ? manifest.version : '';
-        if (!version || !isBelowTargetVersion(version, TARGET_MIN_VERSION)) return;
-
-        const alreadyForced = sessionStorage.getItem('forced-refresh-2-4-2');
-        if (alreadyForced === '1') return;
-        sessionStorage.setItem('forced-refresh-2-4-2', '1');
-
-        await updateApp();
-      } catch {
-        // ignore
       }
     })();
   }, []);
@@ -217,6 +164,7 @@ const App = () => (
                 <div className="flex-1">
                   <AppRoutes />
                 </div>
+                <UpdateAvailabilityNotifier />
                 <Footer />
               </div>
             </AppErrorBoundary>

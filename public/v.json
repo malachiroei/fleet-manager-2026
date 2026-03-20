@@ -1,7 +1,7 @@
 {
-    "version": "2.4.2",
-    "releaseDate": "18/03/2026",
-    "releaseTime": "23:30",
-    "description": "עדכון: ניווט לשרת הטסט + ניקוי SW/Cache",
-    "changelog": "כפתור עדכן → fleet-manager-dev עם ?updated=true; נכסי build עם base מלא לטסט."
+    "version": "2.4.4",
+    "releaseDate": "19/03/2026",
+    "releaseTime": "14:00",
+    "description": "Infrastructure check: Removed rocket emoji and fixed automatic update mechanism",
+    "changelog": "Infrastructure check: Removed rocket emoji and fixed automatic update mechanism"
   }
