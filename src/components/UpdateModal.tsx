@@ -32,7 +32,20 @@ export function UpdateModal() {
           <Button type="button" variant="outline" onClick={() => setNeedRefresh(false)}>
             לא עכשיו
           </Button>
-          <Button type="button" onClick={() => void updateServiceWorker(true)}>
+          <Button
+            type="button"
+            onClick={() => {
+              // מניעת לופ: מסירים סימוני עדכון/מודאל לפני שמפעילים skipWaiting
+              try {
+                sessionStorage.removeItem("pwa-modal-for-version");
+                sessionStorage.removeItem("pwa-waiting-reload");
+              } catch {
+                // ignore
+              }
+              setNeedRefresh(false);
+              void updateServiceWorker(true);
+            }}
+          >
             עדכן עכשיו
           </Button>
         </DialogFooter>

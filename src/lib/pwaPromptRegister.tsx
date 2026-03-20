@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { version as currentVersion } from "@/constants/version";
 
 export interface RegisterSWOptions {
   immediate?: boolean;
@@ -20,6 +21,21 @@ export function useRegisterSW(options?: RegisterSWOptions) {
 
     let registration: ServiceWorkerRegistration | null = null;
     let cancelled = false;
+
+    const VERSION_MANIFEST_URL = "https://fleet-manager-dev.vercel.app/v.json";
+    const PWA_MODAL_VERSION_KEY = "pwa-modal-for-version";
+
+    const fetchRemoteVersion = async (): Promise<string | null> => {
+      try {
+        const res = await fetch(`${VERSION_MANIFEST_URL}?t=${Date.now()}`, { cache: "no-store" });
+        if (!res.ok) return null;
+        const manifest = (await res.json()) as { version?: unknown };
+        const v = typeof manifest.version === "string" ? manifest.version.trim() : "";
+        return v || null;
+      } catch {
+        return null;
+      }
+    };
 
     const onControllerChange = () => {
       try {
@@ -43,7 +59,30 @@ export function useRegisterSW(options?: RegisterSWOptions) {
           installing.addEventListener("statechange", () => {
             if (installing.state !== "installed") return;
             if (navigator.serviceWorker.controller) {
-              setNeedRefresh(true);
+              void (async () => {
+                // תנאי מפורש: אם הגרסה ב-v.json זהה לזו שבקוד -> לא להציג מודאל.
+                const newVersion = await fetchRemoteVersion();
+                    if (!newVersion) {
+                      setNeedRefresh(false);
+                      return;
+                    }
+                    if (newVersion === currentVersion) {
+                      setNeedRefresh(false);
+                      return;
+                    }
+
+                // מניעת פתיחה חוזרת לאותו version
+                try {
+                  if (newVersion) {
+                    if (sessionStorage.getItem(PWA_MODAL_VERSION_KEY) === newVersion) return;
+                    sessionStorage.setItem(PWA_MODAL_VERSION_KEY, newVersion);
+                  }
+                } catch {
+                  // ignore
+                }
+
+                setNeedRefresh(true);
+              })();
             } else {
               setOfflineReady(true);
             }
