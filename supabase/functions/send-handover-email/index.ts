@@ -157,7 +157,7 @@ serve(async (req) => {
     // ── Supabase admin client ────────────────────────────────────────────────
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    // ── 0. Resolve CC recipients from system_settings ────────────────────────
+    // ── 0. Resolve CC recipients from public.system_settings ─────────────────
     let ccEmails: string[] = [fallbackManagerEmail];
     try {
       const { data: settingsRow } = await supabase
@@ -290,7 +290,7 @@ serve(async (req) => {
     `.trim();
 
     // ── 5. Send via Resend ────────────────────────────────────────────────────
-    // Driver gets the email; all system_settings addresses are CC'd
+    // Driver gets the email; all system_settings.notification_emails addresses are CC'd
     const recipients = [driverEmail];
     for (const cc of ccEmails) {
       if (cc !== driverEmail && !recipients.includes(cc)) {

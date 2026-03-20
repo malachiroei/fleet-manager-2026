@@ -17,6 +17,7 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
+import { FLEET_KV_TABLE } from '@/lib/fleetKvTable';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -91,7 +92,7 @@ export async function sendHandoverEmail({
   let ccEmails: string[] = [];
   try {
     const { data } = await (supabase as any)
-      .from('system_settings')
+      .from(FLEET_KV_TABLE)
       .select('value')
       .eq('key', 'notification_emails')
       .maybeSingle() as { data: { value: unknown } | null };

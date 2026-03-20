@@ -9,7 +9,8 @@ import { useTeamMembersForSwitcher } from '@/hooks/useTeam';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { AIChatAssistant } from './AIChatAssistant';
 import { useTheme } from '@/hooks/useTheme';
-import { Sun, Moon, Building2, LogOut, Home, ArrowRight, ChevronDown, Building, Settings } from 'lucide-react';
+import { Sun, Moon, Building2, LogOut, Home, ArrowRight, ChevronDown, Building, Settings, Check } from 'lucide-react';
+// Check: רק בייצור (כתום) — בטסט אין סימון V בכותרת
 import { PwaInstallButton } from './PwaInstallButton';
 import { Button } from './ui/button';
 import {
@@ -23,7 +24,12 @@ import {
 import { cn } from '@/lib/utils';
 import { appLogo } from '@/components/BrandLogo';
 import { supabase } from '@/integrations/supabase/client';
-import { version as appVersionLabel } from '@/constants/version';
+import {
+  version as bundleVersion,
+  FLEET_PRO_ACK_VERSION_STORAGE_KEY,
+  FLEET_PRO_DEFAULT_HEADER_VERSION,
+} from '@/constants/version';
+import { normalizeVersion } from '@/lib/versionManifest';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -56,6 +62,20 @@ export function AppLayout({ children }: AppLayoutProps) {
   const orgName = organization?.name?.trim() ?? '';
   const { data: teamMembers = [], error: teamMembersError } = useTeamMembersForSwitcher(activeOrgId ?? null as any);
   const { viewAsEmail, setViewAsEmail, viewAsProfile } = useViewAs();
+
+  /** קיר קשיח ייצור: רק fleet-manager-pro.com (בדיוק) */
+  const isProduction = window.location.hostname === 'fleet-manager-pro.com';
+  /** מוצג בכותרת — בטסט = גרסת בנדל; בייצור = מאושרת או ברירת מחדל עד "עדכן עכשיו" */
+  const headerDisplayVersion = useMemo(() => {
+    if (!isProduction) return normalizeVersion(bundleVersion);
+    try {
+      const stored = localStorage.getItem(FLEET_PRO_ACK_VERSION_STORAGE_KEY);
+      if (stored?.trim()) return normalizeVersion(stored.trim());
+    } catch {
+      // ignore
+    }
+    return normalizeVersion(FLEET_PRO_DEFAULT_HEADER_VERSION);
+  }, [isProduction, bundleVersion]);
 
   useEffect(() => {
     console.log('TeamMembers for Org:', activeOrgId, {
@@ -654,8 +674,15 @@ export function AppLayout({ children }: AppLayoutProps) {
           <span className="block truncate text-[10px] text-cyan-400/55">
             {orgName || 'הצי הראשי - רועי'}
           </span>
-          <span className="block truncate text-xs font-semibold text-green-400 drop-shadow-sm">
-            גרסה v{appVersionLabel}
+          <span className="block truncate text-xs font-semibold text-white drop-shadow-sm">
+            <span className="inline-flex items-center gap-1">
+              גרסה v{headerDisplayVersion}
+              <Check
+                className={cn('h-3.5 w-3.5 shrink-0', checkmarkColor)}
+                strokeWidth={2.75}
+                aria-label="גרסה מסונכרנת"
+              />
+            </span>
           </span>
         </div>
       </div>

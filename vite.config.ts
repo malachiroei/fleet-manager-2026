@@ -5,16 +5,21 @@ import path from "path";
 
 /**
  * PWA — vite-plugin-pwa:
- * - registerType: 'prompt' (לא autoUpdate) — לא מפעילים גרסת SW חדשה בלי אישור מהממשק
- * - strategies: 'injectManifest' — מקור: src/sw.ts (ללא skipWaiting ב-install)
- * - injectRegister: false — הרישום ב-src/lib/pwaPromptRegister.tsx (עם הפרדת prod/test)
+ * - פלט SW בדפדפן: /sw-v2.js (מקור לבילד: src/sw-v2.ts) — שובר רישום ישן של sw.js
+ * - registerType: מ-VITE_PWA_REGISTER_TYPE — autoUpdate (טסט) / prompt (ייצור). ברירת מחדל: prompt
+ * - injectRegister: false — הרישום ב-src/lib/pwaPromptRegister.tsx
+ *
+ * אם build של ה-SW נכשל עם MODULE_NOT_FOUND ב־@babel/* — ודאו ש־devDependencies כוללות
+ * @babel/traverse ו־@babel/generator תקינים (workbox-build משתמש בהם).
  */
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   // טעינת משתני הסביבה לפי המוד הנוכחי
   const env = loadEnv(mode, process.cwd(), '');
-  
+  const pwaRegisterType =
+    env.VITE_PWA_REGISTER_TYPE === 'autoUpdate' ? ('autoUpdate' as const) : ('prompt' as const);
+
   return {
     base: '/',
     server: {
@@ -30,18 +35,20 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       VitePWA({
-        registerType: "prompt",
+        registerType: pwaRegisterType,
         injectRegister: false,
         strategies: "injectManifest",
         srcDir: "src",
-        filename: "sw.ts",
+        // מקור TypeScript; vite-plugin-pwa יוצא ל-dist בשם sw-v2.js
+        filename: "sw-v2.ts",
         manifest: false,
         includeManifestIcons: false,
         injectManifest: {
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           globPatterns: [
             "**/*.{js,css,html,ico,png,svg,webp,woff2,json,webmanifest}",
           ],
-          globIgnores: ["**/node_modules/**/*"],
+          globIgnores: ["**/node_modules/**/*", "**/v.json", "v.json"],
         },
         devOptions: {
           enabled: false,
@@ -50,6 +57,7 @@ export default defineConfig(({ mode }) => {
     ],
     build: {
       outDir: 'dist',
+      emptyOutDir: true,
       assetsDir: 'assets',
       rollupOptions: {
         output: {

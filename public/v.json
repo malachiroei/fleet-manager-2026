@@ -1,11 +1,11 @@
 {
-  "version": "2.4.9",
-  "releaseDate": "20/03/2026",
-  "releaseTime": "20:00",
-  "description": "Release 2.4.9: VitePWA registerType prompt + injectManifest, SW ללא skipWaiting ב-install",
-  "changelog": "בניית sw דרך vite-plugin-pwa; מניעת עדכון אוטומטי במקור",
+  "version": "2.5.11",
+  "releaseDate": "21/03/2026",
+  "releaseTime": "00:00",
+  "description": "Release 2.5.11: קיר קשיח SW בייצור + זיהוי עדכון רק מ-Supabase",
+  "changelog": "sw-v2: ללא skipWaiting אוטומטי ב-fleet-manager-pro.com\nReact: ללא registration.update בייצור; מודאל מול version_manifest בלבד\nעדכן עכשיו: SKIP_WAITING + reload",
   "changes": [
-    "בדיקה סופית של חסימת עדכון אוטומטי 🛑",
-    "צבע ירוק"
+    "Hard stop SW בייצור (waiting עד הודעה)",
+    "גרסת בנדל 2.5.11 — טסט כתום; Pro סגול עד אישור"
   ]
 }

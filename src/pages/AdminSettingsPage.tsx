@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
  import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { supabase } from '@/integrations/supabase/client';
@@ -18,6 +19,17 @@ import { version as codeVersion } from '@/constants/version';
 import { triggerServiceWorkerUpdateCheck } from '@/lib/pwaServiceWorkerControl';
 import { hidePwaUpdateModal, showPwaUpdateModal } from '@/lib/pwaUpdateModalBridge';
 import { parseManifestChanges } from '@/lib/pwaManifest';
+import {
+  pickLatestVersionManifest,
+  computeNextPatchVersion,
+  fetchPendingChangesFromDb,
+  fetchVersionManifestFromDb,
+  normalizeVersion,
+  compareSemver,
+  versionNotOlderThanBundle,
+} from '@/lib/versionManifest';
+import { isFleetManagerTestHost, isFleetProductionHost } from '@/lib/pwaPromptRegister';
+import { FLEET_KV_TABLE } from '@/lib/fleetKvTable';
  
 export default function AdminSettingsPage() {
     const DEV_MANIFEST_URL = 'https://fleet-manager-dev.vercel.app/v.json';
@@ -47,7 +59,7 @@ export default function AdminSettingsPage() {
       return true;
     })();
 
-    // ── notification_emails — stored in system_settings table ─────────────────
+    // ── notification_emails — stored in system_settings ───────────────────────
     const [notificationEmailsRaw, setNotificationEmailsRaw] = useState('malachiroei@gmail.com');
     const [isSavingEmails, setIsSavingEmails] = useState(false);
     const [isLoadingEmails, setIsLoadingEmails] = useState(true);
@@ -56,7 +68,7 @@ export default function AdminSettingsPage() {
       (async () => {
         try {
           const { data, error } = await (supabase as any)
-            .from('system_settings')
+            .from(FLEET_KV_TABLE)
             .select('value')
             .eq('key', 'notification_emails')
             .maybeSingle();
@@ -73,7 +85,7 @@ export default function AdminSettingsPage() {
       })();
     }, []);
 
-    // ── last_pricing_upload_date — stored in system_settings (shared for all users) ─────────
+    // ── last_pricing_upload_date — stored in system_settings (shared for all users)
     useEffect(() => {
       const handlePricingUploaded = (event: Event) => {
         const detail = (event as CustomEvent<{ iso?: string }>).detail;
@@ -88,7 +100,7 @@ export default function AdminSettingsPage() {
       (async () => {
         try {
           const { data, error } = await (supabase as any)
-            .from('system_settings')
+            .from(FLEET_KV_TABLE)
             .select('key,value')
             .in('key', ['last_pricing_upload_date', 'last_pricing_upload']);
 
@@ -132,14 +144,14 @@ export default function AdminSettingsPage() {
       setIsSavingEmails(true);
       try {
         const { error } = await (supabase as any)
-          .from('system_settings')
+          .from(FLEET_KV_TABLE)
           .upsert({ key: 'notification_emails', value: emails }, { onConflict: 'key' });
         if (error) throw error;
         setNotificationEmailsRaw(emails.join(', '));
         toast.success(`נשמרו ${emails.length} כתובות מייל להתראות`);
       } catch (err) {
         console.error(err);
-        toast.error('שמירה נכשלה — ודא שהמיגרציה system_settings הופעלה');
+        toast.error('שמירה נכשלה — ודא שטבלת settings קיימת ב-Supabase');
       } finally {
         setIsSavingEmails(false);
       }
@@ -157,17 +169,23 @@ export default function AdminSettingsPage() {
     const [isPublishConfirmOpen, setIsPublishConfirmOpen] = useState(false);
     const [isPublishProgressOpen, setIsPublishProgressOpen] = useState(false);
     const [publishNextVersion, setPublishNextVersion] = useState<string>('');
-    const [pendingChanges, setPendingChanges] = useState<string[]>([]);
+    const [publishVersionInput, setPublishVersionInput] = useState<string>('');
+    const [publishChangelogText, setPublishChangelogText] = useState<string>('');
     const [publishProgressValue, setPublishProgressValue] = useState<number>(0);
     const [publishProgressStage, setPublishProgressStage] = useState<string>('');
     const [isPublishing, setIsPublishing] = useState(false);
+    /** השוואת גרסאות + בחירת pending — מודאל פרסום (בעיקר בטסט) */
+    const [publishDiffSupabaseVersion, setPublishDiffSupabaseVersion] = useState<string>('');
+    const [publishPendingCandidates, setPublishPendingCandidates] = useState<string[]>([]);
+    const [publishCandidateSelected, setPublishCandidateSelected] = useState<boolean[]>([]);
+    const [publishExtraChangelogLines, setPublishExtraChangelogLines] = useState<string>('');
 
-    const DEFAULT_APP_VERSION = '2.1.0';
+    const DEFAULT_APP_VERSION = codeVersion;
     const [appVersion, setAppVersion] = useState<string>(() => {
       try {
-        return localStorage.getItem('fleet-manager-app_version') || DEFAULT_APP_VERSION;
+        return versionNotOlderThanBundle(localStorage.getItem('fleet-manager-app_version'), codeVersion);
       } catch {
-        return DEFAULT_APP_VERSION;
+        return codeVersion;
       }
     });
     // Default visible timestamp for the last update (updated by the "עדכן" flow)
@@ -184,7 +202,7 @@ export default function AdminSettingsPage() {
       return formatDateTimeForUi(new Date(2026, 2, 18, 13, 0, 0));
     });
 
-    const [latestManifestVersion, setLatestManifestVersion] = useState<string>(DEFAULT_APP_VERSION);
+    const [latestManifestVersion, setLatestManifestVersion] = useState<string>(codeVersion);
 
     const restoreInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -205,7 +223,15 @@ export default function AdminSettingsPage() {
             const localVersion = localStorage.getItem('fleet-manager-app_version');
             const localLastIso = localStorage.getItem('fleet-manager-last_update_date_iso');
             if (localVersion && localLastIso) {
-              setAppVersion(localVersion);
+              const v = versionNotOlderThanBundle(localVersion, codeVersion);
+              setAppVersion(v);
+              if (v !== localVersion) {
+                try {
+                  localStorage.setItem('fleet-manager-app_version', v);
+                } catch {
+                  // ignore
+                }
+              }
               const ms = Date.parse(localLastIso);
               if (!Number.isNaN(ms)) {
                 setLastUpdateDate(formatDateTimeForUi(new Date(ms)));
@@ -219,14 +245,15 @@ export default function AdminSettingsPage() {
           }
 
           const [versionRes, lastUpdateRes] = await Promise.all([
-            (supabase as any).from('system_settings').select('value').eq('key', 'app_version').maybeSingle(),
-            (supabase as any).from('system_settings').select('value').eq('key', 'last_update_date').maybeSingle(),
+            (supabase as any).from(FLEET_KV_TABLE).select('value').eq('key', 'app_version').maybeSingle(),
+            (supabase as any).from(FLEET_KV_TABLE).select('value').eq('key', 'last_update_date').maybeSingle(),
           ]);
 
           if (!versionRes?.error) {
             const versionValue = versionRes?.data?.value;
             if (typeof versionValue === 'string' && versionValue.trim()) {
-              setAppVersion(versionValue);
+              const v = versionNotOlderThanBundle(versionValue, codeVersion);
+              setAppVersion(v);
             }
           }
 
@@ -247,16 +274,13 @@ export default function AdminSettingsPage() {
       })();
     }, []);
 
-    // Load latest version manifest for "latest version" coloring
+    // Load latest version manifest for "latest version" coloring (DB או v.json בטסט)
     useEffect(() => {
       (async () => {
         try {
-          const res = await fetch(`${DEV_MANIFEST_URL}?t=${Date.now()}`, { cache: 'no-store' });
-          if (!res.ok) return;
-          const json = (await res.json()) as { version?: unknown };
-          if (typeof json.version === 'string' && json.version.trim()) {
-            setLatestManifestVersion(json.version);
-          }
+          const picked = await pickLatestVersionManifest(supabase as any, DEV_MANIFEST_URL);
+          const v = picked?.manifest?.version;
+          if (typeof v === 'string' && v.trim()) setLatestManifestVersion(v.trim());
         } catch {
           // best-effort only
         }
@@ -498,37 +522,17 @@ export default function AdminSettingsPage() {
 
         // חייב להתאים לגרסה שבאמת רצה בדפדפן (מהבילד), לא ל-appVersion מ-localStorage —
         // אחרת מופיע מודאל עדכון למרות שהמסך כבר מציג את codeVersion מהבילד.
-        const normalize = (v: string) => v.replace(/^v/, "").trim();
+        const picked = await pickLatestVersionManifest(supabase as any, DEV_MANIFEST_URL);
+        if (!picked) throw new Error('לא ניתן לטעון מניפסט גרסה (ענן או v.json)');
 
-        const parseSemver = (v: string): number[] | null => {
-          const parts = String(v).split('.').map((x) => parseInt(x, 10));
-          if (parts.length < 3) return null;
-          if (parts.some((n) => Number.isNaN(n))) return null;
-          return parts.slice(0, 3);
-        };
-
-        const compareSemver = (a: string, b: string) => {
-          const pa = parseSemver(a);
-          const pb = parseSemver(b);
-          if (!pa || !pb) return 0;
-          for (let i = 0; i < 3; i += 1) {
-            if (pa[i] > pb[i]) return 1;
-            if (pa[i] < pb[i]) return -1;
-          }
-          return 0;
-        };
-
-        const cacheBustedUrl = `${DEV_MANIFEST_URL}?t=${Date.now()}`;
-        const latestRes = await fetch(cacheBustedUrl, { cache: 'no-store' });
-        if (!latestRes.ok) throw new Error(`HTTP ${latestRes.status}`);
-        const latestManifest = (await latestRes.json()) as Partial<VersionManifest>;
+        const latestManifest = picked.manifest as Partial<VersionManifest>;
         const manifestChanges = parseManifestChanges(latestManifest);
 
         const latestVersion = latestManifest?.version ? String(latestManifest.version) : '';
         if (!latestVersion) throw new Error('Latest manifest missing "version"');
 
-        const latestNormalized = normalize(latestVersion);
-        const currentNormalized = normalize(codeVersion);
+        const latestNormalized = normalizeVersion(latestVersion);
+        const currentNormalized = normalizeVersion(codeVersion);
 
         // אם הגרסה מהשרת זהה לגרסה הנוכחית בבילד — לסגור את מודאל ה-PWA.
         if (latestNormalized === currentNormalized) {
@@ -556,38 +560,16 @@ export default function AdminSettingsPage() {
         const message = err instanceof Error ? err.message : 'שגיאה לא ידועה';
         toast.error(`בדיקת עדכונים נכשלה: ${message}`);
       } finally {
-        // תמיד מנסים לבדוק SW — גם אם v.json/DB נכשלו; תהליך PWA לא תלוי ב-Supabase
-        try {
-          await triggerServiceWorkerUpdateCheck();
-        } catch (swErr) {
-          console.warn("triggerServiceWorkerUpdateCheck:", swErr);
+        // במקור (ייצור): רק מודאל + אישור "עדכן עכשיו" — לא מושכים עדכון SW ברקע מכפתור זה
+        if (!isFleetProductionHost()) {
+          try {
+            await triggerServiceWorkerUpdateCheck();
+          } catch (swErr) {
+            console.warn('triggerServiceWorkerUpdateCheck:', swErr);
+          }
         }
         setIsCheckingUpdates(false);
       }
-    };
-
-    const downloadJsonFile = (filename: string, obj: unknown) => {
-      const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
-    };
-
-    const parseSemverParts = (v: string): number[] | null => {
-      const parts = String(v).split('.').map((x) => parseInt(x, 10));
-      if (parts.length < 3) return null;
-      if (parts.some((n) => Number.isNaN(n))) return null;
-      return parts.slice(0, 3);
-    };
-
-    const computeNextPatchVersion = (v: string): string => {
-      const parts = parseSemverParts(v);
-      if (!parts) return '0.0.1';
-      const [major, minor, patch] = parts;
-      return `${major}.${minor}.${patch + 1}`;
     };
 
     const formatReleaseDate = (d: Date) => {
@@ -603,36 +585,83 @@ export default function AdminSettingsPage() {
       return `${hh}:${mm}`;
     };
 
+    /** שורות צ׳יינג׳לוג מהטקסט במודאל — ללא שורות ריקות */
+    const parseChangelogLines = (raw: string): string[] =>
+      raw
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+
+    /**
+     * מניפסט מלא ל-Supabase (jsonb) — שדות קבועים בלבד כדי למנוע 400 / ערכים לא צפויים ממיזוג ישן.
+     * כולל: version, changes, releaseDate, releaseTime, publishedAt, timestamp, description, changelog
+     */
+    const buildManifestForPublish = (
+      versionInput: string,
+      changesLines: string[],
+      releaseDate: string,
+      releaseTime: string,
+      description: string,
+      publishedAtIso: string
+    ): Record<string, unknown> => {
+      const version =
+        normalizeVersion(versionInput).trim() || String(versionInput).trim();
+      const changes = changesLines
+        .map((c) => String(c).trim())
+        .filter((c) => c.length > 0);
+      const changelogFull = changes.join('\n');
+      const payload = {
+        version,
+        changes,
+        releaseDate,
+        releaseTime,
+        publishedAt: publishedAtIso,
+        /** מזהה זמן פרסום (מקור אמת לעדכון) */
+        timestamp: publishedAtIso,
+        description: String(description),
+        changelog: changelogFull,
+      };
+      return JSON.parse(JSON.stringify(payload)) as Record<string, unknown>;
+    };
+
     const openPublishModal = async () => {
       setIsPublishing(false);
       try {
-        const cacheBustedUrlManifest = `${DEV_MANIFEST_URL}?t=${Date.now()}`;
-        const cacheBustedUrlPending = `/pending_changes.json?t=${Date.now()}`;
+        const staticManifestUrl =
+          typeof window !== 'undefined' && window.location?.origin
+            ? `${window.location.origin}/v.json`
+            : DEV_MANIFEST_URL;
 
-        const [manifestRes, pendingRes] = await Promise.all([
-          fetch(cacheBustedUrlManifest, { cache: 'no-store' }),
-          fetch(cacheBustedUrlPending, { cache: 'no-store' }),
-        ]);
+        const fromDbOnly = await fetchVersionManifestFromDb(supabase as any);
+        const dbVer =
+          typeof fromDbOnly?.version === 'string' && fromDbOnly.version.trim()
+            ? fromDbOnly.version.trim()
+            : '';
+        setPublishDiffSupabaseVersion(dbVer);
 
-        if (!manifestRes.ok) throw new Error(`manifest fetch failed: HTTP ${manifestRes.status}`);
-        if (!pendingRes.ok) throw new Error(`pending fetch failed: HTTP ${pendingRes.status}`);
+        const picked = await pickLatestVersionManifest(supabase as any, staticManifestUrl);
+        const manifestJson = picked?.manifest ?? {};
+        const currentVersion =
+          typeof manifestJson?.version === 'string' && manifestJson.version.trim()
+            ? manifestJson.version
+            : appVersion;
 
-        const manifestJson = (await manifestRes.json()) as { version?: unknown };
-        const currentVersion = typeof manifestJson?.version === 'string' ? manifestJson.version : appVersion;
-
-        const pendingJson = (await pendingRes.json()) as { changes?: unknown };
-        const changesRaw = pendingJson?.changes;
-        const changes =
-          Array.isArray(changesRaw) ? changesRaw.map((x) => String(x)).filter((s) => s.trim()) : [];
-
-        if (changes.length === 0) {
-          toast.error('אין שינויים ממתינים לפרסום (pending_changes.json ריק).');
-          return;
-        }
+        // רק Supabase — ללא pending_changes.json מקומי
+        const changes = (await fetchPendingChangesFromDb(supabase as any)) ?? [];
 
         const next = computeNextPatchVersion(currentVersion);
-        setPendingChanges(changes);
+        const initialLines = changes && changes.length > 0 ? changes : [];
         setPublishNextVersion(next);
+        setPublishVersionInput(next);
+        setPublishChangelogText(initialLines.length > 0 ? initialLines.join('\n') : '');
+        setPublishPendingCandidates(initialLines);
+        setPublishCandidateSelected(initialLines.map(() => true));
+        setPublishExtraChangelogLines('');
+
+        if (initialLines.length === 0) {
+          toast.message('אין שינויים ב-pending — ניתן להקליד צ׳יינג׳לוג ידנית (או רק בשדה הנוסף בטסט).');
+        }
+
         setIsPublishConfirmOpen(true);
       } catch (e) {
         console.error(e);
@@ -642,6 +671,28 @@ export default function AdminSettingsPage() {
     };
 
     const publishRelease = async () => {
+      const versionFinal = publishVersionInput.trim() || publishNextVersion.trim();
+
+      let changesFinal: string[];
+      if (isFleetManagerTestHost()) {
+        const fromChecks = publishPendingCandidates.filter(
+          (line, i) => publishCandidateSelected[i] && String(line).trim().length > 0
+        );
+        const extra = parseChangelogLines(publishExtraChangelogLines);
+        changesFinal = [...fromChecks.map((s) => s.trim()), ...extra];
+      } else {
+        changesFinal = parseChangelogLines(publishChangelogText);
+      }
+
+      if (!String(versionFinal).trim()) {
+        toast.error('נא להזין מספר גרסה (כל מחרוזת לא ריקה, למשל 2.5.11).');
+        return;
+      }
+      if (changesFinal.length === 0) {
+        toast.error('חסרה רשימת שינויים — סמן לפחות שורה אחת או הזן טקסט בצ׳יינג׳לוג.');
+        return;
+      }
+
       setIsPublishConfirmOpen(false);
       setIsPublishProgressOpen(true);
       setIsPublishing(true);
@@ -651,51 +702,108 @@ export default function AdminSettingsPage() {
       const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
       try {
-        const manifestRes = await fetch(`${DEV_MANIFEST_URL}?t=${Date.now()}`, { cache: 'no-store' });
-        if (!manifestRes.ok) throw new Error(`manifest fetch failed: HTTP ${manifestRes.status}`);
-        const manifestJson = (await manifestRes.json()) as Record<string, unknown>;
-
-        setPublishProgressStage('מעדכן v.json...');
+        setPublishProgressStage('מכין מניפסט גרסה...');
         setPublishProgressValue(35);
-        await sleep(400);
+        await sleep(200);
 
         const now = new Date();
+        const publishedAtIso = now.toISOString();
         const releaseDate = formatReleaseDate(now);
         const releaseTime = formatReleaseTime(now);
-        const description = `Release: ${publishNextVersion}. ${pendingChanges.slice(0, 5).join(' | ')}${pendingChanges.length > 5 ? '...' : ''}`;
+        const description = `Release: ${versionFinal}. ${changesFinal.slice(0, 5).join(' | ')}${changesFinal.length > 5 ? '...' : ''}`;
 
-        const newManifest = {
-          ...manifestJson,
-          version: publishNextVersion,
+        const newManifest = buildManifestForPublish(
+          versionFinal,
+          changesFinal,
           releaseDate,
           releaseTime,
           description,
-          changes: pendingChanges.length > 0 ? pendingChanges : [],
-        };
+          publishedAtIso
+        );
 
-        // Clear file for next cycle
-        const clearedPending = { changes: [] as string[] };
+        if (
+          typeof newManifest.version !== 'string' ||
+          !String(newManifest.version).trim() ||
+          !Array.isArray(newManifest.changes) ||
+          newManifest.changes.length === 0
+        ) {
+          throw new Error('Missing version or changes');
+        }
 
-        setPublishProgressStage('מוריד קבצי פרסום...');
-        setPublishProgressValue(75);
-        await sleep(500);
+        const versionCanonical = String(newManifest.version).trim();
 
-        // Download artifacts (browser cannot directly write into repo/static files)
-        downloadJsonFile('v.json', newManifest);
-        downloadJsonFile('public_v.json', newManifest);
-        downloadJsonFile('pending_changes.json', clearedPending);
-        downloadJsonFile('public_pending_changes.json', clearedPending);
+        /** בטסט: רק פריטים שלא נבחרו נשארים ב-pending_changes; בשאר הסביבות — מנקים pending אחרי פרסום מלא מטקסטאריאה */
+        let pendingChangesPayload: { changes: string[] };
+        if (isFleetManagerTestHost()) {
+          const remaining = publishPendingCandidates
+            .filter((_line, i) => publishCandidateSelected[i] !== true)
+            .map((s) => String(s).trim())
+            .filter((s) => s.length > 0);
+          pendingChangesPayload = { changes: remaining };
+        } else {
+          pendingChangesPayload = { changes: [] };
+        }
+
+        setPublishProgressStage('שומר מניפסט בענן (Supabase)...');
+        setPublishProgressValue(45);
+        await sleep(150);
+
+        // פרסום → רק system_settings (ללא הורדות קבצים)
+        const rows = [
+          { key: 'version_manifest', value: newManifest },
+          { key: 'app_version', value: versionCanonical },
+          { key: 'last_update_date', value: publishedAtIso },
+          { key: 'pending_changes', value: pendingChangesPayload },
+        ];
+
+        const { error: upsertError } = await (supabase as any)
+          .from('system_settings')
+          .upsert(rows, { onConflict: 'key' });
+        if (upsertError) {
+          console.error('system_settings upsert', upsertError, JSON.stringify(rows));
+          throw upsertError;
+        }
+
+        try {
+          localStorage.setItem('fleet-manager-app_version', versionCanonical);
+          localStorage.setItem('fleet-manager-last_update_date_iso', publishedAtIso);
+        } catch {
+          // ignore quota / private mode
+        }
+        setAppVersion(versionCanonical);
+        setLatestManifestVersion(versionCanonical);
+
+        setPublishProgressStage('מסיים...');
+        setPublishProgressValue(90);
+        await sleep(200);
 
         setPublishProgressStage('בוצע!');
         setPublishProgressValue(100);
-        toast.success('הגרסה פורסמה (קבצי עדכון הוכנו להורדה).');
+        toast.success(
+          isFleetManagerTestHost()
+            ? `הגרסה ${versionCanonical} נשמרה ב-Supabase (version_manifest). הדף יתרענן.`
+            : `הגרסה ${versionCanonical} נשמרה ב-Supabase תחת version_manifest — מקור האמת בענן.`
+        );
 
         setIsPublishProgressOpen(false);
-        setPendingChanges([]);
+        setPublishChangelogText('');
+        setPublishExtraChangelogLines('');
+        setPublishPendingCandidates([]);
+        setPublishCandidateSelected([]);
+
+        if (isFleetManagerTestHost()) {
+          window.setTimeout(() => {
+            window.location.reload();
+          }, 600);
+        }
       } catch (e) {
         console.error(e);
-        const message = e instanceof Error ? e.message : 'שגיאה לא ידועה';
+        let message = e instanceof Error ? e.message : 'שגיאה לא ידועה';
+        if (message === 'Missing version or changes') {
+          message = 'חסרה גרסה או רשימת שינויים — נא למלא את השדות במודאל.';
+        }
         toast.error(`פרסום נכשל: ${message}`);
+        setIsPublishProgressOpen(false);
       } finally {
         setIsPublishing(false);
       }
@@ -932,9 +1040,12 @@ export default function AdminSettingsPage() {
                 <div>
                   <CardTitle>מידע מערכת</CardTitle>
                   <CardDescription>
-                    Fleet Manager Pro — גרסה{' '}
+                    Fleet Manager Pro — גרסת בנדל (מהקוד המפורסם){' '}
                     <span className={codeVersion === latestManifestVersion ? 'text-[#10b981]' : undefined}>
                       {codeVersion}
+                    </span>
+                    <span className="text-muted-foreground text-xs block mt-1">
+                      מניפסט אחרון (ענן / v.json): {latestManifestVersion}
                     </span>
                   </CardDescription>
                 </div>
@@ -1030,17 +1141,138 @@ export default function AdminSettingsPage() {
                   <DialogHeader>
                     <DialogTitle>פרסום גרסה חדשה</DialogTitle>
                     <DialogDescription>
-                      גרסה חדשה זמינה: <strong>{publishNextVersion}</strong>
+                      נשמר רק ב־<code className="text-xs">system_settings</code> (ללא הורדות JSON). ב־fleet-manager-dev: רק
+                      פריטים מסומנים נכנסים ל־<code className="text-xs">version_manifest.changes</code>; לא מסומנים נשארים
+                      ב־<code className="text-xs">pending_changes</code>.
                     </DialogDescription>
                   </DialogHeader>
 
-                  <div className="space-y-2">
-                    <p className="text-sm font-semibold">צ׳יינג׳לוג (pending_changes):</p>
-                    <ul className="list-disc list-inside text-sm">
-                      {pendingChanges.map((c, idx) => (
-                        <li key={`${idx}-${c}`}>{c}</li>
-                      ))}
-                    </ul>
+                  <div className="space-y-3 max-h-[70vh] overflow-y-auto pe-1">
+                    {isFleetManagerTestHost() ? (
+                      <div className="rounded-md border border-border bg-muted/30 p-3 space-y-2 text-sm">
+                        <p className="font-semibold text-foreground">השוואת גרסאות (Diff)</p>
+                        <div className="flex flex-wrap justify-between gap-2">
+                          <span className="text-muted-foreground">גרסת בנדל (הפריסה הנוכחית)</span>
+                          <code className="font-mono text-xs bg-background px-2 py-0.5 rounded">{codeVersion}</code>
+                        </div>
+                        <div className="flex flex-wrap justify-between gap-2">
+                          <span className="text-muted-foreground">גרסה אחרונה ב־Supabase</span>
+                          <code className="font-mono text-xs bg-background px-2 py-0.5 rounded">
+                            {publishDiffSupabaseVersion || '— אין מניפסט'}
+                          </code>
+                        </div>
+                        {publishDiffSupabaseVersion ? (
+                          <p className="text-xs text-muted-foreground">
+                            {compareSemver(codeVersion, publishDiffSupabaseVersion) > 0
+                              ? 'הבנדל חדש יותר מהרשומה בענן — פרסום יעדכן את מקור האמת.'
+                              : compareSemver(codeVersion, publishDiffSupabaseVersion) < 0
+                                ? 'בענן רשומה גרסה גבוהה מהבנדל — ודא שהפריסה מסונכרנת.'
+                                : 'מספרי גרסה תואמים בין בנדל לענן (semver).'}
+                          </p>
+                        ) : null}
+
+                        <div className="pt-2 border-t border-border space-y-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-semibold">Pending — סמן מה נכנס לגרסה</span>
+                            <div className="flex gap-1">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-xs"
+                                onClick={() =>
+                                  setPublishCandidateSelected(publishPendingCandidates.map(() => true))
+                                }
+                              >
+                                בחר הכל
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-xs"
+                                onClick={() =>
+                                  setPublishCandidateSelected(publishPendingCandidates.map(() => false))
+                                }
+                              >
+                                נקה
+                              </Button>
+                            </div>
+                          </div>
+                          {publishPendingCandidates.length === 0 ? (
+                            <p className="text-xs text-muted-foreground">אין שורות pending — השתמש בשדה «שורות נוספות».</p>
+                          ) : (
+                            <ul className="space-y-2">
+                              {publishPendingCandidates.map((line, i) => (
+                                <li key={`${i}-${line.slice(0, 24)}`} className="flex gap-2 items-start">
+                                  <Checkbox
+                                    id={`publish-pending-${i}`}
+                                    checked={publishCandidateSelected[i] === true}
+                                    onCheckedChange={(v) => {
+                                      setPublishCandidateSelected((prev) => {
+                                        const next = [...prev];
+                                        next[i] = v === true;
+                                        return next;
+                                      });
+                                    }}
+                                  />
+                                  <label
+                                    htmlFor={`publish-pending-${i}`}
+                                    className="text-sm leading-snug cursor-pointer flex-1"
+                                  >
+                                    {line}
+                                  </label>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-sm font-semibold" htmlFor="publish-extra-changelog">
+                            שורות נוספות (אופציונלי)
+                          </label>
+                          <Textarea
+                            id="publish-extra-changelog"
+                            rows={4}
+                            className="text-sm min-h-[80px]"
+                            value={publishExtraChangelogLines}
+                            onChange={(e) => setPublishExtraChangelogLines(e.target.value)}
+                            placeholder="שורה אחת לכל שינוי נוסף"
+                          />
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-semibold" htmlFor="publish-version-input">
+                        מספר גרסה (מחרוזת חופשית, למשל 2.5.2)
+                      </label>
+                      <Input
+                        id="publish-version-input"
+                        dir="ltr"
+                        className="font-mono text-sm"
+                        value={publishVersionInput}
+                        onChange={(e) => setPublishVersionInput(e.target.value)}
+                        placeholder="2.5.11"
+                        autoComplete="off"
+                      />
+                    </div>
+                    {!isFleetManagerTestHost() ? (
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-semibold" htmlFor="publish-changelog-textarea">
+                          צ׳יינג׳לוג — שורה אחת לכל שינוי
+                        </label>
+                        <Textarea
+                          id="publish-changelog-textarea"
+                          rows={8}
+                          className="text-sm min-h-[140px]"
+                          value={publishChangelogText}
+                          onChange={(e) => setPublishChangelogText(e.target.value)}
+                          placeholder={'תיקון באג X\nשיפור Y'}
+                        />
+                      </div>
+                    ) : null}
                   </div>
 
                   <DialogFooter className="mt-4">
@@ -1074,7 +1306,8 @@ export default function AdminSettingsPage() {
                   <div className="space-y-3">
                     <Progress value={publishProgressValue} className="h-2" />
                     <p className="text-xs text-muted-foreground">
-                      היישום יכין את הקבצים המעודכנים (v.json + pending_changes.json) להורדה במחשב.
+                      נשמר ב-Supabase: version_manifest (version, changes, timestamp, changelog). בטסט הדף יתרענן
+                      אוטומטית אחרי השמירה.
                     </p>
                   </div>
                 </DialogContent>

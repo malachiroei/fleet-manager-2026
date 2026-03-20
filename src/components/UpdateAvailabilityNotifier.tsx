@@ -6,27 +6,10 @@ import {
   skipWaitingFromUserAction,
   subscribeToServiceWorkerUpdate,
 } from '@/lib/registerServiceWorker';
+import { supabase } from '@/integrations/supabase/client';
+import { fetchVersionManifestFromDb, fetchVersionManifestFromUrl, compareSemver } from '@/lib/versionManifest';
 
 const VERSION_MANIFEST_URL = 'https://fleet-manager-dev.vercel.app/v.json';
-
-function parseSemver(v: string): number[] | null {
-  const parts = String(v).split('.').map((x) => parseInt(x, 10));
-  if (parts.length < 3) return null;
-  if (parts.some((n) => Number.isNaN(n))) return null;
-  return parts.slice(0, 3);
-}
-
-/** חיובי אם a גדול מ-b */
-function compareSemver(a: string, b: string): number {
-  const pa = parseSemver(a);
-  const pb = parseSemver(b);
-  if (!pa || !pb) return 0;
-  for (let i = 0; i < 3; i += 1) {
-    if (pa[i] > pb[i]) return 1;
-    if (pa[i] < pb[i]) return -1;
-  }
-  return 0;
-}
 
 /**
  * בודק מול v.json בטסט ומול עדכון SW — ללא רענון אוטומטי.
@@ -40,10 +23,16 @@ export function UpdateAvailabilityNotifier() {
 
   const checkManifest = useCallback(async () => {
     try {
-      const res = await fetch(`${VERSION_MANIFEST_URL}?t=${Date.now()}`, { cache: 'no-store' });
-      if (!res.ok) return;
-      const manifest = (await res.json()) as { version?: unknown };
-      const latest = typeof manifest.version === 'string' ? manifest.version.trim() : '';
+      const fromDb = await fetchVersionManifestFromDb(supabase as any);
+      const fromUrl = await fetchVersionManifestFromUrl(VERSION_MANIFEST_URL);
+      const candidates: { version: string }[] = [];
+      if (fromDb?.version) candidates.push({ version: String(fromDb.version) });
+      if (fromUrl?.version) candidates.push({ version: String(fromUrl.version) });
+      let latest = '';
+      for (const c of candidates) {
+        if (!c.version.trim()) continue;
+        if (!latest || compareSemver(c.version, latest) > 0) latest = c.version.trim();
+      }
       if (!latest) return;
       if (compareSemver(latest, bundledVersion) > 0) {
         setRemoteVersion(latest);

@@ -1,3 +1,5 @@
+import { FLEET_SW_SCRIPT, getFleetServiceWorkerRegistration } from '@/lib/pwaServiceWorkerControl';
+
 /**
  * רישום SW ל-PWA. אין skipWaiting אוטומטי — רק אחרי פעולת משתמש (ראה skipWaitingFromUserAction).
  */
@@ -18,10 +20,10 @@ export function getServiceWorkerRegistration(): ServiceWorkerRegistration | null
   return registrationRef;
 }
 
-/** נקרא רק מלחיצה על "עדכן עכשיו" — מפעיל את ה-SW הממתין */
+/** נקרא רק מלחיצה על "עדכן עכשיו" — מפעיל את ה-SW הממתין (sw-v2) */
 export async function skipWaitingFromUserAction(): Promise<void> {
   if (!('serviceWorker' in navigator)) return;
-  const reg = registrationRef ?? (await navigator.serviceWorker.getRegistration());
+  const reg = registrationRef ?? (await getFleetServiceWorkerRegistration());
   if (reg?.waiting) {
     reg.waiting.postMessage({ type: 'SKIP_WAITING' });
   }
@@ -32,7 +34,7 @@ export function registerServiceWorker() {
 
   window.addEventListener('load', () => {
     navigator.serviceWorker
-      .register('/sw.js', { scope: '/' })
+      .register(FLEET_SW_SCRIPT, { scope: '/' })
       .then((registration) => {
         registrationRef = registration;
 
@@ -51,7 +53,7 @@ export function registerServiceWorker() {
         // אין registration.update() אוטומטי — רק אחרי פעולת משתמש (ראה pwaServiceWorkerControl)
       })
       .catch(() => {
-        /* dev / אין sw.js */
+        /* dev / אין sw-v2.js */
       });
   });
 }
