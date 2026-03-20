@@ -48,7 +48,7 @@ import {
   purgeAllClientStorageThisOrigin,
   FLEET_MANAGER_PRO_ORIGIN,
 } from "@/lib/testDeployUpdate";
-import { UpdateAvailabilityNotifier } from "@/components/UpdateAvailabilityNotifier";
+import { UpdateModal } from "@/components/UpdateModal";
 const queryClient = new QueryClient();
 
 /** נטען בדומיין הטסט: מנקה מטמון/SW/localStorage ומחזיר למקור (pro.com) */
@@ -151,7 +151,6 @@ function AppRoutes() {
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ForceUpdateProHandler />
-    <EmergencyCacheBuster />
     <ThemeProvider>
     <TooltipProvider>
       <Toaster />
@@ -164,7 +163,7 @@ const App = () => (
                 <div className="flex-1">
                   <AppRoutes />
                 </div>
-                <UpdateAvailabilityNotifier />
+                <UpdateModal />
                 <Footer />
               </div>
             </AppErrorBoundary>
