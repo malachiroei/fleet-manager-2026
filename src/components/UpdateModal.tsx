@@ -10,7 +10,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { clearServiceWorkerAndCaches } from '@/lib/registerServiceWorker';
+import {
+  clearServiceWorkerAndCaches,
+  skipWaitingAndReload,
+} from '@/lib/registerServiceWorker';
 import { FLEET_FORCE_UPDATE_PRO_URL } from '@/constants/fleetUpdate';
 
 export type UpdateManifest = {
@@ -61,6 +64,11 @@ export function UpdateModal({
     if (isUpdating) return;
     setIsUpdating(true);
     setProgress(5);
+
+    const didSkipWaiting = await skipWaitingAndReload();
+    if (didSkipWaiting) {
+      return;
+    }
 
     for (let p = 10; p <= 100; p += 10) {
       await new Promise((resolve) => setTimeout(resolve, 80));

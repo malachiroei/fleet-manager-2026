@@ -44,6 +44,7 @@ import { ViewAsProvider } from '@/contexts/ViewAsContext';
 import Footer from "@/components/layout/Footer";
 import { VehicleSpecDirtyProvider } from "@/contexts/VehicleSpecDirtyContext";
 import { PermissionGuard } from "@/components/PermissionGuard";
+import { ServiceWorkerUpdateListener } from "@/components/ServiceWorkerUpdateListener";
 const queryClient = new QueryClient();
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
@@ -131,6 +132,7 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
+      <ServiceWorkerUpdateListener />
       <BrowserRouter>
         <AuthProvider>
           <ViewAsProvider>

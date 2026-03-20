@@ -19,6 +19,7 @@ async function bootstrap() {
     return;
   }
 
+  // SW נשאר ב-waiting עד שהמשתמש מאשר; אין reload אוטומטי (ראה registerServiceWorker / ServiceWorkerUpdateListener).
   registerServiceWorker();
   createRoot(document.getElementById("root")!).render(<App />);
 }
