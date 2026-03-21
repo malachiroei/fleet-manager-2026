@@ -1,6 +1,6 @@
 // Central place for the app's current version.
 // Keep the named export `version` because some UI components import it directly.
-export const version = '2.7.53';
+export const version = '2.7.54';
 export default version;
 
 /** גרסת כותרת ברירת מחדל בייצור לפני אישור "עדכן עכשיו" (מניעת הצגת גרסת בנדל לפני הסכמה) */

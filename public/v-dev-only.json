@@ -1,9 +1,9 @@
 {
-  "version": "2.7.53",
+  "version": "2.7.54",
   "releaseDate": "21/03/2026",
   "releaseTime": "00:00",
-  "description": "Release 2.7.53: פרסום גלובלי — upsertSystemSettingsRows + verify read-back; הרשאות — עוגן פרטי *-p בלי bump גלובלי; מודאל עדכון שקט; רענון מנהל רק לעצמו",
-  "changelog": "formatPrivateUiAnchorVersion; FLEET_PRO_PRIVATE_ANCHOR_ACKNOWLEDGED_KEY; useFleetProSupabaseUpdateGate silent path; UpdateModal permission_anchor; commitFleetPro options",
+  "description": "Release 2.7.54: Hotfix — Dashboard mobile quick actions use showDashboardTreatmentCard (ReferenceError)",
+  "changelog": "Dashboard.tsx: showDashboardTreatmentPlaceholder → showDashboardTreatmentCard",
   "changes": [
     "UI_FEATURE_BOLD_VERSION_HEADER — Bold version text in header (AppLayout)",
     "UI_FEATURE_STAR_HEADER — Star icon (⭐) in header (AppLayout)",

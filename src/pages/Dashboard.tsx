@@ -412,7 +412,7 @@ export default function Dashboard() {
           <section className="space-y-3 pb-4">
             <h2 className="text-base font-semibold text-foreground">{t('dashboard.quickActions')}</h2>
             <div className="grid grid-cols-1 gap-3">
-              {showDashboardTreatmentPlaceholder ? (
+              {showDashboardTreatmentCard ? (
                 <Card
                   role="button"
                   tabIndex={0}
