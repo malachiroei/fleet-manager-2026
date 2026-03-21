@@ -7,12 +7,16 @@ import {
   subscribeToServiceWorkerUpdate,
 } from '@/lib/registerServiceWorker';
 import { supabase } from '@/integrations/supabase/client';
-import { fetchVersionManifestFromDb, fetchVersionManifestFromUrl, compareSemver } from '@/lib/versionManifest';
-
-const VERSION_MANIFEST_URL = 'https://fleet-manager-dev.vercel.app/v.json';
+import {
+  compareSemver,
+  fetchVersionManifestFromDb,
+  fetchVersionManifestFromUrl,
+  getTestStaticManifestUrl,
+  isFleetManagerProHostname,
+} from '@/lib/versionManifest';
 
 /**
- * בודק מול v.json בטסט ומול עדכון SW — ללא רענון אוטומטי.
+ * בודק מול v-dev-only.json בטסט ומול עדכון SW — ללא רענון אוטומטי.
  * המשתמש רואה באנר ומחליט מתי ללחוץ "עדכן עכשיו".
  */
 export function UpdateAvailabilityNotifier() {
@@ -22,9 +26,10 @@ export function UpdateAvailabilityNotifier() {
   const [dismissing, setDismissing] = useState(false);
 
   const checkManifest = useCallback(async () => {
+    if (typeof window !== 'undefined' && isFleetManagerProHostname()) return;
     try {
       const fromDb = await fetchVersionManifestFromDb(supabase as any);
-      const fromUrl = await fetchVersionManifestFromUrl(VERSION_MANIFEST_URL);
+      const fromUrl = await fetchVersionManifestFromUrl(getTestStaticManifestUrl());
       const candidates: { version: string }[] = [];
       if (fromDb?.version) candidates.push({ version: String(fromDb.version) });
       if (fromUrl?.version) candidates.push({ version: String(fromUrl.version) });

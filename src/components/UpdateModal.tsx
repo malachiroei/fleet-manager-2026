@@ -1,5 +1,6 @@
 import { useRegisterSW } from "@/lib/pwaPromptRegister";
 import { hidePwaUpdateModal } from "@/lib/pwaUpdateModalBridge";
+import { useFleetProSupabaseUpdateGate } from "@/components/useFleetProSupabaseUpdateGate";
 import {
   Dialog,
   DialogContent,
@@ -13,8 +14,11 @@ import { Button } from "@/components/ui/button";
 /**
  * מצב "prompt": needRefresh מ-useRegisterSW הוא הדגל היחיד ל-open של המודאל.
  * אין skipWaiting עד לחיצה על "עדכן עכשיו" → updateServiceWorker(true).
+ * בייצור — רק כאן נשלפת גרסה מ-Supabase (אין מניפסט סטטי על pro; שאר האפליקציה "עיוורת").
  */
 export function UpdateModal() {
+  useFleetProSupabaseUpdateGate();
+
   const {
     needRefresh: [needRefresh],
     updatePromptDetails,

@@ -1,9 +1,14 @@
 /**
- * Service Worker ידני — שקול ל-registerType: "prompt" של vite-plugin-pwa:
- * אין skipWaiting אוטומטי; רק אחרי הודעת SKIP_WAITING מהדף (לחיצה על "עדכן עכשיו").
+ * Service Worker ידני — שקול ל־vite-plugin-pwa:
+ * - registerType: "prompt" / לא autoUpdate
+ * - injectManifest: לוגיקה מפורשת בקובץ זה בלבד
+ *
+ * חשוב: אין self.skipWaiting() באירוע install או activate.
+ * skipWaiting רק אחרי הודעה מהדף: postMessage({ type: "SKIP_WAITING" })
  */
-self.addEventListener("install", () => {
-  // בכוונה ללא skipWaiting
+self.addEventListener("install", (event) => {
+  // במפורש לא קוראים ל-self.skipWaiting() — ממתינים ל-SKIP_WAITING מהלקוח
+  event.waitUntil(Promise.resolve());
 });
 
 self.addEventListener("activate", (event) => {

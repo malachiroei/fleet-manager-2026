@@ -24,6 +24,7 @@ import {
   computeNextPatchVersion,
   fetchPendingChangesFromDb,
   fetchVersionManifestFromDb,
+  getTestStaticManifestUrl,
   normalizeVersion,
   compareSemver,
   versionNotOlderThanBundle,
@@ -32,7 +33,6 @@ import { isFleetManagerTestHost, isFleetProductionHost } from '@/lib/pwaPromptRe
 import { FLEET_KV_TABLE } from '@/lib/fleetKvTable';
  
 export default function AdminSettingsPage() {
-    const DEV_MANIFEST_URL = 'https://fleet-manager-dev.vercel.app/v.json';
     const { theme, setTheme } = useTheme();
     const [lastPricingUpload, setLastPricingUpload] = useState<string | null>(localStorage.getItem('last_pricing_upload'));
     const lastVehicleUpload = localStorage.getItem('last_vehicle_upload');
@@ -274,11 +274,11 @@ export default function AdminSettingsPage() {
       })();
     }, []);
 
-    // Load latest version manifest for "latest version" coloring (DB או v.json בטסט)
+    // Load latest version manifest for "latest version" coloring (DB או v-dev-only.json בטסט)
     useEffect(() => {
       (async () => {
         try {
-          const picked = await pickLatestVersionManifest(supabase as any, DEV_MANIFEST_URL);
+          const picked = await pickLatestVersionManifest(supabase as any, getTestStaticManifestUrl());
           const v = picked?.manifest?.version;
           if (typeof v === 'string' && v.trim()) setLatestManifestVersion(v.trim());
         } catch {
@@ -522,8 +522,8 @@ export default function AdminSettingsPage() {
 
         // חייב להתאים לגרסה שבאמת רצה בדפדפן (מהבילד), לא ל-appVersion מ-localStorage —
         // אחרת מופיע מודאל עדכון למרות שהמסך כבר מציג את codeVersion מהבילד.
-        const picked = await pickLatestVersionManifest(supabase as any, DEV_MANIFEST_URL);
-        if (!picked) throw new Error('לא ניתן לטעון מניפסט גרסה (ענן או v.json)');
+        const picked = await pickLatestVersionManifest(supabase as any, getTestStaticManifestUrl());
+        if (!picked) throw new Error('לא ניתן לטעון מניפסט גרסה (ענן או v-dev-only.json)');
 
         const latestManifest = picked.manifest as Partial<VersionManifest>;
         const manifestChanges = parseManifestChanges(latestManifest);
@@ -627,10 +627,7 @@ export default function AdminSettingsPage() {
     const openPublishModal = async () => {
       setIsPublishing(false);
       try {
-        const staticManifestUrl =
-          typeof window !== 'undefined' && window.location?.origin
-            ? `${window.location.origin}/v.json`
-            : DEV_MANIFEST_URL;
+        const staticManifestUrl = getTestStaticManifestUrl();
 
         const fromDbOnly = await fetchVersionManifestFromDb(supabase as any);
         const dbVer =
@@ -685,7 +682,7 @@ export default function AdminSettingsPage() {
       }
 
       if (!String(versionFinal).trim()) {
-        toast.error('נא להזין מספר גרסה (כל מחרוזת לא ריקה, למשל 2.5.11).');
+        toast.error('נא להזין מספר גרסה (כל מחרוזת לא ריקה, למשל 2.6.2).');
         return;
       }
       if (changesFinal.length === 0) {
@@ -1045,7 +1042,7 @@ export default function AdminSettingsPage() {
                       {codeVersion}
                     </span>
                     <span className="text-muted-foreground text-xs block mt-1">
-                      מניפסט אחרון (ענן / v.json): {latestManifestVersion}
+                      מניפסט אחרון (ענן / v-dev-only): {latestManifestVersion}
                     </span>
                   </CardDescription>
                 </div>
@@ -1238,7 +1235,7 @@ export default function AdminSettingsPage() {
                             className="text-sm min-h-[80px]"
                             value={publishExtraChangelogLines}
                             onChange={(e) => setPublishExtraChangelogLines(e.target.value)}
-                            placeholder="שורה אחת לכל שינוי נוסף"
+                            placeholder={'הוספת V ירוק לכותרות (כל הסביבות)\nשינוי צבע גרסה לזהב'}
                           />
                         </div>
                       </div>
@@ -1254,7 +1251,7 @@ export default function AdminSettingsPage() {
                         className="font-mono text-sm"
                         value={publishVersionInput}
                         onChange={(e) => setPublishVersionInput(e.target.value)}
-                        placeholder="2.5.11"
+                        placeholder="2.7.8"
                         autoComplete="off"
                       />
                     </div>
@@ -1269,7 +1266,7 @@ export default function AdminSettingsPage() {
                           className="text-sm min-h-[140px]"
                           value={publishChangelogText}
                           onChange={(e) => setPublishChangelogText(e.target.value)}
-                          placeholder={'תיקון באג X\nשיפור Y'}
+                          placeholder={'הוספת V ירוק לכותרות (כל הסביבות)\nשינוי צבע גרסה לזהב'}
                         />
                       </div>
                     ) : null}

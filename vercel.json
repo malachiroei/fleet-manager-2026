@@ -15,5 +15,27 @@
       ]
     }
   ],
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    {
+      "source": "/v.json",
+      "destination": "/api/block-v-json",
+      "has": [{ "type": "host", "value": "fleet-manager-pro.com" }]
+    },
+    {
+      "source": "/v.json",
+      "destination": "/api/block-v-json",
+      "has": [{ "type": "host", "value": "www.fleet-manager-pro.com" }]
+    },
+    {
+      "source": "/v-dev-only.json",
+      "destination": "/api/block-v-json",
+      "has": [{ "type": "host", "value": "fleet-manager-pro.com" }]
+    },
+    {
+      "source": "/v-dev-only.json",
+      "destination": "/api/block-v-json",
+      "has": [{ "type": "host", "value": "www.fleet-manager-pro.com" }]
+    },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }

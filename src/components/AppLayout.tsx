@@ -9,8 +9,7 @@ import { useTeamMembersForSwitcher } from '@/hooks/useTeam';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { AIChatAssistant } from './AIChatAssistant';
 import { useTheme } from '@/hooks/useTheme';
-import { Sun, Moon, Building2, LogOut, Home, ArrowRight, ChevronDown, Building, Settings, Check } from 'lucide-react';
-// Check: רק בייצור (כתום) — בטסט אין סימון V בכותרת
+import { Sun, Moon, Building2, LogOut, Home, ArrowRight, ChevronDown, Building, Settings } from 'lucide-react';
 import { PwaInstallButton } from './PwaInstallButton';
 import { Button } from './ui/button';
 import {
@@ -29,7 +28,8 @@ import {
   FLEET_PRO_ACK_VERSION_STORAGE_KEY,
   FLEET_PRO_DEFAULT_HEADER_VERSION,
 } from '@/constants/version';
-import { normalizeVersion } from '@/lib/versionManifest';
+import { useFleetHeaderUiFeatures } from '@/hooks/useFleetHeaderUiFeatures';
+import { compareSemver, isFleetManagerProHostname, normalizeVersion } from '@/lib/versionManifest';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -62,19 +62,25 @@ export function AppLayout({ children }: AppLayoutProps) {
   const orgName = organization?.name?.trim() ?? '';
   const { data: teamMembers = [], error: teamMembersError } = useTeamMembersForSwitcher(activeOrgId ?? null as any);
   const { viewAsEmail, setViewAsEmail, viewAsProfile } = useViewAs();
+  const { boldVersion, starInHeader, ready: headerUiReady } = useFleetHeaderUiFeatures();
 
-  /** קיר קשיח ייצור: רק fleet-manager-pro.com (בדיוק) */
-  const isProduction = window.location.hostname === 'fleet-manager-pro.com';
+  /** קיר קשיח ייצור: fleet-manager-pro.com + www */
+  const isProduction = isFleetManagerProHostname();
   /** מוצג בכותרת — בטסט = גרסת בנדל; בייצור = מאושרת או ברירת מחדל עד "עדכן עכשיו" */
   const headerDisplayVersion = useMemo(() => {
     if (!isProduction) return normalizeVersion(bundleVersion);
+    let ack = FLEET_PRO_DEFAULT_HEADER_VERSION;
     try {
       const stored = localStorage.getItem(FLEET_PRO_ACK_VERSION_STORAGE_KEY);
-      if (stored?.trim()) return normalizeVersion(stored.trim());
+      if (stored?.trim()) ack = stored.trim();
     } catch {
       // ignore
     }
-    return normalizeVersion(FLEET_PRO_DEFAULT_HEADER_VERSION);
+    const ackN = normalizeVersion(ack);
+    const bundleN = normalizeVersion(bundleVersion);
+    /** בנדל חדש יותר מהמאושר — מציגים את המאושר עד "עדכן עכשיו" */
+    if (compareSemver(bundleN, ackN) > 0) return ackN;
+    return bundleN;
   }, [isProduction, bundleVersion]);
 
   useEffect(() => {
@@ -674,14 +680,19 @@ export function AppLayout({ children }: AppLayoutProps) {
           <span className="block truncate text-[10px] text-cyan-400/55">
             {orgName || 'הצי הראשי - רועי'}
           </span>
-          <span className="block truncate text-xs font-semibold text-white drop-shadow-sm">
-            <span className="inline-flex items-center gap-1">
+          <span
+            className={cn(
+              'block truncate text-xs text-amber-400 drop-shadow-sm',
+              headerUiReady && boldVersion ? 'font-bold' : 'font-semibold'
+            )}
+          >
+            <span className="inline-flex items-center gap-1.5">
               גרסה v{headerDisplayVersion}
-              <Check
-                className={cn('h-3.5 w-3.5 shrink-0', checkmarkColor)}
-                strokeWidth={2.75}
-                aria-label="גרסה מסונכרנת"
-              />
+              {headerUiReady && starInHeader ? (
+                <span className="shrink-0 text-base leading-none" aria-hidden title="מניפסט">
+                  ⭐
+                </span>
+              ) : null}
             </span>
           </span>
         </div>

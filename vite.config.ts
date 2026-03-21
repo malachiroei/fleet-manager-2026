@@ -5,20 +5,13 @@ import path from "path";
 
 /**
  * PWA — vite-plugin-pwa:
- * - פלט SW בדפדפן: /sw-v2.js (מקור לבילד: src/sw-v2.ts) — שובר רישום ישן של sw.js
- * - registerType: מ-VITE_PWA_REGISTER_TYPE — autoUpdate (טסט) / prompt (ייצור). ברירת מחדל: prompt
- * - injectRegister: false — הרישום ב-src/lib/pwaPromptRegister.tsx
- *
- * אם build של ה-SW נכשל עם MODULE_NOT_FOUND ב־@babel/* — ודאו ש־devDependencies כוללות
- * @babel/traverse ו־@babel/generator תקינים (workbox-build משתמש בהם).
+ * - registerType: 'prompt' קבוע — בלי auto-inject של רישום
+ * - injectRegister: null — אין הזרקת registerSW ל-index; רישום ידני ב-pwaPromptRegister.tsx בלבד
  */
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-  // טעינת משתני הסביבה לפי המוד הנוכחי
   const env = loadEnv(mode, process.cwd(), '');
-  const pwaRegisterType =
-    env.VITE_PWA_REGISTER_TYPE === 'autoUpdate' ? ('autoUpdate' as const) : ('prompt' as const);
 
   return {
     base: '/',
@@ -35,8 +28,8 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       VitePWA({
-        registerType: pwaRegisterType,
-        injectRegister: false,
+        registerType: 'prompt',
+        injectRegister: null,
         strategies: "injectManifest",
         srcDir: "src",
         // מקור TypeScript; vite-plugin-pwa יוצא ל-dist בשם sw-v2.js
@@ -46,7 +39,7 @@ export default defineConfig(({ mode }) => {
         injectManifest: {
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           globPatterns: [
-            "**/*.{js,css,html,ico,png,svg,webp,woff2,json,webmanifest}",
+            "**/*.{js,css,html,ico,png,svg,webp,woff2,webmanifest}",
           ],
           globIgnores: ["**/node_modules/**/*", "**/v.json", "v.json"],
         },

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   applyServiceWorkerUpdateAndReload,
   bindServiceWorkerRegistration,
@@ -16,7 +17,8 @@ import {
  */
 export function isFleetProductionHost(): boolean {
   if (typeof window === "undefined") return false;
-  return window.location.hostname === "fleet-manager-pro.com";
+  const h = window.location.hostname.toLowerCase();
+  return h === "fleet-manager-pro.com" || h === "www.fleet-manager-pro.com";
 }
 
 /**
@@ -31,6 +33,17 @@ export function isFleetManagerTestHost(): boolean {
     const first = h.split(".")[0];
     if (first === "fleet-manager-dev" || first.startsWith("fleet-manager-dev-")) return true;
   }
+  return false;
+}
+
+/**
+ * כותרת AppLayout: רקע טסט — דפלויי fleet-manager-dev* או פיתוח מקומי (לא כל host שאינו Pro).
+ */
+export function isFleetHeaderTestEnvironment(): boolean {
+  if (typeof window === "undefined") return false;
+  const h = (window.location.hostname || "").toLowerCase();
+  if (isFleetManagerTestHost()) return true;
+  if (h === "localhost" || h === "127.0.0.1" || h.startsWith("127.")) return true;
   return false;
 }
 
@@ -100,7 +113,9 @@ export function useRegisterSW(options?: RegisterSWOptions) {
     };
 
     (async () => {
-      const isProduction = window.location.hostname === "fleet-manager-pro.com";
+      const isProduction =
+        window.location.hostname.toLowerCase() === "fleet-manager-pro.com" ||
+        window.location.hostname.toLowerCase() === "www.fleet-manager-pro.com";
 
       try {
         try {
@@ -175,9 +190,18 @@ export function useRegisterSW(options?: RegisterSWOptions) {
     setPrompt((p) => ({ ...p, needRefresh: value }));
   }, []);
 
+  /** גרסת מודאל Supabase — ref כדי שלא יאבד ב־callback סגור */
+  const promptTargetVersionRef = useRef("");
+  useEffect(() => {
+    promptTargetVersionRef.current = prompt.targetVersion;
+  }, [prompt.targetVersion]);
+
   const updateServiceWorker = useCallback(async (reloadPage?: boolean) => {
     if (reloadPage !== true) return;
-    await applyServiceWorkerUpdateAndReload();
+    toast.success("העדכון הושלם בהצלחה! האפליקציה תתרענן כעת.");
+    await applyServiceWorkerUpdateAndReload({
+      acknowledgedVersion: promptTargetVersionRef.current.trim() || undefined,
+    });
   }, []);
 
   return {

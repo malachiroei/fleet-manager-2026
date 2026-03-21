@@ -3,7 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { useEffect, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, type ReactNode } from "react";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { AppLayout } from "@/components/AppLayout";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
@@ -49,6 +49,7 @@ import {
   FLEET_MANAGER_PRO_ORIGIN,
 } from "@/lib/testDeployUpdate";
 import { UpdateModal } from "@/components/UpdateModal";
+import { TestHostPendingSeed } from "@/components/TestHostPendingSeed";
 const queryClient = new QueryClient();
 
 /** נטען בדומיין הטסט: מנקה מטמון/SW/localStorage ומחזיר למקור (pro.com) */
@@ -135,7 +136,22 @@ function AppRoutes() {
       <Route path="/handover/replacement" element={<ProtectedRoute><ReplacementVehicleHubPage /></ProtectedRoute>} />
       <Route path="/handover/wizard" element={<ProtectedRoute><VehicleHandoverWizard /></ProtectedRoute>} />
       <Route path="/report-mileage" element={<ProtectedRoute><ReportMileagePage /></ProtectedRoute>} />
-      <Route path="/admin/settings" element={<ProtectedRoute><AdminSettingsPage /></ProtectedRoute>} />
+      <Route
+        path="/admin/settings"
+        element={
+          <ProtectedRoute>
+            <Suspense
+              fallback={
+                <div className="flex min-h-[40vh] items-center justify-center bg-[#020617] text-sm text-white/70">
+                  טוען הגדרות…
+                </div>
+              }
+            >
+              <AdminSettingsPage />
+            </Suspense>
+          </ProtectedRoute>
+        }
+      />
       <Route path="/admin/dashboard" element={<ProtectedRoute><AdminDashboardPage /></ProtectedRoute>} />
       <Route path="/admin/users" element={<ProtectedRoute><AdminUsersPage /></ProtectedRoute>} />
       <Route path="/admin/org-settings" element={<ProtectedRoute><OrgSettingsPage /></ProtectedRoute>} />
@@ -157,6 +173,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
+          <TestHostPendingSeed />
           <ViewAsProvider>
             <AppErrorBoundary>
               <div className="flex min-h-screen flex-col">

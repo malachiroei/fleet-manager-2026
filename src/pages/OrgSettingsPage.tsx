@@ -13,6 +13,7 @@ import {
   Download, RotateCcw, RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { getTestStaticManifestUrl, isFleetManagerProHostname } from '@/lib/versionManifest';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrganization, useUpdateOrganization } from '@/hooks/useOrganizations';
 import { useOrgSettings, useUpdateOrgSettings, uploadTemplatePdf } from '@/hooks/useOrgSettings';
@@ -177,7 +178,6 @@ const ORG_DETAILS_EDIT_CODE = '2101';
 
 // ─── Main Page ─────────────────────────────────────────────────────
 export default function OrgSettingsPage() {
-  const DEV_MANIFEST_URL = 'https://fleet-manager-dev.vercel.app/v.json';
   const { activeOrgId, isAdmin, isManager, isDriver, hasPermission } = useAuth();
   const isDriverOnly = Boolean(isDriver && !isManager && !isAdmin);
   const readOnly = isDriverOnly || !hasPermission('admin_access');
@@ -371,9 +371,18 @@ export default function OrgSettingsPage() {
   const restoreSystemTools = () => restoreInputRef.current?.click();
 
   const checkForUpdates = async () => {
+    if (typeof window !== 'undefined' && isFleetManagerProHostname()) {
+      toast.error('בדיקת מניפסט סטטי חסומה בייצור — השתמשו במודאל העדכון / Supabase.');
+      return;
+    }
     setIsCheckingUpdates(true);
     try {
-      const res = await fetch(`${DEV_MANIFEST_URL}?t=${Date.now()}`, { cache: 'no-store' });
+      const manifestUrl = getTestStaticManifestUrl().trim();
+      if (!manifestUrl) {
+        toast.error('אין מניפסט סטטי זמין בדומיין זה.');
+        return;
+      }
+      const res = await fetch(`${manifestUrl}?t=${Date.now()}`, { cache: 'no-store' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as { version?: unknown };
       const latest = typeof json.version === 'string' ? json.version : '';

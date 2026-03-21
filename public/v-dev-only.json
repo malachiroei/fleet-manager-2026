@@ -1,0 +1,11 @@
+{
+  "version": "2.7.8",
+  "releaseDate": "21/03/2026",
+  "releaseTime": "00:00",
+  "description": "Release 2.7.8: כותרת לפי מניפסט — Bold + כוכב; pending זרע בטסט",
+  "changelog": "UI_FEATURE_BOLD_VERSION_HEADER + UI_FEATURE_STAR_HEADER\npending_changes נזרע בטסט אוטומטית",
+  "changes": [
+    "UI_FEATURE_BOLD_VERSION_HEADER — Bold version text in header (AppLayout)",
+    "UI_FEATURE_STAR_HEADER — Star icon (⭐) in header (AppLayout)"
+  ]
+}
