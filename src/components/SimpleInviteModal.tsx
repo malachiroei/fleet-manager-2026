@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { PERMISSION_KEYS, PERMISSION_LABELS, getDefaultPermissions } from '@/lib/permissions';
 import type { ProfilePermissions } from '@/types/fleet';
 import { supabase } from '@/integrations/supabase/client';
+import { getSupabaseAnonKey, getSupabaseUrl } from '@/integrations/supabase/publicEnv';
 import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import {
@@ -59,11 +60,14 @@ export function SimpleInviteModal({
       let emailSent = false;
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-invite`, {
+        const baseUrl = getSupabaseUrl().replace(/\/$/, '');
+        const anon = getSupabaseAnonKey();
+        const res = await fetch(`${baseUrl}/functions/v1/send-invite`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${session?.access_token}`,
+            apikey: anon,
+            Authorization: `Bearer ${session?.access_token ?? anon}`,
           },
           body: JSON.stringify({ org_id: orgId, email: trimmed.toLowerCase() }),
         });

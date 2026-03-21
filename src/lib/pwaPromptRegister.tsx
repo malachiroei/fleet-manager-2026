@@ -9,6 +9,7 @@ import {
 } from "@/lib/pwaServiceWorkerControl";
 import {
   registerPwaUpdateModalDispatch,
+  type FleetProUpdateModalReason,
   type PwaUpdateModalState,
 } from "@/lib/pwaUpdateModalBridge";
 
@@ -57,12 +58,18 @@ type PromptState = {
   needRefresh: boolean;
   changes: string[];
   targetVersion: string;
+  acknowledgeAsVersion: string;
+  privateAnchorFull: string;
+  updateReason: FleetProUpdateModalReason;
 };
 
 const initialPrompt: PromptState = {
   needRefresh: false,
   changes: [],
   targetVersion: "",
+  acknowledgeAsVersion: "",
+  privateAnchorFull: "",
+  updateReason: "global_version",
 };
 
 /**
@@ -83,12 +90,18 @@ export function useRegisterSW(options?: RegisterSWOptions) {
           open: prev.needRefresh,
           changes: prev.changes,
           targetVersion: prev.targetVersion,
+          acknowledgeAsVersion: prev.acknowledgeAsVersion || prev.targetVersion,
+          privateAnchorFull: prev.privateAnchorFull,
+          updateReason: prev.updateReason,
         };
         const next = reducer(asModal);
         return {
           needRefresh: next.open,
           changes: next.changes,
           targetVersion: next.targetVersion,
+          acknowledgeAsVersion: next.acknowledgeAsVersion || next.targetVersion,
+          privateAnchorFull: next.privateAnchorFull,
+          updateReason: next.updateReason,
         };
       });
     });
@@ -190,17 +203,24 @@ export function useRegisterSW(options?: RegisterSWOptions) {
     setPrompt((p) => ({ ...p, needRefresh: value }));
   }, []);
 
-  /** גרסת מודאל Supabase — ref כדי שלא יאבד ב־callback סגור */
+  /** גרסאות מודאל — ref ל־callback (מניפסט גלובלי ל־ack, לא target_version אישי) */
   const promptTargetVersionRef = useRef("");
+  const promptAckVersionRef = useRef("");
   useEffect(() => {
     promptTargetVersionRef.current = prompt.targetVersion;
-  }, [prompt.targetVersion]);
+    promptAckVersionRef.current = (prompt.acknowledgeAsVersion || prompt.targetVersion).trim();
+  }, [prompt.targetVersion, prompt.acknowledgeAsVersion]);
 
-  const updateServiceWorker = useCallback(async (reloadPage?: boolean) => {
+  const updateServiceWorker = useCallback(async (reloadPage?: boolean, acknowledgedVersionOverride?: string) => {
     if (reloadPage !== true) return;
     toast.success("העדכון הושלם בהצלחה! האפליקציה תתרענן כעת.");
+    const ack =
+      (acknowledgedVersionOverride && String(acknowledgedVersionOverride).trim()) ||
+      promptAckVersionRef.current.trim() ||
+      promptTargetVersionRef.current.trim() ||
+      undefined;
     await applyServiceWorkerUpdateAndReload({
-      acknowledgedVersion: promptTargetVersionRef.current.trim() || undefined,
+      acknowledgedVersion: ack,
     });
   }, []);
 
@@ -209,6 +229,9 @@ export function useRegisterSW(options?: RegisterSWOptions) {
     updatePromptDetails: {
       changes: prompt.changes,
       targetVersion: prompt.targetVersion,
+      acknowledgeAsVersion: (prompt.acknowledgeAsVersion || prompt.targetVersion).trim(),
+      privateAnchorFull: prompt.privateAnchorFull,
+      updateReason: prompt.updateReason,
     },
     offlineReady: [offlineReady, setOfflineReady] as const,
     updateServiceWorker,

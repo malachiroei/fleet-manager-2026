@@ -50,6 +50,7 @@ import {
 } from "@/lib/testDeployUpdate";
 import { UpdateModal } from "@/components/UpdateModal";
 import { TestHostPendingSeed } from "@/components/TestHostPendingSeed";
+import { ProfileVersionHeartbeat } from "@/components/ProfileVersionHeartbeat";
 const queryClient = new QueryClient();
 
 /** נטען בדומיין הטסט: מנקה מטמון/SW/localStorage ומחזיר למקור (pro.com) */
@@ -174,6 +175,7 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <TestHostPendingSeed />
+          <ProfileVersionHeartbeat />
           <ViewAsProvider>
             <AppErrorBoundary>
               <div className="flex min-h-screen flex-col">

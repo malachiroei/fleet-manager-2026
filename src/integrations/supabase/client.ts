@@ -1,10 +1,10 @@
-// Ensure .env has VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY for the
-// project where your auth users and profiles table live (not an old sub-project).
+// Ensure .env / Vercel has VITE_SUPABASE_* or NEXT_PUBLIC_SUPABASE_* (URL + anon key).
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
+import { getSupabaseAnonKey, getSupabaseUrl } from './publicEnv';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+const SUPABASE_URL = getSupabaseUrl();
+const SUPABASE_ANON_KEY = getSupabaseAnonKey();
 
 type SupabaseClientType = ReturnType<typeof createClient<Database>>;
 
@@ -31,8 +31,23 @@ if (typeof window !== 'undefined') {
       : null;
 
   // eslint-disable-next-line no-console
+  const urlFrom = [
+    import.meta.env.VITE_SUPABASE_URL && 'VITE_SUPABASE_URL',
+    import.meta.env.NEXT_PUBLIC_SUPABASE_URL && 'NEXT_PUBLIC_SUPABASE_URL',
+  ]
+    .filter(Boolean)
+    .join('+');
+  const keyFrom = [
+    import.meta.env.VITE_SUPABASE_ANON_KEY && 'VITE_SUPABASE_ANON_KEY',
+    import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY && 'NEXT_PUBLIC_SUPABASE_ANON_KEY',
+  ]
+    .filter(Boolean)
+    .join('+');
+
   console.log('[Supabase] Using configuration', {
-    url: SUPABASE_URL,
+    url: SUPABASE_URL || '(missing)',
+    urlEnvHint: urlFrom || 'none',
+    keyEnvHint: keyFrom || 'none',
     anonKeyPreview: anonPreview,
     anonKeyLength: SUPABASE_ANON_KEY ? String(SUPABASE_ANON_KEY).length : 0,
   });
@@ -41,13 +56,19 @@ if (typeof window !== 'undefined') {
 const shouldInitSupabase = Boolean(SUPABASE_URL) && Boolean(SUPABASE_ANON_KEY);
 
 export const supabase: SupabaseClientType = shouldInitSupabase
-  ? createClient<Database>(SUPABASE_URL as string, SUPABASE_ANON_KEY as string, {
+  ? createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: {
         storage: typeof window !== 'undefined' ? localStorage : undefined,
         persistSession: true,
         autoRefreshToken: true,
       },
+      global: {
+        headers: {
+          // Belt-and-suspenders: PostgREST returns "No API key found" if this is missing.
+          apikey: SUPABASE_ANON_KEY,
+        },
+      },
     })
   : createMissingSupabaseClient(
-      'Supabase client not initialized: missing VITE_SUPABASE_URL and/or VITE_SUPABASE_ANON_KEY in environment.'
+      'Supabase client not initialized: set VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY (or NEXT_PUBLIC_SUPABASE_URL + NEXT_PUBLIC_SUPABASE_ANON_KEY on Vercel).'
     );

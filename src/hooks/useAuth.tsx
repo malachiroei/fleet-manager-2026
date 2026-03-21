@@ -6,6 +6,32 @@ import { hasPermission as checkPermission, type PermissionKey } from '@/lib/perm
 
 const ACTIVE_ORG_STORAGE_KEY = 'fleet-manager-active-org';
 
+/**
+ * Personal profile row: `profiles.id` = Supabase Auth `user.id` (auth.users.id).
+ * Use `select('*')` — do NOT list `user_id` (many DBs have no such column; it caused PostgREST errors).
+ * Global UI flags live in `version_manifest` (see useFleetManifestUiGates); personal overrides in this row.
+ */
+const PROFILE_SELECT_STAR = '*';
+
+function buildPersonalProfilePlaceholder(userId: string, email: string | null, status: string): Profile {
+  const now = new Date().toISOString();
+  return {
+    id: userId,
+    user_id: userId,
+    full_name: '',
+    email,
+    phone: null,
+    org_id: null,
+    permissions: null,
+    status,
+    created_at: now,
+    updated_at: now,
+    allowed_features: null,
+    denied_features: null,
+    ui_denied_features_anchor_version: null,
+  };
+}
+
 export interface MemberOrganization {
   id: string;
   name: string;
@@ -44,6 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [_activeOrgId, setActiveOrgIdState] = useState<string | null>(null);
   const inviteCheckDoneRef = useRef(false);
   const activeOrgInitializedRef = useRef(false);
+  const profileRef = useRef<Profile | null>(null);
 
   const setActiveOrgId = useCallback((orgId: string | null) => {
     setActiveOrgIdState(orgId);
@@ -63,6 +90,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const activeOrgId = _activeOrgId ?? null;
+
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
 
   const fetchUserRoles = useCallback(async (userId: string) => {
     // Roles are defined globally in `user_roles`.
@@ -84,19 +115,67 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const fetchProfile = async (userId: string) => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, user_id, full_name, email, phone, org_id, permissions, status, is_system_admin, created_at, updated_at')
-      .eq('user_id', userId)
-      .maybeSingle();
+  const fetchProfile = useCallback(async (userId: string) => {
+    const applyPersonalRow = (row: Profile) => {
+      const next: Profile = {
+        ...row,
+        /** App-level mirror of auth uid — never read from missing DB column */
+        user_id: userId,
+        status: row.status && String(row.status).trim() ? row.status : 'active',
+        allowed_features: row.allowed_features ?? null,
+        denied_features: row.denied_features ?? null,
+        ui_denied_features_anchor_version: row.ui_denied_features_anchor_version ?? null,
+      };
+      setProfile(next);
+      // eslint-disable-next-line no-console
+      console.log('[Auth] personal profile snapshot (profiles.id = auth uid)', {
+        id: next.id,
+        status: next.status,
+        email: next.email,
+        allowed_features: next.allowed_features ?? null,
+        denied_features: next.denied_features ?? null,
+      });
+    };
 
-    if (!error && data) {
-      setProfile(data as Profile);
-    } else {
-      setProfile(null);
+    const res = await supabase
+      .from('profiles')
+      .select(PROFILE_SELECT_STAR)
+      .eq('id', userId)
+      .single();
+
+    if (!res.error && res.data) {
+      applyPersonalRow(res.data as Profile);
+      return;
     }
-  };
+
+    const err = res.error;
+    const msg = err?.message ?? '';
+    const code = err?.code ?? '';
+    const noRow =
+      code === 'PGRST116' || /no rows|0 rows/i.test(msg) || /multiple rows/i.test(msg);
+
+    if (noRow) {
+      const { data: authData } = await supabase.auth.getUser();
+      const email =
+        authData.user?.id === userId ? (authData.user.email ?? null) : null;
+      console.warn('[Auth] no profiles row for auth uid — using placeholder until row exists', { userId });
+      applyPersonalRow(buildPersonalProfilePlaceholder(userId, email, 'no_profile_row'));
+      return;
+    }
+
+    console.error('[Auth] fetchProfile failed', { message: msg, code });
+    const prev = profileRef.current;
+    if (prev?.id === userId) {
+      return;
+    }
+    const { data: authData } = await supabase.auth.getUser();
+    const email =
+      authData.user?.id === userId ? (authData.user.email ?? null) : null;
+    applyPersonalRow(buildPersonalProfilePlaceholder(userId, email, 'profile_fetch_error'));
+  }, []);
+
+  const fetchProfileRef = useRef(fetchProfile);
+  fetchProfileRef.current = fetchProfile;
 
   const fetchMemberOrganizations = useCallback(async (userId: string, fallbackOrgId?: string | null) => {
     const { data: rows, error: memError } = await (supabase as any)
@@ -130,9 +209,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (session?.user) {
           setTimeout(() => {
-            fetchUserRoles(session.user.id);
-            fetchProfile(session.user.id);
-            fetchMemberOrganizations(session.user.id);
+            void fetchUserRoles(session.user.id);
+            void fetchProfileRef.current(session.user.id);
+            void fetchMemberOrganizations(session.user.id);
           }, 0);
         } else {
           setRoles([]);
@@ -150,19 +229,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(session?.user ?? null);
 
       if (session?.user) {
-        fetchUserRoles(session.user.id);
-        fetchProfile(session.user.id);
-        fetchMemberOrganizations(session.user.id);
+        void fetchUserRoles(session.user.id);
+        void fetchProfileRef.current(session.user.id);
+        void fetchMemberOrganizations(session.user.id);
       }
       setLoading(false);
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [fetchUserRoles, fetchMemberOrganizations]);
 
   const refreshProfile = useCallback(async () => {
     if (user?.id) await fetchProfile(user.id);
-  }, [user?.id]);
+  }, [user?.id, fetchProfile]);
 
   useEffect(() => {
     if (!user?.email || inviteCheckDoneRef.current) return;
@@ -185,12 +264,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           permissions: inv.permissions ?? {},
           updated_at: new Date().toISOString(),
         })
-        .eq('user_id', user.id);
+        .eq('id', user.id);
       if (updateError) return;
       await (supabase as any).from('org_members').insert({ user_id: user.id, org_id: inv.org_id });
       setActiveOrgId(inv.org_id);
       await (supabase as any).from('org_invitations').delete().eq('id', inv.id);
-      await fetchProfile(user.id);
+      await fetchProfileRef.current(user.id);
       await fetchMemberOrganizations(user.id);
     })();
   }, [user?.id, user?.email]);
@@ -247,14 +326,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const userEmail = (data.user?.email ?? email).toLowerCase();
 
       if (userId) {
+        const now = new Date().toISOString();
         const { error: profileError } = await supabase
           .from('profiles')
           .insert({
             id: userId,
-            user_id: userId,
             full_name: fullName,
             email: userEmail,
             status: 'pending_approval',
+            created_at: now,
+            updated_at: now,
           });
 
         if (profileError) {
@@ -269,6 +350,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    try {
+      sessionStorage.removeItem('fleet-version-heartbeat');
+    } catch {
+      // ignore
+    }
     await supabase.auth.signOut();
     setRoles([]);
     setProfile(null);

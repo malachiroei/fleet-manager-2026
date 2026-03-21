@@ -1,6 +1,9 @@
 import { useRegisterSW } from "@/lib/pwaPromptRegister";
 import { hidePwaUpdateModal } from "@/lib/pwaUpdateModalBridge";
+import { commitFleetProAcknowledgedVersionAndHardReload } from "@/lib/pwaServiceWorkerControl";
+import { isFleetManagerProHostname } from "@/lib/versionManifest";
 import { useFleetProSupabaseUpdateGate } from "@/components/useFleetProSupabaseUpdateGate";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -30,7 +33,8 @@ export function UpdateModal() {
     },
   });
 
-  const { changes, targetVersion } = updatePromptDetails;
+  const { changes, targetVersion, acknowledgeAsVersion, privateAnchorFull, updateReason } =
+    updatePromptDetails;
 
   return (
     <Dialog
@@ -42,11 +46,24 @@ export function UpdateModal() {
       <DialogContent dir="rtl" className="sm:max-w-md border-cyan-500/30 bg-[#0b1220] text-white">
         <DialogHeader>
           <DialogTitle className="text-cyan-100">
-            גרסה חדשה זמינה
+            {updateReason === "permission_anchor"
+              ? "עדכון הרשאות ממשק"
+              : "גרסה חדשה זמינה"}
             {targetVersion ? <span className="text-cyan-400"> ({targetVersion})</span> : null}
           </DialogTitle>
           <DialogDescription className="text-white/70">
-            יש גרסה מעודכנת של האפליקציה. תוכל לעדכן עכשיו או להמשיך לעבוד — העדכון לא יוחל עד שתאשר.
+            {updateReason === "permission_anchor" ? (
+              <>
+                הגרסה הגלובלית במערכת נשארה <strong className="text-white/90">{targetVersion}</strong> — השתנו הרשאות
+                עבור המשתמש שלך. לחיצה על «עדכן עכשיו» שומרת את אותה גרסה גלובלית ב־localStorage כאישור (בלי לשנות את
+                מספר הגרסה בענן) ומפעילה את התכונות המעודכנות אחרי רענון.
+              </>
+            ) : (
+              <>
+                יש גרסה מעודכנת של האפליקציה. תוכל לעדכן עכשיו או לסגור ולהמשיך לעבוד — המודאל לא יופיע שוב עד רענון מלא
+                של הדף (בייצור).
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -64,7 +81,15 @@ export function UpdateModal() {
         ) : null}
 
         <DialogFooter className="mt-2 flex flex-row flex-wrap gap-2 sm:justify-start">
-          <Button type="button" variant="outline" onClick={() => hidePwaUpdateModal()}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() =>
+              hidePwaUpdateModal({
+                dismissUntilPageUnload: isFleetManagerProHostname(),
+              })
+            }
+          >
             לא עכשיו
           </Button>
           <Button
@@ -77,8 +102,17 @@ export function UpdateModal() {
               } catch {
                 // ignore
               }
-              hidePwaUpdateModal();
-              void updateServiceWorker(true);
+              const ackRaw = (acknowledgeAsVersion || targetVersion || "").trim();
+              const pa = (privateAnchorFull || "").trim();
+              hidePwaUpdateModal({ dismissUntilPageUnload: isFleetManagerProHostname() });
+              if (isFleetManagerProHostname()) {
+                toast.success("העדכון הושלם בהצלחה! האפליקציה תתרענן כעת.");
+                void commitFleetProAcknowledgedVersionAndHardReload(ackRaw, {
+                  privateAnchorFull: pa || undefined,
+                });
+                return;
+              }
+              void updateServiceWorker(true, acknowledgeAsVersion || targetVersion);
             }}
           >
             עדכן עכשיו

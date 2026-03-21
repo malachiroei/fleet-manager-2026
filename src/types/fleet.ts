@@ -28,6 +28,20 @@ export interface Profile {
   is_system_admin?: boolean | null;
   created_at: string;
   updated_at: string;
+  /** דו״ח heartbeat מהלקוח (גרסת בנדל) */
+  current_app_version?: string | null;
+  /** אופציונלי: מודאל עדכון משווה מול זה במקום מניפסט גלובלי */
+  target_version?: string | null;
+  /** טוקני UI_FEATURE_* נוספים למשתמש (מעבר למניפסט הגלובלי); JSONB מערך מחרוזות ב-Supabase. גם `!UI_FEATURE_*` לחסימה אישית */
+  allowed_features?: string[] | null;
+  /**
+   * אופציונלי: מערך טוקנים חסומים (חלופה/תוספת ל־`!` ב־allowed_features). דורש עמודה ב-DB — ראו docs.
+   */
+  denied_features?: string[] | null;
+  /**
+   * גרסת מניפסט גלובלי (נורמלית) בשעת שמירת הרשאות UI — חסימות אישיות חלות רק אחרי ack ≥ ערך זה.
+   */
+  ui_denied_features_anchor_version?: string | null;
 }
 
 export interface UserRole {

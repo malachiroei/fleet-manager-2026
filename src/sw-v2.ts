@@ -56,19 +56,42 @@ function isForceUpdateBypassActive(): boolean {
 }
 
 /**
- * קו הגנה אחרון בייצור — לפני workbox.
+ * Supabase REST / Realtime — לעולם לא דרך cache ולא חסימת מניפסט.
+ * כל השיטות (PATCH ל-heartbeat, POST, וכו') עוברות ישירות לרשת.
+ */
+function isSupabaseApiUrl(url: URL): boolean {
+  const h = url.hostname.toLowerCase();
+  return h.endsWith('.supabase.co');
+}
+
+/**
+ * קו הגנה אחרון בייצור — אחרי דילוג Supabase; לפני workbox.
  */
 self.addEventListener('fetch', (event) => {
   const ev = event as FetchEvent;
-  if (ev.request.method !== 'GET' && ev.request.method !== 'HEAD') return;
-  if (!isFleetProductionOrigin()) return;
-  if (isForceUpdateBypassActive()) return;
   let url: URL;
   try {
     url = new URL(ev.request.url);
   } catch {
     return;
   }
+  if (isSupabaseApiUrl(url)) {
+    // עוברים את אותו Request כדי לא לאבד headers (Authorization, apikey, Prefer, Content-Type, וכו').
+    // fetch(Request, { cache }) משאיר את ה-headers מהבקשה המקורית; לא בונים Request חדש בלי כותרות.
+    const req = ev.request;
+    ev.respondWith(
+      fetch(req.clone(), {
+        cache: 'no-store',
+        redirect: req.redirect,
+        integrity: req.integrity,
+      })
+    );
+    return;
+  }
+
+  if (ev.request.method !== 'GET' && ev.request.method !== 'HEAD') return;
+  if (!isFleetProductionOrigin()) return;
+  if (isForceUpdateBypassActive()) return;
   if (!isBlockedManifestJsonRequestOnPro(url)) return;
   ev.respondWith(
     new Response(

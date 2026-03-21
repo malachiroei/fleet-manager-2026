@@ -1,11 +1,14 @@
 {
-  "version": "2.7.8",
+  "version": "2.7.53",
   "releaseDate": "21/03/2026",
   "releaseTime": "00:00",
-  "description": "Release 2.7.8: כותרת לפי מניפסט — Bold + כוכב; pending זרע בטסט",
-  "changelog": "UI_FEATURE_BOLD_VERSION_HEADER + UI_FEATURE_STAR_HEADER\npending_changes נזרע בטסט אוטומטית",
+  "description": "Release 2.7.53: פרסום גלובלי — upsertSystemSettingsRows + verify read-back; הרשאות — עוגן פרטי *-p בלי bump גלובלי; מודאל עדכון שקט; רענון מנהל רק לעצמו",
+  "changelog": "formatPrivateUiAnchorVersion; FLEET_PRO_PRIVATE_ANCHOR_ACKNOWLEDGED_KEY; useFleetProSupabaseUpdateGate silent path; UpdateModal permission_anchor; commitFleetPro options",
   "changes": [
     "UI_FEATURE_BOLD_VERSION_HEADER — Bold version text in header (AppLayout)",
-    "UI_FEATURE_STAR_HEADER — Star icon (⭐) in header (AppLayout)"
+    "UI_FEATURE_STAR_HEADER — Star icon (⭐) in header (AppLayout)",
+    "UI_FEATURE_DASHBOARD_ACTION_TREATMENT — Dashboard Quick Action: עדכן טיפול",
+    "UI_FEATURE_DASHBOARD_ACTION_TEST — Dashboard Quick Action: כפתור בדיקה",
+    "UI_FEATURE_DEBUG_ADMIN_USER_VERSIONS_TABLE — Admin: טבלת User Status & Versions (debug, Pro only)"
   ]
 }

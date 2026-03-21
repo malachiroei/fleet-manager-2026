@@ -14,6 +14,8 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
 
   return {
+    /** Expose both Vite and NEXT_PUBLIC_* names (Vercel env often uses the latter). */
+    envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
     base: '/',
     server: {
       host: "::",

@@ -69,7 +69,7 @@ export default function AdminUsersPage() {
 
       const { error } = await supabase
         .from('profiles')
-        .update({ status: 'active', permissions: nextPerms })
+        .update({ status: 'active', permissions: nextPerms, updated_at: new Date().toISOString() })
         .eq('id', profileId);
       if (error) throw error;
     },

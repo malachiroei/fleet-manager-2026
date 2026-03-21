@@ -429,35 +429,112 @@ export type Database = {
         }
         Relationships: []
       }
+      /**
+       * profiles: מפתח ראשי = id (תואם auth.users.id / auth.uid()).
+       * סינון באפליקציה — רק .eq('id', user.id), לא user_id.
+       * user_id בעמודות: אופציונלי/legacy; ייתכן NULL ב-DB.
+       */
       profiles: {
         Row: {
-          created_at: string
-          email: string | null
-          full_name: string
           id: string
-          phone: string | null
+          created_at: string
           updated_at: string
-          user_id: string
+          full_name: string
+          email: string | null
+          phone: string | null
+          org_id: string | null
+          permissions: Json | null
+          status: string
+          is_system_admin: boolean | null
+          current_app_version: string | null
+          target_version: string | null
+          /** Per-user UI feature tokens (UI_FEATURE_*) in addition to global manifest */
+          allowed_features: Json | null
+          /** Per-user UI_FEATURE_* deny list (overrides manifest + grants); optional migration */
+          denied_features: Json | null
+          /** Manifest version when UI permissions were saved — personal denies apply only after user ack ≥ this */
+          ui_denied_features_anchor_version: string | null
+          /** legacy; may be null — use id for joins and RLS */
+          user_id: string | null
         }
         Insert: {
-          created_at?: string
-          email?: string | null
+          id: string
           full_name: string
-          id?: string
+          email?: string | null
           phone?: string | null
+          org_id?: string | null
+          permissions?: Json | null
+          status?: string
+          is_system_admin?: boolean | null
+          current_app_version?: string | null
+          target_version?: string | null
+          allowed_features?: Json | null
+          denied_features?: Json | null
+          ui_denied_features_anchor_version?: string | null
+          created_at?: string
           updated_at?: string
-          user_id: string
+          user_id?: string | null
         }
         Update: {
-          created_at?: string
-          email?: string | null
-          full_name?: string
           id?: string
+          full_name?: string
+          email?: string | null
           phone?: string | null
+          org_id?: string | null
+          permissions?: Json | null
+          status?: string
+          is_system_admin?: boolean | null
+          current_app_version?: string | null
+          target_version?: string | null
+          allowed_features?: Json | null
+          denied_features?: Json | null
+          ui_denied_features_anchor_version?: string | null
+          created_at?: string
           updated_at?: string
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: []
+      }
+      maintenance_records: {
+        Row: {
+          id: string
+          created_at: string
+          vehicle_id: string
+          service_type: string
+          odometer: number
+          date: string
+          notes: string | null
+          created_by: string | null
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          vehicle_id: string
+          service_type: string
+          odometer: number
+          date: string
+          notes?: string | null
+          created_by?: string | null
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          vehicle_id?: string
+          service_type?: string
+          odometer?: number
+          date?: string
+          notes?: string | null
+          created_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "maintenance_records_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {

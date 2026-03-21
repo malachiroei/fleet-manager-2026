@@ -10,10 +10,60 @@ import {
   version as bundleVersion,
   FLEET_BYPASS_SESSION_STORAGE_KEY,
   FLEET_PRO_ACK_VERSION_STORAGE_KEY,
+  FLEET_PRO_ACK_VERSION_UPDATED_EVENT,
+  FLEET_PRO_PRIVATE_ANCHOR_ACKNOWLEDGED_KEY,
   FORCE_UPDATE_RELOAD_STORAGE_KEY,
   FLEET_SW_BYPASS_TTL_MS,
 } from "@/constants/version";
-import { normalizeVersion } from "@/lib/versionManifest";
+import { normalizeVersion, toCanonicalThreePartVersion } from "@/lib/versionManifest";
+
+export type CommitFleetProAckOptions = {
+  /** ערך מלא של `ui_denied_features_anchor_version` בעדכון שקט (עוגן פרטי) */
+  privateAnchorFull?: string;
+};
+
+/**
+ * פרו: «עדכן עכשיו» — כתיבה סינכרונית ל־localStorage, המתנה קצרה, רענון קשיח (מונע לולאת מודאל).
+ * `privateAnchorFull`: מאשר עוגן פרטי — ה־ack נשמר כגרסת המניפסט הגלובלי (ללא שינוי מספר בכותרת מעבר ליישור semver).
+ */
+export async function commitFleetProAcknowledgedVersionAndHardReload(
+  rawAckVersion: string,
+  options?: CommitFleetProAckOptions
+): Promise<void> {
+  if (typeof window === "undefined") return;
+  const n = normalizeVersion(String(rawAckVersion ?? "").trim());
+  const canonical = toCanonicalThreePartVersion(n) || n;
+  if (!canonical) return;
+  try {
+    localStorage.setItem(FLEET_PRO_ACK_VERSION_STORAGE_KEY, canonical);
+  } catch {
+    // ignore
+  }
+  const pa = String(options?.privateAnchorFull ?? "").trim();
+  if (pa) {
+    try {
+      localStorage.setItem(FLEET_PRO_PRIVATE_ANCHOR_ACKNOWLEDGED_KEY, pa);
+    } catch {
+      // ignore
+    }
+  }
+  try {
+    window.dispatchEvent(new Event(FLEET_PRO_ACK_VERSION_UPDATED_EVENT));
+  } catch {
+    // ignore
+  }
+  await new Promise<void>((resolve) => window.setTimeout(resolve, 500));
+  const loc = window.location as Location & { reload?: (forceReload?: boolean) => void };
+  if (typeof loc.reload === "function") {
+    try {
+      loc.reload(true);
+      return;
+    } catch {
+      // ignore
+    }
+  }
+  window.location.reload();
+}
 
 export const FLEET_SW_SCRIPT = "/sw-v2.js" as const;
 
@@ -228,12 +278,30 @@ export async function applyServiceWorkerUpdateAndReload(
     }
     postForceUpdateBypassToServiceWorkers({ sessionId: bypassSessionId });
 
-    const ackFromModal = options?.acknowledgedVersion?.trim();
+    let ackToStore = options?.acknowledgedVersion?.trim();
+    if (!ackToStore) {
+      try {
+        const { fetchVersionManifestFromDb } = await import("@/lib/versionManifest");
+        const { supabase } = await import("@/integrations/supabase/client");
+        const fromDb = await fetchVersionManifestFromDb(supabase as any);
+        const v = fromDb?.version ? String(fromDb.version).trim() : "";
+        if (v) ackToStore = normalizeVersion(v);
+      } catch {
+        // ignore
+      }
+    }
+    const rawAck = normalizeVersion(ackToStore || bundleVersion);
+    const ackNormalized =
+      toCanonicalThreePartVersion(rawAck) || rawAck || toCanonicalThreePartVersion(bundleVersion) || bundleVersion;
     try {
-      localStorage.setItem(
-        FLEET_PRO_ACK_VERSION_STORAGE_KEY,
-        normalizeVersion(ackFromModal || bundleVersion)
-      );
+      localStorage.setItem(FLEET_PRO_ACK_VERSION_STORAGE_KEY, ackNormalized);
+    } catch {
+      // ignore
+    }
+    try {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event(FLEET_PRO_ACK_VERSION_UPDATED_EVENT));
+      }
     } catch {
       // ignore
     }

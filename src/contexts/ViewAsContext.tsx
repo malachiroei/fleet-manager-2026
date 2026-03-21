@@ -35,7 +35,7 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
         // IMPORTANT: keep org silo — only resolve a profile within the active org
         const { data, error } = await supabase
           .from('profiles')
-          .select('id, user_id, full_name, email, phone, org_id, permissions, status, is_system_admin, created_at, updated_at')
+          .select('id, full_name, email, phone, org_id, permissions, status, is_system_admin, created_at, updated_at')
           .eq('org_id', activeOrgId)
           .eq('email', normalizedEmail)
           .maybeSingle();

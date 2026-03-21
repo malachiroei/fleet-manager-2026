@@ -2,6 +2,13 @@
 
 **Last updated:** 2026-03-21
 
+## 2.7.9 additions
+
+- **Heartbeat:** logged-in clients update `profiles.current_app_version` (bundle) once per session; `docs/SUPABASE_PROFILE_VERSION_COLUMNS.sql`.
+- **Admin:** “User Status & Versions” table (email, version, optional `target_version`, last `updated_at`); yellow warning if reported version is behind published `version_manifest`.
+- **Pro update modal:** if `profiles.target_version` is set (valid semver, supports 4+ segments e.g. `2.7.24.1`), compare against it instead of global manifest version; SW bypass / 3-minute TTL unchanged. **Admin:** User Status table → «שלח גרסה ספציפית» sets `target_version` for one user only.
+- **Per-user UI tokens:** `profiles.allowed_features` (JSONB array of `UI_FEATURE_*` strings). Gates merge with global `version_manifest.changes`; does **not** change version / blue update modal for other users. See `docs/SUPABASE_PROFILES_ALLOWED_FEATURES.sql`.
+
 ## Current production picture (2.7.8)
 
 - **Live on Pro (`fleet-manager-pro.com`):** selective UI from published `version_manifest.changes` — **Star icon (⭐)** in the header is **on** (token `UI_FEATURE_STAR_HEADER`).

@@ -1,9 +1,10 @@
-import { ReactNode, useEffect, useMemo } from 'react';
+import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useVehicleSpecDirty } from '@/contexts/VehicleSpecDirtyContext';
 import { useViewAs } from '@/contexts/ViewAsContext';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks/useAuth';
+import { useFleetHeaderUiFeatures } from '@/hooks/useFleetHeaderUiFeatures';
 import { useOrganization } from '@/hooks/useOrganizations';
 import { useTeamMembersForSwitcher } from '@/hooks/useTeam';
 import { LanguageSwitcher } from './LanguageSwitcher';
@@ -26,10 +27,16 @@ import { supabase } from '@/integrations/supabase/client';
 import {
   version as bundleVersion,
   FLEET_PRO_ACK_VERSION_STORAGE_KEY,
+  FLEET_PRO_ACK_VERSION_UPDATED_EVENT,
   FLEET_PRO_DEFAULT_HEADER_VERSION,
 } from '@/constants/version';
-import { useFleetHeaderUiFeatures } from '@/hooks/useFleetHeaderUiFeatures';
-import { compareSemver, isFleetManagerProHostname, normalizeVersion } from '@/lib/versionManifest';
+import {
+  compareSemverExtended,
+  isFleetManagerProHostname,
+  normalizeVersion,
+  showFleetStagingEnvironmentBanner,
+  toCanonicalThreePartVersion,
+} from '@/lib/versionManifest';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -42,17 +49,6 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { theme, toggleTheme } = useTheme();
   const { user, signOut, profile, activeOrgId, memberOrganizations, setActiveOrgId, isAdmin, isManager } = useAuth();
   const email = (user?.email ?? '').toLowerCase();
-  const appStatus = String(import.meta.env.VITE_APP_STATUS ?? '').toLowerCase();
-  // If the env var isn't set (common on new Vercel projects), default to "show" so it can't be missed.
-  // Explicitly hide only for production-like statuses.
-  const showWorkBanner = !['prod', 'production', 'source'].includes(appStatus) || !appStatus;
-  const shouldShowDevTools = (() => {
-    if (typeof window === 'undefined') return false;
-    const host = (window.location.hostname || '').toLowerCase();
-    // Dev tools banner appears ONLY on dev/test hosts.
-    // Requirements: hostname contains `dev` OR `localhost`.
-    return host.includes('localhost') || host.includes('dev');
-  })();
   const name = (profile?.full_name?.trim()) || user?.user_metadata?.full_name || email.split('@')[0] || '';
   const initials = (name || email || '?').slice(0, 2).toUpperCase();
   const isRtl = i18n.dir() === 'rtl';
@@ -62,10 +58,52 @@ export function AppLayout({ children }: AppLayoutProps) {
   const orgName = organization?.name?.trim() ?? '';
   const { data: teamMembers = [], error: teamMembersError } = useTeamMembersForSwitcher(activeOrgId ?? null as any);
   const { viewAsEmail, setViewAsEmail, viewAsProfile } = useViewAs();
-  const { boldVersion, starInHeader, ready: headerUiReady } = useFleetHeaderUiFeatures();
 
-  /** קיר קשיח ייצור: fleet-manager-pro.com + www */
+  /** קיר קשיח ייצור: fleet-manager-pro.com + www (גרסה בכותרת וכו') */
   const isProduction = isFleetManagerProHostname();
+  /** באנר "גרסת בדיקה": מוסתר ב־fleet-manager-pro.com + www (ייצור) */
+  const showStagingWarningBar = showFleetStagingEnvironmentBanner();
+  const { boldVersion: headerBoldVersion, starInHeader: headerStarInHeader, ready: headerUiReady } =
+    useFleetHeaderUiFeatures();
+
+  /** ריענון כותרת אחרי כתיבת fleet-pro-acknowledged-version (לפני reload) */
+  const [proAckBump, setProAckBump] = useState(0);
+  useEffect(() => {
+    if (!isProduction) return;
+    const bump = () => setProAckBump((n) => n + 1);
+    window.addEventListener(FLEET_PRO_ACK_VERSION_UPDATED_EVENT, bump);
+    return () => window.removeEventListener(FLEET_PRO_ACK_VERSION_UPDATED_EVENT, bump);
+  }, [isProduction]);
+
+  /**
+   * ייצור: אחרי `FLEET_PRO_ACK_VERSION_UPDATED_EVENT` — אם `fleet-pro-acknowledged-version` בפועל השתנה,
+   * רענון קשיח כדי לסנכרן gates / מצב React עם localStorage (פרסום, שמירת הרשאות, «עדכן עכשיו»).
+   */
+  const lastProAckSeenRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isProduction) return;
+    try {
+      lastProAckSeenRef.current = localStorage.getItem(FLEET_PRO_ACK_VERSION_STORAGE_KEY);
+    } catch {
+      lastProAckSeenRef.current = null;
+    }
+    const onAckEvent = () => {
+      let next = '';
+      try {
+        next = localStorage.getItem(FLEET_PRO_ACK_VERSION_STORAGE_KEY)?.trim() ?? '';
+      } catch {
+        return;
+      }
+      const prev = (lastProAckSeenRef.current ?? '').trim();
+      if (next && next !== prev) {
+        lastProAckSeenRef.current = next;
+        window.location.reload();
+      }
+    };
+    window.addEventListener(FLEET_PRO_ACK_VERSION_UPDATED_EVENT, onAckEvent);
+    return () => window.removeEventListener(FLEET_PRO_ACK_VERSION_UPDATED_EVENT, onAckEvent);
+  }, [isProduction]);
+
   /** מוצג בכותרת — בטסט = גרסת בנדל; בייצור = מאושרת או ברירת מחדל עד "עדכן עכשיו" */
   const headerDisplayVersion = useMemo(() => {
     if (!isProduction) return normalizeVersion(bundleVersion);
@@ -76,12 +114,12 @@ export function AppLayout({ children }: AppLayoutProps) {
     } catch {
       // ignore
     }
-    const ackN = normalizeVersion(ack);
-    const bundleN = normalizeVersion(bundleVersion);
-    /** בנדל חדש יותר מהמאושר — מציגים את המאושר עד "עדכן עכשיו" */
-    if (compareSemver(bundleN, ackN) > 0) return ackN;
+    const ackN = toCanonicalThreePartVersion(normalizeVersion(ack)) || normalizeVersion(ack);
+    const bundleN = toCanonicalThreePartVersion(normalizeVersion(bundleVersion)) || normalizeVersion(bundleVersion);
+    /** בנדל חדש יותר מהמאושר — מציגים את המאושר עד "עדכן עכשיו" (semver מורחב) */
+    if (compareSemverExtended(bundleN, ackN) > 0) return ackN;
     return bundleN;
-  }, [isProduction, bundleVersion]);
+  }, [isProduction, bundleVersion, proAckBump]);
 
   useEffect(() => {
     console.log('TeamMembers for Org:', activeOrgId, {
@@ -125,6 +163,14 @@ export function AppLayout({ children }: AppLayoutProps) {
   const isMainAdmin = email === 'malachiroei@gmail.com';
   const isDriverRoei = email === 'roeima21@gmail.com';
   const isRavid = email === 'ravidmalachi@gmail.com';
+
+  const viewAsBannerVisible = (isMainAdmin || isRavid) && Boolean(viewAsEmail);
+  const headerStickyTopClass = showStagingWarningBar
+    ? viewAsBannerVisible
+      ? 'top-24'
+      : 'top-12'
+    : 'top-0';
+  const viewAsStickyTopClass = showStagingWarningBar ? 'top-12' : 'top-0';
 
   const mainFleetOrgId = useMemo(() => {
     // Prefer explicit Main Fleet org id when present.
@@ -682,18 +728,12 @@ export function AppLayout({ children }: AppLayoutProps) {
           </span>
           <span
             className={cn(
-              'block truncate text-xs text-amber-400 drop-shadow-sm',
-              headerUiReady && boldVersion ? 'font-bold' : 'font-semibold'
+              'block truncate text-xs text-white/65',
+              headerUiReady && headerBoldVersion ? 'font-bold text-amber-300/95' : 'font-medium'
             )}
           >
-            <span className="inline-flex items-center gap-1.5">
-              גרסה v{headerDisplayVersion}
-              {headerUiReady && starInHeader ? (
-                <span className="shrink-0 text-base leading-none" aria-hidden title="מניפסט">
-                  ⭐
-                </span>
-              ) : null}
-            </span>
+            גרסה v{headerDisplayVersion}
+            {headerUiReady && headerStarInHeader ? <span className="ms-1" aria-hidden>⭐</span> : null}
           </span>
         </div>
       </div>
@@ -702,19 +742,26 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   return (
     <div
-      className="flex min-h-[100dvh] flex-col overflow-x-hidden bg-[#020617]"
+      className={cn(
+        'flex min-h-[100dvh] flex-col overflow-x-hidden bg-[#020617]',
+        showStagingWarningBar && 'pt-12'
+      )}
       dir={isRtl ? 'rtl' : 'ltr'}
     >
-      {shouldShowDevTools && (
-        <div className="fixed left-0 right-0 top-0 z-[70] h-16 bg-red-600 animate-pulse border-b border-red-400/60 shadow-md">
-          <div className="mx-auto flex max-w-[1920px] h-full items-center justify-center px-4 sm:px-6">
-            <span className="font-extrabold text-2xl text-white">גרסת עבודה - פיתוח</span>
-          </div>
+      {showStagingWarningBar ? (
+        <div
+          className="fixed left-0 right-0 top-0 z-[999] flex h-12 items-center justify-center border-b border-red-400/60 bg-red-600 px-4 text-center shadow-md"
+          role="banner"
+          aria-label="גרסת בדיקה"
+        >
+          <span className="text-sm font-bold tracking-wide text-white sm:text-base">
+            גרסת בדיקה / Test Version
+          </span>
         </div>
-      )}
+      ) : null}
       {(isMainAdmin || isRavid) && viewAsEmail && (
         <div
-          className={`sticky z-50 w-full bg-amber-500 text-black shadow-md ${shouldShowDevTools ? 'top-16' : 'top-0'}`}
+          className={cn('sticky z-50 w-full bg-amber-500 text-black shadow-md', viewAsStickyTopClass)}
         >
           <div className="mx-auto flex max-w-[1920px] items-center justify-between px-4 py-2 text-xs sm:text-sm">
             <span className="font-medium">
@@ -741,7 +788,10 @@ export function AppLayout({ children }: AppLayoutProps) {
         </div>
       )}
       <header
-        className={`sticky z-40 border-b border-white/10 bg-[#0d1b2e] min-h-[4.25rem] sm:min-h-0 ${shouldShowDevTools ? 'top-16' : 'top-0'}`}
+        className={cn(
+          'sticky z-40 border-b border-white/10 bg-[#0d1b2e] min-h-[4.25rem] sm:min-h-0',
+          headerStickyTopClass
+        )}
       >
         <div className="mx-auto flex max-w-[1920px] w-full flex-col gap-0 sm:gap-1 px-4 sm:px-6 py-3 sm:py-3">
           {/* Row 1: לוגו + בית + גלגל שיניים */}

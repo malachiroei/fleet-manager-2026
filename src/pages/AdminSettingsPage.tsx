@@ -1,39 +1,123 @@
 import type { ChangeEvent } from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
  import { Link } from 'react-router-dom';
  import { Button } from '@/components/ui/button';
  import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { supabase } from '@/integrations/supabase/client';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import PricingDataUploader from '@/components/PricingDataUploader';
 import FleetDataImporter from '@/components/FleetDataImporter';
-import { ArrowRight, Settings, Shield, Mail, Loader2, Monitor, Moon, Sun, Download, RefreshCw, RotateCcw } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowRight,
+  Check,
+  Download,
+  Globe,
+  Loader2,
+  Mail,
+  Monitor,
+  Moon,
+  RefreshCw,
+  RotateCcw,
+  Send,
+  Settings,
+  Shield,
+  Sun,
+  UserCog,
+  Users,
+} from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
+import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
-import { version as codeVersion } from '@/constants/version';
-import { triggerServiceWorkerUpdateCheck } from '@/lib/pwaServiceWorkerControl';
-import { hidePwaUpdateModal, showPwaUpdateModal } from '@/lib/pwaUpdateModalBridge';
+import {
+  FLEET_PRO_ACK_VERSION_STORAGE_KEY,
+  FLEET_PRO_ACK_VERSION_UPDATED_EVENT,
+  version as codeVersion,
+} from '@/constants/version';
+import {
+  commitFleetProAcknowledgedVersionAndHardReload,
+  triggerServiceWorkerUpdateCheck,
+} from '@/lib/pwaServiceWorkerControl';
+import {
+  clearFleetProUpdateModalSuppressFlag,
+  hidePwaUpdateModal,
+  showPwaUpdateModal,
+} from '@/lib/pwaUpdateModalBridge';
 import { parseManifestChanges } from '@/lib/pwaManifest';
 import {
   pickLatestVersionManifest,
-  computeNextPatchVersion,
   fetchPendingChangesFromDb,
   fetchVersionManifestFromDb,
+  formatPrivateUiAnchorVersion,
   getTestStaticManifestUrl,
   normalizeVersion,
   compareSemver,
+  computeNextPatchVersion,
+  parseSemverParts,
+  parseSemverSegments,
+  toCanonicalThreePartVersion,
   versionNotOlderThanBundle,
+  isFleetManagerProHostname,
 } from '@/lib/versionManifest';
 import { isFleetManagerTestHost, isFleetProductionHost } from '@/lib/pwaPromptRegister';
+import { upsertSystemSettingsRows, verifyPublishWrittenToSupabase } from '@/lib/systemSettingsUpsert';
 import { FLEET_KV_TABLE } from '@/lib/fleetKvTable';
+import {
+  buildPendingOnlyPublishCandidates,
+  getFleetStagingOnlyUiInfoLines,
+  FLEET_UI_DEFAULT_PUBLISH_CANDIDATES,
+  getFleetUiPermissionModalEditableCandidates,
+  getFleetUiTokensExcludedFromProPublishDefaults,
+  globalManifestUiFeatureTokenSet,
+  isFleetStagingOnlyUiTokenId,
+  mergeProfilePermissionModalPayload,
+  mergeUniquePendingChangeLines,
+  parseProfileAllowedFeatureTokens,
+  parseProfileUiFeatureDenylist,
+  removePendingLinesPublishedInChanges,
+  stripFleetStagingOnlyLinesForProHostname,
+} from '@/lib/fleetPublishedUiFeatures';
+
+/** רשימת מידע סטטית במודאל פרסום — פיצ'רי staging/debug (ללא צ'קבוקס) */
+const FLEET_STAGING_DEBUG_INFO_LINES = getFleetStagingOnlyUiInfoLines();
+import { useFleetManifestUiGates } from '@/hooks/useFleetManifestUiGates';
  
+type UserVersionRow = {
+  id: string;
+  email: string | null;
+  current_app_version: string | null;
+  target_version: string | null;
+  updated_at: string;
+  allowed_features?: unknown;
+  denied_features?: unknown;
+};
+
+function isUserVersionBehindManifest(userVer: string | null | undefined, manifestVer: string): boolean {
+  const m = normalizeVersion(String(manifestVer ?? '').trim());
+  if (!parseSemverParts(m)) return false;
+  if (!userVer?.trim()) return true;
+  const u = normalizeVersion(userVer.trim());
+  if (!parseSemverParts(u)) return true;
+  return compareSemver(m, u) > 0;
+}
+
 export default function AdminSettingsPage() {
     const { theme, setTheme } = useTheme();
+    const { isAdmin, profile, refreshProfile } = useAuth();
+    const canViewUserVersions = isAdmin || Boolean(profile?.is_system_admin);
+    const manifestUiGates = useFleetManifestUiGates();
+    /** ייצור (apex + www): הטבלה מוסתרת לחלוטין אלא אם טוקן הדיבוג במניפסט */
+    const isFleetProDomain = isFleetManagerProHostname();
+    const showUserVersionsTable =
+      canViewUserVersions &&
+      manifestUiGates.ready &&
+      (!isFleetProDomain || manifestUiGates.adminUserVersionsTable);
     const [lastPricingUpload, setLastPricingUpload] = useState<string | null>(localStorage.getItem('last_pricing_upload'));
     const lastVehicleUpload = localStorage.getItem('last_vehicle_upload');
     const lastDriverUpload = localStorage.getItem('last_driver_upload');
@@ -170,12 +254,14 @@ export default function AdminSettingsPage() {
     const [isPublishProgressOpen, setIsPublishProgressOpen] = useState(false);
     const [publishNextVersion, setPublishNextVersion] = useState<string>('');
     const [publishVersionInput, setPublishVersionInput] = useState<string>('');
-    const [publishChangelogText, setPublishChangelogText] = useState<string>('');
     const [publishProgressValue, setPublishProgressValue] = useState<number>(0);
     const [publishProgressStage, setPublishProgressStage] = useState<string>('');
     const [isPublishing, setIsPublishing] = useState(false);
     /** השוואת גרסאות + בחירת pending — מודאל פרסום (בעיקר בטסט) */
     const [publishDiffSupabaseVersion, setPublishDiffSupabaseVersion] = useState<string>('');
+    /** שורות מ־version_manifest.changes — ממוזגות אוטומטית לפרסום (ללא צ'קבוקס) */
+    const [publishManifestCarryLines, setPublishManifestCarryLines] = useState<string[]>([]);
+    /** רק pending / ברירות מחדל שעדיין לא פורסמו */
     const [publishPendingCandidates, setPublishPendingCandidates] = useState<string[]>([]);
     const [publishCandidateSelected, setPublishCandidateSelected] = useState<boolean[]>([]);
     const [publishExtraChangelogLines, setPublishExtraChangelogLines] = useState<string>('');
@@ -203,6 +289,213 @@ export default function AdminSettingsPage() {
     });
 
     const [latestManifestVersion, setLatestManifestVersion] = useState<string>(codeVersion);
+
+    const [userVersionRows, setUserVersionRows] = useState<UserVersionRow[]>([]);
+    const [userVersionLoading, setUserVersionLoading] = useState(false);
+
+    /** מודאל ניהול טוקני UI למשתמש — profiles.allowed_features */
+    const [userPermissionsRow, setUserPermissionsRow] = useState<UserVersionRow | null>(null);
+    const [userPermissionsSelections, setUserPermissionsSelections] = useState<Record<string, boolean>>({});
+    const [userPermissionsSaving, setUserPermissionsSaving] = useState(false);
+    /** רענון allowed_features מ-Supabase בעת פתיחת המודאל */
+    const [userPermissionsLoadingFresh, setUserPermissionsLoadingFresh] = useState(false);
+    const [userPermissionsFreshHint, setUserPermissionsFreshHint] = useState<string | null>(null);
+    /** טוקנים פעילים מהמניפסט הגלובלי (למודאל הרשאות — V נעול + אי שמירה ב־profile) */
+    const [permissionModalGlobalTokens, setPermissionModalGlobalTokens] = useState<string[]>([]);
+
+    const permissionModalGlobalTokenSet = useMemo(
+      () => new Set(permissionModalGlobalTokens),
+      [permissionModalGlobalTokens]
+    );
+
+    const permissionModalEditableCandidates = useMemo(() => getFleetUiPermissionModalEditableCandidates(), []);
+
+    /** טסט בלבד: טוקני staging במודאל הרשאות — מוצגים כ-disabled */
+    const permissionModalStagingDisabledOnTest = useMemo(
+      () =>
+        isFleetProDomain
+          ? []
+          : FLEET_UI_DEFAULT_PUBLISH_CANDIDATES.filter((c) => isFleetStagingOnlyUiTokenId(c.token)),
+      [isFleetProDomain]
+    );
+
+    const loadUserVersions = useCallback(async () => {
+      if (!showUserVersionsTable) return;
+      setUserVersionLoading(true);
+      try {
+        const { data, error } = await (supabase as any)
+          .from('profiles')
+          .select('id, email, current_app_version, target_version, allowed_features, denied_features, updated_at')
+          .order('updated_at', { ascending: false });
+        if (error) throw error;
+        setUserVersionRows(Array.isArray(data) ? (data as UserVersionRow[]) : []);
+      } catch (e) {
+        console.warn('[AdminSettings] user versions', e);
+        toast.error('טעינת סטטוס משתמשים נכשלה — ודא עמודות current_app_version ב-profiles ו-RLS למנהלים');
+        setUserVersionRows([]);
+      } finally {
+        setUserVersionLoading(false);
+      }
+    }, [showUserVersionsTable]);
+
+    useEffect(() => {
+      void loadUserVersions();
+    }, [loadUserVersions]);
+
+    /** מצב צ'קבוקסים: גלובלי ∪ הרשאה חיובית; חסימה מ־denied_features (או ! legacy ב-allowed) */
+    const computePermissionModalCheckedFromProfile = useCallback(
+      (allowedRaw: unknown, deniedRaw: unknown, globalTokens: Set<string>) => {
+        const allowed = parseProfileAllowedFeatureTokens(allowedRaw);
+        const denied = parseProfileUiFeatureDenylist(allowedRaw, deniedRaw);
+        const next: Record<string, boolean> = {};
+        for (const { token } of permissionModalEditableCandidates) {
+          next[token] = !denied.has(token) && (globalTokens.has(token) || allowed.has(token));
+        }
+        return next;
+      },
+      [permissionModalEditableCandidates]
+    );
+
+    const openUserPermissionsModal = useCallback(
+      async (row: UserVersionRow) => {
+        setUserPermissionsFreshHint(null);
+        setUserPermissionsSelections({});
+        setUserPermissionsRow(row);
+        setPermissionModalGlobalTokens([]);
+        setUserPermissionsLoadingFresh(true);
+
+        const applyMerged = (allowedRaw: unknown, deniedRaw: unknown, globalSet: Set<string>) => {
+          setPermissionModalGlobalTokens([...globalSet].sort());
+          setUserPermissionsSelections(
+            computePermissionModalCheckedFromProfile(allowedRaw, deniedRaw, globalSet)
+          );
+        };
+
+        let globalSet = new Set<string>();
+        let allowedRaw: unknown = row.allowed_features;
+        let deniedRaw: unknown = row.denied_features;
+
+        try {
+          const [picked, profileRes] = await Promise.all([
+            pickLatestVersionManifest(supabase as any, getTestStaticManifestUrl()),
+            (supabase as any)
+              .from('profiles')
+              .select('allowed_features, denied_features')
+              .eq('id', row.id)
+              .maybeSingle(),
+          ]);
+          const lines = parseManifestChanges(picked?.manifest ?? {});
+          globalSet = globalManifestUiFeatureTokenSet(lines, isFleetProDomain);
+
+          const { data, error } = profileRes;
+          if (error) throw error;
+          if (data && data.allowed_features !== undefined) {
+            allowedRaw = data.allowed_features;
+          }
+          if (data && data.denied_features !== undefined) {
+            deniedRaw = data.denied_features;
+          }
+          applyMerged(allowedRaw, deniedRaw, globalSet);
+          setUserPermissionsRow({ ...row, allowed_features: allowedRaw, denied_features: deniedRaw });
+        } catch (e) {
+          console.warn('[AdminSettings] permissions modal load', e);
+          setUserPermissionsFreshHint(
+            'לא ניתן לטעון מניפסט/הרשאות מהשרת — מוצגים לפי הנתונים בטבלה בלבד (ללא מיזוג מניפסט גלובלי).'
+          );
+          globalSet = new Set<string>();
+          applyMerged(row.allowed_features, row.denied_features, globalSet);
+        } finally {
+          setUserPermissionsLoadingFresh(false);
+        }
+      },
+      [computePermissionModalCheckedFromProfile, isFleetProDomain]
+    );
+
+    const closeUserPermissionsModal = useCallback(() => {
+      if (userPermissionsSaving || userPermissionsLoadingFresh) return;
+      setUserPermissionsRow(null);
+      setUserPermissionsSelections({});
+      setPermissionModalGlobalTokens([]);
+      setUserPermissionsFreshHint(null);
+    }, [userPermissionsSaving, userPermissionsLoadingFresh]);
+
+    const submitUserPermissions = useCallback(async () => {
+      if (!userPermissionsRow) return;
+      const globalSet = new Set<string>(permissionModalGlobalTokens);
+      const managed = permissionModalEditableCandidates.map(({ token }) => token);
+      const payload = mergeProfilePermissionModalPayload(
+        userPermissionsRow.allowed_features,
+        userPermissionsRow.denied_features,
+        managed,
+        globalSet,
+        userPermissionsSelections
+      );
+      setUserPermissionsSaving(true);
+      try {
+        /**
+         * עוגן פרטי בלבד — ללא שינוי system_settings / גרסה גלובלית.
+         * פורמט: `CurrentGlobal-p<timestamp>`; המשתמש מקבל מודאל «עדכן עכשיו» שמאשר ב־localStorage.
+         */
+        const manifestRow = await fetchVersionManifestFromDb(supabase as any);
+        const globalRaw =
+          manifestRow && typeof manifestRow.version === 'string' ? manifestRow.version.trim() : '';
+        let globalBase =
+          toCanonicalThreePartVersion(normalizeVersion(globalRaw)) || normalizeVersion(globalRaw).trim();
+        if (!globalBase || !parseSemverParts(globalBase)) {
+          globalBase =
+            toCanonicalThreePartVersion(normalizeVersion(codeVersion)) ||
+            normalizeVersion(codeVersion).trim() ||
+            '0.0.0';
+        }
+        const privateAnchor = formatPrivateUiAnchorVersion(globalBase);
+        const { error } = await (supabase as any)
+          .from('profiles')
+          .update({
+            allowed_features: payload.allowed_features,
+            denied_features: payload.denied_features,
+            ui_denied_features_anchor_version: privateAnchor,
+          })
+          .eq('id', userPermissionsRow.id);
+        if (error) throw error;
+        const targetId = userPermissionsRow.id;
+        const isSelfSave = profile?.id === targetId;
+        const who = userPermissionsRow.email ?? targetId.slice(0, 8);
+        const a = payload.allowed_features.length
+          ? `allowed:\n${payload.allowed_features.map((t) => `• ${t}`).join('\n')}`
+          : 'allowed: —';
+        const d = payload.denied_features.length
+          ? `denied:\n${payload.denied_features.map((t) => `• ${t}`).join('\n')}`
+          : 'denied: —';
+        const tokenList = `${a}\n\n${d}`;
+        toast.success(`הרשאות UI עודכנו עבור ${who} · עוגן פרטי (גרסה גלובלית ${globalBase})`, {
+          description: tokenList,
+          duration: 6500,
+        });
+        setUserPermissionsRow(null);
+        setUserPermissionsSelections({});
+        void loadUserVersions();
+        /** רענון קשיח רק כשהמנהל עדכן את עצמו — סנכרון ack + עוגן פרטי */
+        if (isSelfSave) {
+          void commitFleetProAcknowledgedVersionAndHardReload(globalBase, {
+            privateAnchorFull: privateAnchor,
+          });
+        }
+      } catch (e) {
+        console.error(e);
+        const msg = e instanceof Error ? e.message : 'שגיאה לא ידועה';
+        toast.error(`שמירה נכשלה: ${msg}`);
+      } finally {
+        setUserPermissionsSaving(false);
+      }
+    }, [
+      userPermissionsRow,
+      userPermissionsSelections,
+      permissionModalGlobalTokens,
+      permissionModalEditableCandidates,
+      loadUserVersions,
+      codeVersion,
+      profile?.id,
+    ]);
 
     const restoreInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -638,25 +931,38 @@ export default function AdminSettingsPage() {
 
         const picked = await pickLatestVersionManifest(supabase as any, staticManifestUrl);
         const manifestJson = picked?.manifest ?? {};
-        const currentVersion =
-          typeof manifestJson?.version === 'string' && manifestJson.version.trim()
-            ? manifestJson.version
-            : appVersion;
 
         // רק Supabase — ללא pending_changes.json מקומי
         const changes = (await fetchPendingChangesFromDb(supabase as any)) ?? [];
 
-        const next = computeNextPatchVersion(currentVersion);
-        const initialLines = changes && changes.length > 0 ? changes : [];
-        setPublishNextVersion(next);
-        setPublishVersionInput(next);
-        setPublishChangelogText(initialLines.length > 0 ? initialLines.join('\n') : '');
-        setPublishPendingCandidates(initialLines);
-        setPublishCandidateSelected(initialLines.map(() => true));
+        const publishedLinesRaw = parseManifestChanges(manifestJson);
+        const pendingLines = Array.isArray(changes) ? changes.map((x) => String(x).trim()).filter(Boolean) : [];
+        const isProHost = isFleetManagerProHostname();
+        const publishedLines = stripFleetStagingOnlyLinesForProHostname(publishedLinesRaw, isProHost);
+        const omitProDefaults = isProHost ? getFleetUiTokensExcludedFromProPublishDefaults() : undefined;
+        setPublishManifestCarryLines(publishedLines);
+        const pendingOnly = buildPendingOnlyPublishCandidates(pendingLines, publishedLines, {
+          omitDefaultTokens: omitProDefaults,
+          isProPublishHost: isProHost,
+        });
+        /** ברירת מחדל: תמיד patch+1 על גרסת הבנדל (לא גרסת הבנדל עצמה) */
+        const bundleCanonical =
+          toCanonicalThreePartVersion(normalizeVersion(codeVersion)) ||
+          normalizeVersion(codeVersion).trim() ||
+          codeVersion.trim();
+        const versionDefault = computeNextPatchVersion(bundleCanonical || '0.0.0');
+        setPublishNextVersion(versionDefault);
+        setPublishVersionInput(versionDefault);
+        setPublishPendingCandidates(pendingOnly);
+        setPublishCandidateSelected(pendingOnly.map(() => true));
         setPublishExtraChangelogLines('');
 
-        if (initialLines.length === 0) {
-          toast.message('אין שינויים ב-pending — ניתן להקליד צ׳יינג׳לוג ידנית (או רק בשדה הנוסף בטסט).');
+        if (pendingOnly.length === 0 && publishedLines.length === 0) {
+          toast.message('אין pending ואין מניפסט קודם — השתמש בשדה «שורות נוספות» או פרסם לאחר הוספת שורות.');
+        }
+
+        if (isProHost && publishedLinesRaw.length > publishedLines.length) {
+          toast.message('שורות דיבוג/staging הוסרו מרשימת הפרסום — בפרודקשן אי אפשר לפרסם אותן.');
         }
 
         setIsPublishConfirmOpen(true);
@@ -669,16 +975,25 @@ export default function AdminSettingsPage() {
 
     const publishRelease = async () => {
       const versionFinal = publishVersionInput.trim() || publishNextVersion.trim();
+      const isProPublish = isFleetManagerProHostname();
 
-      let changesFinal: string[];
-      if (isFleetManagerTestHost()) {
-        const fromChecks = publishPendingCandidates.filter(
-          (line, i) => publishCandidateSelected[i] && String(line).trim().length > 0
-        );
-        const extra = parseChangelogLines(publishExtraChangelogLines);
-        changesFinal = [...fromChecks.map((s) => s.trim()), ...extra];
-      } else {
-        changesFinal = parseChangelogLines(publishChangelogText);
+      const carried = publishManifestCarryLines
+        .map((s) => String(s).trim())
+        .filter((s) => s.length > 0);
+      const selectedNew = publishPendingCandidates
+        .filter((_line, i) => publishCandidateSelected[i] === true)
+        .map((s) => String(s).trim())
+        .filter((s) => s.length > 0);
+      const extra = parseChangelogLines(publishExtraChangelogLines);
+      /** בפרודקשן: מסננים ידנית שורות DEBUG/staging — לא נכנסות למניפסט */
+      const mergedBeforeProStrip = mergeUniquePendingChangeLines(
+        mergeUniquePendingChangeLines(carried, selectedNew),
+        extra
+      );
+      const changesFinal = stripFleetStagingOnlyLinesForProHostname(mergedBeforeProStrip, isProPublish);
+
+      if (isProPublish && mergedBeforeProStrip.length > changesFinal.length) {
+        toast.message('שורות דיבוג / staging הוסרו — בפרודקשן לא נשמרות במניפסט.');
       }
 
       if (!String(versionFinal).trim()) {
@@ -729,16 +1044,22 @@ export default function AdminSettingsPage() {
 
         const versionCanonical = String(newManifest.version).trim();
 
-        /** בטסט: רק פריטים שלא נבחרו נשארים ב-pending_changes; בשאר הסביבות — מנקים pending אחרי פרסום מלא מטקסטאריאה */
+        const existingPendingRaw = (await fetchPendingChangesFromDb(supabase as any)) ?? [];
+        const existingPending = existingPendingRaw.map((x) => String(x).trim()).filter((s) => s.length > 0);
+        const prunedPublishedTokens = removePendingLinesPublishedInChanges(existingPending, changesFinal);
+
+        /** pending: מסירים שורות שטוקן שלהן פורסם; ממזגים עם פריטים שלא סומנו במודאל (טסט) */
         let pendingChangesPayload: { changes: string[] };
         if (isFleetManagerTestHost()) {
-          const remaining = publishPendingCandidates
+          const uncheckedFromModal = publishPendingCandidates
             .filter((_line, i) => publishCandidateSelected[i] !== true)
             .map((s) => String(s).trim())
             .filter((s) => s.length > 0);
-          pendingChangesPayload = { changes: remaining };
+          pendingChangesPayload = {
+            changes: mergeUniquePendingChangeLines(prunedPublishedTokens, uncheckedFromModal),
+          };
         } else {
-          pendingChangesPayload = { changes: [] };
+          pendingChangesPayload = { changes: prunedPublishedTokens };
         }
 
         setPublishProgressStage('שומר מניפסט בענן (Supabase)...');
@@ -753,20 +1074,26 @@ export default function AdminSettingsPage() {
           { key: 'pending_changes', value: pendingChangesPayload },
         ];
 
-        const { error: upsertError } = await (supabase as any)
-          .from('system_settings')
-          .upsert(rows, { onConflict: 'key' });
-        if (upsertError) {
-          console.error('system_settings upsert', upsertError, JSON.stringify(rows));
-          throw upsertError;
+        await upsertSystemSettingsRows(supabase as any, rows);
+        const verify = await verifyPublishWrittenToSupabase(supabase as any, versionCanonical);
+        if (!verify.ok) {
+          console.error('verifyPublishWrittenToSupabase', verify.message);
+          throw new Error(verify.message);
         }
 
         try {
           localStorage.setItem('fleet-manager-app_version', versionCanonical);
           localStorage.setItem('fleet-manager-last_update_date_iso', publishedAtIso);
+          const ackCanon =
+            toCanonicalThreePartVersion(normalizeVersion(versionCanonical)) ||
+            normalizeVersion(versionCanonical);
+          localStorage.setItem(FLEET_PRO_ACK_VERSION_STORAGE_KEY, ackCanon);
+          window.dispatchEvent(new Event(FLEET_PRO_ACK_VERSION_UPDATED_EVENT));
         } catch {
           // ignore quota / private mode
         }
+        clearFleetProUpdateModalSuppressFlag();
+        hidePwaUpdateModal();
         setAppVersion(versionCanonical);
         setLatestManifestVersion(versionCanonical);
 
@@ -783,8 +1110,8 @@ export default function AdminSettingsPage() {
         );
 
         setIsPublishProgressOpen(false);
-        setPublishChangelogText('');
         setPublishExtraChangelogLines('');
+        setPublishManifestCarryLines([]);
         setPublishPendingCandidates([]);
         setPublishCandidateSelected([]);
 
@@ -1027,6 +1354,320 @@ export default function AdminSettingsPage() {
             </CardContent>
           </Card>
 
+          {showUserVersionsTable ? (
+            <Card>
+              <CardHeader>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-500/10">
+                      <Users className="h-5 w-5 text-cyan-500" />
+                    </div>
+                    <div>
+                      <CardTitle>User Status &amp; Versions</CardTitle>
+                      <CardDescription>
+                        גרסת בנדל אחרונה שדווחה (heartbeat) מול מניפסט נוכחי:{' '}
+                        <code className="text-xs">{latestManifestVersion}</code>. אזהרה צהובה אם המשתמש מאחור.
+                        <span className="mt-1 block text-[11px] text-muted-foreground">
+                          «ניהול הרשאות»: טוקנים ב־<code className="text-[10px]">profiles.allowed_features</code> — בנוסף
+                          למניפסט הגלובלי, בלי לשנות גרסה או מודאל עדכון לאחרים.
+                        </span>
+                        {isFleetProDomain ? (
+                          <span className="mt-1 block text-[11px] text-amber-600/90">
+                            בייצור (fleet-manager-pro.com / www): מוצג רק כשהטוקן
+                            UI_FEATURE_DEBUG_ADMIN_USER_VERSIONS_TABLE מופיע במניפסט.
+                          </span>
+                        ) : null}
+                      </CardDescription>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void loadUserVersions()}
+                    disabled={userVersionLoading}
+                  >
+                    {userVersionLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin ml-2" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4 ml-2" />
+                    )}
+                    רענן
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="overflow-x-auto px-1 sm:px-2">
+                {userVersionLoading && userVersionRows.length === 0 ? (
+                  <p className="text-sm text-muted-foreground px-4 py-2">טוען…</p>
+                ) : userVersionRows.length === 0 ? (
+                  <p className="text-sm text-muted-foreground px-4 py-2">אין רשומות או אין הרשאת צפייה בכל ה-profiles.</p>
+                ) : (
+                  <Table className="w-full min-w-[880px] table-fixed border-collapse text-sm caption-bottom [&_th]:h-auto [&_th]:py-3 [&_td]:py-3">
+                    <colgroup>
+                      <col style={{ width: '26%' }} />
+                      <col style={{ width: '14%' }} />
+                      <col style={{ width: '14%' }} />
+                      <col style={{ width: '16%' }} />
+                      <col style={{ width: '200px' }} />
+                    </colgroup>
+                    <TableHeader>
+                      <TableRow className="hover:bg-transparent border-b">
+                        <TableHead className="px-3 sm:px-4 text-start align-bottom font-semibold whitespace-normal min-w-0">
+                          אימייל
+                        </TableHead>
+                        <TableHead className="px-3 sm:px-4 text-start align-bottom font-semibold whitespace-normal min-w-0">
+                          גרסה נוכחית
+                        </TableHead>
+                        <TableHead className="px-3 sm:px-4 text-start align-bottom font-semibold whitespace-normal min-w-0">
+                          יעד עדכון (אופציונלי)
+                        </TableHead>
+                        <TableHead className="px-3 sm:px-4 text-start align-bottom font-semibold whitespace-nowrap min-w-0">
+                          עדכון אחרון (seen)
+                        </TableHead>
+                        <TableHead className="px-2 sm:px-3 text-center align-bottom font-semibold whitespace-nowrap min-w-0 w-[200px]">
+                          פעולות
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {userVersionRows.map((row) => {
+                        const warn = isUserVersionBehindManifest(row.current_app_version, latestManifestVersion);
+                        return (
+                          <TableRow key={row.id} className="border-b">
+                            <TableCell className="px-3 sm:px-4 text-start align-top font-medium min-w-0">
+                              <span className="block truncate" title={row.email ?? row.id}>
+                                {row.email ?? row.id.slice(0, 8)}
+                              </span>
+                            </TableCell>
+                            <TableCell className="px-3 sm:px-4 text-start align-top min-w-0">
+                              <span className="inline-flex items-start gap-1.5 min-w-0">
+                                {warn ? (
+                                  <AlertTriangle
+                                    className="h-4 w-4 shrink-0 text-amber-500 mt-0.5"
+                                    aria-label="גרסה מיושנת מול המניפסט"
+                                  />
+                                ) : null}
+                                <span className="min-w-0 break-all text-xs sm:text-sm">
+                                  {row.current_app_version?.trim() || '—'}
+                                </span>
+                              </span>
+                            </TableCell>
+                            <TableCell className="px-3 sm:px-4 text-start align-top text-muted-foreground text-xs min-w-0 break-words">
+                              {row.target_version?.trim() || '—'}
+                            </TableCell>
+                            <TableCell className="px-3 sm:px-4 text-start align-top text-muted-foreground text-xs whitespace-nowrap min-w-0">
+                              {row.updated_at
+                                ? formatDateTimeForUi(new Date(row.updated_at))
+                                : '—'}
+                            </TableCell>
+                            <TableCell className="px-2 sm:px-3 align-top w-[200px] max-w-[200px]">
+                              <div className="flex flex-col gap-2 items-stretch">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  disabled
+                                  title="מומלץ «ניהול הרשאות»: שמירה שם מקפיצה גרסה גלובלית (+1) ומפעילה עדכון אצל המשתמש. כפתור זה מנוטרל כדי למנוע כפילות."
+                                  className="h-auto min-h-8 py-2 gap-1.5 text-[11px] sm:text-xs font-medium inline-flex items-center justify-center text-center leading-snug px-2 opacity-55 cursor-not-allowed"
+                                >
+                                  <Send className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+                                  <span className="break-words">גרסה ממוקדת (לא בשימוש)</span>
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-auto min-h-8 py-2 gap-1.5 text-[11px] sm:text-xs font-medium inline-flex items-center justify-center text-center leading-snug border-primary/25 hover:bg-primary/5 px-2"
+                                  onClick={() => void openUserPermissionsModal(row)}
+                                >
+                                  <UserCog className="h-3.5 w-3.5 shrink-0 opacity-90" aria-hidden />
+                                  <span className="break-words">ניהול הרשאות</span>
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
+
+          <Dialog
+            key={userPermissionsRow?.id ?? 'fleet-permissions-closed'}
+            open={userPermissionsRow !== null}
+            onOpenChange={(open) => {
+              if (!open) {
+                if (userPermissionsSaving || userPermissionsLoadingFresh) return;
+                closeUserPermissionsModal();
+              }
+            }}
+          >
+            <DialogContent
+              dir="rtl"
+              className="sm:max-w-lg max-h-[85vh] flex flex-col"
+              onPointerDownOutside={(e) => {
+                if (userPermissionsSaving || userPermissionsLoadingFresh) e.preventDefault();
+              }}
+              onEscapeKeyDown={(e) => {
+                if (userPermissionsSaving || userPermissionsLoadingFresh) e.preventDefault();
+              }}
+            >
+              <DialogHeader>
+                <DialogTitle>ניהול הרשאות UI</DialogTitle>
+                <DialogDescription className="text-start">
+                  <strong>V (מסומן)</strong> = פעיל לפי מניפסט גלובלי או <code className="text-xs">allowed_features</code>.
+                  ביטול על טוקן Globe נשמר ב־<code className="text-xs">denied_features</code> (jsonb). תאימות לאחור: גם{' '}
+                  <code className="text-xs">!TOKEN</code> ב־allowed נקרא כחסימה. טעינה: מניפסט + פרופיל מ-Supabase.
+                </DialogDescription>
+                <p className="text-[11px] text-start rounded-md border border-cyan-500/35 bg-cyan-500/10 text-cyan-950 dark:text-cyan-100/95 px-3 py-2 mt-2 leading-snug">
+                  <strong>שמור הרשאות</strong> מעדכן רק את המשתמש ב־<code className="text-[10px]">profiles</code> —{' '}
+                  <strong>ללא שינוי גרסה גלובלית</strong> ב־<code className="text-[10px]">system_settings</code>. נשמר
+                  עוגן פרטי ב־<code className="text-[10px]">ui_denied_features_anchor_version</code> (פורמט{' '}
+                  <code className="text-[10px]">גרסה_גלובלית-p…</code>) עד שהמשתמש מאשר «עדכן עכשיו». אם שמרת על{' '}
+                  <strong>עצמך</strong>, הדף יתרענן אוטומטית לאחר הסנכרון.
+                </p>
+              </DialogHeader>
+              {userPermissionsRow ? (
+                <div className="space-y-3 text-sm overflow-y-auto flex-1 pe-1 relative min-h-[120px]">
+                  {userPermissionsLoadingFresh ? (
+                    <div
+                      className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-md bg-background/80 backdrop-blur-[2px]"
+                      aria-busy="true"
+                      aria-live="polite"
+                    >
+                      <Loader2 className="h-8 w-8 animate-spin text-primary" aria-hidden />
+                      <span className="text-xs text-muted-foreground">טוען הרשאות נוכחיות מהשרת…</span>
+                    </div>
+                  ) : null}
+                  <div>
+                    <span className="text-muted-foreground text-xs block mb-1">משתמש</span>
+                    <span className="font-medium break-all">{userPermissionsRow.email ?? userPermissionsRow.id}</span>
+                  </div>
+                  {userPermissionsFreshHint ? (
+                    <p className="text-[11px] text-amber-800/95 dark:text-amber-400/95 rounded-md border border-amber-500/35 bg-amber-500/10 p-2">
+                      {userPermissionsFreshHint}
+                    </p>
+                  ) : null}
+                  {!userPermissionsLoadingFresh &&
+                  !isFleetProDomain &&
+                  permissionModalStagingDisabledOnTest.length > 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold text-muted-foreground">
+                        טוקני Staging / debug (צפייה בלבד בטסט — לא נשמרים מכאן)
+                      </p>
+                      <ul className="space-y-2.5 rounded-md border border-dashed border-muted-foreground/30 bg-muted/25 p-3">
+                        {permissionModalStagingDisabledOnTest.map(({ token, line }) => {
+                          const inDb = parseProfileAllowedFeatureTokens(
+                            userPermissionsRow.allowed_features
+                          ).has(token);
+                          const fromGlobal = permissionModalGlobalTokenSet.has(token);
+                          const stagingChecked = fromGlobal || inDb;
+                          return (
+                            <li key={`perm-staging-${token}`} className="flex gap-2 items-start opacity-80">
+                              <Checkbox
+                                id={`perm-ui-staging-${token}`}
+                                checked={stagingChecked}
+                                disabled
+                                aria-readonly
+                              />
+                              <label
+                                htmlFor={`perm-ui-staging-${token}`}
+                                className="text-sm leading-snug flex-1 min-w-0 cursor-not-allowed"
+                              >
+                                <span className="block break-words">{line}</span>
+                                <span className="block text-[10px] text-muted-foreground mt-1">
+                                  מופעל רק דרך מניפסט בפרו / טסט; לא ניתן לעדכן מכאן.
+                                </span>
+                              </label>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {!userPermissionsLoadingFresh ? (
+                    <>
+                      <p className="text-xs font-semibold text-foreground">טוקנים הניתנים לעריכה</p>
+                      <ul className="space-y-2.5 rounded-md border border-border bg-muted/20 p-3">
+                        {permissionModalEditableCandidates.map(({ token, line }) => {
+                          const isGlobal = permissionModalGlobalTokenSet.has(token);
+                          const checked = userPermissionsSelections[token] ?? false;
+                          return (
+                            <li key={token} className="flex gap-2 items-start">
+                              <div className="flex items-start gap-1 shrink-0 pt-0.5">
+                                <Checkbox
+                                  id={`perm-ui-${token}`}
+                                  checked={checked}
+                                  disabled={false}
+                                  onCheckedChange={(v) => {
+                                    setUserPermissionsSelections((prev) => ({
+                                      ...prev,
+                                      [token]: v === true,
+                                    }));
+                                  }}
+                                />
+                                {isGlobal ? (
+                                  <span title="קיים במניפסט הגלובלי — ניתן לחסום למשתמש זה" className="inline-flex mt-0.5">
+                                    <Globe
+                                      className="h-3.5 w-3.5 shrink-0 text-primary/85"
+                                      aria-hidden
+                                    />
+                                  </span>
+                                ) : null}
+                              </div>
+                              <label
+                                htmlFor={`perm-ui-${token}`}
+                                className="text-sm leading-snug flex-1 min-w-0 cursor-pointer"
+                              >
+                                <span className="block break-words">{line}</span>
+                                {isGlobal ? (
+                                  <span className="block text-[10px] text-muted-foreground mt-0.5">
+                                    מניפסט גלובלי — ביטול סימון מוסיף את הטוקן ל־<code className="text-[10px]">denied_features</code>.
+                                  </span>
+                                ) : null}
+                              </label>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
+              <DialogFooter className="gap-2 sm:gap-0 mt-2 shrink-0">
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={closeUserPermissionsModal}
+                  disabled={userPermissionsSaving || userPermissionsLoadingFresh}
+                >
+                  ביטול
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => void submitUserPermissions()}
+                  disabled={userPermissionsSaving || userPermissionsLoadingFresh}
+                  className="gap-2"
+                >
+                  {userPermissionsSaving ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin shrink-0" aria-hidden />
+                      שומר…
+                    </>
+                  ) : (
+                    <>
+                      <Check className="h-4 w-4 shrink-0 opacity-90" aria-hidden />
+                      שמור הרשאות
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
           {/* System Info */}
           <Card>
             <CardHeader>
@@ -1137,10 +1778,18 @@ export default function AdminSettingsPage() {
                 <DialogContent dir="rtl" className="sm:max-w-lg">
                   <DialogHeader>
                     <DialogTitle>פרסום גרסה חדשה</DialogTitle>
-                    <DialogDescription>
-                      נשמר רק ב־<code className="text-xs">system_settings</code> (ללא הורדות JSON). ב־fleet-manager-dev: רק
-                      פריטים מסומנים נכנסים ל־<code className="text-xs">version_manifest.changes</code>; לא מסומנים נשארים
-                      ב־<code className="text-xs">pending_changes</code>.
+                    <DialogDescription className="space-y-2">
+                      <span className="block">
+                        נשמר ב־<code className="text-xs">system_settings</code>. כל השורות שכבר ב־
+                        <code className="text-xs">version_manifest.changes</code> ממוזגות אוטומטית לגרסה החדשה (ללא צ'קבוקס).
+                        סמן כאן רק <strong>שינויים ממתינים (pending)</strong> שטרם פורסמו. לאחר פרסום, מה שנבחר עובר למניפסט
+                        ונמחק מ־pending.
+                      </span>
+                      {isFleetManagerProHostname() ? (
+                        <span className="block text-xs text-amber-700/90 dark:text-amber-400/90">
+                          בייצור: טוקני דיבוג/staging לא נכנסים למניפסט — מוצגים למטה כמידע בלבד.
+                        </span>
+                      ) : null}
                     </DialogDescription>
                   </DialogHeader>
 
@@ -1167,83 +1816,107 @@ export default function AdminSettingsPage() {
                                 : 'מספרי גרסה תואמים בין בנדל לענן (semver).'}
                           </p>
                         ) : null}
-
-                        <div className="pt-2 border-t border-border space-y-2">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="font-semibold">Pending — סמן מה נכנס לגרסה</span>
-                            <div className="flex gap-1">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 text-xs"
-                                onClick={() =>
-                                  setPublishCandidateSelected(publishPendingCandidates.map(() => true))
-                                }
-                              >
-                                בחר הכל
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 text-xs"
-                                onClick={() =>
-                                  setPublishCandidateSelected(publishPendingCandidates.map(() => false))
-                                }
-                              >
-                                נקה
-                              </Button>
-                            </div>
-                          </div>
-                          {publishPendingCandidates.length === 0 ? (
-                            <p className="text-xs text-muted-foreground">אין שורות pending — השתמש בשדה «שורות נוספות».</p>
-                          ) : (
-                            <ul className="space-y-2">
-                              {publishPendingCandidates.map((line, i) => (
-                                <li key={`${i}-${line.slice(0, 24)}`} className="flex gap-2 items-start">
-                                  <Checkbox
-                                    id={`publish-pending-${i}`}
-                                    checked={publishCandidateSelected[i] === true}
-                                    onCheckedChange={(v) => {
-                                      setPublishCandidateSelected((prev) => {
-                                        const next = [...prev];
-                                        next[i] = v === true;
-                                        return next;
-                                      });
-                                    }}
-                                  />
-                                  <label
-                                    htmlFor={`publish-pending-${i}`}
-                                    className="text-sm leading-snug cursor-pointer flex-1"
-                                  >
-                                    {line}
-                                  </label>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <label className="text-sm font-semibold" htmlFor="publish-extra-changelog">
-                            שורות נוספות (אופציונלי)
-                          </label>
-                          <Textarea
-                            id="publish-extra-changelog"
-                            rows={4}
-                            className="text-sm min-h-[80px]"
-                            value={publishExtraChangelogLines}
-                            onChange={(e) => setPublishExtraChangelogLines(e.target.value)}
-                            placeholder={'הוספת V ירוק לכותרות (כל הסביבות)\nשינוי צבע גרסה לזהב'}
-                          />
-                        </div>
                       </div>
                     ) : null}
 
+                    <div className="rounded-md border border-border bg-muted/30 p-3 space-y-4 text-sm">
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-semibold text-foreground">שינויים ממתינים לפרסום (Pending)</span>
+                          <div className="flex gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-xs"
+                              onClick={() =>
+                                setPublishCandidateSelected(publishPendingCandidates.map(() => true))
+                              }
+                            >
+                              בחר הכל
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-xs"
+                              onClick={() =>
+                                setPublishCandidateSelected(publishPendingCandidates.map(() => false))
+                              }
+                            >
+                              נקה
+                            </Button>
+                          </div>
+                        </div>
+                        {publishPendingCandidates.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">
+                            אין מועמדים חדשים — פיצ'רים שכבר פורסמו לא מופיעים כאן.
+                          </p>
+                        ) : (
+                          <ul className="space-y-2">
+                            {publishPendingCandidates.map((line, i) => (
+                              <li key={`pend-${i}-${line.slice(0, 24)}`} className="flex gap-2 items-start">
+                                <Checkbox
+                                  id={`publish-pending-${i}`}
+                                  checked={publishCandidateSelected[i] === true}
+                                  onCheckedChange={(v) => {
+                                    setPublishCandidateSelected((prev) => {
+                                      const next = [...prev];
+                                      next[i] = v === true;
+                                      return next;
+                                    });
+                                  }}
+                                />
+                                <label
+                                  htmlFor={`publish-pending-${i}`}
+                                  className="text-sm leading-snug cursor-pointer flex-1 min-w-0"
+                                >
+                                  {line}
+                                </label>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+
+                      <div className="space-y-1.5 border-t border-border pt-3">
+                        <label className="text-sm font-semibold" htmlFor="publish-extra-changelog">
+                          שורות נוספות (אופציונלי)
+                        </label>
+                        <Textarea
+                          id="publish-extra-changelog"
+                          rows={4}
+                          className="text-sm min-h-[80px]"
+                          value={publishExtraChangelogLines}
+                          onChange={(e) => setPublishExtraChangelogLines(e.target.value)}
+                          placeholder={'שורה אחת לכל שינוי — יתווסף למניפסט ביחד עם pending ועם המניפסט הקיים'}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="rounded-md border border-dashed border-muted-foreground/35 bg-muted/20 p-3 space-y-2 text-sm">
+                      <p className="font-semibold text-foreground" dir="ltr">
+                        Staging/Debug Features (Active in Test Only)
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        טוקנים אלה פעילים רק בסביבת בדיקה; בפרודקשן לא נשמרים במניפסט ולא מופעלים — רשימה לעיון בלבד.
+                      </p>
+                      {FLEET_STAGING_DEBUG_INFO_LINES.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">—</p>
+                      ) : (
+                        <ul className="space-y-1.5 list-disc list-inside text-xs text-muted-foreground">
+                          {FLEET_STAGING_DEBUG_INFO_LINES.map((line) => (
+                            <li key={line} className="break-words">
+                              {line}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+
                     <div className="space-y-1.5">
                       <label className="text-sm font-semibold" htmlFor="publish-version-input">
-                        מספר גרסה (מחרוזת חופשית, למשל 2.5.2)
+                        מספר גרסה (ברירת מחדל = גרסת בנדל + patch +1)
                       </label>
                       <Input
                         id="publish-version-input"
@@ -1251,25 +1924,14 @@ export default function AdminSettingsPage() {
                         className="font-mono text-sm"
                         value={publishVersionInput}
                         onChange={(e) => setPublishVersionInput(e.target.value)}
-                        placeholder="2.7.8"
+                        placeholder={computeNextPatchVersion(
+                          toCanonicalThreePartVersion(normalizeVersion(codeVersion)) ||
+                            normalizeVersion(codeVersion).trim() ||
+                            '0.0.0'
+                        )}
                         autoComplete="off"
                       />
                     </div>
-                    {!isFleetManagerTestHost() ? (
-                      <div className="space-y-1.5">
-                        <label className="text-sm font-semibold" htmlFor="publish-changelog-textarea">
-                          צ׳יינג׳לוג — שורה אחת לכל שינוי
-                        </label>
-                        <Textarea
-                          id="publish-changelog-textarea"
-                          rows={8}
-                          className="text-sm min-h-[140px]"
-                          value={publishChangelogText}
-                          onChange={(e) => setPublishChangelogText(e.target.value)}
-                          placeholder={'הוספת V ירוק לכותרות (כל הסביבות)\nשינוי צבע גרסה לזהב'}
-                        />
-                      </div>
-                    ) : null}
                   </div>
 
                   <DialogFooter className="mt-4">

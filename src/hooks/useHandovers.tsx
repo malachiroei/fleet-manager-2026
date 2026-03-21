@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { getSupabaseAnonKey, getSupabasePublishableKey, getSupabaseUrl } from '@/integrations/supabase/publicEnv';
 import type { VehicleHandover } from '@/types/fleet';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
@@ -1590,14 +1591,11 @@ export async function sendHandoverNotificationEmail(input: SendHandoverEmailInpu
   // Some SDK versions may surface generic non-2xx errors even when the function is reachable.
   // Retry once via direct HTTPS call to capture a concrete response and avoid false negatives.
   try {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-    const anonKey =
-      (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) ||
-      (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined) ||
-      '';
+    const supabaseUrl = getSupabaseUrl();
+    const anonKey = getSupabaseAnonKey() || getSupabasePublishableKey();
     if (!supabaseUrl || !anonKey) {
       throw new Error(
-        `Missing client env vars for fallback call (VITE_SUPABASE_URL=${Boolean(supabaseUrl)}, VITE_SUPABASE_ANON_KEY/VITE_SUPABASE_PUBLISHABLE_KEY=${Boolean(anonKey)})`,
+        `Missing Supabase URL/anon key for fallback call (url=${Boolean(supabaseUrl)}, anon/publishable=${Boolean(anonKey)}). Set VITE_* or NEXT_PUBLIC_* env on Vercel.`,
       );
     }
     const endpoint = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/send-handover-notification`;

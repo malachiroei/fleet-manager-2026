@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useDashboardStats, useComplianceAlerts } from '@/hooks/useDashboard';
+import { useFleetManifestUiGates } from '@/hooks/useFleetManifestUiGates';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useAuth } from '@/hooks/useAuth';
 import { useViewAs } from '@/contexts/ViewAsContext';
@@ -12,9 +13,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import QuickOdometerDialog from '@/components/QuickOdometerDialog';
-import { 
-  Car, 
-  Users, 
+import {
+  Car,
+  Users,
   AlertTriangle,
   BarChart3,
   FileText,
@@ -24,11 +25,13 @@ import {
   Repeat,
   Gauge,
   Settings,
-  Calculator,
-  Droplet,
-  UserCog
+  UserCog,
+  Wrench,
+  FlaskConical,
+  ClipboardList,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 const statusCardConfig: Array<{
   titleKey: 'navigation.fleetManagement' | 'navigation.drivers' | 'navigation.exceptionAlerts' | 'dashboard.replacementVehicle';
@@ -159,6 +162,11 @@ export default function Dashboard() {
   const isMobile = useIsMobile();
   const { user, profile, hasPermission, isAdmin, isManager, isDriver, roles: userRoles, loading, activeOrgId } = useAuth();
   const { viewAsEmail, viewAsProfile } = useViewAs();
+  const manifestUi = useFleetManifestUiGates();
+  const showDashboardTreatmentCard =
+    manifestUi.ready && manifestUi.dashboardTreatment;
+  const showDashboardTestCard = manifestUi.ready && manifestUi.dashboardTest;
+  const showMaintenanceFormCard = manifestUi.ready && manifestUi.maintenanceForm;
   const totalAlerts = (alerts?.filter(a => a.status === 'expired' || a.status === 'warning').length) ?? 0;
   const isStatsLoading = isLoading || !stats;
 
@@ -276,9 +284,9 @@ export default function Dashboard() {
     },
     {
       title: t('navigation.accidents'),
-      href: '/maintenance/add',
+      href: '/compliance',
       icon: Plus,
-      permission: 'maintenance',
+      permission: 'compliance',
     },
     {
       title: t('navigation.vehicleDelivery'),
@@ -318,6 +326,10 @@ export default function Dashboard() {
     if (a.href === '/report-mileage') return canReportMileage;
     return true;
   });
+
+  const devFeatureToast = () => {
+    toast.info('פונקציה זו בפיתוח');
+  };
 
   return (
     <div className="container py-6 md:py-8 pb-32 sm:pb-8 space-y-6 md:space-y-8 relative z-[1]">
@@ -400,6 +412,78 @@ export default function Dashboard() {
           <section className="space-y-3 pb-4">
             <h2 className="text-base font-semibold text-foreground">{t('dashboard.quickActions')}</h2>
             <div className="grid grid-cols-1 gap-3">
+              {showDashboardTreatmentPlaceholder ? (
+                <Card
+                  role="button"
+                  tabIndex={0}
+                  className="h-full min-h-[48px] cursor-pointer touch-manipulation border-primary/35 bg-primary/[0.07] shadow-sm transition-all duration-200 hover:shadow-md hover:border-primary/50"
+                  style={{ touchAction: 'manipulation' }}
+                  onClick={() => devFeatureToast()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      devFeatureToast();
+                    }
+                  }}
+                >
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/20 text-primary">
+                      <Wrench className="h-4.5 w-4.5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-foreground truncate">עדכן טיפול</p>
+                      <span className="text-[11px] text-muted-foreground">בקרוב</span>
+                    </div>
+                    <ChevronLeft className="h-4 w-4 text-muted-foreground shrink-0" />
+                  </CardContent>
+                </Card>
+              ) : null}
+              {showDashboardTestCard ? (
+                <Card
+                  role="button"
+                  tabIndex={0}
+                  className="h-full min-h-[48px] cursor-pointer touch-manipulation border-primary/35 bg-primary/[0.07] shadow-sm transition-all duration-200 hover:shadow-md hover:border-primary/50"
+                  style={{ touchAction: 'manipulation' }}
+                  onClick={() => devFeatureToast()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      devFeatureToast();
+                    }
+                  }}
+                >
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/20 text-primary">
+                      <FlaskConical className="h-4.5 w-4.5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-foreground truncate">כפתור בדיקה</p>
+                      <span className="text-[11px] text-muted-foreground">בקרוב</span>
+                    </div>
+                    <ChevronLeft className="h-4 w-4 text-muted-foreground shrink-0" />
+                  </CardContent>
+                </Card>
+              ) : null}
+              {showMaintenanceFormCard ? (
+                <Link
+                  to="/maintenance/add"
+                  className="block touch-manipulation cursor-pointer"
+                  style={{ touchAction: 'manipulation' }}
+                >
+                  <Card className="h-full min-h-[48px] transition-all duration-200 hover:shadow-md border-primary/35 bg-primary/[0.07] shadow-sm hover:border-primary/50">
+                    <CardContent className="p-4 flex items-center gap-3">
+                      <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/20 text-primary">
+                        <ClipboardList className="h-4.5 w-4.5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-foreground truncate">עדכן טיפול</p>
+                        <span className="text-[11px] text-muted-foreground">טופס תחזוקה — הוספת רישום</span>
+                      </div>
+                      <ChevronLeft className="h-4 w-4 text-muted-foreground shrink-0" />
+                    </CardContent>
+                  </Card>
+                </Link>
+              ) : null}
               {quickLinks.map((action, idx) =>
                 action.disabled ? (
                   <Card key={`${action.title}-${idx}`} className="h-full cursor-not-allowed opacity-55 touch-manipulation min-h-[48px]">
@@ -463,6 +547,84 @@ export default function Dashboard() {
           <section className="space-y-3">
             <h2 className="text-lg font-semibold text-foreground">{t('dashboard.quickActions')}</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+              {showDashboardTreatmentCard ? (
+                <Card
+                  role="button"
+                  tabIndex={0}
+                  className="h-full min-h-[48px] cursor-pointer touch-manipulation border-primary/35 bg-primary/[0.07] shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-primary/50"
+                  style={{ touchAction: 'manipulation' }}
+                  onClick={() => devFeatureToast()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      devFeatureToast();
+                    }
+                  }}
+                >
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary/20 text-primary">
+                      <Wrench className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-foreground truncate">טיפול רכב</p>
+                      <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                        בקרוב
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : null}
+              {showDashboardTestCard ? (
+                <Card
+                  role="button"
+                  tabIndex={0}
+                  className="h-full min-h-[48px] cursor-pointer touch-manipulation border-primary/35 bg-primary/[0.07] shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-primary/50"
+                  style={{ touchAction: 'manipulation' }}
+                  onClick={() => devFeatureToast()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      devFeatureToast();
+                    }
+                  }}
+                >
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary/20 text-primary">
+                      <FlaskConical className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-foreground truncate">כפתור בדיקה</p>
+                      <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                        בקרוב
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : null}
+              {showMaintenanceFormCard ? (
+                <Link
+                  to="/maintenance/add"
+                  className="block touch-manipulation cursor-pointer"
+                  style={{ touchAction: 'manipulation' }}
+                >
+                  <Card className="h-full min-h-[48px] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md border-primary/35 bg-primary/[0.07] shadow-sm hover:border-primary/50">
+                    <CardContent className="p-4 flex items-center gap-3">
+                      <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary/20 text-primary">
+                        <ClipboardList className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-foreground truncate">עדכן טיפול</p>
+                        <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                          טופס תחזוקה — הוספת רישום
+                          <ChevronLeft className="h-3.5 w-3.5" />
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              ) : null}
               {quickLinks.map((action, idx) =>
                 action.disabled ? (
                   <Card key={`${action.title}-${idx}`} className="h-full cursor-not-allowed opacity-55 touch-manipulation">

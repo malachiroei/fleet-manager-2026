@@ -31,6 +31,114 @@ export function parseSemverParts(v: string): number[] | null {
   return parts.slice(0, 3);
 }
 
+/**
+ * כל מקטעי הגרסה המספריים (לפחות major.minor.patch).
+ * תומך ב־2.7.24.1 לעומת 2.7.24 — נדרש ל־profiles.target_version ועדכון ממוקד.
+ */
+export function parseSemverSegments(v: string): number[] | null {
+  const s = normalizeVersion(String(v).trim());
+  if (!s) return null;
+  const parts = s.split('.').map((x) => parseInt(x, 10));
+  if (parts.length < 3) return null;
+  if (parts.some((n) => Number.isNaN(n))) return null;
+  return parts;
+}
+
+/**
+ * גרסת ריליס קנונית לפרודקשן: רק major.minor.patch (ללא מקטע רביעי).
+ * 2.7.44.1 → 2.7.44 — נשמר ב־localStorage / מניפסט כ־2.7.45 וכו'.
+ */
+export function toCanonicalThreePartVersion(v: string): string {
+  const n = normalizeVersion(String(v ?? '').trim());
+  if (!n) return '';
+  const segs = parseSemverSegments(n);
+  if (!segs || segs.length < 3) return n;
+  return `${segs[0]}.${segs[1]}.${segs[2]}`;
+}
+
+/** עוגן אישי אחרי שמירת הרשאות: `2.7.51-p<timestamp>` — לא משנה גרסה גלובלית */
+export type PrivateUiAnchorParse =
+  | { kind: 'none' }
+  | { kind: 'semver'; canonical: string }
+  | { kind: 'private'; globalBase: string; full: string };
+
+/**
+ * מפרק `profiles.ui_denied_features_anchor_version`:
+ * - private: `major.minor.patch-p<digits>`
+ * - semver: גרסה תלת־מקטעית קלאסית (לגאסי)
+ */
+export function parsePrivateUiAnchor(raw: string): PrivateUiAnchorParse {
+  const s = String(raw ?? '').trim();
+  if (!s) return { kind: 'none' };
+  const m = s.match(/^(\d+\.\d+\.\d+)-p(\d+)$/);
+  if (m) {
+    const globalBase = m[1];
+    if (parseSemverSegments(globalBase)) return { kind: 'private', globalBase, full: s };
+  }
+  const canonical = toCanonicalThreePartVersion(normalizeVersion(s)) || normalizeVersion(s);
+  if (canonical && parseSemverSegments(canonical)) return { kind: 'semver', canonical };
+  return { kind: 'none' };
+}
+
+/** בונה עוגן פרטי מהגרסה הגלובלית הנוכחית (ממניפסט / app_version) */
+export function formatPrivateUiAnchorVersion(globalCanonical: string): string {
+  const base =
+    toCanonicalThreePartVersion(normalizeVersion(globalCanonical)) || normalizeVersion(globalCanonical).trim();
+  if (base && parseSemverSegments(base)) return `${base}-p${Date.now()}`;
+  return `${normalizeVersion(globalCanonical) || '0.0.0'}-p${Date.now()}`;
+}
+
+/** השוואת semver עם תמיכה במקטע רביעי ומעלה (2.7.24.1 > 2.7.24) */
+export function compareSemverExtended(a: string, b: string): number {
+  const pa = parseSemverSegments(normalizeVersion(a));
+  const pb = parseSemverSegments(normalizeVersion(b));
+  if (!pa || !pb) return compareSemver(a, b);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i += 1) {
+    const na = pa[i] ?? 0;
+    const nb = pb[i] ?? 0;
+    if (na > nb) return 1;
+    if (na < nb) return -1;
+  }
+  return 0;
+}
+
+/**
+ * עוגן קשיח ל־UI בפרו: max semver-extended בין גרסת המניפסט ל־profiles.ui_denied_features_anchor_version.
+ * עד ש־localStorage `fleet-pro-acknowledged-version` ≥ ערך זה — אין להפעיל פיצ'רים מ־DB (כולל allowed_features).
+ */
+export function computeStrictUiFeatureAnchorVersion(
+  manifestVersion: string,
+  profileUiDeniedAnchorVersion: string | null | undefined
+): string {
+  const mvRaw = normalizeVersion(String(manifestVersion ?? '').trim());
+  const mv = toCanonicalThreePartVersion(mvRaw) || mvRaw;
+  const paRaw = String(profileUiDeniedAnchorVersion ?? '').trim();
+  const pa = paRaw
+    ? toCanonicalThreePartVersion(normalizeVersion(paRaw)) || normalizeVersion(paRaw)
+    : '';
+  if (!mv && !pa) return '';
+  if (!mv) return pa;
+  if (!pa) return mv;
+  if (!parseSemverSegments(mv) || !parseSemverSegments(pa)) return mv || pa;
+  return compareSemverExtended(pa, mv) >= 0 ? pa : mv;
+}
+
+/**
+ * הצעה לעדכון ממוקד למשתמש: patch+1 על בסיס תלת־מקטעי בלבד (ללא יצירת מקטע רביעי).
+ * @deprecated לוגיקת 2.7.x.y.1 הוסרה — השתמש ב־`computeNextPatchVersion(toCanonicalThreePartVersion(...))`.
+ */
+export function suggestTargetedReleaseVersion(
+  currentReported: string | null | undefined,
+  fallbackBase: string
+): string {
+  const cur = normalizeVersion(String(currentReported ?? '').trim());
+  const fb = normalizeVersion(String(fallbackBase ?? '').trim());
+  const merged = cur || fb;
+  const base = toCanonicalThreePartVersion(merged) || '0.0.0';
+  return computeNextPatchVersion(base);
+}
+
 /** חיובי אם a גדול מ-b */
 export function compareSemver(a: string, b: string): number {
   const pa = parseSemverParts(normalizeVersion(a));
@@ -74,6 +182,15 @@ export function isFleetManagerProHostname(): boolean {
   if (typeof window === 'undefined') return false;
   const h = window.location.hostname.toLowerCase();
   return h === 'fleet-manager-pro.com' || h === 'www.fleet-manager-pro.com';
+}
+
+/**
+ * באנר אדום (גרסת בדיקה): מוסתר בייצור — fleet-manager-pro.com ו־www.fleet-manager-pro.com בלבד.
+ * כל שאר ה-hostnames (Vercel, localhost וכו') — מציגים באנר.
+ */
+export function showFleetStagingEnvironmentBanner(): boolean {
+  if (typeof window === 'undefined') return false;
+  return !isFleetManagerProHostname();
 }
 
 /**
