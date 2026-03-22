@@ -1,14 +1,13 @@
 {
-  "version": "2.7.54",
-  "releaseDate": "21/03/2026",
+  "version": "2.7.58",
+  "releaseDate": "22/03/2026",
   "releaseTime": "00:00",
-  "description": "Release 2.7.54: Hotfix — Dashboard mobile quick actions use showDashboardTreatmentCard (ReferenceError)",
-  "changelog": "Dashboard.tsx: showDashboardTreatmentPlaceholder → showDashboardTreatmentCard",
+  "description": "Release 2.7.58: Hierarchical permissions, team delegation UI, system form registry, admin debug filter",
+  "changelog": "parent_admin_id, team modal = feature catalog + 7 system forms, target_version sync, debug table top-level only",
   "changes": [
     "UI_FEATURE_BOLD_VERSION_HEADER — Bold version text in header (AppLayout)",
     "UI_FEATURE_STAR_HEADER — Star icon (⭐) in header (AppLayout)",
     "UI_FEATURE_DASHBOARD_ACTION_TREATMENT — Dashboard Quick Action: עדכן טיפול",
-    "UI_FEATURE_DASHBOARD_ACTION_TEST — Dashboard Quick Action: כפתור בדיקה",
-    "UI_FEATURE_DEBUG_ADMIN_USER_VERSIONS_TABLE — Admin: טבלת User Status & Versions (debug, Pro only)"
+    "UI_FEATURE_DASHBOARD_ACTION_TEST — Dashboard Quick Action: כפתור בדיקה"
   ]
 }

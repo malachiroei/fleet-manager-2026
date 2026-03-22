@@ -1,5 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import {
+  buildFleetOrgDocPermissionRowsFromDocuments,
+  type FleetOrgDocumentLike,
+  type FleetOrgDocumentPermissionEntry,
+} from '@/lib/fleetSystemFormRegistry';
 import { uploadOrgPdf } from './useUiLabels';
 
 interface OrgDocumentHookOptions {
@@ -9,6 +14,8 @@ interface OrgDocumentHookOptions {
 export interface OrgDocument {
   id: string;
   title: string;
+  /** שם תצוגה — אם ריק, משתמשים ב־title */
+  name?: string | null;
   description: string;
   category?: 'תפעול' | 'בטיחות' | 'מסמכים אישיים' | string;
   file_url: string | null;
@@ -26,6 +33,26 @@ export interface OrgDocument {
 }
 
 const QUERY_KEY = ['org-documents'] as const;
+
+const ORG_DOCS_PERMISSION_REGISTRY_KEY = [...QUERY_KEY, 'permission-registry'] as const;
+
+/**
+ * כל שורות `org_documents` → טוקני הרשאה דינמיים (כותרת מ-DB).
+ */
+export function useOrgDocumentsPermissionRegistry() {
+  return useQuery<FleetOrgDocumentPermissionEntry[]>({
+    queryKey: ORG_DOCS_PERMISSION_REGISTRY_KEY,
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from('org_documents')
+        .select('id, title, name, json_schema, sort_order, is_active')
+        .order('sort_order', { ascending: true });
+      if (error) throw error;
+      return buildFleetOrgDocPermissionRowsFromDocuments((data ?? []) as FleetOrgDocumentLike[]);
+    },
+    staleTime: 15_000,
+  });
+}
 
 export function useOrgDocuments() {
   return useQuery<OrgDocument[]>({
@@ -79,6 +106,8 @@ export function useCreateOrgDocument(options?: OrgDocumentHookOptions) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: [...QUERY_KEY, 'admin'] });
+      queryClient.invalidateQueries({ queryKey: ORG_DOCS_PERMISSION_REGISTRY_KEY });
     },
   });
 }
@@ -103,6 +132,8 @@ export function useUpdateOrgDocument(options?: OrgDocumentHookOptions) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: [...QUERY_KEY, 'admin'] });
+      queryClient.invalidateQueries({ queryKey: ORG_DOCS_PERMISSION_REGISTRY_KEY });
     },
   });
 }
@@ -119,6 +150,8 @@ export function useDeleteOrgDocument() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: [...QUERY_KEY, 'admin'] });
+      queryClient.invalidateQueries({ queryKey: ORG_DOCS_PERMISSION_REGISTRY_KEY });
     },
   });
 }

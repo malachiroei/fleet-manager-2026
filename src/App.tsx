@@ -51,6 +51,8 @@ import {
 import { UpdateModal } from "@/components/UpdateModal";
 import { TestHostPendingSeed } from "@/components/TestHostPendingSeed";
 import { ProfileVersionHeartbeat } from "@/components/ProfileVersionHeartbeat";
+import { SupabaseEnvironmentLockOverlay } from "@/components/SupabaseEnvironmentLockOverlay";
+import { FleetEnvTestBadge } from "@/components/FleetEnvTestBadge";
 const queryClient = new QueryClient();
 
 /** נטען בדומיין הטסט: מנקה מטמון/SW/localStorage ומחזיר למקור (pro.com) */
@@ -167,6 +169,8 @@ function AppRoutes() {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
+    <SupabaseEnvironmentLockOverlay />
+    <FleetEnvTestBadge />
     <ForceUpdateProHandler />
     <ThemeProvider>
     <TooltipProvider>

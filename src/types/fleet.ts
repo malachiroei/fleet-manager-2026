@@ -21,6 +21,8 @@ export interface Profile {
   email: string | null;
   phone: string | null;
   org_id: string | null;
+  /** מנהל ישיר (profiles.id); null = רמת על — תואם עמודת parent_admin_id ב-DB */
+  parent_admin_id?: string | null;
   /** JSON object of permission keys to boolean. e.g. { "vehicles": true, "manage_team": true } */
   permissions: ProfilePermissions | null;
   status: string;

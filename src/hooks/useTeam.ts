@@ -24,8 +24,9 @@ export function useTeamMembers(orgId: string | null | undefined) {
       if (!orgId) return [];
       const { data, error } = await supabase
         .from('profiles')
-        // Keep this select minimal and aligned with actual columns to avoid 400 errors
-        .select('id, full_name, email, org_id, status')
+        .select(
+          'id, full_name, email, org_id, status, permissions, allowed_features, denied_features, target_version, current_app_version, parent_admin_id, ui_denied_features_anchor_version'
+        )
         .eq('org_id', orgId)
         .order('full_name');
 
@@ -196,7 +197,14 @@ export function useApproveMember() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ profileId }: { profileId: string }) => {
+    mutationFn: async ({
+      profileId,
+      parentAdminProfileId,
+    }: {
+      profileId: string;
+      /** profiles.id של המאשר — נשמר כ-parent_admin_id אצל המשתמש המאושר */
+      parentAdminProfileId: string | null;
+    }) => {
       const { data: existing, error: existingError } = await (supabase as any)
         .from('profiles')
         .select('permissions')
@@ -212,7 +220,12 @@ export function useApproveMember() {
 
       const { data, error } = await (supabase as any)
         .from('profiles')
-        .update({ status: 'active', permissions: nextPerms, updated_at: new Date().toISOString() })
+        .update({
+          status: 'active',
+          permissions: nextPerms,
+          ...(parentAdminProfileId ? { parent_admin_id: parentAdminProfileId } : {}),
+          updated_at: new Date().toISOString(),
+        })
         .eq('id', profileId)
         .select()
         .single();
@@ -227,6 +240,36 @@ export function useApproveMember() {
     },
     onError: (err: Error) => {
       toast({ title: 'שגיאה באישור משתמש', description: err.message, variant: 'destructive' });
+    },
+  });
+}
+
+/** מסנכרן target_version של חבר צוות לגרסת המנהל (עדכון שקט — טוסט בלבד). */
+export function useSyncMemberTargetVersion() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      memberProfileId,
+      targetVersion,
+    }: {
+      memberProfileId: string;
+      targetVersion: string;
+    }) => {
+      const v = String(targetVersion ?? '').trim();
+      if (!v) throw new Error('חסרה גרסת יעד');
+      const { error } = await (supabase as any)
+        .from('profiles')
+        .update({ target_version: v, updated_at: new Date().toISOString() })
+        .eq('id', memberProfileId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: TEAM_QUERY_KEY });
+      toast({ title: 'גרסת היעד עודכנה' });
+    },
+    onError: (err: Error) => {
+      toast({ title: 'עדכון גרסה נכשל', description: err.message, variant: 'destructive' });
     },
   });
 }

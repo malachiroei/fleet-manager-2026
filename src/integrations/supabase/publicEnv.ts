@@ -1,37 +1,94 @@
 /**
- * Browser Supabase configuration.
- * Support both Vite defaults (VITE_*) and names common on Vercel / Next-style (NEXT_PUBLIC_*).
- * vite.config.ts sets `envPrefix: ['VITE_', 'NEXT_PUBLIC_']` so both are available on import.meta.env.
+ * Supabase — משתני סביבה דרך `import.meta.env` (Vite).
+ * תומך בשני מוסכמות שמות: `NEXT_PUBLIC_*` ו־`VITE_*`.
+ *
+ * v2.7.66: ב־`fleet-manager-pro.com` — URL קשיח לפרויקט הייצור; מפתח anon מ־Vercel (או fallback לזוגות הסטנדרטיים).
+ *
+ * אימות ref: `evaluateSupabaseEnvironmentGuard` ב־`@/lib/supabase/envGuard`.
  */
 
-function firstNonEmpty(...candidates: (string | undefined)[]): string {
-  for (const c of candidates) {
-    const t = typeof c === 'string' ? c.trim() : '';
-    if (t) return t;
+import {
+  FLEET_PRODUCTION_SUPABASE_URL,
+  isFleetManagerProDotComHostname,
+} from '@/lib/supabase/fleetSupabaseProductionDefaults';
+
+function trimEnv(v: unknown): string {
+  return typeof v === 'string' ? v.trim() : '';
+}
+
+function firstNonEmpty(pairs: ReadonlyArray<readonly [string, unknown]>): {
+  value: string;
+  source: string | null;
+} {
+  for (const [source, v] of pairs) {
+    const t = trimEnv(v);
+    if (t) return { value: t, source };
   }
-  return '';
+  return { value: '', source: null };
 }
 
-/** Project URL (https://xxx.supabase.co) */
+export type ResolvedSupabaseViteEnv = {
+  url: string;
+  anonKey: string;
+  urlEnvSource: string | null;
+  anonKeyEnvSource: string | null;
+};
+
+const URL_ENV_PAIRS = [
+  ['NEXT_PUBLIC_SUPABASE_URL', import.meta.env.NEXT_PUBLIC_SUPABASE_URL],
+  ['VITE_SUPABASE_URL', import.meta.env.VITE_SUPABASE_URL],
+] as const;
+
+const ANON_KEY_ENV_PAIRS = [
+  ['NEXT_PUBLIC_SUPABASE_ANON_KEY', import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY],
+  ['VITE_SUPABASE_ANON_KEY', import.meta.env.VITE_SUPABASE_ANON_KEY],
+] as const;
+
+/** מפתח anon ייעודי לייצור (אופציונלי) — לפני הזוגות הכלליים כשמשתמשים ב-URL הייצור הקשיח */
+const PRODUCTION_ANON_KEY_ENV_PAIRS = [
+  ['NEXT_PUBLIC_FLEET_PRODUCTION_SUPABASE_ANON_KEY', import.meta.env.NEXT_PUBLIC_FLEET_PRODUCTION_SUPABASE_ANON_KEY],
+  ['VITE_FLEET_PRODUCTION_SUPABASE_ANON_KEY', import.meta.env.VITE_FLEET_PRODUCTION_SUPABASE_ANON_KEY],
+] as const;
+
+function computeResolvedSupabaseViteEnv(): ResolvedSupabaseViteEnv {
+  if (isFleetManagerProDotComHostname()) {
+    const keyRes = firstNonEmpty([...PRODUCTION_ANON_KEY_ENV_PAIRS, ...ANON_KEY_ENV_PAIRS]);
+    return {
+      url: FLEET_PRODUCTION_SUPABASE_URL,
+      anonKey: keyRes.value,
+      urlEnvSource: 'hardcoded production (fleet-manager-pro.com → cesstoohvlbvyreznwqd)',
+      anonKeyEnvSource: keyRes.source,
+    };
+  }
+
+  const urlRes = firstNonEmpty(URL_ENV_PAIRS);
+  const keyRes = firstNonEmpty(ANON_KEY_ENV_PAIRS);
+  return {
+    url: urlRes.value,
+    anonKey: keyRes.value,
+    urlEnvSource: urlRes.source,
+    anonKeyEnvSource: keyRes.source,
+  };
+}
+
+let resolvedMemo: ResolvedSupabaseViteEnv | null = null;
+
+export function resolveSupabaseViteEnv(): ResolvedSupabaseViteEnv {
+  if (resolvedMemo === null) {
+    resolvedMemo = computeResolvedSupabaseViteEnv();
+  }
+  return resolvedMemo;
+}
+
 export function getSupabaseUrl(): string {
-  return firstNonEmpty(
-    import.meta.env.VITE_SUPABASE_URL as string | undefined,
-    import.meta.env.NEXT_PUBLIC_SUPABASE_URL as string | undefined
-  );
+  return resolveSupabaseViteEnv().url;
 }
 
-/** Anonymous / publishable key — required for PostgREST `apikey` header */
 export function getSupabaseAnonKey(): string {
-  return firstNonEmpty(
-    import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined,
-    import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string | undefined
-  );
+  return resolveSupabaseViteEnv().anonKey;
 }
 
-/** Optional alternate name some dashboards use */
+/** מפתח חלופי (אם בשימוש) — רק NEXT_PUBLIC */
 export function getSupabasePublishableKey(): string {
-  return firstNonEmpty(
-    import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined,
-    import.meta.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY as string | undefined
-  );
+  return trimEnv(import.meta.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
 }

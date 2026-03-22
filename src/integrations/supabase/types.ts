@@ -443,6 +443,8 @@ export type Database = {
           email: string | null
           phone: string | null
           org_id: string | null
+          /** מנהל ישיר בהיררכיה; null = ללא הורה */
+          parent_admin_id: string | null
           permissions: Json | null
           status: string
           is_system_admin: boolean | null
@@ -463,6 +465,7 @@ export type Database = {
           email?: string | null
           phone?: string | null
           org_id?: string | null
+          parent_admin_id?: string | null
           permissions?: Json | null
           status?: string
           is_system_admin?: boolean | null
@@ -481,6 +484,7 @@ export type Database = {
           email?: string | null
           phone?: string | null
           org_id?: string | null
+          parent_admin_id?: string | null
           permissions?: Json | null
           status?: string
           is_system_admin?: boolean | null

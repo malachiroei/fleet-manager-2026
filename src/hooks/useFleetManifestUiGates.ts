@@ -11,11 +11,10 @@ import {
   FLEET_UI_FEATURE_BOLD_VERSION_TOKEN,
   FLEET_UI_FEATURE_DASHBOARD_ACTION_TEST_TOKEN,
   FLEET_UI_FEATURE_DASHBOARD_ACTION_TREATMENT_TOKEN,
-  FLEET_UI_FEATURE_DEBUG_ADMIN_USER_VERSIONS_TABLE_TOKEN,
   FLEET_UI_FEATURE_MAINTENANCE_FORM_TOKEN,
   FLEET_UI_FEATURE_STAR_HEADER_TOKEN,
   FLEET_UI_LOGGED_FEATURE_TOKENS,
-  FLEET_UI_MANIFEST_BYPASS_TOKENS,
+  isFleetUiManifestBypassToken,
   fleetUiRequiredAckVersion,
   isFleetStagingOnlyUiTokenId,
   manifestChangesIncludeToken,
@@ -46,6 +45,10 @@ export type FleetManifestUiGates = {
   ready: boolean;
   /** true = fleet-manager-pro.com / www */
   isPro: boolean;
+  /** שורות צ'יינג'לוג מהמניפסט (טוקנים גלובליים) */
+  manifestChangeLines: string[];
+  /** גרסת מניפסט ממוזגת מ-DB (ייצור) */
+  manifestVersion: string;
   /** כותרת — פרו: רק מניפסט Supabase + יישור גרסה */
   boldVersion: boolean;
   starInHeader: boolean;
@@ -54,7 +57,6 @@ export type FleetManifestUiGates = {
   dashboardTest: boolean;
   /** טופס תחזוקה — רק הרשאה אישית (לא במניפסט גלובלי) */
   maintenanceForm: boolean;
-  adminUserVersionsTable: boolean;
 };
 
 type ProManifestGateState = {
@@ -227,7 +229,7 @@ export function useFleetManifestUiGates(): FleetManifestUiGates {
       if (compareSemverExtended(proAckVersion, publishedManifestWatermark) < 0) return false;
     }
 
-    const manifestBypass = FLEET_UI_MANIFEST_BYPASS_TOKENS.includes(t);
+    const manifestBypass = isFleetUiManifestBypassToken(t);
     /** בלי גרסה גלובלית מ־DB — לא מפעילים פיצ'רי מניפסט (מונע דליפה לפני טעינה) */
     if (!manifestBypass && !manifestVersion.trim()) return false;
 
@@ -272,11 +274,13 @@ export function useFleetManifestUiGates(): FleetManifestUiGates {
   return {
     ready,
     isPro,
+    /** שורות changes מהמניפסט (למיזוג טוקנים גלובליים במודאל הרשאות / ניהול צוות) */
+    manifestChangeLines: lines,
+    manifestVersion,
     boldVersion: allow(FLEET_UI_FEATURE_BOLD_VERSION_TOKEN),
     starInHeader: allow(FLEET_UI_FEATURE_STAR_HEADER_TOKEN),
     dashboardTreatment: allow(FLEET_UI_FEATURE_DASHBOARD_ACTION_TREATMENT_TOKEN),
     dashboardTest: allow(FLEET_UI_FEATURE_DASHBOARD_ACTION_TEST_TOKEN),
     maintenanceForm: allow(FLEET_UI_FEATURE_MAINTENANCE_FORM_TOKEN),
-    adminUserVersionsTable: allow(FLEET_UI_FEATURE_DEBUG_ADMIN_USER_VERSIONS_TABLE_TOKEN),
   };
 }

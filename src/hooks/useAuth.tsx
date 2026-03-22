@@ -30,6 +30,7 @@ function buildPersonalProfilePlaceholder(userId: string, email: string | null, s
     allowed_features: null,
     denied_features: null,
     ui_denied_features_anchor_version: null,
+    parent_admin_id: null,
   };
 }
 
