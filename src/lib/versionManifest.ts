@@ -255,6 +255,54 @@ export async function fetchVersionManifestFromUrl(url: string): Promise<Partial<
   }
 }
 
+/** גרסה גלובלית מ־system_settings.app_version (מחרוזת ב־value) */
+export async function fetchAppVersionFromDb(supabase: {
+  from: (t: string) => {
+    select: (c: string) => {
+      eq: (a: string, b: string) => {
+        maybeSingle: () => Promise<{ data: { value?: unknown } | null; error: Error | null }>;
+      };
+    };
+  };
+}): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from(FLEET_KV_TABLE)
+      .select('value')
+      .eq('key', 'app_version')
+      .limit(1)
+      .maybeSingle();
+    if (error) return null;
+    const v = data?.value;
+    if (typeof v === 'string' && v.trim()) return v.trim();
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * עוגן גלובלי ל־UI: max semver בין גרסת מניפסט (אם קיימת) לבין app_version ב־DB.
+ * פרסום שמעדכן רק app_version עדיין דורש ack מתאים.
+ */
+export function fleetMergeGlobalPublishedVersions(
+  manifestVersion: string | null | undefined,
+  appVersion: string | null | undefined
+): string {
+  const mRaw = String(manifestVersion ?? '').trim();
+  const aRaw = String(appVersion ?? '').trim();
+  const m = mRaw
+    ? toCanonicalThreePartVersion(normalizeVersion(mRaw)) || normalizeVersion(mRaw).trim()
+    : '';
+  const a = aRaw
+    ? toCanonicalThreePartVersion(normalizeVersion(aRaw)) || normalizeVersion(aRaw).trim()
+    : '';
+  if (!m) return a;
+  if (!a) return m;
+  if (!parseSemverSegments(m) || !parseSemverSegments(a)) return m || a;
+  return compareSemverExtended(a, m) > 0 ? a : m;
+}
+
 /** קריאת מניפסט מ-Supabase (אובייקט JSON בשדה value) */
 export async function fetchVersionManifestFromDb(supabase: {
   from: (t: string) => {

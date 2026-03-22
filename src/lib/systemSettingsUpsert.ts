@@ -71,3 +71,27 @@ export async function verifyPublishWrittenToSupabase(
 
   return { ok: true };
 }
+
+/**
+ * אימות פרסום שמעדכן רק `app_version` (ללא שינוי version_manifest).
+ */
+export async function verifyAppVersionInSupabase(
+  supabase: any,
+  expectedVersion: string
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const exp = normalizeVersion(String(expectedVersion ?? '').trim());
+  if (!exp) return { ok: false, message: 'verify: expectedVersion empty' };
+
+  const { data: aData, error: aErr } = await supabase
+    .from(FLEET_KV_TABLE)
+    .select('value')
+    .eq('key', 'app_version')
+    .maybeSingle();
+  if (aErr) return { ok: false, message: `verify: app_version read — ${aErr.message}` };
+  const av = jsonbValueToString(aData?.value);
+  if (normalizeVersion(av) !== normalizeVersion(exp)) {
+    return { ok: false, message: `verify: app_version mismatch (got ${av}, expected ${exp})` };
+  }
+
+  return { ok: true };
+}

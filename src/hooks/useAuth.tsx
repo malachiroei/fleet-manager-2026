@@ -3,6 +3,7 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import type { AppRole, Profile } from '@/types/fleet';
 import { hasPermission as checkPermission, type PermissionKey } from '@/lib/permissions';
+import { clearFleetProUpdateModalSuppressFlag } from '@/lib/pwaUpdateModalBridge';
 
 const ACTIVE_ORG_STORAGE_KEY = 'fleet-manager-active-org';
 
@@ -94,6 +95,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     profileRef.current = profile;
   }, [profile]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const uid = user.id;
+    const channel = supabase
+      .channel(`profile-hard-sync-${uid}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${uid}` },
+        () => {
+          clearFleetProUpdateModalSuppressFlag();
+          void fetchProfileRef.current(uid);
+        }
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
 
   const fetchUserRoles = useCallback(async (userId: string) => {
     // Roles are defined globally in `user_roles`.

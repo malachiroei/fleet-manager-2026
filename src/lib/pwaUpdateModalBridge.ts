@@ -53,17 +53,24 @@ export function showPwaUpdateModal(opts: {
   changes?: string[];
   /** ברירת מחדל = אותה גרסה כמו targetVersion */
   acknowledgeAsVersion?: string;
+  updateReason?: FleetProUpdateModalReason;
+  privateAnchorFull?: string;
 }): void {
   const changes = Array.isArray(opts.changes)
     ? opts.changes.map((s) => String(s).trim()).filter(Boolean)
     : [];
   const tv = String(opts.targetVersion).trim();
   const ack = String(opts.acknowledgeAsVersion ?? opts.targetVersion).trim() || tv;
-  run(() => ({
+  const reason: FleetProUpdateModalReason = opts.updateReason ?? "global_version";
+  const pa = String(opts.privateAnchorFull ?? "").trim();
+  run((prev) => ({
+    ...prev,
     open: true,
     targetVersion: tv,
     acknowledgeAsVersion: ack,
     changes,
+    updateReason: reason,
+    privateAnchorFull: pa,
   }));
 }
 

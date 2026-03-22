@@ -6,18 +6,21 @@
  * - אין import/שימוש ב-getTestStaticManifestUrl או fetchVersionManifestFromUrl כאן.
  */
 import { useEffect } from "react";
+import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { commitFleetProAcknowledgedVersionAndHardReload } from "@/lib/pwaServiceWorkerControl";
 import {
   compareSemverExtended,
+  fetchAppVersionFromDb,
   fetchVersionManifestFromDb,
+  fleetMergeGlobalPublishedVersions,
   isFleetManagerProHostname,
   normalizeVersion,
   parsePrivateUiAnchor,
   parseSemverSegments,
   toCanonicalThreePartVersion,
 } from "@/lib/versionManifest";
-import { parseManifestChanges } from "@/lib/pwaManifest";
 import {
   hidePwaUpdateModal,
   isFleetProUpdateModalSuppressedUntilPageUnload,
@@ -28,6 +31,9 @@ import {
   FLEET_PRO_DEFAULT_HEADER_VERSION,
   FLEET_PRO_PRIVATE_ANCHOR_ACKNOWLEDGED_KEY,
 } from "@/constants/version";
+
+/** מניעת הצפת טוסט הרשאות באותו עוגן פרטי עד רענון מלא של המסמך */
+let fleetProPermissionToastAnchorShown = "";
 
 export function useFleetProSupabaseUpdateGate(): void {
   const { user } = useAuth();
@@ -44,26 +50,24 @@ export function useFleetProSupabaseUpdateGate(): void {
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
       checkInFlight = true;
       try {
-        const fromDb = await fetchVersionManifestFromDb(supabase as any);
-        if (!fromDb?.version) return;
-        const rawGlobal = normalizeVersion(String(fromDb.version));
+        const [fromDb, appVerRaw] = await Promise.all([
+          fetchVersionManifestFromDb(supabase as any),
+          fetchAppVersionFromDb(supabase as any),
+        ]);
+        const rawManifest =
+          fromDb && typeof fromDb.version === "string" ? String(fromDb.version).trim() : "";
+        const merged = fleetMergeGlobalPublishedVersions(rawManifest, appVerRaw);
+        if (!merged) return;
+        const rawGlobal = normalizeVersion(merged);
         const globalLatest = toCanonicalThreePartVersion(rawGlobal) || rawGlobal;
 
-        let effectiveLatest = globalLatest;
         let profileAnchorRaw = "";
         if (user?.id) {
           const { data: row } = await (supabase as any)
             .from("profiles")
-            .select("target_version, ui_denied_features_anchor_version")
+            .select("ui_denied_features_anchor_version")
             .eq("id", user.id)
             .maybeSingle();
-          const raw = typeof row?.target_version === "string" ? row.target_version.trim() : "";
-          if (raw) {
-            const nt = normalizeVersion(raw);
-            if (parseSemverSegments(nt)) {
-              effectiveLatest = toCanonicalThreePartVersion(nt) || nt;
-            }
-          }
           profileAnchorRaw =
             typeof row?.ui_denied_features_anchor_version === "string"
               ? row.ui_denied_features_anchor_version.trim()
@@ -94,11 +98,18 @@ export function useFleetProSupabaseUpdateGate(): void {
           }
         }
 
-        /** גרסה גלובלית חדשה מ־ack — מודאל פריסה */
+        if (privateParsed.kind !== "private" || privateCleared) {
+          fleetProPermissionToastAnchorShown = "";
+        }
+
+        /**
+         * גרסה גלובלית חדשה מ־ack — רק מול `version_manifest` (לא profiles.target_version),
+         * כדי שלא יוצג עדכון «מעל» מה שבאמת פרוס בבנדל/מניפסט.
+         */
         const versionBehind =
           parseSemverSegments(ack) &&
-          parseSemverSegments(effectiveLatest) &&
-          compareSemverExtended(effectiveLatest, ack) > 0;
+          parseSemverSegments(globalLatest) &&
+          compareSemverExtended(globalLatest, ack) > 0;
 
         /** עוגן פרטי: הגרסה הגלובלית לא עלתה, אבל יש שינוי הרשאות שלא אושר בלוקאל */
         const silentPermissionUpdate =
@@ -110,11 +121,10 @@ export function useFleetProSupabaseUpdateGate(): void {
 
         if (versionBehind) {
           if (isFleetProUpdateModalSuppressedUntilPageUnload()) return;
-          const changes = parseManifestChanges(fromDb);
           showPwaUpdateModal({
             targetVersion: globalLatest,
             acknowledgeAsVersion: globalLatest,
-            changes,
+            changes: ["עדכון גרסה זמין במערכת"],
             updateReason: "global_version",
             privateAnchorFull:
               privateParsed.kind === "private" ? privateParsed.full : "",
@@ -124,24 +134,31 @@ export function useFleetProSupabaseUpdateGate(): void {
 
         if (silentPermissionUpdate) {
           if (isFleetProUpdateModalSuppressedUntilPageUnload()) return;
-          showPwaUpdateModal({
-            targetVersion: globalLatest,
-            acknowledgeAsVersion: globalLatest,
-            changes: [
-              "עודכנו הרשאות ממשק עבור המשתמש שלך.",
-              "לחיצה על «עדכן עכשיו» מסנכרנת את המכשיר מול הגרסה הגלובלית — ללא שינוי מספר הגרסה בענן.",
-            ],
-            updateReason: "permission_anchor",
-            privateAnchorFull: privateParsed.full,
+          if (fleetProPermissionToastAnchorShown === privateParsed.full) return;
+          fleetProPermissionToastAnchorShown = privateParsed.full;
+          const toastId = `fleet-perm-refresh-${privateParsed.full}`;
+          toast.message("עודכנו הרשאות הממשק", {
+            id: toastId,
+            description: `הגרסה הגלובלית נשארה ${globalLatest} — יש לרענן כדי להחיל. לחיצה אחת מסיימת.`,
+            duration: 60_000,
+            action: {
+              label: "רענן והחל",
+              onClick: () => {
+                toast.dismiss(toastId);
+                void commitFleetProAcknowledgedVersionAndHardReload(globalLatest, {
+                  privateAnchorFull: privateParsed.full,
+                });
+              },
+            },
           });
           return;
         }
 
-        /** ack מעודכן (≥ גרסה זמינה) ואין עוגן פרטי ממתין */
+        /** ack מעודכן (≥ גרסת מניפסט) ואין עוגן פרטי ממתין */
         if (
           parseSemverSegments(ack) &&
-          parseSemverSegments(effectiveLatest) &&
-          compareSemverExtended(ack, effectiveLatest) >= 0
+          parseSemverSegments(globalLatest) &&
+          compareSemverExtended(ack, globalLatest) >= 0
         ) {
           hidePwaUpdateModal();
           return;

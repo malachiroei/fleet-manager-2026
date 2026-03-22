@@ -15,6 +15,7 @@ import {
   FLEET_UI_FEATURE_MAINTENANCE_FORM_TOKEN,
   FLEET_UI_FEATURE_STAR_HEADER_TOKEN,
   FLEET_UI_LOGGED_FEATURE_TOKENS,
+  FLEET_UI_MANIFEST_BYPASS_TOKENS,
   fleetUiRequiredAckVersion,
   isFleetStagingOnlyUiTokenId,
   manifestChangesIncludeToken,
@@ -23,7 +24,9 @@ import {
 } from '@/lib/fleetPublishedUiFeatures';
 import {
   compareSemverExtended,
+  fetchAppVersionFromDb,
   fetchVersionManifestFromDb,
+  fleetMergeGlobalPublishedVersions,
   isFleetManagerProHostname,
   normalizeVersion,
   parsePrivateUiAnchor,
@@ -121,12 +124,15 @@ export function useFleetManifestUiGates(): FleetManifestUiGates {
       return;
     }
     try {
-      const manifest = await fetchVersionManifestFromDb(supabase as any);
+      const [manifest, appVerRaw] = await Promise.all([
+        fetchVersionManifestFromDb(supabase as any),
+        fetchAppVersionFromDb(supabase as any),
+      ]);
       const lines = parseManifestChanges(manifest);
-      const rawVer =
+      const rawManifest =
         manifest && typeof manifest.version === 'string' ? String(manifest.version).trim() : '';
-      const norm = rawVer ? normalizeVersion(rawVer).trim() : '';
-      const manifestVersion = norm ? toCanonicalThreePartVersion(norm) || norm : '';
+      const merged = fleetMergeGlobalPublishedVersions(rawManifest, appVerRaw);
+      const manifestVersion = merged ? normalizeVersion(merged).trim() : '';
       setState({ ready: true, lines, manifestVersion, isPro: true });
     } catch {
       setState({ ready: true, lines: [], manifestVersion: '', isPro: true });
@@ -221,15 +227,16 @@ export function useFleetManifestUiGates(): FleetManifestUiGates {
       if (compareSemverExtended(proAckVersion, publishedManifestWatermark) < 0) return false;
     }
 
-    /** בלי גרסת מניפסט מ-Supabase — לא מפעילים פיצ'רי מניפסט (מונע דליפה לפני טעינה) */
-    if (t !== FLEET_UI_FEATURE_MAINTENANCE_FORM_TOKEN && !manifestVersion.trim()) return false;
+    const manifestBypass = FLEET_UI_MANIFEST_BYPASS_TOKENS.includes(t);
+    /** בלי גרסה גלובלית מ־DB — לא מפעילים פיצ'רי מניפסט (מונע דליפה לפני טעינה) */
+    if (!manifestBypass && !manifestVersion.trim()) return false;
 
     const req = fleetUiRequiredAckVersion(t, manifestVersion);
     if (!parseSemverSegments(proAckVersion) || !parseSemverSegments(req)) return false;
     if (compareSemverExtended(proAckVersion, req) < 0) return false;
 
-    /** טופס תחזוקה — רק הרשאה אישית (אחרי ack לפי fleetUiRequiredAckVersion) */
-    if (t === FLEET_UI_FEATURE_MAINTENANCE_FORM_TOKEN) {
+    /** טפסים בהרשאה אישית בלבד — אחרי ack לפי fleetUiRequiredAckVersion */
+    if (manifestBypass) {
       return profileAllowedTokens.has(t);
     }
 

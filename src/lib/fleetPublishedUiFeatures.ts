@@ -25,6 +25,14 @@ export const FLEET_UI_FEATURE_DASHBOARD_ACTION_TEST_TOKEN = 'UI_FEATURE_DASHBOAR
  */
 export const FLEET_UI_FEATURE_MAINTENANCE_FORM_TOKEN = 'UI_FEATURE_MAINTENANCE_FORM';
 
+/** טפסים בסטייג' — הרשאה אישית בלבד (מודאל ניהול הרשאות); תאימות לאחור לפרופילים קיימים */
+export const FLEET_UI_FEATURE_FORMS_SYSTEM_STAGING_TABLE_TOKEN = 'UI_FEATURE_FORMS_SYSTEM_STAGING_TABLE';
+
+export const FLEET_UI_FEATURE_FORM_VEHICLE_STATUS_TOKEN = 'UI_FEATURE_FORM_VEHICLE_STATUS';
+export const FLEET_UI_FEATURE_FORM_CAR_HANDOVER_TOKEN = 'UI_FEATURE_FORM_CAR_HANDOVER';
+export const FLEET_UI_FEATURE_FORM_PERIODIC_MAINTENANCE_TOKEN = 'UI_FEATURE_FORM_PERIODIC_MAINTENANCE';
+export const FLEET_UI_FEATURE_FORM_REPAIR_REPORT_TOKEN = 'UI_FEATURE_FORM_REPAIR_REPORT';
+
 /** פרו: טבלת User Status & Versions — רק עם טוקן דיבוג במניפסט (בפרודקשן חסום לחלוטין בקוד) */
 export const FLEET_UI_FEATURE_DEBUG_ADMIN_USER_VERSIONS_TABLE_TOKEN =
   'UI_FEATURE_DEBUG_ADMIN_USER_VERSIONS_TABLE';
@@ -40,6 +48,11 @@ export const FLEET_UI_FEATURE_MIN_ACK_VERSION: Record<string, string> = {
   [FLEET_UI_FEATURE_DASHBOARD_ACTION_TEST_TOKEN]: '2.7.13',
   [FLEET_UI_FEATURE_DEBUG_ADMIN_USER_VERSIONS_TABLE_TOKEN]: '2.7.13',
   [FLEET_UI_FEATURE_MAINTENANCE_FORM_TOKEN]: '2.7.45',
+  [FLEET_UI_FEATURE_FORMS_SYSTEM_STAGING_TABLE_TOKEN]: '2.7.56',
+  [FLEET_UI_FEATURE_FORM_VEHICLE_STATUS_TOKEN]: '2.7.57',
+  [FLEET_UI_FEATURE_FORM_CAR_HANDOVER_TOKEN]: '2.7.57',
+  [FLEET_UI_FEATURE_FORM_PERIODIC_MAINTENANCE_TOKEN]: '2.7.57',
+  [FLEET_UI_FEATURE_FORM_REPAIR_REPORT_TOKEN]: '2.7.57',
 };
 
 export function fleetUiMinAckVersionForToken(token: string, publishedManifestVersion: string): string {
@@ -128,22 +141,203 @@ export const FLEET_UI_PENDING_LINE_DASHBOARD_TREATMENT = `${FLEET_UI_FEATURE_DAS
 export const FLEET_UI_PENDING_LINE_DASHBOARD_TEST = `${FLEET_UI_FEATURE_DASHBOARD_ACTION_TEST_TOKEN} — Dashboard Quick Action: כפתור בדיקה`;
 export const FLEET_UI_PENDING_LINE_DEBUG_ADMIN_USER_VERSIONS = `${FLEET_UI_FEATURE_DEBUG_ADMIN_USER_VERSIONS_TABLE_TOKEN} — Admin: טבלת User Status & Versions (debug, Pro only)`;
 export const FLEET_UI_PENDING_LINE_MAINTENANCE_FORM = `${FLEET_UI_FEATURE_MAINTENANCE_FORM_TOKEN} — Dashboard: טופס תחזוקה (הרשאה אישית בלבד, לא במניפסט)`;
+export const FLEET_UI_PENDING_LINE_FORMS_SYSTEM_STAGING_TABLE = `${FLEET_UI_FEATURE_FORMS_SYSTEM_STAGING_TABLE_TOKEN} — Staging forms: vehicle status form entry (permission only)`;
+export const FLEET_UI_PENDING_LINE_FORM_VEHICLE_STATUS = `${FLEET_UI_FEATURE_FORM_VEHICLE_STATUS_TOKEN} — טופס סטטוס רכב`;
+export const FLEET_UI_PENDING_LINE_FORM_CAR_HANDOVER = `${FLEET_UI_FEATURE_FORM_CAR_HANDOVER_TOKEN} — טופס מסירת רכב`;
+export const FLEET_UI_PENDING_LINE_FORM_PERIODIC_MAINTENANCE = `${FLEET_UI_FEATURE_FORM_PERIODIC_MAINTENANCE_TOKEN} — טופס טיפול תקופתי`;
+export const FLEET_UI_PENDING_LINE_FORM_REPAIR_REPORT = `${FLEET_UI_FEATURE_FORM_REPAIR_REPORT_TOKEN} — טופס דיווח תיקון`;
+
+/** קטגוריה לקיבוץ בממשק: כותרת, דשבורד, טפסים, מנהל */
+export type FleetUiFeatureCategory = 'header' | 'dashboard' | 'forms' | 'admin';
+
+/** קיבוץ במודאל הרשאות מנהל */
+export type FleetUiPermissionSection = 'header_ui' | 'dashboard_actions' | 'maintenance_forms' | 'admin_debug';
 
 /**
- * טוקנים שמופיעים במודאל «ניהול הרשאות» בלבד — לא ב־FLEET_UI_DEFAULT_PUBLISH_CANDIDATES / מניפסט גלובלי.
+ * מקור אמת יחיד לכל פיצ'רי UI — הרשאות אישיות, פרסום גלובלי, והשוואת pending.
  */
-export const FLEET_UI_PERMISSION_MODAL_EXTRA_CANDIDATES: { token: string; line: string }[] = [
-  { token: FLEET_UI_FEATURE_MAINTENANCE_FORM_TOKEN, line: FLEET_UI_PENDING_LINE_MAINTENANCE_FORM },
+export type FleetUiFeatureCatalogEntry = {
+  token: string;
+  line: string;
+  title: string;
+  category: FleetUiFeatureCategory;
+  permissionSection: FleetUiPermissionSection;
+  /** ניתן לכלול ב־version_manifest בפרסום גלובלי */
+  globalManifestEligible: boolean;
+  /** מוצג במודאל הרשאות משתמש */
+  permissionModal: boolean;
+};
+
+export const FLEET_UI_FEATURE_CATALOG: FleetUiFeatureCatalogEntry[] = [
+  {
+    token: FLEET_UI_FEATURE_STAR_HEADER_TOKEN,
+    line: FLEET_UI_PENDING_LINE_STAR,
+    title: 'כוכב בראש הדף',
+    category: 'header',
+    permissionSection: 'header_ui',
+    globalManifestEligible: true,
+    permissionModal: true,
+  },
+  {
+    token: FLEET_UI_FEATURE_BOLD_VERSION_TOKEN,
+    line: FLEET_UI_PENDING_LINE_BOLD,
+    title: 'גרסה מודגשת',
+    category: 'header',
+    permissionSection: 'header_ui',
+    globalManifestEligible: true,
+    permissionModal: true,
+  },
+  {
+    token: FLEET_UI_FEATURE_DASHBOARD_ACTION_TEST_TOKEN,
+    line: FLEET_UI_PENDING_LINE_DASHBOARD_TEST,
+    title: 'כפתור עדכן נסיעה',
+    category: 'dashboard',
+    permissionSection: 'dashboard_actions',
+    globalManifestEligible: true,
+    permissionModal: true,
+  },
+  {
+    token: FLEET_UI_FEATURE_DASHBOARD_ACTION_TREATMENT_TOKEN,
+    line: FLEET_UI_PENDING_LINE_DASHBOARD_TREATMENT,
+    title: 'כפתור עדכן טיפול',
+    category: 'dashboard',
+    permissionSection: 'dashboard_actions',
+    globalManifestEligible: true,
+    permissionModal: true,
+  },
+  {
+    token: FLEET_UI_FEATURE_MAINTENANCE_FORM_TOKEN,
+    line: FLEET_UI_PENDING_LINE_MAINTENANCE_FORM,
+    title: 'טופס תחזוקה',
+    category: 'forms',
+    permissionSection: 'maintenance_forms',
+    globalManifestEligible: false,
+    permissionModal: true,
+  },
+  {
+    token: FLEET_UI_FEATURE_FORM_VEHICLE_STATUS_TOKEN,
+    line: FLEET_UI_PENDING_LINE_FORM_VEHICLE_STATUS,
+    title: 'טופס סטטוס רכב',
+    category: 'forms',
+    permissionSection: 'maintenance_forms',
+    globalManifestEligible: false,
+    permissionModal: true,
+  },
+  {
+    token: FLEET_UI_FEATURE_FORM_CAR_HANDOVER_TOKEN,
+    line: FLEET_UI_PENDING_LINE_FORM_CAR_HANDOVER,
+    title: 'טופס מסירת רכב',
+    category: 'forms',
+    permissionSection: 'maintenance_forms',
+    globalManifestEligible: false,
+    permissionModal: true,
+  },
+  {
+    token: FLEET_UI_FEATURE_FORM_PERIODIC_MAINTENANCE_TOKEN,
+    line: FLEET_UI_PENDING_LINE_FORM_PERIODIC_MAINTENANCE,
+    title: 'טופס טיפול תקופתי',
+    category: 'forms',
+    permissionSection: 'maintenance_forms',
+    globalManifestEligible: false,
+    permissionModal: true,
+  },
+  {
+    token: FLEET_UI_FEATURE_FORM_REPAIR_REPORT_TOKEN,
+    line: FLEET_UI_PENDING_LINE_FORM_REPAIR_REPORT,
+    title: 'טופס דיווח תיקון',
+    category: 'forms',
+    permissionSection: 'maintenance_forms',
+    globalManifestEligible: false,
+    permissionModal: true,
+  },
+  {
+    token: FLEET_UI_FEATURE_DEBUG_ADMIN_USER_VERSIONS_TABLE_TOKEN,
+    line: FLEET_UI_PENDING_LINE_DEBUG_ADMIN_USER_VERSIONS,
+    title: 'טבלת סטטוס משתמשים (דיבוג)',
+    category: 'admin',
+    permissionSection: 'admin_debug',
+    globalManifestEligible: true,
+    permissionModal: true,
+  },
 ];
 
-/** סדר מוצע למיזוג ב־fleet-manager-dev (מודאל פרסום) */
-export const FLEET_UI_DEFAULT_PUBLISH_CANDIDATES: { token: string; line: string }[] = [
-  { token: FLEET_UI_FEATURE_BOLD_VERSION_TOKEN, line: FLEET_UI_PENDING_LINE_BOLD },
-  { token: FLEET_UI_FEATURE_STAR_HEADER_TOKEN, line: FLEET_UI_PENDING_LINE_STAR },
-  { token: FLEET_UI_FEATURE_DASHBOARD_ACTION_TREATMENT_TOKEN, line: FLEET_UI_PENDING_LINE_DASHBOARD_TREATMENT },
-  { token: FLEET_UI_FEATURE_DASHBOARD_ACTION_TEST_TOKEN, line: FLEET_UI_PENDING_LINE_DASHBOARD_TEST },
-  { token: FLEET_UI_FEATURE_DEBUG_ADMIN_USER_VERSIONS_TABLE_TOKEN, line: FLEET_UI_PENDING_LINE_DEBUG_ADMIN_USER_VERSIONS },
+/** טופסים / הרשאה אישית בלבד — לא דורשים שורה ב־version_manifest כדי שיופיעו אחרי ack */
+export const FLEET_UI_MANIFEST_BYPASS_TOKENS: readonly string[] = [
+  FLEET_UI_FEATURE_MAINTENANCE_FORM_TOKEN,
+  FLEET_UI_FEATURE_FORMS_SYSTEM_STAGING_TABLE_TOKEN,
+  FLEET_UI_FEATURE_FORM_VEHICLE_STATUS_TOKEN,
+  FLEET_UI_FEATURE_FORM_CAR_HANDOVER_TOKEN,
+  FLEET_UI_FEATURE_FORM_PERIODIC_MAINTENANCE_TOKEN,
+  FLEET_UI_FEATURE_FORM_REPAIR_REPORT_TOKEN,
 ];
+
+/** מועמדים לפרסום גלובלי — נגזר מהקטלוג */
+export const FLEET_UI_DEFAULT_PUBLISH_CANDIDATES: { token: string; line: string }[] = FLEET_UI_FEATURE_CATALOG.filter(
+  (e) => e.globalManifestEligible
+).map((e) => ({ token: e.token, line: e.line }));
+
+/** טפסים / הרשאה אישית בלבד — לא במניפסט גלובלי */
+export const FLEET_UI_PERMISSION_MODAL_EXTRA_CANDIDATES: { token: string; line: string }[] = FLEET_UI_FEATURE_CATALOG.filter(
+  (e) => !e.globalManifestEligible && e.permissionModal
+).map((e) => ({ token: e.token, line: e.line }));
+
+export function fleetUiCatalogEntryByToken(token: string): FleetUiFeatureCatalogEntry | undefined {
+  const t = String(token).trim();
+  return FLEET_UI_FEATURE_CATALOG.find((e) => e.token === t);
+}
+
+/** כותרת ידידותית לשורת צ׳יינג׳לוג — אחרת המחרוזת המלאה */
+export function fleetUiCatalogTitleForLineOrLine(line: string): string {
+  const t = extractFleetUiFeatureTokenFromLine(String(line));
+  if (!t) return String(line).trim();
+  return fleetUiCatalogEntryByToken(t)?.title ?? String(line).trim();
+}
+
+function catalogTokensInPublishedManifest(publishedChangeLines: string[]): Set<string> {
+  const s = new Set<string>();
+  for (const l of publishedChangeLines) {
+    const t = extractFleetUiFeatureTokenFromLine(String(l));
+    if (t) s.add(t);
+  }
+  return s;
+}
+
+/**
+ * שורות ל־«יכולות חדשות» במודאל פרסום: טוקנים מהקוד שאינם במניפסט הנוכחי + pending מ־DB (ללא כפילות טוקן).
+ */
+export function buildNewPublishCapabilityLines(
+  publishedChangeLines: string[],
+  dbPendingLines: string[],
+  isProHostname: boolean
+): string[] {
+  const pubToks = catalogTokensInPublishedManifest(publishedChangeLines);
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of FLEET_UI_FEATURE_CATALOG) {
+    if (!entry.globalManifestEligible) continue;
+    if (isProHostname && isFleetStagingOnlyUiTokenId(entry.token)) continue;
+    if (pubToks.has(entry.token)) continue;
+    out.push(entry.line);
+    seen.add(entry.token);
+  }
+
+  for (const raw of dbPendingLines) {
+    const line = String(raw).trim();
+    if (!line) continue;
+    const t = extractFleetUiFeatureTokenFromLine(line);
+    if (t) {
+      if (pubToks.has(t)) continue;
+      if (seen.has(t)) continue;
+      if (isProHostname && isFleetStagingOnlyUiTokenId(t)) continue;
+      seen.add(t);
+      out.push(line);
+    } else if (!publishedChangeLines.some((p) => String(p).trim() === line)) {
+      out.push(line);
+    }
+  }
+  return out;
+}
 
 /** מנרמל JSONB / מחרוזת JSON / מערך / אובייקט אינדקסים / מחרוזת Postgres `{a,b}` לפני פירוק טוקנים */
 export function coalesceAllowedFeaturesInput(raw: unknown): unknown[] {
@@ -203,6 +397,11 @@ export const FLEET_UI_LOGGED_FEATURE_TOKENS: readonly string[] = [
   FLEET_UI_FEATURE_DASHBOARD_ACTION_TREATMENT_TOKEN,
   FLEET_UI_FEATURE_DASHBOARD_ACTION_TEST_TOKEN,
   FLEET_UI_FEATURE_MAINTENANCE_FORM_TOKEN,
+  FLEET_UI_FEATURE_FORMS_SYSTEM_STAGING_TABLE_TOKEN,
+  FLEET_UI_FEATURE_FORM_VEHICLE_STATUS_TOKEN,
+  FLEET_UI_FEATURE_FORM_CAR_HANDOVER_TOKEN,
+  FLEET_UI_FEATURE_FORM_PERIODIC_MAINTENANCE_TOKEN,
+  FLEET_UI_FEATURE_FORM_REPAIR_REPORT_TOKEN,
   FLEET_UI_FEATURE_DEBUG_ADMIN_USER_VERSIONS_TABLE_TOKEN,
 ];
 
@@ -327,16 +526,56 @@ export function getFleetUiPermissionModalCandidates(isProHostname: boolean): { t
   return FLEET_UI_DEFAULT_PUBLISH_CANDIDATES.filter((c) => !isFleetStagingOnlyUiTokenId(c.token));
 }
 
-/** שורות עם צ'קבוקס פעיל במודאל הרשאות — ללא staging/debug (מוצגים בנפרד בטסט) + טוקנים permission-only. */
-export function getFleetUiPermissionModalEditableCandidates(): { token: string; line: string }[] {
-  const base = FLEET_UI_DEFAULT_PUBLISH_CANDIDATES.filter((c) => !isFleetStagingOnlyUiTokenId(c.token));
-  return [...base, ...FLEET_UI_PERMISSION_MODAL_EXTRA_CANDIDATES];
+/** שורת מודאל «ניהול הרשאות» — כותרת ידידותית + מזהה טכני ב־`line` לצ׳יינג׳לוג */
+export type FleetPermissionModalEditableRow = {
+  token: string;
+  line: string;
+  title: string;
+  subtitle?: string;
+  hint?: string;
+  indent?: boolean;
+  /** מוצג ככותרת קבוצה מעל השורה (ללא צ'קבוקס) */
+  sectionHeadingBefore?: string;
+};
+
+const FLEET_UI_PERMISSION_SECTION_LABELS: Record<FleetUiPermissionSection, string> = {
+  header_ui: 'ממשק כותרת',
+  dashboard_actions: 'פעולות דשבורד',
+  maintenance_forms: 'טפסי תחזוקה',
+  admin_debug: 'מנהל — דיבוג',
+};
+
+const FLEET_UI_PERMISSION_SECTION_ORDER: FleetUiPermissionSection[] = [
+  'header_ui',
+  'dashboard_actions',
+  'maintenance_forms',
+  'admin_debug',
+];
+
+/** שורות עם צ'קבוקס פעיל במודאל הרשאות — נגזר מ־FLEET_UI_FEATURE_CATALOG (מקור אמת יחיד). */
+export function getFleetUiPermissionModalEditableCandidates(): FleetPermissionModalEditableRow[] {
+  const rows: FleetPermissionModalEditableRow[] = [];
+  for (const sec of FLEET_UI_PERMISSION_SECTION_ORDER) {
+    const inSection = FLEET_UI_FEATURE_CATALOG.filter((e) => e.permissionModal && e.permissionSection === sec);
+    let first = true;
+    for (const e of inSection) {
+      rows.push({
+        sectionHeadingBefore: first ? FLEET_UI_PERMISSION_SECTION_LABELS[sec] : undefined,
+        token: e.token,
+        line: e.line,
+        title: e.title,
+        indent: sec === 'maintenance_forms',
+      });
+      first = false;
+    }
+  }
+  return rows;
 }
 
 export function manifestChangesIncludeToken(lines: string[], token: string): boolean {
   const t = String(token).trim();
   if (!t) return false;
-  return lines.some((line) => String(line).includes(t));
+  return lines.some((line) => extractFleetUiFeatureTokenFromLine(String(line)) === t);
 }
 
 /** מוסיף שורות UI ברירת מחדל שלא קיימות כבר ב־pending (לפי טוקן) */
