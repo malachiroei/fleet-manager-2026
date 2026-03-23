@@ -174,7 +174,7 @@ export function TeamMemberDelegationDialog({
               : true;
         }
         setPermState(nextPerm);
-        setUiState(computeUiSelections(a, d, globalTokenSet, uiCandidates));
+        setUiState(computeUiSelections(a, d, globalTokenSet, combinedUiCandidateTokens));
       } catch (e) {
         console.warn('[TeamDelegation] load profile', e);
         toast({

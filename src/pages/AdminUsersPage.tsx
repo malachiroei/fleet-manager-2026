@@ -31,10 +31,7 @@ export default function AdminUsersPage() {
 
   const isMainAdmin =
     (profile?.email?.toLowerCase() === 'malachiroei@gmail.com') ||
-    (user?.email?.toLowerCase() === 'malachiroei@gmail.com') ||
-    localStorage.getItem('is_admin') === 'true';
-
-  console.log('Am I Admin?', isMainAdmin, 'Profile email:', profile?.email);
+    (user?.email?.toLowerCase() === 'malachiroei@gmail.com');
 
   // Main admin only: fetch ALL non-active profiles. Do NOT filter by org_id.
   const pendingQuery = useQuery({
@@ -202,9 +199,6 @@ export default function AdminUsersPage() {
       </div>
     );
   }
-
-  // Quick override: if logged in as main admin email, always render admin content.
-  if (profile?.email === 'malachiroei@gmail.com') return renderAdminContent();
 
   if (!isMainAdmin) {
     // toast + redirect happens in useEffect above
