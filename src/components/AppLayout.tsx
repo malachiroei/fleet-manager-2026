@@ -22,7 +22,7 @@ import {
   DropdownMenuRadioItem,
 } from './ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-import { appLogo } from '@/components/BrandLogo';
+import { getBrandLogoUrl } from '@/components/BrandLogo';
 import { supabase } from '@/integrations/supabase/client';
 import {
   version as bundleVersion,
@@ -714,7 +714,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       <div className={cn('flex min-w-0 items-center gap-2 sm:gap-3', isRtl && 'flex-row-reverse')}>
         <div className="h-12 w-16 shrink-0 overflow-hidden rounded-lg bg-[#0a1525] p-2 flex items-center justify-center">
           <img
-            src={appLogo}
+            src={getBrandLogoUrl()}
             alt=""
             className="max-h-12 w-full object-contain object-center"
           />

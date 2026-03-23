@@ -6,16 +6,11 @@
 
 import { isFleetAppStagingEnvironment } from '@/lib/fleetAppStagingEnvironment';
 import { clearLocalStorageOnSupabaseEnvironmentGuardFailure } from '@/lib/supabase/environmentLocalStorage';
-import {
-  FLEET_PRODUCTION_SUPABASE_PROJECT_REF,
-  isFleetManagerProDotComHostname,
-} from '@/lib/supabase/fleetSupabaseProductionDefaults';
+import { getSupabaseUrl } from '@/integrations/supabase/publicEnv';
+import { isFleetManagerProDotComHostname } from '@/lib/supabase/fleetSupabaseProductionDefaults';
 import { isFleetManagerProHostname } from '@/lib/versionManifest';
 
 const clean = (s: string) => String(s ?? '').replace(/[^a-z0-9]/gi, '').toLowerCase().trim();
-
-/** Supabase project ref של סביבת הטסט/סטייג׳ (מופיע ב-URL של Supabase בסטייג׳). */
-export const FLEET_STAGING_DEFAULT_SUPABASE_PROJECT_REF = 'hojopkvnajvexnwolyeu';
 
 const FLEET_ENV_GUARD_SYNC_RELOAD_SESSION_KEY = 'fleet-supabase-env-guard-v2765-sync';
 
@@ -24,15 +19,26 @@ function trimEnv(v: unknown): string {
 }
 
 /**
- * Production ref — Vercel קודם; אחרת ref קשיח כשהדפדפן על fleet-manager-pro.com (תואם ל-URL ב-publicEnv).
+ * Production ref — Vercel קודם; אחרת מ־NEXT_PUBLIC_FLEET_KNOWN_PRODUCTION_SUPABASE_REF או מ־URL הפרויקט (כמו ב-publicEnv).
  */
 function getFleetProductionDefaultSupabaseRef(): string {
   const fromEnv =
     trimEnv(import.meta.env.NEXT_PUBLIC_FLEET_KNOWN_PRODUCTION_SUPABASE_REF) ||
     trimEnv(import.meta.env.VITE_FLEET_KNOWN_PRODUCTION_SUPABASE_REF);
   if (fromEnv) return fromEnv;
-  if (isFleetManagerProDotComHostname()) return FLEET_PRODUCTION_SUPABASE_PROJECT_REF;
+  if (isFleetManagerProDotComHostname()) {
+    const fromUrl = extractProjectRefFromSupabaseUrl(getSupabaseUrl());
+    if (fromUrl) return fromUrl;
+  }
   return '';
+}
+
+function getFleetStagingDefaultSupabaseRef(): string {
+  return (
+    trimEnv(import.meta.env.NEXT_PUBLIC_FLEET_STAGING_DEFAULT_SUPABASE_REF) ||
+    trimEnv(import.meta.env.VITE_FLEET_STAGING_DEFAULT_SUPABASE_REF) ||
+    ''
+  );
 }
 
 /** Staging | Production | Unknown — לפי דומיין האפליקציה (לא Supabase). */
@@ -92,7 +98,7 @@ type ResolveEffective = {
 function resolveEffectiveExpectedSupabaseRef(url: string, vercelRaw: string): ResolveEffective {
   const environmentLabel = detectFleetDeployEnvironmentLabel();
   const prodDefault = getFleetProductionDefaultSupabaseRef();
-  const stagingDefault = FLEET_STAGING_DEFAULT_SUPABASE_PROJECT_REF;
+  const stagingDefault = getFleetStagingDefaultSupabaseRef();
   const extracted = extractProjectRefFromSupabaseUrl(url);
 
   const vercelTrim = String(vercelRaw ?? '').trim();
@@ -213,7 +219,7 @@ export function evaluateSupabaseEnvironmentGuard(
     '[Supabase envGuard] NEXT_PUBLIC_SUPABASE_PROJECT_REF from Vercel takes precedence when set and matches URL;',
     vercelProjectRef
       ? `Vercel ref is set (clean length ${clean(vercelProjectRef).length})`
-      : 'Vercel ref not set — using hostname fallbacks (staging default or NEXT_PUBLIC_FLEET_KNOWN_PRODUCTION_SUPABASE_REF)'
+      : 'Vercel ref not set — using hostname fallbacks (NEXT_PUBLIC_FLEET_STAGING_DEFAULT_SUPABASE_REF or production URL ref / NEXT_PUBLIC_FLEET_KNOWN_PRODUCTION_SUPABASE_REF)'
   );
 
   const expectedClean = clean(effectiveRaw);

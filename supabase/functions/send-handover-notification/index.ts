@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { supabasePublicObjectUrl } from '../_shared/supabasePublicUrl.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -198,7 +199,7 @@ serve(async (req) => {
       ? `${appBaseUrl}/vehicles/${payload.vehicleId}#handover-${payload.handoverId}`
       : persistedPdfUrl);
 
-    const logoUrl = 'https://hojopkvnajvexnwolyeu.supabase.co/storage/v1/object/public/logos/logo.jpg';
+    const logoUrl = supabasePublicObjectUrl(supabaseUrl, 'logos/logo.jpg');
     const html = `
       <div style="font-family: Arial, sans-serif; direction: rtl; text-align: right;">
         <div style="margin: 0 0 14px; text-align: right;">

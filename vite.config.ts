@@ -65,6 +65,12 @@ export default defineConfig(({ mode }) => {
     define: {
       // הזרקה מפורשת של משתני הסביבה כדי למנוע Cache
       'process.env.VITE_APP_STATUS': JSON.stringify(env.VITE_APP_STATUS),
+      'process.env.NEXT_PUBLIC_SUPABASE_URL': JSON.stringify(
+        env.NEXT_PUBLIC_SUPABASE_URL ?? env.VITE_SUPABASE_URL ?? ''
+      ),
+      'process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY': JSON.stringify(
+        env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? env.VITE_SUPABASE_ANON_KEY ?? ''
+      ),
     },
     resolve: {
       alias: {

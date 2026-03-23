@@ -1,7 +1,7 @@
 /**
  * Supabase browser client — אימות סביבה לפני אתחול (v2.7.66).
  * URL/מפתח: `resolveSupabaseViteEnv` / `getSupabaseUrl` / `getSupabaseAnonKey` ב־`publicEnv`
- * (על fleet-manager-pro.com — URL ייצור קשיח; anon מ-Vercel).
+ * (על fleet-manager-pro.com — URL ייצור מ־env; anon מ-Vercel).
  * מיוצא גם מ־`@/integrations/supabase/client` לתאימות ייבוא קיימת.
  */
 import { createClient } from '@supabase/supabase-js';

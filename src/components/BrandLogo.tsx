@@ -2,8 +2,11 @@
  * Brand logo (Supabase Storage public bucket: logos).
  * Centralized so header/auth screens use the same asset.
  */
-const appLogo =
-  'https://hojopkvnajvexnwolyeu.supabase.co/storage/v1/object/public/logos/logo.jpg';
+import { fleetPublicStorageObjectUrl } from '@/lib/supabase/fleetPublicStorageUrl';
+
+export function getBrandLogoUrl(): string {
+  return fleetPublicStorageObjectUrl('logos/logo.jpg');
+}
 
 const wrapBase =
   'shrink-0 bg-[#0a1525] rounded-xl overflow-hidden flex items-center justify-center';
@@ -29,9 +32,9 @@ export function BrandLogo({ size = 'header', className = '' }: BrandLogoProps) {
   const { wrap } = sizeClasses[size];
   return (
     <div className={`${wrap} ${className}`.trim()}>
-      <img src={appLogo} alt="" className={imgBase} aria-hidden />
+      <img src={getBrandLogoUrl()} alt="" className={imgBase} aria-hidden />
     </div>
   );
 }
 
-export { appLogo, wrapBase as brandLogoWrapBase, imgBase as brandLogoImgBase };
+export { wrapBase as brandLogoWrapBase, imgBase as brandLogoImgBase };

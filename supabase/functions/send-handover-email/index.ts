@@ -27,6 +27,7 @@
 
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { supabasePublicObjectUrl } from '../_shared/supabasePublicUrl.ts';
 
 // ── CORS ────────────────────────────────────────────────────────────────────
 const corsHeaders = {
@@ -249,7 +250,7 @@ serve(async (req) => {
       .join('');
 
     const sentAt = new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
-    const logoUrl = 'https://hojopkvnajvexnwolyeu.supabase.co/storage/v1/object/public/logos/logo.jpg';
+    const logoUrl = supabasePublicObjectUrl(supabaseUrl, 'logos/logo.jpg');
 
     const html = `
 <div dir="rtl" style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f8fafc;">

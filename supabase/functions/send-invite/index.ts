@@ -12,6 +12,7 @@
 
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { supabasePublicObjectUrl } from '../_shared/supabasePublicUrl.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -93,7 +94,7 @@ serve(async (req) => {
       organizationName = (orgRow as { name?: string } | null)?.name?.trim() || organizationName;
     }
 
-    const logoUrl = 'https://hojopkvnajvexnwolyeu.supabase.co/storage/v1/object/public/logos/logo.jpg';
+    const logoUrl = supabaseUrl ? supabasePublicObjectUrl(supabaseUrl, 'logos/logo.jpg') : '';
     const html = `
 <div dir="rtl" style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 560px; margin: 0 auto;">
   <div style="margin: 0 0 12px; text-align: right;">

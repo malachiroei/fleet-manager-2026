@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import hebrewFontUrl from '@/assets/fonts/NotoSansHebrew.ttf?url';
+import { fleetPublicStorageObjectUrl } from '@/lib/supabase/fleetPublicStorageUrl';
 import {
   DAMAGE_SIDES,
   DAMAGE_SIDE_LABELS,
@@ -94,9 +95,9 @@ function arrayBufferToBase64(buffer: ArrayBuffer) {
 
 let cachedHebrewFontBase64: string | null = null;
 let cachedPdfCarImage: { dataUrl: string; format: 'PNG' | 'JPEG' } | null = null;
-// Car diagram (used for PDF rendering) is hosted in Supabase public bucket "logos".
-const FUTURISTIC_CAR_UI_PATH =
-  'https://hojopkvnajvexnwolyeu.supabase.co/storage/v1/object/public/logos/car.jpg';
+function getFuturisticCarPublicUrl(): string {
+  return fleetPublicStorageObjectUrl('logos/car.jpg');
+}
 
 async function getPdfCarImage() {
   if (cachedPdfCarImage) {
@@ -104,7 +105,7 @@ async function getPdfCarImage() {
   }
 
   const candidates = [
-    FUTURISTIC_CAR_UI_PATH,
+    getFuturisticCarPublicUrl(),
     typeof window !== 'undefined' ? `${window.location.origin}/car.png` : null,
   ].filter(Boolean) as string[];
 

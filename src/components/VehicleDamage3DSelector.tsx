@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { fleetPublicStorageObjectUrl } from '@/lib/supabase/fleetPublicStorageUrl';
 import { cn } from '@/lib/utils';
 import {
   DAMAGE_SIDE_LABELS,
@@ -9,10 +10,6 @@ import {
   type VehicleDamageType,
 } from '@/lib/vehicleDamage';
 import { Sparkles, Target } from 'lucide-react';
-
-// Damage marking diagram is hosted in Supabase public bucket "logos".
-const realisticTopCar =
-  'https://hojopkvnajvexnwolyeu.supabase.co/storage/v1/object/public/logos/car.jpg';
 
 interface VehicleDamage3DSelectorProps {
   value: VehicleDamageReport;
@@ -34,6 +31,7 @@ const SIDE_MARKER_ANCHOR: Record<VehicleDamageSide, { x: number; y: number }> = 
 };
 
 export default function VehicleDamage3DSelector({ value, onChange }: VehicleDamage3DSelectorProps) {
+  const realisticTopCar = useMemo(() => fleetPublicStorageObjectUrl('logos/car.jpg'), []);
   const [activeSide, setActiveSide] = useState<VehicleDamageSide>('front');
   const [pickerSide, setPickerSide] = useState<VehicleDamageSide | null>(null);
 

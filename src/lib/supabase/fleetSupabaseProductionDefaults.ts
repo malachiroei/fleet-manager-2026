@@ -1,12 +1,7 @@
 /**
- * v2.7.66 — Supabase ייצור עבור fleet-manager-pro.com (routing דינמי).
- * מפתח ה-anon לא נשמר בקוד — רק מ־Vercel / משתני סביבה.
+ * v2.7.66 — routing לפי hostname (fleet-manager-pro.com).
+ * URL/מפתחות Supabase — רק מ־`.env` / Vercel (`NEXT_PUBLIC_*` / `VITE_*`), לא בקוד.
  */
-
-export const FLEET_PRODUCTION_SUPABASE_URL =
-  'https://cesstoohvlbvyreznwqd.supabase.co' as const;
-
-export const FLEET_PRODUCTION_SUPABASE_PROJECT_REF = 'cesstoohvlbvyreznwqd' as const;
 
 /** כולל www ותתי-דומיינים רלוונטיים */
 export function isFleetManagerProDotComHostname(): boolean {

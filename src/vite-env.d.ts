@@ -18,6 +18,12 @@ interface ImportMetaEnv {
   /** v2.7.66: anon לפרויקט ייצור (אופציונלי; אחרת NEXT_PUBLIC_SUPABASE_ANON_KEY) */
   readonly NEXT_PUBLIC_FLEET_PRODUCTION_SUPABASE_ANON_KEY?: string;
   readonly VITE_FLEET_PRODUCTION_SUPABASE_ANON_KEY?: string;
+  /** v2.7.66: URL Supabase ייצור — על fleet-manager-pro.com לפני NEXT_PUBLIC_SUPABASE_URL */
+  readonly NEXT_PUBLIC_FLEET_PRODUCTION_SUPABASE_URL?: string;
+  readonly VITE_FLEET_PRODUCTION_SUPABASE_URL?: string;
+  /** fallback ל-ref סטייג׳ כש-NEXT_PUBLIC_SUPABASE_PROJECT_REF לא מוגדר */
+  readonly NEXT_PUBLIC_FLEET_STAGING_DEFAULT_SUPABASE_REF?: string;
+  readonly VITE_FLEET_STAGING_DEFAULT_SUPABASE_REF?: string;
 }
 
 interface ImportMeta {
