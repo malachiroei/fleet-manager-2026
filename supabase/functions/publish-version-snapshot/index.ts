@@ -23,6 +23,8 @@ const ALLOWED_PUBLISHER_EMAIL = 'malachiroei@gmail.com';
 const DEFAULT_PATH = 'src/config/version_snapshot.json';
 
 serve(async (req) => {
+  console.log('--- STARTING PUBLISH PROCESS ---');
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -106,6 +108,8 @@ serve(async (req) => {
       );
     }
 
+    console.log('Using Token starting with:', Deno.env.get('GITHUB_TOKEN')?.slice(0, 4));
+
     const text = JSON.stringify(snap, null, 2);
     const [owner, name] = repo.split('/').map((s) => s.trim());
     if (!owner || !name) {
@@ -115,60 +119,69 @@ serve(async (req) => {
       });
     }
 
-    const apiBase = `https://api.github.com/repos/${owner}/${name}/contents/${encodeURIComponent(path)}`;
-    const getRes = await fetch(`${apiBase}?ref=${encodeURIComponent(branch)}`, {
-      headers: {
-        Accept: 'application/vnd.github+json',
-        Authorization: `Bearer ${token}`,
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-    });
-
-    let sha: string | undefined;
-    if (getRes.ok) {
-      const meta = (await getRes.json()) as { sha?: string };
-      sha = typeof meta.sha === 'string' ? meta.sha : undefined;
-    } else if (getRes.status !== 404) {
-      const errText = await getRes.text();
-      return new Response(
-        JSON.stringify({ ok: false, error: `GitHub GET failed: ${getRes.status} ${errText.slice(0, 300)}` }),
-        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
-    }
-
-    const b64 = base64Encode(new TextEncoder().encode(text));
-    const putBody: Record<string, string> = {
-      message: `chore(release): version_snapshot ${version}`,
-      content: b64,
-      branch,
-    };
-    if (sha) putBody.sha = sha;
-
-    const putRes = await fetch(apiBase, {
-      method: 'PUT',
-      headers: {
-        Accept: 'application/vnd.github+json',
-        Authorization: `Bearer ${token}`,
-        'X-GitHub-Api-Version': '2022-11-28',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(putBody),
-    });
-
-    const putText = await putRes.text();
-    if (!putRes.ok) {
-      return new Response(
-        JSON.stringify({ ok: false, error: `GitHub PUT failed: ${putRes.status} ${putText.slice(0, 400)}` }),
-        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
-    }
-
     let commitSha: string | undefined;
     try {
-      const putJson = JSON.parse(putText) as { commit?: { sha?: string } };
-      commitSha = typeof putJson?.commit?.sha === 'string' ? putJson.commit.sha : undefined;
-    } catch {
-      /* ignore */
+      const apiBase = `https://api.github.com/repos/${owner}/${name}/contents/${encodeURIComponent(path)}`;
+      const getRes = await fetch(`${apiBase}?ref=${encodeURIComponent(branch)}`, {
+        headers: {
+          Accept: 'application/vnd.github+json',
+          Authorization: `Bearer ${token}`,
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+      });
+
+      let sha: string | undefined;
+      if (getRes.ok) {
+        const meta = (await getRes.json()) as { sha?: string };
+        sha = typeof meta.sha === 'string' ? meta.sha : undefined;
+      } else if (getRes.status !== 404) {
+        const errText = await getRes.text();
+        return new Response(
+          JSON.stringify({ ok: false, error: `GitHub GET failed: ${getRes.status} ${errText.slice(0, 300)}` }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+
+      const b64 = base64Encode(new TextEncoder().encode(text));
+      const putBody: Record<string, string> = {
+        message: `chore(release): version_snapshot ${version}`,
+        content: b64,
+        branch,
+      };
+      if (sha) putBody.sha = sha;
+
+      const putRes = await fetch(apiBase, {
+        method: 'PUT',
+        headers: {
+          Accept: 'application/vnd.github+json',
+          Authorization: `Bearer ${token}`,
+          'X-GitHub-Api-Version': '2022-11-28',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(putBody),
+      });
+
+      const putText = await putRes.text();
+      if (!putRes.ok) {
+        return new Response(
+          JSON.stringify({ ok: false, error: `GitHub PUT failed: ${putRes.status} ${putText.slice(0, 400)}` }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+
+      try {
+        const putJson = JSON.parse(putText) as { commit?: { sha?: string } };
+        commitSha = typeof putJson?.commit?.sha === 'string' ? putJson.commit.sha : undefined;
+      } catch {
+        /* ignore */
+      }
+    } catch (error) {
+      console.error('GITHUB API ERROR:', error);
+      const detail = error instanceof Error ? error.message : String(error);
+      return new Response(
+        JSON.stringify({ ok: false, error: `GitHub API error: ${detail}` }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
     }
 
     const prodUrl = Deno.env.get('PRODUCTION_SUPABASE_URL')?.trim();
