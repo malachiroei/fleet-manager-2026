@@ -8,6 +8,7 @@ export type PublishVersionSnapshotResponse = {
   production: Record<string, unknown>;
 };
 
+/** פרסום גרסה — הנתיב שמעדכן את ריפו הפרודקשן (GitHub API; ענף master לפי סודות publish-version-snapshot). */
 export async function invokePublishVersionSnapshot(
   snapshot: VersionSnapshotFile
 ): Promise<PublishVersionSnapshotResponse> {

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * שימוש: node scripts/push-release-snapshot-git.mjs <path-to-downloaded-release_snapshot.json>
- * מעתיק ל-src/config/release_snapshot.json, git add/commit/push.
+ * מעתיק ל-src/config/release_snapshot.json, git add/commit/push ל-origin בלבד (לא production).
  */
 import { writeFileSync, readFileSync, existsSync } from 'fs';
 import { execSync } from 'child_process';
@@ -25,5 +25,5 @@ writeFileSync(target, raw, 'utf8');
 const ver = JSON.parse(raw).version ?? 'snapshot';
 execSync('git add src/config/release_snapshot.json', { cwd: root, stdio: 'inherit' });
 execSync(`git commit -m "chore(release): release_snapshot ${ver}"`, { cwd: root, stdio: 'inherit' });
-execSync('git push', { cwd: root, stdio: 'inherit' });
+execSync('git push origin HEAD', { cwd: root, stdio: 'inherit' });
 console.log('Pushed release_snapshot', ver);

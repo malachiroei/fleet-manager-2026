@@ -1,6 +1,7 @@
 /**
- * דחיפת release_snapshot.json ל-GitHub (אופציונלי).
- * סודות: GITHUB_TOKEN (classic PAT עם repo), GITHUB_REPO=owner/name, אופציונלי GITHUB_BRANCH (default main).
+ * דחיפת release_snapshot.json ל-GitHub (אופציונלי) — רק לריפו הטסט, לא לפרודקשן.
+ * סודות: GITHUB_TOKEN, GITHUB_REPO=owner/name (fleet-manager-dev), GITHUB_BRANCH=dev (ברירת מחדל).
+ * הגדר גם PRODUCTION_GITHUB_REPO=owner/fleet-manager-2026 — אם GITHUB_REPO תואם, הבקשה נחסמת.
  *
  * גוף בקשה: { "content": "<stringified JSON של הסנאפשוט>" }
  * או { "snapshot": { ...אובייקט } }
@@ -24,7 +25,7 @@ serve(async (req) => {
   try {
     const token = Deno.env.get('GITHUB_TOKEN')?.trim();
     const repo = Deno.env.get('GITHUB_REPO')?.trim();
-    const branch = Deno.env.get('GITHUB_BRANCH')?.trim() || 'main';
+    const branch = Deno.env.get('GITHUB_BRANCH')?.trim() || 'dev';
     const path = Deno.env.get('GITHUB_SNAPSHOT_PATH')?.trim() || DEFAULT_PATH;
 
     if (!token || !repo) {
@@ -34,6 +35,18 @@ serve(async (req) => {
           error: 'Missing GITHUB_TOKEN or GITHUB_REPO — set Supabase secrets for push-release-snapshot',
         }),
         { status: 501, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
+
+    const productionRepoGuard = Deno.env.get('PRODUCTION_GITHUB_REPO')?.trim().toLowerCase();
+    if (productionRepoGuard && repo.toLowerCase() === productionRepoGuard) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error:
+            'push-release-snapshot cannot target production; only publish-version-snapshot may update the production repo',
+        }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 

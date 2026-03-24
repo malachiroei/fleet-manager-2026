@@ -115,7 +115,7 @@ export default function TeamManagementPage() {
       });
       const ok = !error && data && typeof data === 'object' && (data as { ok?: boolean }).ok === true;
       if (ok) {
-        toast.success('בנוסף: הקובץ נדחף ל-GitHub אוטומטית (סודות Supabase מוגדרים).');
+        toast.success('בנוסף: נדחף לריפו הטסט ב-GitHub (לא פרודקשן; פרסום גרסה בלבד מעדכן את הפרו).');
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'דחיפה נכשלה');
