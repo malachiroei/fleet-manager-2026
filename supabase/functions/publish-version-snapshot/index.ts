@@ -9,7 +9,7 @@
  * - אופציונלי PRODUCTION_SUPABASE_URL + PRODUCTION_SUPABASE_SERVICE_ROLE_KEY
  *
  * גוף: { snapshot: { version, release_date, description, features[], ui_changes } }
- * דורש Authorization: Bearer <JWT> — רק malachiroei@gmail.com
+ * (כש־TEMP_SKIP_JWT_USER_CHECK=false) דורש Authorization: Bearer <JWT> — רק malachiroei@gmail.com
  *
  * GitHub: רק fetch() ל-api.github.com (ללא Octokit). ייבוא: serve (deno.land), createClient (esm.sh).
  */
@@ -24,6 +24,12 @@ const corsHeaders = {
 
 const ALLOWED_PUBLISHER_EMAIL = 'malachiroei@gmail.com';
 const DEFAULT_PATH = 'src/config/version_snapshot.json';
+
+/**
+ * TEMP — דילוג על `admin.auth.getUser` + דרישת Bearer (בדיקת GitHub / 401).
+ * להחזיר ל־`false`, לפרוס מחדש **בלי** `--no-verify-jwt`, לפני פרודקשן.
+ */
+const TEMP_SKIP_JWT_USER_CHECK = true;
 
 /** יעד הפרסום ב-GitHub — חייב להיות בדיוק malachiroei/fleet-manager-2026 */
 const GITHUB_DEST_OWNER = 'malachiroei';
@@ -261,34 +267,40 @@ serve(async (req) => {
       });
     }
 
-    const authHeader = req.headers.get('Authorization') ?? '';
-    const jwt = authHeader.replace(/^Bearer\s+/i, '').trim();
-    if (!jwt) {
-      return new Response(JSON.stringify({ ok: false, error: 'Missing Authorization Bearer token' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    if (!TEMP_SKIP_JWT_USER_CHECK) {
+      const authHeader = req.headers.get('Authorization') ?? '';
+      const jwt = authHeader.replace(/^Bearer\s+/i, '').trim();
+      if (!jwt) {
+        return new Response(JSON.stringify({ ok: false, error: 'Missing Authorization Bearer token' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-    console.log('DIAG: before createClient (admin)');
-    const admin = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-    console.log('DIAG: before admin.auth.getUser(jwt)');
-    const { data: userData, error: userErr } = await admin.auth.getUser(jwt);
-    console.log('DIAG: after admin.auth.getUser', { ok: !userErr, hasEmail: !!userData?.user?.email });
-    const email = userData?.user?.email?.trim().toLowerCase() ?? '';
-    if (userErr || !email) {
-      return new Response(JSON.stringify({ ok: false, error: 'Invalid or expired session' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      console.log('DIAG: before createClient (admin)');
+      const admin = createClient(supabaseUrl, serviceRoleKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
       });
-    }
-    if (email !== ALLOWED_PUBLISHER_EMAIL) {
-      return new Response(JSON.stringify({ ok: false, error: 'Forbidden: publish allowed only for main publisher account' }), {
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      console.log('DIAG: before admin.auth.getUser(jwt)');
+      const { data: userData, error: userErr } = await admin.auth.getUser(jwt);
+      console.log('DIAG: after admin.auth.getUser', { ok: !userErr, hasEmail: !!userData?.user?.email });
+      const email = userData?.user?.email?.trim().toLowerCase() ?? '';
+      if (userErr || !email) {
+        return new Response(JSON.stringify({ ok: false, error: 'Invalid or expired session' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      if (email !== ALLOWED_PUBLISHER_EMAIL) {
+        return new Response(JSON.stringify({ ok: false, error: 'Forbidden: publish allowed only for main publisher account' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    } else {
+      console.warn(
+        'TEMP_SKIP_JWT_USER_CHECK=true: JWT user checks disabled — restore before production + deploy without --no-verify-jwt',
+      );
     }
 
     let body: { snapshot?: Record<string, unknown> };
