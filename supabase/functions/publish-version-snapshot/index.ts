@@ -5,7 +5,7 @@
  * - GITHUB_TOKEN; יעד: GITHUB_REPO או PRODUCTION_GITHUB_REPO (owner/name); GITHUB_BRANCH=master (ברירת מחדל)
  * - אופציונלי GITHUB_VERSION_SNAPSHOT_PATH (default src/config/version_snapshot.json)
  * - סנכרון תלויות (חובה בכל פרסום): לפני version_snapshot — דוחף package.json + package-lock.json לענף היעד.
- *   מקור: GITHUB_DEPENDENCIES_SOURCE_REPO (owner/name) או ברירת מחדל כשהיעד fleet-manager-2026 → owner/fleet-manager-dev.
+ *   מקור: GITHUB_DEPENDENCIES_SOURCE_REPO (owner/name) או ברירת מחדל כשהיעד fleet-manager-2026 → malachiroei/fleet-manager-dev.
  *   ענף מקור: GITHUB_DEPENDENCIES_SOURCE_BRANCH (ברירת מחדל dev). נכשל אם ה-JSON לא תקין.
  * - אופציונלי PRODUCTION_SUPABASE_URL + PRODUCTION_SUPABASE_SERVICE_ROLE_KEY — עדכון system_settings בפרו
  *
@@ -30,6 +30,13 @@ const githubHeaders = (token: string) => ({
   Authorization: `Bearer ${token}`,
   'X-GitHub-Api-Version': '2022-11-28',
 });
+
+/** לוג מלא ל-Supabase Functions logs (גוף התשובה נצרך פעם אחת). */
+async function logGithubFullError(res: Response, context: string): Promise<string> {
+  const body = await res.text();
+  console.error('GITHUB FULL ERROR:', context, 'status=', res.status, 'body=', body);
+  return body;
+}
 
 /** תוכן טקסט מקובץ בריפו (תומך ב-base64 או download_url לקבצים גדולים). */
 async function fetchRepoFileText(
@@ -63,6 +70,7 @@ async function fetchRepoFileText(
       },
     });
     if (!raw.ok) {
+      await logGithubFullError(raw, `GET download_url ${filePath}`);
       throw new Error(`download_url ${filePath}: ${raw.status}`);
     }
     return await raw.text();
@@ -90,8 +98,8 @@ async function putRepoFile(
     const meta = (await getRes.json()) as { sha?: string };
     sha = typeof meta.sha === 'string' ? meta.sha : undefined;
   } else if (getRes.status !== 404) {
-    const errText = await getRes.text();
-    return { ok: false, error: `GET dest ${filePath}: ${getRes.status} ${errText.slice(0, 200)}` };
+    const errText = await logGithubFullError(getRes, `GET dest sha ${destOwner}/${destRepo}/${filePath}`);
+    return { ok: false, error: `GET dest ${filePath}: ${getRes.status} ${errText.slice(0, 400)}` };
   }
 
   const b64 = base64Encode(new TextEncoder().encode(text));
@@ -110,7 +118,8 @@ async function putRepoFile(
 
   const putText = await putRes.text();
   if (!putRes.ok) {
-    return { ok: false, error: `PUT dest ${filePath}: ${putRes.status} ${putText.slice(0, 300)}` };
+    console.error('GITHUB FULL ERROR:', `PUT dest ${destOwner}/${destRepo}/${filePath}`, 'status=', putRes.status, 'body=', putText);
+    return { ok: false, error: `PUT dest ${filePath}: ${putRes.status} ${putText.slice(0, 500)}` };
   }
 
   let commitSha: string | undefined;
@@ -139,9 +148,10 @@ function resolveDependencySourceRepo(destOwner: string, destRepoName: string): {
     return { repoFull: `${m[1]}/${m[2]}`, owner: m[1], name: m[2], via: 'GITHUB_DEPENDENCIES_SOURCE_REPO' };
   }
   if (destRepoName.toLowerCase() === 'fleet-manager-2026') {
+    const stagingOwner = 'malachiroei';
     return {
-      repoFull: `${destOwner}/fleet-manager-dev`,
-      owner: destOwner,
+      repoFull: `${stagingOwner}/fleet-manager-dev`,
+      owner: stagingOwner,
       name: 'fleet-manager-dev',
       via: 'default_fleet_manager_pair',
     };
@@ -237,7 +247,7 @@ serve(async (req) => {
       );
     }
 
-    console.log('Using Token starting with:', Deno.env.get('GITHUB_TOKEN')?.slice(0, 4));
+    console.log('Using Token starting with:', token ? token.slice(0, 4) : '(empty)');
 
     const [owner, name] = repo.split('/').map((s) => s.trim());
     if (!owner || !name) {
@@ -311,9 +321,9 @@ serve(async (req) => {
         const meta = (await getRes.json()) as { sha?: string };
         sha = typeof meta.sha === 'string' ? meta.sha : undefined;
       } else if (getRes.status !== 404) {
-        const errText = await getRes.text();
+        const errText = await logGithubFullError(getRes, `GET snapshot ${path}@${branch}`);
         return new Response(
-          JSON.stringify({ ok: false, error: `GitHub GET failed: ${getRes.status} ${errText.slice(0, 300)}` }),
+          JSON.stringify({ ok: false, error: `GitHub GET failed: ${getRes.status} ${errText.slice(0, 400)}` }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         );
       }
@@ -338,8 +348,9 @@ serve(async (req) => {
 
       const putText = await putRes.text();
       if (!putRes.ok) {
+        console.error('GITHUB FULL ERROR:', `PUT snapshot ${path}`, 'status=', putRes.status, 'body=', putText);
         return new Response(
-          JSON.stringify({ ok: false, error: `GitHub PUT failed: ${putRes.status} ${putText.slice(0, 400)}` }),
+          JSON.stringify({ ok: false, error: `GitHub PUT failed: ${putRes.status} ${putText.slice(0, 500)}` }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
         );
       }
