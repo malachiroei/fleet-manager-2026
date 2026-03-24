@@ -25,24 +25,41 @@ const corsHeaders = {
 const ALLOWED_PUBLISHER_EMAIL = 'malachiroei@gmail.com';
 const DEFAULT_PATH = 'src/config/version_snapshot.json';
 
-/** יעד הפרסום ב-GitHub — קבוע (סנכרון תלויות + version_snapshot). */
+/** יעד הפרסום ב-GitHub — חייב להיות בדיוק malachiroei/fleet-manager-2026 */
 const GITHUB_DEST_OWNER = 'malachiroei';
 const GITHUB_DEST_REPO = 'fleet-manager-2026';
+/** מחרוזת יעד לפרסום — חייבת להיות זהה ל־malachiroei/fleet-manager-2026 */
+const GITHUB_DEST_FULL = 'malachiroei/fleet-manager-2026';
 
 const GITHUB_FETCH_TIMEOUT_MS = 10_000;
 
 /**
- * fetch ל-GitHub עם timeout; לוג לפני ואחרי כל קריאה.
+ * fetch ל-GitHub עם timeout; דיאגנוזה אגרסיבית — URL מדויק + catch רחב.
  */
 async function githubFetch(label: string, url: string, init?: RequestInit): Promise<Response> {
+  console.log('Attempting GitHub access to:', url);
   console.log('Fetching from GitHub...', label, url);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), GITHUB_FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(url, { ...init, signal: controller.signal });
+    let res: Response;
+    try {
+      res = await fetch(url, { ...init, signal: controller.signal });
+    } catch (err) {
+      console.error('CATCHED ERROR:', err);
+      if (err instanceof Error) {
+        console.error('CATCHED ERROR name:', err.name, 'message:', err.message);
+        if (err.stack) console.error('CATCHED ERROR stack:', err.stack);
+      } else {
+        console.error('CATCHED ERROR (non-Error):', String(err), typeof err);
+      }
+      throw err;
+    }
     console.log('GitHub fetch done', label, res.status, res.ok);
     return res;
   } catch (e) {
+    console.error('CATCHED ERROR:', e);
+    if (e instanceof Error && e.stack) console.error('CATCHED ERROR outer stack:', e.stack);
     const name = e instanceof Error ? e.name : '';
     const msg = e instanceof Error ? e.message : String(e);
     console.error('GitHub fetch failed', label, name, msg);
@@ -253,10 +270,13 @@ serve(async (req) => {
       });
     }
 
+    console.log('DIAG: before createClient (admin)');
     const admin = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
+    console.log('DIAG: before admin.auth.getUser(jwt)');
     const { data: userData, error: userErr } = await admin.auth.getUser(jwt);
+    console.log('DIAG: after admin.auth.getUser', { ok: !userErr, hasEmail: !!userData?.user?.email });
     const email = userData?.user?.email?.trim().toLowerCase() ?? '';
     if (userErr || !email) {
       return new Response(JSON.stringify({ ok: false, error: 'Invalid or expired session' }), {
@@ -273,7 +293,9 @@ serve(async (req) => {
 
     let body: { snapshot?: Record<string, unknown> };
     try {
+      console.log('DIAG: before req.json()');
       body = await req.json();
+      console.log('DIAG: after req.json()');
     } catch (jsonErr) {
       console.error('req.json() failed:', jsonErr);
       return new Response(JSON.stringify({ ok: false, error: 'Invalid JSON body' }), {
@@ -302,7 +324,10 @@ serve(async (req) => {
 
     const owner = GITHUB_DEST_OWNER;
     const name = GITHUB_DEST_REPO;
-    console.log('GitHub publish destination repo:', `${owner}/${name}`);
+    console.log('GitHub publish destination repo:', GITHUB_DEST_FULL);
+    if (`${owner}/${name}` !== GITHUB_DEST_FULL) {
+      console.error('CRITICAL: destination repo string mismatch', `${owner}/${name}`, 'expected', GITHUB_DEST_FULL);
+    }
     const branch = Deno.env.get('GITHUB_BRANCH')?.trim() || 'master';
     const path = Deno.env.get('GITHUB_VERSION_SNAPSHOT_PATH')?.trim() || DEFAULT_PATH;
 
