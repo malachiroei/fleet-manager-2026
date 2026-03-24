@@ -29,7 +29,7 @@ const DEFAULT_PATH = 'src/config/version_snapshot.json';
  * TEMP — דילוג על `admin.auth.getUser` + דרישת Bearer (בדיקת GitHub / 401).
  * להחזיר ל־`false`, לפרוס מחדש **בלי** `--no-verify-jwt`, לפני פרודקשן.
  */
-const TEMP_SKIP_JWT_USER_CHECK = true;
+const TEMP_SKIP_JWT_USER_CHECK = false;
 
 /** יעד הפרסום ב-GitHub — חייב להיות בדיוק malachiroei/fleet-manager-2026 */
 const GITHUB_DEST_OWNER = 'malachiroei';
