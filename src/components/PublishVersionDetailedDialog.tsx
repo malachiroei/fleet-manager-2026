@@ -143,12 +143,24 @@ export function PublishVersionDetailedDialog({
       return;
     }
 
+    const features = buildVersionSnapshotFeaturesFromSelection(selectedIds);
+    // eslint-disable-next-line no-console
+    console.log(
+      '[PublishVersionDetailedDialog] modal selection → features:',
+      'checkboxes=',
+      selectedIds.size,
+      'features.length=',
+      features.length,
+      'ids sample:',
+      features.slice(0, 8).map((f) => f.id),
+    );
+
     const snapshot: VersionSnapshotFile = {
       version,
       release_date: releaseDate.trim() || new Date().toISOString().slice(0, 10),
       description: description.trim() || `גרסה ${version}`,
       release_notes: releaseNotes.trim() || undefined,
-      features: buildVersionSnapshotFeaturesFromSelection(selectedIds),
+      features,
       ui_changes: uiChanges.trim() || releaseNotes.trim() || '—',
     };
 

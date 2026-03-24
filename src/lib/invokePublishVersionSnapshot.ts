@@ -1,6 +1,21 @@
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import {
+  getSupabaseAnonKey,
+  getSupabasePublishableKey,
+  getSupabaseUrl,
+} from '@/integrations/supabase/publicEnv';
 import type { VersionSnapshotFile } from '@/lib/versionSnapshotTypes';
+
+function anonKeyForFunctions(): string {
+  return getSupabaseAnonKey() || getSupabasePublishableKey() || '';
+}
+
+/** חייב להתאים ל־Edge Functions ב־Supabase Dashboard (אותו פרויקט כמו VITE/NEXT_PUBLIC_SUPABASE_URL). */
+function publishVersionSnapshotFunctionUrl(): string {
+  const base = getSupabaseUrl().replace(/\/+$/, '');
+  return `${base}/functions/v1/publish-version-snapshot`;
+}
 
 export type PublishVersionSnapshotResponse = {
   ok: true;
@@ -9,12 +24,54 @@ export type PublishVersionSnapshotResponse = {
   production: Record<string, unknown>;
 };
 
-/** פרסום גרסה — הנתיב שמעדכן את ריפו הפרודקשן (GitHub API; ענף master לפי סודות publish-version-snapshot). */
+/**
+ * פרסום גרסה — Edge Function `publish-version-snapshot`.
+ * (אין `InvokePublishButton.tsx`; הקריאה מגיעה מ־`PublishVersionDetailedDialog` וכו׳.)
+ *
+ * דורש JWT של המשתמש ב־Authorization; שער Supabase דורש גם `apikey` (כמו ב־`send-invite`).
+ */
 export async function invokePublishVersionSnapshot(
-  snapshot: VersionSnapshotFile
+  snapshot: VersionSnapshotFile,
 ): Promise<PublishVersionSnapshotResponse> {
+  const anon = anonKeyForFunctions();
+  if (!anon) {
+    throw new Error('Missing Supabase anon key — cannot invoke publish-version-snapshot');
+  }
+
+  let {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session?.access_token) {
+    await supabase.auth.refreshSession();
+    ({
+      data: { session },
+    } = await supabase.auth.getSession());
+  }
+
+  if (!session?.access_token) {
+    throw new Error('Not signed in — cannot publish (missing JWT for Authorization)');
+  }
+
+  const functionUrl = publishVersionSnapshotFunctionUrl();
+  const featureCount = snapshot.features?.length ?? 0;
+  const featureIdsPreview = (snapshot.features ?? []).slice(0, 12).map((f) => f.id);
+  console.log('Sending request to function...');
+  console.log('publish-version-snapshot endpoint (must match Dashboard):', functionUrl);
+  console.log('Authorization: Bearer <JWT> present:', true);
+  console.log(
+    '[invokePublishVersionSnapshot] body.snapshot.features count:',
+    featureCount,
+    'sample ids:',
+    featureIdsPreview,
+  );
+
   const { data, error } = await supabase.functions.invoke('publish-version-snapshot', {
     body: { snapshot },
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      apikey: anon,
+    },
   });
   if (error) {
     if (error instanceof FunctionsHttpError) {

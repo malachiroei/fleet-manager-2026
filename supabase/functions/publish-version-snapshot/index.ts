@@ -305,6 +305,11 @@ serve(async (req) => {
     }
 
     const { snapshot } = body;
+    const featuresList = Array.isArray(snapshot?.features) ? snapshot.features : [];
+    console.log('Files to publish:', featuresList.length || 0);
+    if (featuresList.length === 0) {
+      console.warn('WARNING: No features selected for publishing.');
+    }
     console.log('Snapshot received:', !!snapshot);
     const snap = snapshot;
     if (!snap || typeof snap !== 'object') {
