@@ -12,6 +12,7 @@
  * גוף: { snapshot: { version, release_date, description, features[], ui_changes } }
  * דורש Authorization: Bearer <JWT> — רק malachiroei@gmail.com
  */
+/** std: שרת HTTP + base64 — תבנית רשמית של Supabase Edge; חבילת אפליקציה חיצונית דרך esm.sh בלבד. */
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { decode as base64Decode, encode as base64Encode } from 'https://deno.land/std@0.190.0/encoding/base64.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -36,19 +37,6 @@ async function logGithubFullError(res: Response, context: string): Promise<strin
   const body = await res.text();
   console.error('GITHUB FULL ERROR:', context, 'status=', res.status, 'body=', body);
   return body;
-}
-
-/** שמות משתני סביבה זמינים (ללא ערכים) — לדיבוג חסרון סודות. */
-function listAvailableEnvKeys(): string[] {
-  try {
-    const o = Deno.env.toObject();
-    if (o && typeof o === 'object') {
-      return Object.keys(o).sort();
-    }
-  } catch (e) {
-    console.warn('listAvailableEnvKeys: Deno.env.toObject() failed', e);
-  }
-  return [];
 }
 
 /** תוכן טקסט מקובץ בריפו (תומך ב-base64 או download_url לקבצים גדולים). */
@@ -246,8 +234,8 @@ serve(async (req) => {
 
     const rawGithubToken = Deno.env.get('GITHUB_TOKEN');
     const token = rawGithubToken?.trim();
+    console.log('Token check:', token ? 'Exists (starts with ' + token.slice(0, 4) + ')' : 'MISSING');
     if (!token) {
-      console.log('Available keys:', listAvailableEnvKeys());
       console.error('CRITICAL: GITHUB_TOKEN is missing from environment variables');
       return new Response(JSON.stringify({ ok: false, error: 'Missing Token' }), {
         status: 500,
@@ -272,8 +260,6 @@ serve(async (req) => {
         { status: 501, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
-
-    console.log('Using Token starting with:', token.slice(0, 4));
 
     const [owner, name] = repo.split('/').map((s) => s.trim());
     if (!owner || !name) {
