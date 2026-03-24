@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
@@ -51,11 +51,32 @@ export default function TeamManagementPage() {
   const isSuperAdminTeamView = isRoeySuperAdminProfile(profile);
   const showPushToPro = isSuperAdminTeamView;
   const [pushBusy, setPushBusy] = useState(false);
-  const { data: members, isLoading, isFetching: membersFetching } = useTeamMembers(orgId);
+  const { data: members, isLoading, isFetching: membersFetching } = useTeamMembers(orgId, {
+    loadAllOrgs: isSuperAdminTeamView,
+  });
   const { data: invitations, isLoading: invitationsLoading, isFetching: invitationsFetching } =
     useOrgInvitations(orgId);
   const memberRows = members ?? [];
   const invitationRows = invitations ?? [];
+
+  /** מיילים שכבר יש להם שורה ב-profiles — לא מציגים אותם כהזמנה פתוחה */
+  const registeredEmails = useMemo(() => {
+    const set = new Set<string>();
+    for (const m of memberRows) {
+      const e = m.email?.trim().toLowerCase();
+      if (e) set.add(e);
+    }
+    return set;
+  }, [memberRows]);
+
+  const invitationRowsVisible = useMemo(() => {
+    return invitationRows.filter((inv) => {
+      const e = inv.email?.trim().toLowerCase();
+      if (!e) return true;
+      return !registeredEmails.has(e);
+    });
+  }, [invitationRows, registeredEmails]);
+
   const listLoading = isLoading || invitationsLoading || membersFetching || invitationsFetching;
   const [modalOpen, setModalOpen] = useState(false);
   /** Explicit boolean — avoids undefined / HMR glitches on PRO. */
@@ -191,8 +212,8 @@ export default function TeamManagementPage() {
                 {listLoading
                   ? 'טוען…'
                   : isSuperAdminTeamView
-                    ? `${memberRows.length} פרופילים · ${invitationRows.length} הזמנות פתוחות`
-                    : `${memberRows.length} חברי צוות · ${invitationRows.length} הזמנות פתוחות`}
+                    ? `${memberRows.length} פרופילים · ${invitationRowsVisible.length} הזמנות פתוחות (אחרי סינון)`
+                    : `${memberRows.length} חברי צוות · ${invitationRowsVisible.length} הזמנות פתוחות`}
               </CardDescription>
             </div>
             <Button onClick={() => setModalOpen(true)} className="gap-2">
@@ -222,7 +243,7 @@ export default function TeamManagementPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {memberRows.length === 0 && invitationRows.length === 0 ? (
+                  {memberRows.length === 0 && invitationRowsVisible.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={tableColCount} className="text-center text-muted-foreground py-8">
                         אין נתונים להצגה.
@@ -315,10 +336,16 @@ export default function TeamManagementPage() {
                       })}
                       <TableRow className="border-t-2 border-border bg-muted/40 hover:bg-muted/40 pointer-events-none">
                         <TableCell colSpan={tableColCount} className="py-3 text-sm font-semibold text-foreground">
-                          הזמנות פתוחות ({invitationRows.length})
+                          הזמנות פתוחות ({invitationRowsVisible.length})
+                          {invitationRows.length !== invitationRowsVisible.length ? (
+                            <span className="block text-xs font-normal text-muted-foreground">
+                              הוסרו {invitationRows.length - invitationRowsVisible.length} הזמנות שכבר רשומות
+                              ב-profiles
+                            </span>
+                          ) : null}
                         </TableCell>
                       </TableRow>
-                      {invitationRows.map((inv, idx) => (
+                      {invitationRowsVisible.map((inv, idx) => (
                         <TableRow key={inv.id ?? `inv-${idx}`} className="bg-muted/30">
                           {showSensitiveColumns ? (
                             <TableCell className="font-mono text-[10px] text-muted-foreground max-w-[140px] truncate">

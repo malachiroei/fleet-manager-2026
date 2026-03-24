@@ -26,16 +26,32 @@ export interface TeamMemberSummary {
   source: 'profile' | 'invitation';
 }
 
-export function useTeamMembers(_orgId: string | null | undefined) {
+export type UseTeamMembersOptions = {
+  /** סופר־אדמין: טוען את כל ה-profiles; אחרת מסנן לפי org_id */
+  loadAllOrgs?: boolean;
+};
+
+/**
+ * profiles.id אמור להתאים ל-auth.users.id (האפליקציה נשענת על כך).
+ * ברירת מחדל: רק פרופילים עם org_id = הארגון הפעיל (פחות רעש, תואם RLS חדש).
+ */
+export function useTeamMembers(orgId: string | null | undefined, options?: UseTeamMembersOptions) {
   const { profile } = useAuth();
+  const loadAllOrgs = options?.loadAllOrgs === true;
+
+  const enabled = Boolean(profile) && (loadAllOrgs || Boolean(orgId));
 
   return useQuery({
-    queryKey: [...TEAM_QUERY_KEY, 'all-unfiltered'],
-    enabled: !!profile,
+    queryKey: [...TEAM_QUERY_KEY, loadAllOrgs ? 'all-orgs' : 'org', orgId ?? 'none'],
+    enabled,
     queryFn: async (): Promise<Profile[]> => {
-      const { data, error } = await (supabase as any).from('profiles').select('*');
+      let q = supabase.from('profiles').select('*').order('full_name', { ascending: true });
+      if (!loadAllOrgs && orgId) {
+        q = q.eq('org_id', orgId);
+      }
+      const { data, error } = await q;
       if (error) {
-        console.error('Supabase Error:', error);
+        console.error('Supabase Error (useTeamMembers):', error);
         return [];
       }
       return (data ?? []) as Profile[];
