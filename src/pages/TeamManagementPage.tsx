@@ -12,6 +12,7 @@ import {
   isRoeySuperAdminProfile,
 } from '@/hooks/useTeam';
 import { getDefaultPermissions, PERMISSION_LABELS } from '@/lib/permissions';
+import { ALLOWED_FEATURE_LABELS, normalizeAllowedFeaturesFromProfile } from '@/lib/allowedFeatures';
 import {
   buildReleaseSnapshotPayload,
   downloadReleaseSnapshotJson,
@@ -22,6 +23,7 @@ import { getSupabaseAnonKey } from '@/integrations/supabase/publicEnv';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { SimpleInviteModal } from '@/components/SimpleInviteModal';
+import { MemberAllowedFeaturesDialog } from '@/components/MemberAllowedFeaturesDialog';
 import { TeamMemberDelegationDialog } from '@/components/TeamMemberDelegationDialog';
 import {
   Table,
@@ -59,6 +61,8 @@ export default function TeamManagementPage() {
   /** Explicit boolean — avoids undefined / HMR glitches on PRO. */
   const [delegationOpen, setDelegationOpen] = useState<boolean>(false);
   const [delegationMember, setDelegationMember] = useState<Profile | null>(null);
+  const [featuresDialogOpen, setFeaturesDialogOpen] = useState(false);
+  const [featuresMember, setFeaturesMember] = useState<Profile | null>(null);
   const approveMember = useApproveMember();
 
   /** עמודת מזהה ארגון ונתונים דומים — רק לרועי (סופר־אדמין). */
@@ -67,6 +71,13 @@ export default function TeamManagementPage() {
 
   /** מניעת קריסה — ערכים לא בוליאניים / undefined (HMR וכו') */
   const delegationDialogOpen = (delegationOpen ?? false) === true;
+
+  function accessFeaturesSummary(m: Profile): string {
+    const list = normalizeAllowedFeaturesFromProfile(m.allowed_features);
+    if (list === null) return 'ברירת מחדל (מערכת ישנה)';
+    if (list.length === 0) return 'ללא הרשאות גסות (מפורש)';
+    return list.map((k) => ALLOWED_FEATURE_LABELS[k] ?? k).join(', ');
+  }
 
   const canManageTeam = isAdmin || isManager || hasPermission('manage_team') || Boolean(activeOrgId ?? profile?.org_id);
 
@@ -206,7 +217,7 @@ export default function TeamManagementPage() {
                     ) : null}
                     <TableHead>שם</TableHead>
                     <TableHead>אימייל</TableHead>
-                    <TableHead className="text-center">הרשאות</TableHead>
+                    <TableHead className="min-w-[200px]">הרשאות גישה</TableHead>
                     <TableHead className="text-center">סטטוס</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -230,13 +241,29 @@ export default function TeamManagementPage() {
                             ) : null}
                             <TableCell className="font-medium">{m.full_name || '—'}</TableCell>
                             <TableCell className="text-muted-foreground">{m.email || '—'}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground">
-                              {m.permissions
-                                ? Object.entries(m.permissions)
-                                    .filter(([, v]) => v)
-                                    .map(([k]) => PERMISSION_LABELS[k as keyof typeof PERMISSION_LABELS] ?? k)
-                                    .join(', ') || '—'
-                                : 'כל ההרשאות'}
+                            <TableCell className="text-xs align-top">
+                              <p className="text-muted-foreground leading-snug mb-2">{accessFeaturesSummary(m)}</p>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-[11px]"
+                                onClick={() => {
+                                  setFeaturesMember(m);
+                                  setFeaturesDialogOpen(true);
+                                }}
+                              >
+                                ערוך הרשאות
+                              </Button>
+                              <p className="mt-2 text-[10px] text-muted-foreground border-t border-border/60 pt-2">
+                                הרשאות JSON (ישן):{' '}
+                                {m.permissions
+                                  ? Object.entries(m.permissions)
+                                      .filter(([, v]) => v)
+                                      .map(([k]) => PERMISSION_LABELS[k as keyof typeof PERMISSION_LABELS] ?? k)
+                                      .join(', ') || '—'
+                                  : 'ברירת מחדל'}
+                              </p>
                             </TableCell>
                             <TableCell className="text-center text-xs">
                               {m?.status === 'pending_approval' ? (
@@ -303,14 +330,7 @@ export default function TeamManagementPage() {
                             <Mail className="h-3.5 w-3.5 shrink-0" />
                             <span className="truncate">{inv.email ?? '—'}</span>
                           </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {inv?.permissions && typeof inv.permissions === 'object'
-                              ? Object.entries(inv.permissions)
-                                  .filter(([, v]) => v)
-                                  .map(([k]) => PERMISSION_LABELS[k as keyof typeof PERMISSION_LABELS] ?? k)
-                                  .join(', ') || '—'
-                              : '—'}
-                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">— (אחרי הצטרפות)</TableCell>
                           <TableCell className="text-center text-xs">
                             <div className="flex flex-col items-center gap-1">
                               <span className="inline-flex items-center justify-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
@@ -342,6 +362,15 @@ export default function TeamManagementPage() {
         orgId={inviteModalOrgId}
         invitedBy={profile?.user_id ?? null}
         onSuccess={() => queryClient.invalidateQueries({ queryKey: ORG_INVITATIONS_QUERY_KEY })}
+      />
+
+      <MemberAllowedFeaturesDialog
+        open={featuresDialogOpen}
+        onOpenChange={(o) => {
+          setFeaturesDialogOpen(o);
+          if (!o) setFeaturesMember(null);
+        }}
+        member={featuresMember}
       />
 
       <TeamMemberDelegationDialog
