@@ -9,6 +9,8 @@ export interface Organization {
   email?: string | null;
   created_at?: string;
   updated_at?: string;
+  /** גרסת release_snapshot.json שסונכרנה לארגון (DB) */
+  release_snapshot_ack_version?: string | null;
 }
 
 /** Permission flags stored as JSON in profiles.permissions. Used to hide/show routes and actions. */

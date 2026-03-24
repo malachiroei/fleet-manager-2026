@@ -248,7 +248,7 @@ export function TeamMemberDelegationDialog({
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [...TEAM_QUERY_KEY, orgId] });
+      queryClient.invalidateQueries({ queryKey: TEAM_QUERY_KEY });
       toast({ title: 'הרשאות נשמרו' });
       onOpenChange(false);
     },

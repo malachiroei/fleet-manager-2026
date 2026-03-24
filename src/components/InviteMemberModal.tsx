@@ -1,8 +1,13 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, type FormEvent } from 'react';
 import { PERMISSION_KEYS, PERMISSION_LABELS, getDefaultPermissions } from '@/lib/permissions';
 import type { ProfilePermissions } from '@/types/fleet';
+import {
+  PRODUCTION_INVITE_METADATA,
+  PRODUCTION_NEW_ORG_ADMIN_PERMISSIONS,
+  newClientOrganizationId,
+} from '@/lib/productionOrgAdminInvite';
 import { supabase } from '@/integrations/supabase/client';
-import { getSupabaseAnonKey, getSupabaseUrl } from '@/integrations/supabase/publicEnv';
+import { sendInvitationEmail } from '@/lib/sendInvitationEmail';
 import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,7 +39,7 @@ interface InviteMemberModalProps {
 export function InviteMemberModal({
   open,
   onOpenChange,
-  orgId,
+  orgId: _orgId,
   invitedBy,
   onSuccess,
 }: InviteMemberModalProps) {
@@ -58,64 +63,56 @@ export function InviteMemberModal({
 
   /**
    * Standalone invite: insert + optional email. No global mutation, no global state updates on error.
-   * - Passes current user JWT explicitly to send-invite to fix 401.
+   * - שליחת מייל: `sendInvitationEmail` (JWT או anon, + נסיון חוזר ב-fetch).
    * - try/catch keeps all failure handling local (toast only); Roei's session is never touched.
    * - onSuccess and list refresh run exactly ONCE per successful invite (ref guard) to avoid duplicate rows.
    */
   const submitInvite = useCallback(
-    async (inviteEmail: string, perms: ProfilePermissions) => {
-      if (!orgId) return;
+    async (inviteEmail: string, _perms: ProfilePermissions) => {
       if (submittingRef.current) return;
       submittingRef.current = true;
       setIsPending(true);
       onSuccessCalledRef.current = false;
 
       try {
-        // Enforce report_mileage for all invited users (even if older clients omit it).
-        const enforcedPerms: ProfilePermissions = { ...perms, report_mileage: true };
+        const newOrgId = newClientOrganizationId();
+        const emailNorm = inviteEmail.trim().toLowerCase();
         const { data, error } = await (supabase as any)
           .from('org_invitations')
           .insert({
-            org_id: orgId,
-            email: inviteEmail.trim().toLowerCase(),
-            permissions: enforcedPerms,
+            org_id: newOrgId,
+            email: emailNorm,
+            role: 'admin',
+            permissions: PRODUCTION_NEW_ORG_ADMIN_PERMISSIONS,
             invited_by: invitedBy,
+            metadata: PRODUCTION_INVITE_METADATA,
           })
-          .select()
+          .select('org_id, email')
           .single();
 
         if (error) throw error;
 
+        const row = data as { org_id?: string; email?: string };
+        const inviteOrgId = String(row?.org_id ?? newOrgId);
+        const inviteAddr = String(row?.email ?? emailNorm);
+
         let emailSent = false;
         try {
-          const { data: { session } } = await supabase.auth.getSession();
-          const token = session?.access_token;
-          const inviteEmailAddr = (data as { email: string }).email;
-          if (token) {
-            const baseUrl = getSupabaseUrl().replace(/\/$/, '');
-            const anon = getSupabaseAnonKey();
-            const url = `${baseUrl}/functions/v1/send-invite`;
-            const res = await fetch(url, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                apikey: anon,
-                Authorization: `Bearer ${token}`,
-              },
-              body: JSON.stringify({ org_id: orgId, email: inviteEmailAddr }),
-            });
-            emailSent = res.ok;
-          }
+          const mail = await sendInvitationEmail({
+            orgId: inviteOrgId,
+            email: inviteAddr,
+          });
+          emailSent = mail.ok;
         } catch {
-          // Invitation is saved; email/401 failure is non-fatal. No global state update.
+          // Invitation is saved; email failure is non-fatal. No global state update.
         }
 
         if (emailSent) {
           toast({ title: 'ההזמנה נשמרה ומייל ההזמנה נשלח' });
         } else {
           toast({
-            title: 'ההזמנה נשמרה',
-            description: 'שליחת מייל ההזמנה נכשלה. ניתן לשלוח שוב מאוחר יותר.',
+            title: 'ההזמנה נשמרה במערכת',
+            description: 'אם המייל נכשל — פרטי השגיאה הוצגו בהודעה אדומה.',
           });
         }
         // Refresh team list exactly ONCE so no duplicate "Pending" rows.
@@ -136,17 +133,17 @@ export function InviteMemberModal({
         setIsPending(false);
       }
     },
-    [orgId, invitedBy, onSuccess, handleOpenChange]
+    [invitedBy, onSuccess, handleOpenChange]
   );
 
   const handleSubmit = useCallback(
-    async (e: React.FormEvent) => {
+    async (e: FormEvent) => {
       e.preventDefault();
       const trimmed = email.trim();
-      if (!trimmed || !orgId) return;
+      if (!trimmed) return;
       await submitInvite(trimmed, permissions);
     },
-    [email, permissions, orgId, submitInvite]
+    [email, permissions, submitInvite]
   );
 
   return (

@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import QuickOdometerDialog from '@/components/QuickOdometerDialog';
+import { ReleaseSnapshotSyncBanner } from '@/components/ReleaseSnapshotSyncBanner';
 import {
   Car,
   Users,
@@ -324,6 +325,7 @@ export default function Dashboard() {
   const canReportMileage = forceMileageForMalachiroei || canReportMileageFromPermissions;
   const quickLinks = baseQuickLinks.filter((a) => {
     if (a.href === '/report-mileage') return canReportMileage;
+    if (a.adminOnly && !isMainAdmin) return false;
     return true;
   });
 
@@ -341,6 +343,8 @@ export default function Dashboard() {
           {t('dashboard.subtitle')}
         </p>
       </div>
+
+      <ReleaseSnapshotSyncBanner />
 
       {!isDriverOnly && !isStatsLoading && stats && stats.totalVehicles === 0 && stats.totalDrivers === 0 && (
         <Card className="border-dashed border-2 border-primary/30 bg-primary/5">

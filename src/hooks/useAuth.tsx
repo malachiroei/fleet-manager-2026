@@ -327,22 +327,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signUp = async (email: string, password: string, fullName: string) => {
-    const redirectUrl = `${window.location.origin}/`;
-
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: redirectUrl,
-        data: { full_name: fullName },
-      },
-    });
-
-    if (error) {
-      return { error };
-    }
-
     try {
+      const redirectUrl = `${window.location.origin}/`;
+
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: redirectUrl,
+          data: { full_name: fullName },
+        },
+      });
+
+      if (error) {
+        return { error };
+      }
+
       const userId = data.user?.id;
       const userEmail = (data.user?.email ?? email).toLowerCase();
 
@@ -363,11 +363,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.error('Failed to create pending profile after signUp', profileError);
         }
       }
-    } catch (e) {
-      console.error('Unexpected error while creating profile after signUp', e);
-    }
 
-    return { error: null };
+      return { error: null };
+    } catch (e) {
+      const details = e instanceof Error ? e.message : String(e);
+      const wrappedError = new Error(`SignUp API failed: ${details}`);
+      console.error('Unexpected SignUp API error', e);
+      return { error: wrappedError };
+    }
   };
 
   const signOut = async () => {

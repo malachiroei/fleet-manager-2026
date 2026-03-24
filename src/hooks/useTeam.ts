@@ -4,9 +4,19 @@ import type { Profile } from '@/types/fleet';
 import type { ProfilePermissions } from '@/types/fleet';
 import { toast } from '@/hooks/use-toast';
 import { getDefaultPermissions } from '@/lib/permissions';
+import { sendInvitationEmail } from '@/lib/sendInvitationEmail';
+import { useAuth } from '@/hooks/useAuth';
 
-const TEAM_QUERY_KEY = ['team-members'] as const;
-const INVITATIONS_QUERY_KEY = ['org-invitations'] as const;
+export const TEAM_MEMBERS_QUERY_KEY = ['team-members'] as const;
+const TEAM_QUERY_KEY = TEAM_MEMBERS_QUERY_KEY;
+export const ORG_INVITATIONS_QUERY_KEY = ['org-invitations'] as const;
+
+/** Super-admin: רועי — זיהוי לפי מייל בפרופיל בלבד (כמו בדרישת המשימה). */
+export const SUPER_ADMIN_TEAM_VIEWER_EMAIL = 'malachiroei@gmail.com';
+
+export function isRoeySuperAdminProfile(profile: Profile | null | undefined): boolean {
+  return profile?.email === 'malachiroei@gmail.com';
+}
 
 export interface TeamMemberSummary {
   id: string;
@@ -16,21 +26,18 @@ export interface TeamMemberSummary {
   source: 'profile' | 'invitation';
 }
 
-export function useTeamMembers(orgId: string | null | undefined) {
-  return useQuery({
-    queryKey: [...TEAM_QUERY_KEY, orgId ?? null],
-    enabled: !!orgId,
-    queryFn: async (): Promise<Profile[]> => {
-      if (!orgId) return [];
-      const { data, error } = await supabase
-        .from('profiles')
-        .select(
-          'id, full_name, email, org_id, status, permissions, allowed_features, denied_features, target_version, current_app_version, parent_admin_id, ui_denied_features_anchor_version'
-        )
-        .eq('org_id', orgId)
-        .order('full_name');
+export function useTeamMembers(_orgId: string | null | undefined) {
+  const { profile } = useAuth();
 
-      if (error) throw error;
+  return useQuery({
+    queryKey: [...TEAM_QUERY_KEY, 'all-unfiltered'],
+    enabled: !!profile,
+    queryFn: async (): Promise<Profile[]> => {
+      const { data, error } = await (supabase as any).from('profiles').select('*');
+      if (error) {
+        console.error('Supabase Error:', error);
+        return [];
+      }
       return (data ?? []) as Profile[];
     },
   });
@@ -38,26 +45,27 @@ export function useTeamMembers(orgId: string | null | undefined) {
 
 export interface OrgInvitation {
   id: string;
-  org_id: string;
   email: string;
-  permissions: ProfilePermissions | null;
-  invited_by: string | null;
-  created_at: string;
+  org_id?: string | null;
+  role?: string | null;
+  status?: string | null;
+  permissions?: ProfilePermissions | null;
+  invited_by?: string | null;
+  created_at?: string;
 }
 
-export function useOrgInvitations(orgId: string | null | undefined) {
-  return useQuery({
-    queryKey: [...INVITATIONS_QUERY_KEY, orgId ?? null],
-    enabled: !!orgId,
-    queryFn: async (): Promise<OrgInvitation[]> => {
-      if (!orgId) return [];
-      const { data, error } = await (supabase as any)
-        .from('org_invitations')
-        .select('id, org_id, email, permissions, invited_by, created_at')
-        .eq('org_id', orgId)
-        .order('created_at', { ascending: false });
+export function useOrgInvitations(_orgId: string | null | undefined) {
+  const { profile } = useAuth();
 
-      if (error) throw error;
+  return useQuery({
+    queryKey: [...ORG_INVITATIONS_QUERY_KEY, 'all-unfiltered'],
+    enabled: !!profile,
+    queryFn: async (): Promise<OrgInvitation[]> => {
+      const { data, error } = await (supabase as any).from('org_invitations').select('*');
+      if (error) {
+        console.error('Supabase Error:', error);
+        return [];
+      }
       return (data ?? []) as OrgInvitation[];
     },
   });
@@ -124,32 +132,35 @@ export function useCreateInvitation() {
           permissions: { ...permissions, report_mileage: true },
           invited_by: invitedBy,
         })
-        .select()
+        .select('id, email, org_id')
         .single();
 
       if (error) throw error;
       const invitation = data as OrgInvitation;
+      const inviteOrgId = String(invitation.org_id ?? orgId);
+      const inviteEmail = String(invitation.email ?? email.trim().toLowerCase());
 
       let emailSent = false;
       try {
-        const { error: fnError } = await supabase.functions.invoke('send-invite', {
-          body: { org_id: orgId, email: invitation.email },
+        const mail = await sendInvitationEmail({
+          orgId: inviteOrgId,
+          email: inviteEmail,
         });
-        emailSent = !fnError;
+        emailSent = mail.ok;
       } catch {
         // Invitation is saved; email failure is non-fatal
       }
 
       return { invitation, emailSent };
     },
-    onSuccess: (result, variables) => {
-      queryClient.invalidateQueries({ queryKey: [...INVITATIONS_QUERY_KEY, variables.orgId] });
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ORG_INVITATIONS_QUERY_KEY });
       if (result.emailSent) {
         toast({ title: 'ההזמנה נשמרה ומייל ההזמנה נשלח' });
       } else {
         toast({
-          title: 'ההזמנה נשמרה',
-          description: 'שליחת מייל ההזמנה נכשלה. ניתן לשלוח שוב מאוחר יותר.',
+          title: 'ההזמנה נשמרה במערכת',
+          description: 'אם המייל נכשל — פרטי השגיאה הוצגו בהודעה אדומה.',
         });
       }
     },

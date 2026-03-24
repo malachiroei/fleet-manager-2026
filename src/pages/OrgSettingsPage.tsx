@@ -178,7 +178,9 @@ const ORG_DETAILS_EDIT_CODE = '2101';
 
 // ─── Main Page ─────────────────────────────────────────────────────
 export default function OrgSettingsPage() {
-  const { activeOrgId, isAdmin, isManager, isDriver, hasPermission } = useAuth();
+  const { activeOrgId, isAdmin, isManager, isDriver, hasPermission, user, profile } = useAuth();
+  const isRoeyMainAdmin =
+    (profile?.email ?? user?.email ?? '').trim().toLowerCase() === 'malachiroei@gmail.com';
   const isDriverOnly = Boolean(isDriver && !isManager && !isAdmin);
   const readOnly = isDriverOnly || !hasPermission('admin_access');
 
@@ -435,7 +437,7 @@ export default function OrgSettingsPage() {
 
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-4">
-          <Link to="/admin/settings">
+          <Link to={isRoeyMainAdmin ? '/admin/settings' : '/'}>
             <Button variant="ghost" size="icon" className="rounded-full"><ArrowRight className="h-5 w-5" /></Button>
           </Link>
           <div>

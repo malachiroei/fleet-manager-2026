@@ -10,7 +10,7 @@ import { useTeamMembersForSwitcher } from '@/hooks/useTeam';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { AIChatAssistant } from './AIChatAssistant';
 import { useTheme } from '@/hooks/useTheme';
-import { Sun, Moon, Building2, LogOut, Home, ArrowRight, ChevronDown, Building, Settings } from 'lucide-react';
+import { Sun, Moon, Building2, LogOut, Home, ArrowRight, ChevronDown, Building, Settings, UserCog } from 'lucide-react';
 import { PwaInstallButton } from './PwaInstallButton';
 import { Button } from './ui/button';
 import {
@@ -47,7 +47,23 @@ export function AppLayout({ children }: AppLayoutProps) {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const { theme, toggleTheme } = useTheme();
-  const { user, signOut, profile, activeOrgId, memberOrganizations, setActiveOrgId, isAdmin, isManager } = useAuth();
+  const {
+    user,
+    signOut,
+    profile,
+    activeOrgId,
+    memberOrganizations,
+    setActiveOrgId,
+    isAdmin,
+    isManager,
+    isDriver,
+  } = useAuth();
+  const isDriverOnlyHeader = Boolean(isDriver && !isManager && !isAdmin);
+  /** מנהל ארגון / מנהל צי — כפתורי ניהול בכותרת (ארגון, צוות) */
+  const isOrgAdminOrManager = (isAdmin || isManager) && !isDriverOnlyHeader;
+  /** בולטים בזהב/ענבר כדי שלא יפספסו */
+  const managementNavClass =
+    'relative z-[9999] !flex items-center justify-center border-2 !border-solid !border-[gold] bg-amber-500/25 text-amber-50 shadow-[0_0_18px_rgba(251,191,36,0.45)] hover:bg-amber-500/40 hover:text-white hover:!border-[#ffd700]';
   const email = (user?.email ?? '').toLowerCase();
   const name = (profile?.full_name?.trim()) || user?.user_metadata?.full_name || email.split('@')[0] || '';
   const initials = (name || email || '?').slice(0, 2).toUpperCase();
@@ -161,6 +177,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   console.log('CURRENT PROFILE STATUS:', profile?.status);
 
   const isMainAdmin = email === 'malachiroei@gmail.com';
+  const canAccessGoldenManagementLinks = isOrgAdminOrManager && isMainAdmin;
   const isDriverRoei = email === 'roeima21@gmail.com';
   const isRavid = email === 'ravidmalachi@gmail.com';
 
@@ -271,10 +288,19 @@ export function AppLayout({ children }: AppLayoutProps) {
           <Button
             type="button"
             variant="ghost"
-            size="icon"
-            className="flex sm:hidden h-8 w-8 rounded-lg border border-cyan-400/30 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20 hover:text-white"
+            title="ניהול"
+            aria-label="ניהול"
+            className={cn(
+              'relative z-[9999] flex sm:hidden h-8 rounded-lg border transition-colors',
+              isOrgAdminOrManager
+                ? cn('gap-1 px-2 min-w-[4.5rem]', managementNavClass)
+                : 'w-8 px-0 justify-center border-cyan-400/30 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20 hover:text-white'
+            )}
           >
-            <Settings className="h-4 w-4" />
+            <Settings className={cn('h-4 w-4 shrink-0', isOrgAdminOrManager && 'text-amber-200')} />
+            {isOrgAdminOrManager ? (
+              <span className="text-[11px] font-semibold leading-none text-amber-100">ניהול</span>
+            ) : null}
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align={isRtl ? 'start' : 'end'} className="min-w-[220px]">
@@ -362,12 +388,28 @@ export function AppLayout({ children }: AppLayoutProps) {
                 </span>
               </button>
             </DropdownMenuItem>
-            <DropdownMenuItem asChild className="cursor-pointer">
-              <Link to="/admin/org-settings" className="w-full flex items-center justify-between text-xs">
-                <span>ארגון</span>
-                <Building2 className="h-3.5 w-3.5" />
-              </Link>
-            </DropdownMenuItem>
+            {canAccessGoldenManagementLinks ? (
+              <DropdownMenuItem asChild className="cursor-pointer">
+                <Link
+                  to="/admin/org-settings"
+                  className="w-full flex items-center justify-between text-xs text-amber-700 dark:text-amber-200"
+                >
+                  <span className="font-medium">ארגון</span>
+                  <Building2 className="h-3.5 w-3.5 text-amber-600 dark:text-amber-300" />
+                </Link>
+              </DropdownMenuItem>
+            ) : null}
+            {canAccessGoldenManagementLinks ? (
+              <DropdownMenuItem asChild className="cursor-pointer">
+                <Link
+                  to="/team"
+                  className="w-full flex items-center justify-between text-xs text-amber-700 dark:text-amber-200"
+                >
+                  <span className="font-medium">ניהול צוות</span>
+                  <UserCog className="h-3.5 w-3.5 text-amber-600 dark:text-amber-300" />
+                </Link>
+              </DropdownMenuItem>
+            ) : null}
           </div>
 
           {/* Logout */}
@@ -524,28 +566,59 @@ export function AppLayout({ children }: AppLayoutProps) {
   const TopToolsBlock = () => (
     <div
       className={cn(
-        'flex items-center gap-2 sm:gap-3 shrink-0',
+        'relative z-[9999] flex items-center gap-2 sm:gap-3 shrink-0',
         isRtl ? 'flex-row-reverse' : ''
       )}
     >
-      {/* Mobile: רק גלגל שיניים (תפריט הגדרות) בשורה העליונה */}
-      <div className="flex items-center gap-2 sm:hidden">
+      {/* Mobile: ניהול צוות (מנהל/מנהל צי) + תפריט הגדרות */}
+      <div className="relative z-[9999] flex items-center gap-2 sm:hidden">
+        {canAccessGoldenManagementLinks ? (
+          <Link
+            to="/team"
+            className={cn(
+              'flex h-8 items-center gap-1 rounded-lg border px-2 transition-colors',
+              managementNavClass
+            )}
+          >
+            <UserCog className="h-3.5 w-3.5 shrink-0 text-amber-200" />
+            <span className="text-[11px] font-semibold leading-none text-amber-50">ניהול</span>
+          </Link>
+        ) : null}
         <MobileSettingsMenu />
       </div>
 
       {/* Desktop: שורת הכלים המלאה כמו קודם */}
-      <div className="hidden sm:flex items-center gap-3">
+      <div className="relative z-[9999] hidden sm:flex items-center gap-3">
         <PwaInstallButton />
             <ThemeToggle />
             <LanguageSwitcher />
         <OrgSwitcher />
-        <Link
-          to="/admin/org-settings"
-          className="flex h-8 items-center gap-1.5 rounded-lg border border-cyan-400/20 bg-cyan-500/10 px-2.5 text-xs font-medium text-cyan-100 hover:bg-cyan-500/20"
-        >
-          <Building2 className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">ארגון</span>
-        </Link>
+        {canAccessGoldenManagementLinks ? (
+          <Link
+            to="/admin/org-settings"
+            className={cn(
+              'flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors',
+              managementNavClass
+            )}
+          >
+            <Building2 className="h-3.5 w-3.5 text-amber-200" />
+            <span className="hidden sm:inline">ארגון</span>
+          </Link>
+        ) : null}
+        {canAccessGoldenManagementLinks ? (
+          <Link
+            to="/team"
+            className={cn(
+              'flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors',
+              managementNavClass
+            )}
+          >
+            <UserCog className="h-3.5 w-3.5 text-amber-200" />
+            <span className="hidden sm:inline">ניהול</span>
+            <span className="hidden sm:inline text-amber-200/90">·</span>
+            <span className="hidden sm:inline">צוות</span>
+          </Link>
+        ) : null}
         {viewAsEmail && (
           <Button
             type="button"

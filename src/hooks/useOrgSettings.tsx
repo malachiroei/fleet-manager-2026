@@ -18,6 +18,39 @@ export interface OrgSettings {
 const QUERY_KEY = ['org-settings'] as const;
 const BUCKET = 'vehicle-documents';
 
+/** עמודות ידועות ב-ui_settings — נמנע select('*') שגורם לשגיאות כשהסכימה בטסט שונה */
+const UI_SETTINGS_COLUMNS =
+  'id, org_id, org_name, org_id_number, admin_email, health_statement_text, vehicle_policy_text, health_statement_pdf_url, vehicle_policy_pdf_url, updated_at';
+
+function emptyOrgSettings(organizationId?: string | null): OrgSettings {
+  return {
+    id: '',
+    org_id: organizationId ?? null,
+    org_name: '',
+    org_id_number: '',
+    admin_email: '',
+    health_statement_text: '',
+    vehicle_policy_text: '',
+    health_statement_pdf_url: null,
+    vehicle_policy_pdf_url: null,
+    updated_at: '',
+  };
+}
+
+/** טבלה חסרה / 404 ב-PostgREST — לא לתקוע את הדף */
+function isUiSettingsUnavailableError(error: { code?: string; message?: string; details?: string }): boolean {
+  const code = String(error?.code ?? '');
+  const msg = `${error?.message ?? ''} ${error?.details ?? ''}`.toLowerCase();
+  return (
+    code === 'PGRST205' ||
+    code === '42P01' ||
+    msg.includes('404') ||
+    msg.includes('schema cache') ||
+    msg.includes('does not exist') ||
+    (msg.includes('relation') && msg.includes('ui_settings'))
+  );
+}
+
 /** Upload a PDF template and return its public URL */
 export async function uploadTemplatePdf(file: File, slotName: 'health' | 'policy'): Promise<string> {
   const ext = file.name.split('.').pop() ?? 'pdf';
@@ -31,16 +64,27 @@ export async function uploadTemplatePdf(file: File, slotName: 'health' | 'policy
 }
 
 /** Fetch ui_settings. When organizationId is provided, filter by org_id (DB column name). */
-export function useOrgSettings(organizationId?: string | null) {
+export function useOrgSettings(
+  organizationId?: string | null,
+  opts?: { enabledOnlyWithOrgId?: boolean },
+) {
+  const requireOrg = opts?.enabledOnlyWithOrgId === true;
   return useQuery<OrgSettings | null>({
-    queryKey: [...QUERY_KEY, organizationId ?? null],
+    queryKey: [...QUERY_KEY, organizationId ?? null, requireOrg],
+    enabled: requireOrg ? Boolean(organizationId) : true,
     queryFn: async () => {
-      let query = (supabase as any).from('ui_settings').select('*');
+      let query = (supabase as any).from('ui_settings').select(UI_SETTINGS_COLUMNS);
       if (organizationId) {
         query = query.eq('org_id', organizationId);
       }
       const { data, error } = await query.limit(1).maybeSingle();
-      if (error) throw error;
+      if (error) {
+        if (isUiSettingsUnavailableError(error)) {
+          console.warn('[useOrgSettings] ui_settings לא זמין (404/חסר בטסט), מחזירים הגדרות ריקות:', error.message);
+          return emptyOrgSettings(organizationId);
+        }
+        throw error;
+      }
       return data as OrgSettings | null;
     },
     staleTime: 5 * 60 * 1000,

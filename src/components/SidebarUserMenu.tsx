@@ -34,6 +34,8 @@ export function SidebarUserMenu() {
   }, [open]);
 
   const email = user?.email ?? '';
+  const isRoeyMainAdmin =
+    (profile?.email ?? user?.email ?? '').trim().toLowerCase() === 'malachiroei@gmail.com';
   const name = (profile?.full_name?.trim()) || user?.user_metadata?.full_name || email.split('@')[0] || 'משתמש';
   const initials = name.slice(0, 2).toUpperCase();
   const { data: organization } = useOrganization(activeOrgId ?? null);
@@ -135,8 +137,8 @@ export function SidebarUserMenu() {
 
             <div className="my-1.5 mx-3 h-px bg-white/8 sidebar-divider" />
 
-            {/* Admin Dashboard - only for admins */}
-            {isAdmin && (
+            {/* לוח ארגונים — רק רועי (ניהול מערכת רב-ארגוני) */}
+            {isRoeyMainAdmin && (
               <Link
                 to="/admin/dashboard"
                 onClick={() => setOpen(false)}
@@ -151,8 +153,8 @@ export function SidebarUserMenu() {
               </Link>
             )}
 
-            {/* User Management - master email override */}
-            {(profile?.email ?? user?.email) === 'malachiroei@gmail.com' && (
+            {/* ניהול משתמשים — רק רועי */}
+            {isRoeyMainAdmin && (
               <Link
                 to="/admin/users"
                 onClick={() => setOpen(false)}

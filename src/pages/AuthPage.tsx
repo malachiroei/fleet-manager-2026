@@ -11,6 +11,7 @@ import { Loader2 } from 'lucide-react';
 import { getBrandLogoUrl } from '@/components/BrandLogo';
 import { PwaInstallButton } from '@/components/PwaInstallButton';
 import { toast } from '@/hooks/use-toast';
+import { toast as sonnerToast } from 'sonner';
 
 const RESET_PASSWORD_REDIRECT = () => `${window.location.origin}/reset-password`;
 
@@ -80,15 +81,13 @@ export default function AuthPage() {
 
     if (error) {
       if (error.message.includes('already registered')) {
-        toast({
-          title: 'שגיאה בהרשמה',
-          description: 'כתובת האימייל כבר רשומה במערכת',
-          variant: 'destructive'
-        });
+        sonnerToast.error('שגיאה בהרשמה: כתובת האימייל כבר רשומה במערכת');
       } else {
+        const detailedMessage = `שגיאת API בהרשמה: ${error.message}`;
+        sonnerToast.error(detailedMessage);
         toast({
           title: 'שגיאה בהרשמה',
-          description: error.message,
+          description: detailedMessage,
           variant: 'destructive'
         });
       }

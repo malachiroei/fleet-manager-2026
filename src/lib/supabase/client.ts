@@ -1,5 +1,6 @@
 /**
  * Supabase browser client — אימות סביבה לפני אתחול (v2.7.66).
+ * אין כאן השבתת מיילים במצב פיתוח; הזמנות — `sendInvitationEmail` → Edge Function `send-invite`.
  * URL/מפתח: `resolveSupabaseViteEnv` / `getSupabaseUrl` / `getSupabaseAnonKey` ב־`publicEnv`
  * (על fleet-manager-pro.com — URL ייצור מ־env; anon מ-Vercel).
  * מיוצא גם מ־`@/integrations/supabase/client` לתאימות ייבוא קיימת.
@@ -104,7 +105,13 @@ const createBlockedSupabaseClient = (message: string): SupabaseClientType => {
   ) as unknown as SupabaseClientType;
 };
 
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && !import.meta.env.PROD) {
+  // eslint-disable-next-line no-console
+  console.log('[Supabase] env load status (non-production)', {
+    hasUrl: Boolean(String(SUPABASE_URL ?? '').trim()),
+    hasAnonKey: Boolean(String(SUPABASE_ANON_KEY ?? '').trim()),
+  });
+
   const anonPreview =
     SUPABASE_ANON_KEY && typeof SUPABASE_ANON_KEY === 'string'
       ? `${SUPABASE_ANON_KEY.slice(0, 8)}...${SUPABASE_ANON_KEY.slice(-4)}`

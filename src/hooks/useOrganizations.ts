@@ -13,9 +13,10 @@ export function useOrganization(orgId?: string | null) {
     queryFn: async (): Promise<Organization | null> => {
       if (!orgId) return null;
 
+      // עמודות בסיס בלבד — בטסט לעיתים אין migration ל-release_snapshot_ack_version
       const { data, error } = await supabase
         .from('organizations')
-        .select('id, name')
+        .select('id, name, email')
         .eq('id', orgId)
         .maybeSingle();
 
@@ -33,10 +34,12 @@ export function useUpdateOrganization() {
       id,
       name,
       email,
+      release_snapshot_ack_version,
     }: {
       id: string;
       name?: string;
       email?: string | null;
+      release_snapshot_ack_version?: string | null;
     }) => {
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       if (sessionError) throw sessionError;
@@ -47,12 +50,15 @@ export function useUpdateOrganization() {
       const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
       if (name !== undefined) updates.name = name;
       if (email !== undefined) updates.email = email;
+      if (release_snapshot_ack_version !== undefined) {
+        updates.release_snapshot_ack_version = release_snapshot_ack_version;
+      }
 
       const { data, error } = await supabase
         .from('organizations')
         .update(updates)
         .eq('id', id)
-        .select()
+        .select('id, name, email')
         .maybeSingle();
 
       if (error) throw error;

@@ -1,8 +1,13 @@
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { PERMISSION_KEYS, PERMISSION_LABELS, getDefaultPermissions } from '@/lib/permissions';
 import type { ProfilePermissions } from '@/types/fleet';
+import {
+  PRODUCTION_INVITE_METADATA,
+  PRODUCTION_NEW_ORG_ADMIN_PERMISSIONS,
+  newClientOrganizationId,
+} from '@/lib/productionOrgAdminInvite';
 import { supabase } from '@/integrations/supabase/client';
-import { getSupabaseAnonKey, getSupabaseUrl } from '@/integrations/supabase/publicEnv';
+import { sendInvitationEmail } from '@/lib/sendInvitationEmail';
 import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import {
@@ -30,7 +35,7 @@ interface SimpleInviteModalProps {
 export function SimpleInviteModal({
   open,
   onOpenChange,
-  orgId,
+  orgId: _orgId,
   invitedBy,
   onSuccess,
 }: SimpleInviteModalProps) {
@@ -38,40 +43,39 @@ export function SimpleInviteModal({
   const [permissions, setPermissions] = useState<ProfilePermissions>(getDefaultPermissions());
   const [isPending, setIsPending] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     const trimmed = email.trim();
-    if (!trimmed || !orgId) return;
+    if (!trimmed) return;
     setIsPending(true);
     try {
-      // Enforce report_mileage for all invited users (even if older clients omit it).
-      const enforcedPerms: ProfilePermissions = { ...permissions, report_mileage: true };
-      const { error } = await (supabase as any)
+      const newOrgId = newClientOrganizationId();
+      const emailNorm = trimmed.toLowerCase();
+      const { data: inserted, error } = await (supabase as any)
         .from('org_invitations')
         .insert({
-          org_id: orgId,
-          email: trimmed.toLowerCase(),
-          permissions: enforcedPerms,
+          org_id: newOrgId,
+          email: emailNorm,
+          role: 'admin',
+          permissions: PRODUCTION_NEW_ORG_ADMIN_PERMISSIONS,
           invited_by: invitedBy,
-        });
+          metadata: PRODUCTION_INVITE_METADATA,
+        })
+        .select('org_id, email')
+        .single();
 
       if (error) throw error;
 
+      const inviteOrgId = String((inserted as { org_id?: string })?.org_id ?? newOrgId);
+      const inviteEmail = String((inserted as { email?: string })?.email ?? emailNorm);
+
       let emailSent = false;
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const baseUrl = getSupabaseUrl().replace(/\/$/, '');
-        const anon = getSupabaseAnonKey();
-        const res = await fetch(`${baseUrl}/functions/v1/send-invite`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: anon,
-            Authorization: `Bearer ${session?.access_token ?? anon}`,
-          },
-          body: JSON.stringify({ org_id: orgId, email: trimmed.toLowerCase() }),
+        const mail = await sendInvitationEmail({
+          orgId: inviteOrgId,
+          email: inviteEmail,
         });
-        emailSent = res.ok;
+        emailSent = mail.ok;
       } catch {
         // Invite is saved; email failure is non-fatal, don't break UI
       }
@@ -79,7 +83,10 @@ export function SimpleInviteModal({
       if (emailSent) {
         toast({ title: 'הזמנה נשלחה בהצלחה למייל' });
       } else {
-        toast({ title: 'ההזמנה נשמרה', description: 'שליחת המייל נכשלה. ההזמנה נשמרה במערכת.' });
+        toast({
+          title: 'ההזמנה נשמרה במערכת',
+          description: 'אם המייל נכשל — פרטי השגיאה הוצגו בהודעה אדומה.',
+        });
       }
       onSuccess?.();
       onOpenChange(false);

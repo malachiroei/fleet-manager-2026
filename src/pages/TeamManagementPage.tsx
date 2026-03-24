@@ -2,9 +2,23 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
+import { useOrgSettings } from '@/hooks/useOrgSettings';
 import { useFleetManifestUiGates } from '@/hooks/useFleetManifestUiGates';
-import { useTeamMembers, useOrgInvitations, useApproveMember } from '@/hooks/useTeam';
-import { PERMISSION_LABELS } from '@/lib/permissions';
+import {
+  useTeamMembers,
+  useOrgInvitations,
+  useApproveMember,
+  ORG_INVITATIONS_QUERY_KEY,
+  isRoeySuperAdminProfile,
+} from '@/hooks/useTeam';
+import { getDefaultPermissions, PERMISSION_LABELS } from '@/lib/permissions';
+import {
+  buildReleaseSnapshotPayload,
+  downloadReleaseSnapshotJson,
+  getBundledReleaseSnapshot,
+} from '@/lib/releaseSnapshot';
+import { supabase } from '@/integrations/supabase/client';
+import { getSupabaseAnonKey } from '@/integrations/supabase/publicEnv';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { SimpleInviteModal } from '@/components/SimpleInviteModal';
@@ -17,8 +31,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { ArrowRight, Loader2, Mail, Settings2, UserPlus, Users } from 'lucide-react';
+import { ArrowRight, Loader2, Mail, Settings2, Upload, UserPlus, Users } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import type { Profile } from '@/types/fleet';
 
 /**
@@ -29,13 +44,26 @@ export default function TeamManagementPage() {
   const manifestUi = useFleetManifestUiGates();
   const queryClient = useQueryClient();
   const orgId = activeOrgId ?? null;
-  const { data: members, isLoading } = useTeamMembers(orgId);
-  const { data: invitations } = useOrgInvitations(orgId);
+  const settingsOrgId = orgId ?? profile?.org_id ?? null;
+  const { data: orgSettingsRow } = useOrgSettings(settingsOrgId, { enabledOnlyWithOrgId: true });
+  const isSuperAdminTeamView = isRoeySuperAdminProfile(profile);
+  const showPushToPro = isSuperAdminTeamView;
+  const [pushBusy, setPushBusy] = useState(false);
+  const { data: members, isLoading, isFetching: membersFetching } = useTeamMembers(orgId);
+  const { data: invitations, isLoading: invitationsLoading, isFetching: invitationsFetching } =
+    useOrgInvitations(orgId);
+  const memberRows = members ?? [];
+  const invitationRows = invitations ?? [];
+  const listLoading = isLoading || invitationsLoading || membersFetching || invitationsFetching;
   const [modalOpen, setModalOpen] = useState(false);
   /** Explicit boolean — avoids undefined / HMR glitches on PRO. */
   const [delegationOpen, setDelegationOpen] = useState<boolean>(false);
   const [delegationMember, setDelegationMember] = useState<Profile | null>(null);
   const approveMember = useApproveMember();
+
+  /** עמודת מזהה ארגון ונתונים דומים — רק לרועי (סופר־אדמין). */
+  const showSensitiveColumns = isSuperAdminTeamView;
+  const tableColCount = showSensitiveColumns ? 5 : 4;
 
   /** מניעת קריסה — ערכים לא בוליאניים / undefined (HMR וכו') */
   const delegationDialogOpen = (delegationOpen ?? false) === true;
@@ -46,7 +74,7 @@ export default function TeamManagementPage() {
     return <Navigate to="/" replace />;
   }
 
-  if (!orgId) {
+  if (!orgId && !isSuperAdminTeamView) {
     return (
       <div className="max-w-2xl mx-auto p-6">
         <Card>
@@ -57,6 +85,44 @@ export default function TeamManagementPage() {
       </div>
     );
   }
+
+  const inviteModalOrgId = orgId ?? profile?.org_id ?? '';
+  const delegationOrgId = orgId ?? profile?.org_id ?? '';
+
+  const handlePushReleaseSnapshot = async () => {
+    const snapshotOrgId = orgId ?? profile?.org_id ?? null;
+    if (!snapshotOrgId) {
+      toast.error('בחר ארגון פעיל (מתפריט הארגון) לפני דחיפת סנאפשוט.');
+      return;
+    }
+    setPushBusy(true);
+    try {
+      const snapshot = buildReleaseSnapshotPayload({
+        orgId: snapshotOrgId,
+        orgSettings: orgSettingsRow ?? null,
+        manifestUi,
+        defaultPermissions: getDefaultPermissions(),
+        previousBundledVersion: getBundledReleaseSnapshot().version,
+      });
+      downloadReleaseSnapshotJson(snapshot);
+      toast.info('הקובץ ירד, כעת העלה אותו ל-Git כדי לעדכן את הפרו');
+
+      const sessionRes = await supabase.auth.getSession();
+      const bearer = sessionRes.data.session?.access_token ?? getSupabaseAnonKey();
+      const { data, error } = await supabase.functions.invoke('push-release-snapshot', {
+        headers: { Authorization: `Bearer ${bearer}` },
+        body: { snapshot },
+      });
+      const ok = !error && data && typeof data === 'object' && (data as { ok?: boolean }).ok === true;
+      if (ok) {
+        toast.success('בנוסף: הקובץ נדחף ל-GitHub אוטומטית (סודות Supabase מוגדרים).');
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'דחיפה נכשלה');
+    } finally {
+      setPushBusy(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -69,9 +135,39 @@ export default function TeamManagementPage() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold text-foreground">ניהול צוות</h1>
-            <p className="text-muted-foreground text-sm">חברי הארגון והרשאות</p>
+            <p className="text-muted-foreground text-sm">
+              {isSuperAdminTeamView ? 'כל הארגונים — תצוגת סופר־אדמין' : 'חברי הארגון והרשאות'}
+            </p>
           </div>
         </div>
+
+        {showPushToPro ? (
+          <Card className="border-primary/30 bg-primary/5">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Upload className="h-5 w-5" />
+                גשר עדכונים לפרודקשן (Git)
+              </CardTitle>
+              <CardDescription>
+                יוצר קובץ <code className="text-xs">release_snapshot.json</code> מהגדרות הארגון הנוכחי, פיצ׳רי UI
+                מהמניפסט, ומבנה הרשאות ברירת מחדל — מוריד את הקובץ ומנסה לדחוף ל-GitHub דרך Edge Function
+                (דורש סודות GITHUB_TOKEN + GITHUB_REPO).
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                type="button"
+                variant="default"
+                disabled={pushBusy || !(orgId ?? profile?.org_id)}
+                onClick={() => void handlePushReleaseSnapshot()}
+                className="gap-2"
+              >
+                {pushBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                דחוף עדכונים לפרו
+              </Button>
+            </CardContent>
+          </Card>
+        ) : null}
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -80,7 +176,13 @@ export default function TeamManagementPage() {
                 <Users className="h-5 w-5" />
                 חברי צוות
               </CardTitle>
-              <CardDescription>כל המשתמשים בארגון שלך</CardDescription>
+              <CardDescription>
+                {listLoading
+                  ? 'טוען…'
+                  : isSuperAdminTeamView
+                    ? `${memberRows.length} פרופילים · ${invitationRows.length} הזמנות פתוחות`
+                    : `${memberRows.length} חברי צוות · ${invitationRows.length} הזמנות פתוחות`}
+              </CardDescription>
             </div>
             <Button onClick={() => setModalOpen(true)} className="gap-2">
               <UserPlus className="h-4 w-4" />
@@ -88,7 +190,7 @@ export default function TeamManagementPage() {
             </Button>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
+            {listLoading ? (
               <div className="flex justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
               </div>
@@ -96,6 +198,12 @@ export default function TeamManagementPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    {showSensitiveColumns ? (
+                      <TableHead className="min-w-[132px] align-bottom">
+                        <span className="block text-sm font-medium">מזהה ארגון</span>
+                        <span className="block font-mono text-[10px] font-normal text-muted-foreground">Org ID</span>
+                      </TableHead>
+                    ) : null}
                     <TableHead>שם</TableHead>
                     <TableHead>אימייל</TableHead>
                     <TableHead className="text-center">הרשאות</TableHead>
@@ -103,18 +211,23 @@ export default function TeamManagementPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {members && members.length === 0 && (!invitations || invitations.length === 0) ? (
+                  {memberRows.length === 0 && invitationRows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                        אין חברי צוות.
+                      <TableCell colSpan={tableColCount} className="text-center text-muted-foreground py-8">
+                        אין נתונים להצגה.
                       </TableCell>
                     </TableRow>
                   ) : (
                     <>
-                      {members?.map((m) => {
+                      {memberRows.map((m, mi) => {
                         const isSelf = profile?.id === m.id;
                         return (
-                          <TableRow key={m.id}>
+                          <TableRow key={m.id ?? `m-${mi}`}>
+                            {showSensitiveColumns ? (
+                              <TableCell className="font-mono text-[10px] text-muted-foreground max-w-[140px] truncate">
+                                {m.org_id ?? '—'}
+                              </TableCell>
+                            ) : null}
                             <TableCell className="font-medium">{m.full_name || '—'}</TableCell>
                             <TableCell className="text-muted-foreground">{m.email || '—'}</TableCell>
                             <TableCell className="text-xs text-muted-foreground">
@@ -126,7 +239,7 @@ export default function TeamManagementPage() {
                                 : 'כל ההרשאות'}
                             </TableCell>
                             <TableCell className="text-center text-xs">
-                              {m.status === 'pending_approval' ? (
+                              {m?.status === 'pending_approval' ? (
                                 <div className="flex flex-col items-center justify-center gap-2">
                                   <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
                                     ממתין לאישור
@@ -173,15 +286,25 @@ export default function TeamManagementPage() {
                           </TableRow>
                         );
                       })}
-                      {invitations?.map((inv) => (
-                        <TableRow key={inv.id} className="bg-muted/30">
+                      <TableRow className="border-t-2 border-border bg-muted/40 hover:bg-muted/40 pointer-events-none">
+                        <TableCell colSpan={tableColCount} className="py-3 text-sm font-semibold text-foreground">
+                          הזמנות פתוחות ({invitationRows.length})
+                        </TableCell>
+                      </TableRow>
+                      {invitationRows.map((inv, idx) => (
+                        <TableRow key={inv.id ?? `inv-${idx}`} className="bg-muted/30">
+                          {showSensitiveColumns ? (
+                            <TableCell className="font-mono text-[10px] text-muted-foreground max-w-[140px] truncate">
+                              {inv.org_id ?? '—'}
+                            </TableCell>
+                          ) : null}
                           <TableCell className="font-medium">המתנה להצטרפות</TableCell>
-                          <TableCell className="text-muted-foreground flex items-center gap-1">
-                            <Mail className="h-3.5 w-3.5" />
-                            {inv.email}
+                          <TableCell className="text-muted-foreground flex items-center gap-1" dir="ltr">
+                            <Mail className="h-3.5 w-3.5 shrink-0" />
+                            <span className="truncate">{inv.email ?? '—'}</span>
                           </TableCell>
                           <TableCell className="text-xs text-muted-foreground">
-                            {inv.permissions && typeof inv.permissions === 'object'
+                            {inv?.permissions && typeof inv.permissions === 'object'
                               ? Object.entries(inv.permissions)
                                   .filter(([, v]) => v)
                                   .map(([k]) => PERMISSION_LABELS[k as keyof typeof PERMISSION_LABELS] ?? k)
@@ -189,9 +312,17 @@ export default function TeamManagementPage() {
                               : '—'}
                           </TableCell>
                           <TableCell className="text-center text-xs">
-                            <span className="inline-flex items-center justify-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
-                              הזמנה פתוחה
-                            </span>
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="inline-flex items-center justify-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                                הזמנה פתוחה
+                              </span>
+                              {showSensitiveColumns && inv?.role != null && String(inv.role).trim() !== '' ? (
+                                <span className="text-[10px] text-muted-foreground">role: {String(inv.role)}</span>
+                              ) : null}
+                              {showSensitiveColumns && inv?.status != null && String(inv.status).trim() !== '' ? (
+                                <span className="text-[10px] text-muted-foreground">status: {String(inv.status)}</span>
+                              ) : null}
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -208,9 +339,9 @@ export default function TeamManagementPage() {
         key={modalOpen ? 'open' : 'closed'}
         open={modalOpen}
         onOpenChange={setModalOpen}
-        orgId={orgId}
+        orgId={inviteModalOrgId}
         invitedBy={profile?.user_id ?? null}
-        onSuccess={() => queryClient.invalidateQueries({ queryKey: ['org-invitations', orgId] })}
+        onSuccess={() => queryClient.invalidateQueries({ queryKey: ORG_INVITATIONS_QUERY_KEY })}
       />
 
       <TeamMemberDelegationDialog
@@ -226,7 +357,7 @@ export default function TeamManagementPage() {
         delegatorIsAdmin={isAdmin}
         delegatorIsManager={isManager}
         delegatorHasPermission={hasPermission}
-        orgId={orgId}
+        orgId={delegationMember?.org_id ?? delegationOrgId}
       />
     </div>
   );
