@@ -1,5 +1,8 @@
 // Central place for the app's current version.
 // Keep the named export `version` because some UI components import it directly.
+/** גרסה מקומית לפרסום — לעדכן יחד עם `src/config/version_snapshot.json` */
+export const APP_VERSION = '1.0.1';
+
 export const version = '2.7.67';
 export default version;
 

@@ -145,7 +145,11 @@ export async function sendInvitationEmail(params: {
   const authBearer = await resolveAuthorizationBearer(anon);
   const sr = serviceRoleKeyFromEnv();
 
-  const body = { org_id: orgId, email };
+  const body = {
+    org_id: orgId,
+    email,
+    app_origin: typeof window !== 'undefined' ? window.location.origin : '',
+  };
 
   const invokeHeaders: Record<string, string> = {
     Authorization: `Bearer ${authBearer}`,

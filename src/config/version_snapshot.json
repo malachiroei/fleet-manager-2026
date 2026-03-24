@@ -1,0 +1,28 @@
+{
+  "version": "1.0.1",
+  "release_date": "2026-03-24",
+  "description": "גרסה עם שיפורי הרשמה, הזמנות לפרודקשן וניהול גרסה לפרסום",
+  "features": [
+    {
+      "id": "signup_api_error_toast",
+      "type": "ux",
+      "name": "הודעות שגיאה מפורטות בהרשמה (כולל API)"
+    },
+    {
+      "id": "invite_email_prod_redirect",
+      "type": "email",
+      "name": "קישור הזמנה מסטייג'ינג לרישום בפרודקשן עם org_id"
+    },
+    {
+      "id": "supabase_env_load_log",
+      "type": "dev",
+      "name": "לוג טעינת Supabase URL/Anon (לא בפרודקשן)"
+    },
+    {
+      "id": "golden_nav_main_admin",
+      "type": "security",
+      "name": "הגנה על קישורי ניהול בכותרת למייל מנהל ראשי"
+    }
+  ],
+  "ui_changes": "ללא שינוי עיצוב מרכזי — שיפורי אבטחה/הזמנות והרשמה"
+}
