@@ -271,7 +271,13 @@ serve(async (req) => {
       const authHeader = req.headers.get('Authorization') ?? '';
       const jwt = authHeader.replace(/^Bearer\s+/i, '').trim();
       if (!jwt) {
-        return new Response(JSON.stringify({ ok: false, error: 'Missing Authorization Bearer token' }), {
+        const body = {
+          ok: false,
+          error: 'missing_authorization',
+          message: 'Missing Authorization Bearer token',
+          hint: 'Send header Authorization: Bearer <user_jwt> from supabase.auth.getSession().access_token',
+        };
+        return new Response(JSON.stringify(body), {
           status: 401,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -284,18 +290,49 @@ serve(async (req) => {
       console.log('DIAG: before admin.auth.getUser(jwt)');
       const { data: userData, error: userErr } = await admin.auth.getUser(jwt);
       console.log('DIAG: after admin.auth.getUser', { ok: !userErr, hasEmail: !!userData?.user?.email });
+      if (userErr) {
+        console.error('AUTH ERROR DETAILS:', userErr);
+        const authBody = {
+          ok: false,
+          error: 'auth_get_user_failed',
+          message: userErr.message ?? 'getUser failed',
+          code: (userErr as { code?: string }).code ?? null,
+          status: (userErr as { status?: number }).status ?? null,
+          name: (userErr as { name?: string }).name ?? null,
+        };
+        return new Response(JSON.stringify(authBody), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
       const email = userData?.user?.email?.trim().toLowerCase() ?? '';
-      if (userErr || !email) {
-        return new Response(JSON.stringify({ ok: false, error: 'Invalid or expired session' }), {
+      if (!email) {
+        const body = {
+          ok: false,
+          error: 'no_email_on_user',
+          message: 'JWT valid but user has no email on record',
+          user_id: userData?.user?.id ?? null,
+        };
+        console.error('AUTH ERROR DETAILS: missing email on user', body);
+        return new Response(JSON.stringify(body), {
           status: 401,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
       if (email !== ALLOWED_PUBLISHER_EMAIL) {
-        return new Response(JSON.stringify({ ok: false, error: 'Forbidden: publish allowed only for main publisher account' }), {
-          status: 403,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: 'forbidden_publisher',
+            message: 'Publish allowed only for the designated publisher account',
+            allowed_email: ALLOWED_PUBLISHER_EMAIL,
+            got_email: email,
+          }),
+          {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          },
+        );
       }
     } else {
       console.warn(

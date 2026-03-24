@@ -76,8 +76,23 @@ export async function invokePublishVersionSnapshot(
   if (error) {
     if (error instanceof FunctionsHttpError) {
       try {
-        const j = (await error.context.json()) as { error?: string };
-        throw new Error(j.error ?? error.message);
+        const j = (await error.context.json()) as {
+          ok?: boolean;
+          error?: string;
+          message?: string;
+          code?: string;
+          hint?: string;
+          allowed_email?: string;
+          got_email?: string;
+        };
+        const parts = [
+          j.message,
+          j.error,
+          j.code,
+          j.hint,
+          j.got_email && j.allowed_email ? `מייל: ${j.got_email} (מורשה: ${j.allowed_email})` : null,
+        ].filter(Boolean);
+        throw new Error(parts.length > 0 ? parts.join(' — ') : error.message);
       } catch (e) {
         if (e instanceof Error && e.message !== error.message) throw e;
         throw new Error(error.message);

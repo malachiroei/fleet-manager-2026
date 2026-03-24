@@ -14,14 +14,19 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import snapshotBundled from '@/config/version_snapshot.json';
 import { APP_VERSION } from '@/constants/version';
-import { invokePublishVersionSnapshot } from '@/lib/invokePublishVersionSnapshot';
+import {
+  invokePublishVersionSnapshot,
+  PUBLISH_REAUTH_MESSAGE,
+} from '@/components/version-publish/InvokePublishButton';
 import {
   buildVersionSnapshotFeaturesFromSelection,
   getVersionPublishInventory,
   versionPublishInventoryGroups,
 } from '@/lib/versionPublishInventory';
+import { getPublishInventoryHuman } from '@/lib/versionPublishInventoryHuman';
 import type { VersionSnapshotFile } from '@/lib/versionSnapshotTypes';
 import { compareSemver, toCanonicalThreePartVersion, normalizeVersion } from '@/lib/versionManifest';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -125,6 +130,14 @@ export function PublishVersionDetailedDialog({
     });
   }, []);
 
+  const selectAllInEntireModal = useCallback(
+    (checked: boolean) => {
+      const allIds = getVersionPublishInventory().map((i) => i.id);
+      selectAllInGroup(allIds, checked);
+    },
+    [selectAllInGroup],
+  );
+
   const handlePublishAll = async () => {
     const version =
       normalizeVersion(publishVersionInput.trim()) ||
@@ -201,7 +214,11 @@ export function PublishVersionDetailedDialog({
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      toast.error(`פרסום נכשל: ${msg}`);
+      if (msg === PUBLISH_REAUTH_MESSAGE) {
+        toast.error(PUBLISH_REAUTH_MESSAGE);
+      } else {
+        toast.error(`פרסום נכשל: ${msg}`);
+      }
     } finally {
       setIsPublishingFull(false);
       onFullPublishBusyChange?.(false);
@@ -341,12 +358,34 @@ export function PublishVersionDetailedDialog({
           </div>
 
           <div className="space-y-2 border-t border-border pt-3">
-            <p className="text-sm font-semibold">מלאי רכיבים (סריקה אוטומטית)</p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-semibold">מלאי רכיבים (סריקה אוטומטית)</p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-7 text-[11px]"
+                  onClick={() => selectAllInEntireModal(true)}
+                >
+                  בחר הכל (כל הקבוצות)
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-[11px]"
+                  onClick={() => selectAllInEntireModal(false)}
+                >
+                  נקה הכל
+                </Button>
+              </div>
+            </div>
             <p className="text-[11px] text-muted-foreground">
-              בקטגוריית התשתית: <code className="text-[10px]">package.json</code> ו־
-              <code className="text-[10px]">package-lock.json</code> בשורש. בנוסף נסרקים{' '}
+              שמות בעברית ותיאורים — לעיון לפני פרסום. נתיב המקור מוצג לצורך זיהוי טכני. תשתית:{' '}
+              <code className="text-[10px]">package.json</code> / lock; ממשק:{' '}
               <code className="text-[10px]">src/pages</code>, <code className="text-[10px]">src/components</code> (ללא
-              ui/), ו-<code className="text-[10px]">src/hooks</code> — קבצים חדשים יופיעו אחרי בנייה מחדש.
+              ui/), <code className="text-[10px]">src/hooks</code>.
             </p>
             <div className="space-y-4 max-h-[38vh] overflow-y-auto pe-1 border rounded-md p-3 bg-muted/10">
               {groups.map(({ group, items }) => {
@@ -363,7 +402,7 @@ export function PublishVersionDetailedDialog({
                           className="h-7 text-[11px]"
                           onClick={() => selectAllInGroup(ids, true)}
                         >
-                          בחר הכל
+                          בחר הכל בקבוצה
                         </Button>
                         <Button
                           type="button"
@@ -372,7 +411,7 @@ export function PublishVersionDetailedDialog({
                           className="h-7 text-[11px]"
                           onClick={() => selectAllInGroup(ids, false)}
                         >
-                          נקה
+                          נקה קבוצה
                         </Button>
                         <span className="text-[10px] text-muted-foreground self-center">
                           {ids.filter((id) => selectedIds.has(id)).length}/{ids.length}
@@ -380,26 +419,39 @@ export function PublishVersionDetailedDialog({
                       </div>
                     </div>
                     <ul className="space-y-2 ps-1">
-                      {items.map((item) => (
-                        <li key={item.id} className="flex items-start gap-2">
-                          <Checkbox
-                            id={checkboxDomId(item.id)}
-                            checked={selectedIds.has(item.id)}
-                            onCheckedChange={(v) => toggleId(item.id, v === true)}
-                            className="mt-0.5"
-                          />
-                          <label
-                            htmlFor={checkboxDomId(item.id)}
-                            className="text-xs leading-snug cursor-pointer flex-1"
-                          >
-                            <span className="font-medium">{item.name}</span>
-                            <span className="text-muted-foreground ms-1">({kindLabel(item.kind)})</span>
-                            <span className="block text-[10px] text-muted-foreground/80 font-mono" dir="ltr">
-                              {item.id}
-                            </span>
-                          </label>
-                        </li>
-                      ))}
+                      {items.map((item) => {
+                        const human = getPublishInventoryHuman(item.id, item.name, item.kind);
+                        return (
+                          <li key={item.id} className="flex items-start gap-2">
+                            <Checkbox
+                              id={checkboxDomId(item.id)}
+                              checked={selectedIds.has(item.id)}
+                              onCheckedChange={(v) => toggleId(item.id, v === true)}
+                              className="mt-0.5"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <label
+                                    htmlFor={checkboxDomId(item.id)}
+                                    className="text-xs leading-snug cursor-pointer block"
+                                  >
+                                    <span className="font-medium text-foreground">{human.title}</span>
+                                    <span className="text-muted-foreground ms-1">({kindLabel(item.kind)})</span>
+                                  </label>
+                                </TooltipTrigger>
+                                <TooltipContent side="left" className="max-w-[280px] text-xs">
+                                  {human.description}
+                                </TooltipContent>
+                              </Tooltip>
+                              <p className="text-[10px] text-muted-foreground mt-0.5 leading-snug">{human.description}</p>
+                              <span className="block text-[10px] text-muted-foreground/70 font-mono mt-0.5" dir="ltr">
+                                {item.id}
+                              </span>
+                            </div>
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 );
