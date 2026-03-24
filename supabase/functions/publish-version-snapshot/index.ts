@@ -2,7 +2,7 @@
  * פרסום version_snapshot.json ל-GitHub + סנכרון package.json / package-lock.json מריפו מקור + סימון ב-DB של פרודקשן.
  *
  * סודות (Supabase Functions):
- * - GITHUB_TOKEN; יעד: GITHUB_REPO או PRODUCTION_GITHUB_REPO (owner/name); GITHUB_BRANCH=master (ברירת מחדל)
+ * - GITHUB_TOKEN; יעד קבוע לפרסום: malachiroei/fleet-manager-2026 (ענף: GITHUB_BRANCH או master)
  * - אופציונלי GITHUB_VERSION_SNAPSHOT_PATH (default src/config/version_snapshot.json)
  * - סנכרון תלויות: GITHUB_DEPENDENCIES_SOURCE_REPO או זיווג ברירת מחדל fleet-manager-2026 → malachiroei/fleet-manager-dev
  * - GITHUB_DEPENDENCIES_SOURCE_BRANCH (ברירת מחדל dev)
@@ -24,6 +24,40 @@ const corsHeaders = {
 
 const ALLOWED_PUBLISHER_EMAIL = 'malachiroei@gmail.com';
 const DEFAULT_PATH = 'src/config/version_snapshot.json';
+
+/** יעד הפרסום ב-GitHub — קבוע (סנכרון תלויות + version_snapshot). */
+const GITHUB_DEST_OWNER = 'malachiroei';
+const GITHUB_DEST_REPO = 'fleet-manager-2026';
+
+const GITHUB_FETCH_TIMEOUT_MS = 10_000;
+
+/**
+ * fetch ל-GitHub עם timeout; לוג לפני ואחרי כל קריאה.
+ */
+async function githubFetch(label: string, url: string, init?: RequestInit): Promise<Response> {
+  console.log('Fetching from GitHub...', label, url);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GITHUB_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { ...init, signal: controller.signal });
+    console.log('GitHub fetch done', label, res.status, res.ok);
+    return res;
+  } catch (e) {
+    const name = e instanceof Error ? e.name : '';
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('GitHub fetch failed', label, name, msg);
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function githubErrorMessage(e: unknown): string {
+  if (e instanceof Error && e.name === 'AbortError') {
+    return `GitHub request timed out after ${GITHUB_FETCH_TIMEOUT_MS / 1000}s`;
+  }
+  return e instanceof Error ? e.message : String(e);
+}
 
 function utf8ToBase64(text: string): string {
   const bytes = new TextEncoder().encode(text);
@@ -81,7 +115,7 @@ async function fetchRepoFileText(
     return base64ToUtf8(data.content);
   }
   if (typeof data.download_url === 'string' && data.download_url.length > 0) {
-    const raw = await fetch(data.download_url, {
+    const raw = await githubFetch(`GET download_url ${owner}/${repo}/${filePath}`, data.download_url, {
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: 'application/vnd.github.v3.raw',
@@ -107,9 +141,11 @@ async function putRepoFile(
 ): Promise<{ ok: true; commit_sha?: string } | { ok: false; error: string }> {
   const apiBase =
     `https://api.github.com/repos/${destOwner}/${destRepo}/contents/${encodeURIComponent(filePath)}`;
-  const getRes = await fetch(`${apiBase}?ref=${encodeURIComponent(destBranch)}`, {
-    headers: githubHeaders(token),
-  });
+  const getRes = await githubFetch(
+    `GET dest sha ${destOwner}/${destRepo}/${filePath}@${destBranch}`,
+    `${apiBase}?ref=${encodeURIComponent(destBranch)}`,
+    { headers: githubHeaders(token) },
+  );
 
   let sha: string | undefined;
   if (getRes.ok) {
@@ -128,7 +164,7 @@ async function putRepoFile(
   };
   if (sha) putBody.sha = sha;
 
-  const putRes = await fetch(apiBase, {
+  const putRes = await githubFetch(`PUT dest ${destOwner}/${destRepo}/${filePath}`, apiBase, {
     method: 'PUT',
     headers: { ...githubHeaders(token), 'Content-Type': 'application/json' },
     body: JSON.stringify(putBody),
@@ -264,28 +300,11 @@ serve(async (req) => {
       });
     }
 
-    const repo =
-      Deno.env.get('GITHUB_REPO')?.trim() || Deno.env.get('PRODUCTION_GITHUB_REPO')?.trim();
+    const owner = GITHUB_DEST_OWNER;
+    const name = GITHUB_DEST_REPO;
+    console.log('GitHub publish destination repo:', `${owner}/${name}`);
     const branch = Deno.env.get('GITHUB_BRANCH')?.trim() || 'master';
     const path = Deno.env.get('GITHUB_VERSION_SNAPSHOT_PATH')?.trim() || DEFAULT_PATH;
-
-    if (!repo) {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: 'Missing GITHUB_REPO or PRODUCTION_GITHUB_REPO — set Supabase secrets for publish-version-snapshot',
-        }),
-        { status: 501, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-      );
-    }
-
-    const [owner, name] = repo.split('/').map((s) => s.trim());
-    if (!owner || !name) {
-      return new Response(JSON.stringify({ ok: false, error: 'GITHUB_REPO must be owner/name' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
 
     const depSourceBranch = Deno.env.get('GITHUB_DEPENDENCIES_SOURCE_BRANCH')?.trim() || 'dev';
 
@@ -323,7 +342,7 @@ serve(async (req) => {
         files: fileResults,
       };
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
+      const msg = githubErrorMessage(error);
       const status = /GITHUB_DEPENDENCIES_SOURCE_REPO must be exactly owner\/name/.test(msg)
         ? 400
         : /Cannot infer dependency source/.test(msg)
@@ -342,9 +361,11 @@ serve(async (req) => {
     let commitSha: string | undefined;
     try {
       const apiBase = `https://api.github.com/repos/${owner}/${name}/contents/${encodeURIComponent(path)}`;
-      const getRes = await fetch(`${apiBase}?ref=${encodeURIComponent(branch)}`, {
-        headers: githubHeaders(token),
-      });
+      const getRes = await githubFetch(
+        `GET snapshot ${owner}/${name}/${path}@${branch}`,
+        `${apiBase}?ref=${encodeURIComponent(branch)}`,
+        { headers: githubHeaders(token) },
+      );
 
       let sha: string | undefined;
       if (getRes.ok) {
@@ -367,7 +388,7 @@ serve(async (req) => {
       };
       if (sha) putBody.sha = sha;
 
-      const putRes = await fetch(apiBase, {
+      const putRes = await githubFetch(`PUT snapshot ${owner}/${name}/${path}`, apiBase, {
         method: 'PUT',
         headers: {
           ...githubHeaders(token),
@@ -393,7 +414,7 @@ serve(async (req) => {
       }
     } catch (error) {
       console.error('GITHUB API ERROR:', error);
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = githubErrorMessage(error);
       return new Response(
         JSON.stringify({ ok: false, error: `GitHub API error: ${detail}` }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
