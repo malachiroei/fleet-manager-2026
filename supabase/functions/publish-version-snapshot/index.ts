@@ -2,7 +2,7 @@
  * פרסום version_snapshot.json ל-GitHub + סימון ב-DB של פרודקשן שהגרסה מוכנה.
  *
  * סודות (Supabase Functions):
- * - GITHUB_TOKEN, GITHUB_REPO=owner/name (ריפו פרודקשן, למשל fleet-manager-2026), GITHUB_BRANCH=master (ברירת מחדל)
+ * - GITHUB_TOKEN; ריפו: GITHUB_REPO או PRODUCTION_GITHUB_REPO (owner/name); GITHUB_BRANCH=master (ברירת מחדל)
  * - אופציונלי GITHUB_VERSION_SNAPSHOT_PATH (default src/config/version_snapshot.json)
  * - אופציונלי PRODUCTION_SUPABASE_URL + PRODUCTION_SUPABASE_SERVICE_ROLE_KEY — עדכון system_settings בפרו
  *
@@ -91,7 +91,8 @@ serve(async (req) => {
     }
 
     const token = Deno.env.get('GITHUB_TOKEN')?.trim();
-    const repo = Deno.env.get('GITHUB_REPO')?.trim();
+    const repo =
+      Deno.env.get('GITHUB_REPO')?.trim() || Deno.env.get('PRODUCTION_GITHUB_REPO')?.trim();
     const branch = Deno.env.get('GITHUB_BRANCH')?.trim() || 'master';
     const path = Deno.env.get('GITHUB_VERSION_SNAPSHOT_PATH')?.trim() || DEFAULT_PATH;
 
@@ -99,7 +100,7 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({
           ok: false,
-          error: 'Missing GITHUB_TOKEN or GITHUB_REPO — set Supabase secrets for publish-version-snapshot',
+          error: 'Missing GITHUB_TOKEN or GITHUB_REPO/PRODUCTION_GITHUB_REPO — set Supabase secrets for publish-version-snapshot',
         }),
         { status: 501, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
