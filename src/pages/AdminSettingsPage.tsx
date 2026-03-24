@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { useAuth } from '@/hooks/useAuth';
+import { PublishVersionDetailedDialog } from '@/components/PublishVersionDetailedDialog';
 import { toast } from 'sonner';
 import {
   FLEET_PRO_ACK_VERSION_STORAGE_KEY,
@@ -65,7 +66,7 @@ const FLEET_STAGING_DEBUG_INFO_LINES = getFleetStagingOnlyUiInfoLines();
 
 export default function AdminSettingsPage() {
     const { theme, setTheme } = useTheme();
-    const { isAdmin, profile, refreshProfile } = useAuth();
+    const { isAdmin, profile, refreshProfile, user } = useAuth();
     const isFleetProDomain = isFleetManagerProHostname();
     const [lastPricingUpload, setLastPricingUpload] = useState<string | null>(localStorage.getItem('last_pricing_upload'));
     const lastVehicleUpload = localStorage.getItem('last_vehicle_upload');
@@ -199,7 +200,7 @@ export default function AdminSettingsPage() {
     const [isBackingUpSettings, setIsBackingUpSettings] = useState(false);
     const [isRestoringSettings, setIsRestoringSettings] = useState(false);
     // ── Version Release System (Admin) ───────────────────────────────────────────
-    const [isPublishConfirmOpen, setIsPublishConfirmOpen] = useState(false);
+    const [isPublishDetailedOpen, setIsPublishDetailedOpen] = useState(false);
     const [isPublishProgressOpen, setIsPublishProgressOpen] = useState(false);
     const [publishNextVersion, setPublishNextVersion] = useState<string>('');
     const [publishVersionInput, setPublishVersionInput] = useState<string>('');
@@ -615,7 +616,7 @@ export default function AdminSettingsPage() {
         setPublishNextVersion(versionDefault);
         setPublishVersionInput(versionDefault);
 
-        setIsPublishConfirmOpen(true);
+        setIsPublishDetailedOpen(true);
       } catch (e) {
         console.error(e);
         const message = e instanceof Error ? e.message : 'שגיאה לא ידועה';
@@ -631,7 +632,7 @@ export default function AdminSettingsPage() {
         return;
       }
 
-      setIsPublishConfirmOpen(false);
+      setIsPublishDetailedOpen(false);
       setIsPublishProgressOpen(true);
       setIsPublishing(true);
       setPublishProgressValue(0);
@@ -1027,107 +1028,25 @@ export default function AdminSettingsPage() {
 
           {showDevTools && (
             <>
-              {/* Publish Version Confirm Modal */}
-              <Dialog open={isPublishConfirmOpen} onOpenChange={setIsPublishConfirmOpen}>
-                <DialogContent dir="rtl" className="sm:max-w-xl">
-                  <DialogHeader>
-                    <DialogTitle>פרסום גרסה חדשה</DialogTitle>
-                    <DialogDescription className="space-y-2">
-                      <span className="block">
-                        פרסום לכולם מעדכן רק את <code className="text-xs">system_settings.app_version</code>. לקוחות בפרו
-                        משווים לגרסת הבנדל ב־<code className="text-xs">version.ts</code> — כשהן תואמות, מודאל העדכון נסגר
-                        אחרי «עדכן עכשיו».
-                      </span>
-                    </DialogDescription>
-                  </DialogHeader>
-
-                  <div className="space-y-3 max-h-[70vh] overflow-y-auto pe-1">
-                    {isFleetManagerTestHost() ? (
-                      <div className="rounded-md border border-border bg-muted/30 p-3 space-y-2 text-sm">
-                        <p className="font-semibold text-foreground">השוואת גרסאות (Diff)</p>
-                        <div className="flex flex-wrap justify-between gap-2">
-                          <span className="text-muted-foreground">גרסת בנדל (הפריסה הנוכחית)</span>
-                          <code className="font-mono text-xs bg-background px-2 py-0.5 rounded">{codeVersion}</code>
-                        </div>
-                        <div className="flex flex-wrap justify-between gap-2">
-                          <span className="text-muted-foreground">app_version אחרון ב־Supabase</span>
-                          <code className="font-mono text-xs bg-background px-2 py-0.5 rounded">
-                            {publishDiffSupabaseVersion || '—'}
-                          </code>
-                        </div>
-                        {publishDiffSupabaseVersion ? (
-                          <p className="text-xs text-muted-foreground">
-                            {compareSemver(codeVersion, publishDiffSupabaseVersion) > 0
-                              ? 'הבנדל חדש יותר מהרשומה בענן — פרסום יעדכן את מקור האמת.'
-                              : compareSemver(codeVersion, publishDiffSupabaseVersion) < 0
-                                ? 'בענן רשומה גרסה גבוהה מהבנדל — ודא שהפריסה מסונכרנת.'
-                                : 'מספרי גרסה תואמים בין בנדל לענן (semver).'}
-                          </p>
-                        ) : null}
-                      </div>
-                    ) : null}
-
-                    <div className="rounded-md border border-dashed border-muted-foreground/35 bg-muted/20 p-3 space-y-2 text-sm">
-                      <p className="font-semibold text-foreground" dir="ltr">
-                        Staging/Debug Features (Active in Test Only)
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        טוקנים אלה פעילים רק בסביבת בדיקה; בפרודקשן לא מופעלים — רשימה לעיון בלבד.
-                      </p>
-                      {FLEET_STAGING_DEBUG_INFO_LINES.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">—</p>
-                      ) : (
-                        <ul className="space-y-1.5 list-disc list-inside text-xs text-muted-foreground">
-                          {FLEET_STAGING_DEBUG_INFO_LINES.map((line) => (
-                            <li key={line} className="break-words">
-                              {line}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-semibold" htmlFor="publish-version-input">
-                        מספר גרסה (ברירת מחדל = גרסת בנדל + patch +1)
-                      </label>
-                      <Input
-                        id="publish-version-input"
-                        dir="ltr"
-                        className="font-mono text-sm"
-                        value={publishVersionInput}
-                        onChange={(e) => setPublishVersionInput(e.target.value)}
-                        placeholder={computeNextPatchVersion(
-                          toCanonicalThreePartVersion(normalizeVersion(codeVersion)) ||
-                            normalizeVersion(codeVersion).trim() ||
-                            '0.0.0'
-                        )}
-                        autoComplete="off"
-                      />
-                      <p className="text-xs text-amber-700/90 dark:text-amber-400/95 rounded-md border border-amber-500/35 bg-amber-500/10 px-2 py-1.5">
-                        לפני הפריסה הבאה: עדכן את <code className="text-[10px]">src/constants/version.ts</code> ל־
-                        <code className="text-[10px] font-mono" dir="ltr">
-                          {(publishVersionInput || publishNextVersion || codeVersion).trim()}
-                        </code>{' '}
-                        כדי שיתאים לגרסה המפורסמת — כך מודאל «עדכן עכשיו» לא יציג אזהרת bundle mismatch.
-                      </p>
-                    </div>
-                  </div>
-
-                  <DialogFooter className="mt-4">
-                    <Button
-                      variant="outline"
-                      onClick={() => setIsPublishConfirmOpen(false)}
-                      disabled={isPublishing}
-                    >
-                      ביטול
-                    </Button>
-                    <Button onClick={publishRelease} disabled={isPublishing}>
-                      פרסם לכולם
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
+              <PublishVersionDetailedDialog
+                open={isPublishDetailedOpen}
+                onOpenChange={setIsPublishDetailedOpen}
+                userEmail={(user?.email ?? '').toLowerCase()}
+                codeVersion={codeVersion}
+                isFleetManagerTestHost={isFleetManagerTestHost()}
+                publishDiffSupabaseVersion={publishDiffSupabaseVersion}
+                publishVersionInput={publishVersionInput}
+                onPublishVersionInputChange={setPublishVersionInput}
+                publishNextVersion={publishNextVersion}
+                publishVersionPlaceholder={computeNextPatchVersion(
+                  toCanonicalThreePartVersion(normalizeVersion(codeVersion)) ||
+                    normalizeVersion(codeVersion).trim() ||
+                    '0.0.0'
+                )}
+                stagingDebugLines={FLEET_STAGING_DEBUG_INFO_LINES}
+                isPublishingLocal={isPublishing}
+                onPublishLocalOnly={publishRelease}
+              />
 
               {/* Publish Version Progress Modal */}
               <Dialog
