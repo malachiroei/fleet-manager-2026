@@ -5,6 +5,7 @@ import type { VersionSnapshotFile } from '@/lib/versionSnapshotTypes';
 export type PublishVersionSnapshotResponse = {
   ok: true;
   github: { path: string; branch: string; commit_sha: string | null };
+  dependencies_sync?: Record<string, unknown>;
   production: Record<string, unknown>;
 };
 

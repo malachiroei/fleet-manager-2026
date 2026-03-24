@@ -166,9 +166,19 @@ export function PublishVersionDetailedDialog({
               ? `פרודקשן: ${prod.error}`
               : 'פרודקשן: סטטוס לא ידוע.';
 
+      const deps = res.dependencies_sync as { skipped?: boolean; reason?: string; source_repo?: string } | undefined;
+      const depsMsg =
+        deps?.skipped === false && deps.source_repo
+          ? ` סנכרון תלויות: package.json + package-lock מ־${deps.source_repo}.`
+          : deps?.skipped === true
+            ? ` תלויות: לא סונכרנו (${String(deps?.reason ?? 'הגדר GITHUB_DEPENDENCIES_SOURCE_REPO')}).`
+            : '';
+
       await onAfterGithubPublish(version);
 
-      toast.success(`GitHub: ${res.github.path} (${res.github.branch}). ${prodMsg} נשמרה גרסה ב-Supabase.`);
+      toast.success(
+        `GitHub: ${res.github.path} (${res.github.branch}).${depsMsg} ${prodMsg} נשמרה גרסה ב-Supabase.`,
+      );
       onOpenChange(false);
       if (isFleetManagerTestHost) {
         window.setTimeout(() => {

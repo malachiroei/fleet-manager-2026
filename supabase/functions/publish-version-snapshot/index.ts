@@ -1,16 +1,18 @@
 /**
- * פרסום version_snapshot.json ל-GitHub + סימון ב-DB של פרודקשן שהגרסה מוכנה.
+ * פרסום version_snapshot.json ל-GitHub + סנכרון package.json / package-lock.json מריפו מקור + סימון ב-DB של פרודקשן.
  *
  * סודות (Supabase Functions):
- * - GITHUB_TOKEN; ריפו: GITHUB_REPO או PRODUCTION_GITHUB_REPO (owner/name); GITHUB_BRANCH=master (ברירת מחדל)
+ * - GITHUB_TOKEN; יעד: GITHUB_REPO או PRODUCTION_GITHUB_REPO (owner/name); GITHUB_BRANCH=master (ברירת מחדל)
  * - אופציונלי GITHUB_VERSION_SNAPSHOT_PATH (default src/config/version_snapshot.json)
+ * - סנכרון תלויות (מומלץ): GITHUB_DEPENDENCIES_SOURCE_REPO=owner/fleet-manager-dev, GITHUB_DEPENDENCIES_SOURCE_BRANCH=dev
+ *   — מעתיק package.json ו-package-lock.json מהמקור לענף היעד בפרו לפני עדכון ה-snapshot.
  * - אופציונלי PRODUCTION_SUPABASE_URL + PRODUCTION_SUPABASE_SERVICE_ROLE_KEY — עדכון system_settings בפרו
  *
  * גוף: { snapshot: { version, release_date, description, features[], ui_changes } }
  * דורש Authorization: Bearer <JWT> — רק malachiroei@gmail.com
  */
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
-import { encode as base64Encode } from 'https://deno.land/std@0.190.0/encoding/base64.ts';
+import { decode as base64Decode, encode as base64Encode } from 'https://deno.land/std@0.190.0/encoding/base64.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
@@ -21,6 +23,104 @@ const corsHeaders = {
 
 const ALLOWED_PUBLISHER_EMAIL = 'malachiroei@gmail.com';
 const DEFAULT_PATH = 'src/config/version_snapshot.json';
+
+const githubHeaders = (token: string) => ({
+  Accept: 'application/vnd.github+json',
+  Authorization: `Bearer ${token}`,
+  'X-GitHub-Api-Version': '2022-11-28',
+});
+
+/** תוכן טקסט מקובץ בריפו (תומך ב-base64 או download_url לקבצים גדולים). */
+async function fetchRepoFileText(
+  owner: string,
+  repo: string,
+  filePath: string,
+  ref: string,
+  token: string,
+): Promise<string> {
+  const url =
+    `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(filePath)}?ref=${encodeURIComponent(ref)}`;
+  const res = await fetch(url, { headers: githubHeaders(token) });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`GET ${owner}/${repo}/${filePath}@${ref}: ${res.status} ${t.slice(0, 240)}`);
+  }
+  const data = (await res.json()) as {
+    encoding?: string;
+    content?: string;
+    download_url?: string | null;
+  };
+  if (data.encoding === 'base64' && typeof data.content === 'string') {
+    const bytes = base64Decode(data.content.replace(/\s/g, ''));
+    return new TextDecoder().decode(bytes);
+  }
+  if (typeof data.download_url === 'string' && data.download_url.length > 0) {
+    const raw = await fetch(data.download_url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github.v3.raw',
+      },
+    });
+    if (!raw.ok) {
+      throw new Error(`download_url ${filePath}: ${raw.status}`);
+    }
+    return await raw.text();
+  }
+  throw new Error(`Unexpected GitHub contents payload for ${filePath}`);
+}
+
+async function putRepoFile(
+  destOwner: string,
+  destRepo: string,
+  filePath: string,
+  destBranch: string,
+  text: string,
+  token: string,
+  message: string,
+): Promise<{ ok: true; commit_sha?: string } | { ok: false; error: string }> {
+  const apiBase =
+    `https://api.github.com/repos/${destOwner}/${destRepo}/contents/${encodeURIComponent(filePath)}`;
+  const getRes = await fetch(`${apiBase}?ref=${encodeURIComponent(destBranch)}`, {
+    headers: githubHeaders(token),
+  });
+
+  let sha: string | undefined;
+  if (getRes.ok) {
+    const meta = (await getRes.json()) as { sha?: string };
+    sha = typeof meta.sha === 'string' ? meta.sha : undefined;
+  } else if (getRes.status !== 404) {
+    const errText = await getRes.text();
+    return { ok: false, error: `GET dest ${filePath}: ${getRes.status} ${errText.slice(0, 200)}` };
+  }
+
+  const b64 = base64Encode(new TextEncoder().encode(text));
+  const putBody: Record<string, string> = {
+    message,
+    content: b64,
+    branch: destBranch,
+  };
+  if (sha) putBody.sha = sha;
+
+  const putRes = await fetch(apiBase, {
+    method: 'PUT',
+    headers: { ...githubHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(putBody),
+  });
+
+  const putText = await putRes.text();
+  if (!putRes.ok) {
+    return { ok: false, error: `PUT dest ${filePath}: ${putRes.status} ${putText.slice(0, 300)}` };
+  }
+
+  let commitSha: string | undefined;
+  try {
+    const putJson = JSON.parse(putText) as { commit?: { sha?: string } };
+    commitSha = typeof putJson?.commit?.sha === 'string' ? putJson.commit.sha : undefined;
+  } catch {
+    /* ignore */
+  }
+  return { ok: true, commit_sha: commitSha };
+}
 
 serve(async (req) => {
   console.log('--- STARTING PUBLISH PROCESS ---');
@@ -110,7 +210,6 @@ serve(async (req) => {
 
     console.log('Using Token starting with:', Deno.env.get('GITHUB_TOKEN')?.slice(0, 4));
 
-    const text = JSON.stringify(snap, null, 2);
     const [owner, name] = repo.split('/').map((s) => s.trim());
     if (!owner || !name) {
       return new Response(JSON.stringify({ ok: false, error: 'GITHUB_REPO must be owner/name' }), {
@@ -119,15 +218,60 @@ serve(async (req) => {
       });
     }
 
+    let dependenciesSync: Record<string, unknown> = {
+      skipped: true,
+      reason: 'Set GITHUB_DEPENDENCIES_SOURCE_REPO (and optionally GITHUB_DEPENDENCIES_SOURCE_BRANCH) to sync package files',
+    };
+
+    const depSourceRepoRaw = Deno.env.get('GITHUB_DEPENDENCIES_SOURCE_REPO')?.trim();
+    const depSourceBranch = Deno.env.get('GITHUB_DEPENDENCIES_SOURCE_BRANCH')?.trim() || 'dev';
+
+    if (depSourceRepoRaw) {
+      const [so, sn] = depSourceRepoRaw.split('/').map((s) => s.trim());
+      if (!so || !sn) {
+        dependenciesSync = { skipped: true, reason: 'invalid GITHUB_DEPENDENCIES_SOURCE_REPO (expected owner/name)' };
+      } else {
+        try {
+          const depFiles = ['package.json', 'package-lock.json'] as const;
+          const fileResults: Record<string, unknown>[] = [];
+          for (const fp of depFiles) {
+            const content = await fetchRepoFileText(so, sn, fp, depSourceBranch, token);
+            const put = await putRepoFile(
+              owner,
+              name,
+              fp,
+              branch,
+              content,
+              token,
+              `chore(release): sync ${fp} for ${version} from ${depSourceRepoRaw}@${depSourceBranch}`,
+            );
+            if (!put.ok) {
+              throw new Error(put.error);
+            }
+            fileResults.push({ path: fp, updated: true, commit_sha: put.commit_sha ?? null });
+          }
+          dependenciesSync = {
+            skipped: false,
+            source_repo: depSourceRepoRaw,
+            source_branch: depSourceBranch,
+            files: fileResults,
+          };
+        } catch (error) {
+          console.error('GITHUB API ERROR (dependencies sync):', error);
+          const detail = error instanceof Error ? error.message : String(error);
+          return new Response(
+            JSON.stringify({ ok: false, error: `Dependencies sync failed: ${detail}` }),
+            { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          );
+        }
+      }
+    }
+
     let commitSha: string | undefined;
     try {
       const apiBase = `https://api.github.com/repos/${owner}/${name}/contents/${encodeURIComponent(path)}`;
       const getRes = await fetch(`${apiBase}?ref=${encodeURIComponent(branch)}`, {
-        headers: {
-          Accept: 'application/vnd.github+json',
-          Authorization: `Bearer ${token}`,
-          'X-GitHub-Api-Version': '2022-11-28',
-        },
+        headers: githubHeaders(token),
       });
 
       let sha: string | undefined;
@@ -142,6 +286,7 @@ serve(async (req) => {
         );
       }
 
+      const text = JSON.stringify(snap, null, 2);
       const b64 = base64Encode(new TextEncoder().encode(text));
       const putBody: Record<string, string> = {
         message: `chore(release): version_snapshot ${version}`,
@@ -153,9 +298,7 @@ serve(async (req) => {
       const putRes = await fetch(apiBase, {
         method: 'PUT',
         headers: {
-          Accept: 'application/vnd.github+json',
-          Authorization: `Bearer ${token}`,
-          'X-GitHub-Api-Version': '2022-11-28',
+          ...githubHeaders(token),
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(putBody),
@@ -213,6 +356,7 @@ serve(async (req) => {
       JSON.stringify({
         ok: true,
         github: { path, branch, commit_sha: commitSha ?? null },
+        dependencies_sync: dependenciesSync,
         production: productionResult,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
