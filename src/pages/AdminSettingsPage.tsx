@@ -7,7 +7,6 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Progress } from '@/components/ui/progress';
 import { supabase } from '@/integrations/supabase/client';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import PricingDataUploader from '@/components/PricingDataUploader';
@@ -201,11 +200,8 @@ export default function AdminSettingsPage() {
     const [isRestoringSettings, setIsRestoringSettings] = useState(false);
     // ── Version Release System (Admin) ───────────────────────────────────────────
     const [isPublishDetailedOpen, setIsPublishDetailedOpen] = useState(false);
-    const [isPublishProgressOpen, setIsPublishProgressOpen] = useState(false);
     const [publishNextVersion, setPublishNextVersion] = useState<string>('');
     const [publishVersionInput, setPublishVersionInput] = useState<string>('');
-    const [publishProgressValue, setPublishProgressValue] = useState<number>(0);
-    const [publishProgressStage, setPublishProgressStage] = useState<string>('');
     const [isPublishing, setIsPublishing] = useState(false);
     /** גרסת app_version אחרונה ב־Supabase — תצוגה במודאל פרסום */
     const [publishDiffSupabaseVersion, setPublishDiffSupabaseVersion] = useState<string>('');
@@ -624,82 +620,38 @@ export default function AdminSettingsPage() {
       }
     };
 
-    const publishRelease = async () => {
-      const versionFinal = publishVersionInput.trim() || publishNextVersion.trim();
+    const publishAppVersionToSupabase = async (versionFinal: string) => {
+      const now = new Date();
+      const publishedAtIso = now.toISOString();
+      const versionCanonical =
+        normalizeVersion(String(versionFinal).trim()) || String(versionFinal).trim();
 
-      if (!String(versionFinal).trim()) {
-        toast.error('נא להזין מספר גרסה (כל מחרוזת לא ריקה, למשל 2.6.2).');
-        return;
+      await upsertSystemSettingsRows(supabase as any, [
+        { key: 'app_version', value: versionCanonical },
+        { key: 'last_update_date', value: publishedAtIso },
+      ]);
+
+      const verify = await verifyAppVersionInSupabase(supabase as any, versionCanonical);
+      if (verify.ok === false) {
+        console.error('verifyAppVersionInSupabase', verify.message);
+        throw new Error(verify.message);
       }
-
-      setIsPublishDetailedOpen(false);
-      setIsPublishProgressOpen(true);
-      setIsPublishing(true);
-      setPublishProgressValue(0);
-      setPublishProgressStage('מכין פרסום...');
-
-      const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
       try {
-        setPublishProgressStage('שומר גרסה ב־Supabase...');
-        setPublishProgressValue(45);
-        await sleep(150);
-
-        const now = new Date();
-        const publishedAtIso = now.toISOString();
-        const versionCanonical =
-          normalizeVersion(String(versionFinal).trim()) || String(versionFinal).trim();
-
-        await upsertSystemSettingsRows(supabase as any, [
-          { key: 'app_version', value: versionCanonical },
-          { key: 'last_update_date', value: publishedAtIso },
-        ]);
-
-        const verify = await verifyAppVersionInSupabase(supabase as any, versionCanonical);
-        if (verify.ok === false) {
-          console.error('verifyAppVersionInSupabase', verify.message);
-          throw new Error(verify.message);
-        }
-
-        try {
-          localStorage.setItem('fleet-manager-app_version', versionCanonical);
-          localStorage.setItem('fleet-manager-last_update_date_iso', publishedAtIso);
-          const ackCanon =
-            toCanonicalThreePartVersion(normalizeVersion(versionCanonical)) ||
-            normalizeVersion(versionCanonical);
-          localStorage.setItem(FLEET_PRO_ACK_VERSION_STORAGE_KEY, ackCanon);
-          window.dispatchEvent(new Event(FLEET_PRO_ACK_VERSION_UPDATED_EVENT));
-        } catch {
-          // ignore quota / private mode
-        }
-        clearFleetProUpdateModalSuppressFlag();
-        hidePwaUpdateModal();
-        setAppVersion(versionCanonical);
-        setLatestManifestVersion(versionCanonical);
-
-        setPublishProgressStage('בוצע!');
-        setPublishProgressValue(100);
-        toast.success(
-          isFleetManagerTestHost()
-            ? `הגרסה ${versionCanonical} נשמרה ב-Supabase (app_version).`
-            : `הגרסה ${versionCanonical} נשמרה ב־Supabase תחת app_version — מקור האמת לעדכון גלובלי.`
-        );
-
-        setIsPublishProgressOpen(false);
-
-        if (isFleetManagerTestHost()) {
-          window.setTimeout(() => {
-            window.location.reload();
-          }, 600);
-        }
-      } catch (e) {
-        console.error(e);
-        const message = e instanceof Error ? e.message : 'שגיאה לא ידועה';
-        toast.error(`פרסום נכשל: ${message}`);
-        setIsPublishProgressOpen(false);
-      } finally {
-        setIsPublishing(false);
+        localStorage.setItem('fleet-manager-app_version', versionCanonical);
+        localStorage.setItem('fleet-manager-last_update_date_iso', publishedAtIso);
+        const ackCanon =
+          toCanonicalThreePartVersion(normalizeVersion(versionCanonical)) ||
+          normalizeVersion(versionCanonical);
+        localStorage.setItem(FLEET_PRO_ACK_VERSION_STORAGE_KEY, ackCanon);
+        window.dispatchEvent(new Event(FLEET_PRO_ACK_VERSION_UPDATED_EVENT));
+      } catch {
+        // ignore quota / private mode
       }
+      clearFleetProUpdateModalSuppressFlag();
+      hidePwaUpdateModal();
+      setAppVersion(versionCanonical);
+      setLatestManifestVersion(versionCanonical);
     };
 
     const isValidFleetManagerBackup = (value: unknown): value is { metadata: { appIdentifier: string } } => {
@@ -1044,32 +996,9 @@ export default function AdminSettingsPage() {
                     '0.0.0'
                 )}
                 stagingDebugLines={FLEET_STAGING_DEBUG_INFO_LINES}
-                isPublishingLocal={isPublishing}
-                onPublishLocalOnly={publishRelease}
+                onAfterGithubPublish={publishAppVersionToSupabase}
+                onFullPublishBusyChange={setIsPublishing}
               />
-
-              {/* Publish Version Progress Modal */}
-              <Dialog
-                open={isPublishProgressOpen}
-                onOpenChange={(open) => {
-                  if (!open && isPublishing) return;
-                  setIsPublishProgressOpen(open);
-                }}
-              >
-                <DialogContent dir="rtl" className="sm:max-w-md">
-                  <DialogHeader>
-                    <DialogTitle>פרסום גרסה</DialogTitle>
-                    <DialogDescription>{publishProgressStage}</DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-3">
-                    <Progress value={publishProgressValue} className="h-2" />
-                    <p className="text-xs text-muted-foreground">
-                      נשמר ב-Supabase: <code className="text-[10px]">app_version</code> ו־
-                      <code className="text-[10px]">last_update_date</code>. בטסט הדף יתרענן אוטומטית אחרי השמירה.
-                    </p>
-                  </div>
-                </DialogContent>
-              </Dialog>
             </>
           )}
        </main>

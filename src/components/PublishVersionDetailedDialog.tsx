@@ -17,8 +17,8 @@ import { APP_VERSION } from '@/constants/version';
 import { invokePublishVersionSnapshot } from '@/lib/invokePublishVersionSnapshot';
 import {
   buildVersionSnapshotFeaturesFromSelection,
+  getVersionPublishInventory,
   versionPublishInventoryGroups,
-  VERSION_PUBLISH_INVENTORY,
 } from '@/lib/versionPublishInventory';
 import type { VersionSnapshotFile } from '@/lib/versionSnapshotTypes';
 import { compareSemver, toCanonicalThreePartVersion, normalizeVersion } from '@/lib/versionManifest';
@@ -26,6 +26,18 @@ import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 const PUBLISHER_EMAIL = 'malachiroei@gmail.com';
+
+function checkboxDomId(inventoryId: string): string {
+  return `pv-inv-${inventoryId.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+}
+
+function kindLabel(kind: string): string {
+  if (kind === 'form') return 'טופס';
+  if (kind === 'page') return 'עמוד';
+  if (kind === 'button') return 'כפתור';
+  if (kind === 'hook') return 'לוגיקה';
+  return kind;
+}
 
 export type PublishVersionDetailedDialogProps = {
   open: boolean;
@@ -39,8 +51,10 @@ export type PublishVersionDetailedDialogProps = {
   publishNextVersion: string;
   publishVersionPlaceholder: string;
   stagingDebugLines: string[];
-  isPublishingLocal: boolean;
-  onPublishLocalOnly: () => void;
+  /** אחרי דחיפה מוצלחת ל-GitHub — שמירת app_version ו-last_update_date ב-Supabase הנוכחי */
+  onAfterGithubPublish: (versionCanonical: string) => Promise<void>;
+  /** לנעילת כפתור «פרסם גרסה חדשה» בזמן הזרימה */
+  onFullPublishBusyChange?: (busy: boolean) => void;
 };
 
 export function PublishVersionDetailedDialog({
@@ -55,22 +69,27 @@ export function PublishVersionDetailedDialog({
   publishNextVersion,
   publishVersionPlaceholder,
   stagingDebugLines,
-  isPublishingLocal,
-  onPublishLocalOnly,
+  onAfterGithubPublish,
+  onFullPublishBusyChange,
 }: PublishVersionDetailedDialogProps) {
   const canPublishSnapshot = userEmail.trim().toLowerCase() === PUBLISHER_EMAIL;
   const [description, setDescription] = useState('');
+  const [releaseNotes, setReleaseNotes] = useState('');
   const [uiChanges, setUiChanges] = useState('');
   const [releaseDate, setReleaseDate] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
-  const [isSendingSnapshot, setIsSendingSnapshot] = useState(false);
+  const [isPublishingFull, setIsPublishingFull] = useState(false);
 
-  const groups = useMemo(() => versionPublishInventoryGroups(), []);
+  const groups = useMemo(() => {
+    if (!open) return [];
+    return versionPublishInventoryGroups();
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
     const s = snapshotBundled as VersionSnapshotFile;
     setDescription(typeof s.description === 'string' ? s.description : '');
+    setReleaseNotes(typeof s.release_notes === 'string' ? s.release_notes : '');
     setUiChanges(typeof s.ui_changes === 'string' ? s.ui_changes : '');
     setReleaseDate(
       typeof s.release_date === 'string' && s.release_date.trim()
@@ -78,7 +97,7 @@ export function PublishVersionDetailedDialog({
         : new Date().toISOString().slice(0, 10)
     );
     const ids = new Set<string>();
-    const invIds = new Set(VERSION_PUBLISH_INVENTORY.map((i) => i.id));
+    const invIds = new Set(getVersionPublishInventory().map((i) => i.id));
     for (const f of s.features ?? []) {
       if (f && typeof f.id === 'string' && invIds.has(f.id)) ids.add(f.id);
     }
@@ -105,7 +124,7 @@ export function PublishVersionDetailedDialog({
     });
   }, []);
 
-  const handleSendVersion = async () => {
+  const handlePublishAll = async () => {
     const version =
       normalizeVersion(publishVersionInput.trim()) ||
       normalizeVersion(publishNextVersion.trim()) ||
@@ -115,7 +134,7 @@ export function PublishVersionDetailedDialog({
       return;
     }
     if (!canPublishSnapshot) {
-      toast.error('פרסום snapshot ל-GitHub מותר רק מהחשבון המורשה.');
+      toast.error('פרסום מלא מותר רק מהחשבון המורשה.');
       return;
     }
     if (selectedIds.size === 0) {
@@ -127,29 +146,40 @@ export function PublishVersionDetailedDialog({
       version,
       release_date: releaseDate.trim() || new Date().toISOString().slice(0, 10),
       description: description.trim() || `גרסה ${version}`,
+      release_notes: releaseNotes.trim() || undefined,
       features: buildVersionSnapshotFeaturesFromSelection(selectedIds),
-      ui_changes: uiChanges.trim() || '—',
+      ui_changes: uiChanges.trim() || releaseNotes.trim() || '—',
     };
 
-    setIsSendingSnapshot(true);
+    setIsPublishingFull(true);
+    onFullPublishBusyChange?.(true);
     try {
       const res = await invokePublishVersionSnapshot(snapshot);
       const prod = res.production as { updated?: boolean; skipped?: boolean; reason?: string; error?: string };
       const prodMsg =
         prod.updated === true
-          ? 'עודכן מפתח version_snapshot_published בפרודקשן.'
+          ? 'עודכן version_snapshot_published בפרודקשן.'
           : prod.skipped
             ? `פרודקשן: דולג (${prod.reason ?? 'לא הוגדרו סודות PRODUCTION_*'}).`
             : prod.error
               ? `פרודקשן: ${prod.error}`
               : 'פרודקשן: סטטוס לא ידוע.';
-      toast.success(`נשלח ל-GitHub: ${res.github.path} (${res.github.branch}). ${prodMsg}`);
+
+      await onAfterGithubPublish(version);
+
+      toast.success(`GitHub: ${res.github.path} (${res.github.branch}). ${prodMsg} נשמרה גרסה ב-Supabase.`);
       onOpenChange(false);
+      if (isFleetManagerTestHost) {
+        window.setTimeout(() => {
+          window.location.reload();
+        }, 600);
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      toast.error(`שליחת גרסה נכשלה: ${msg}`);
+      toast.error(`פרסום נכשל: ${msg}`);
     } finally {
-      setIsSendingSnapshot(false);
+      setIsPublishingFull(false);
+      onFullPublishBusyChange?.(false);
     }
   };
 
@@ -157,12 +187,12 @@ export function PublishVersionDetailedDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent dir="rtl" className="sm:max-w-3xl max-h-[90vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>פרסום גרסה — snapshot + GitHub + פרודקשן</DialogTitle>
+          <DialogTitle>פרסום גרסה — snapshot + GitHub + Supabase</DialogTitle>
           <DialogDescription className="space-y-2">
             <span className="block text-xs text-muted-foreground">
-              בוחרים את הרכיבים שנכללים בגרסה; לחיצה על «שלח גרסה» מעדכנת את{' '}
-              <code className="text-[10px]">src/config/version_snapshot.json</code> ב-GitHub (דורש סודות ב-Supabase
-              Functions) ומסמנת ב-DB של הפרו שהגרסה מוכנה.
+              «פרסם לכולם» מעדכן את <code className="text-[10px]">version_snapshot.json</code> ב-GitHub (פרו), מסמן
+              ב-DB של הפרו אם הוגדרו סודות, ומקפיץ את <code className="text-[10px]">app_version</code> בסביבת
+              Supabase הנוכחית.
             </span>
             <span className="block text-xs">
               גרסת <code className="text-[10px]">APP_VERSION</code> מקומית:{' '}
@@ -172,7 +202,7 @@ export function PublishVersionDetailedDialog({
             </span>
             {!canPublishSnapshot ? (
               <span className="block text-xs text-amber-700 dark:text-amber-400 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1">
-                מחובר כ־{userEmail || '—'} — «שלח גרסה» זמין רק מ־{PUBLISHER_EMAIL}.
+                מחובר כ־{userEmail || '—'} — פרסום מלא זמין רק מ־{PUBLISHER_EMAIL}.
               </span>
             ) : null}
           </DialogDescription>
@@ -223,6 +253,18 @@ export function PublishVersionDetailedDialog({
             )}
           </div>
 
+          <div className="space-y-2 border border-border rounded-md p-3 bg-muted/5 shrink-0">
+            <h3 className="text-sm font-semibold text-foreground">מה חדש בגרסה?</h3>
+            <Textarea
+              id="pv-release-notes"
+              rows={4}
+              value={releaseNotes}
+              onChange={(e) => setReleaseNotes(e.target.value)}
+              placeholder="תאר בקצרה מה השתנה לצוות / למשתמשים..."
+              className="text-sm resize-y min-h-[80px]"
+            />
+          </div>
+
           <div className="grid gap-3 sm:grid-cols-2 shrink-0">
             <div className="space-y-1.5 sm:col-span-2">
               <Label htmlFor="pv-version">מספר גרסה לפרסום</Label>
@@ -252,7 +294,7 @@ export function PublishVersionDetailedDialog({
               />
             </div>
             <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor="pv-desc">תיאור גרסה</Label>
+              <Label htmlFor="pv-desc">תיאור קצר (כותרת)</Label>
               <Textarea
                 id="pv-desc"
                 rows={2}
@@ -262,7 +304,7 @@ export function PublishVersionDetailedDialog({
               />
             </div>
             <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor="pv-ui">שינויי ממשק (טקסט חופשי)</Label>
+              <Label htmlFor="pv-ui">שינויי ממשק (אופציונלי — טקסט חופשי)</Label>
               <Textarea
                 id="pv-ui"
                 rows={2}
@@ -274,7 +316,11 @@ export function PublishVersionDetailedDialog({
           </div>
 
           <div className="space-y-2 border-t border-border pt-3">
-            <p className="text-sm font-semibold">מלאי רכיבים — סמן מה נכלל בגרסה</p>
+            <p className="text-sm font-semibold">מלאי רכיבים (סריקה אוטומטית)</p>
+            <p className="text-[11px] text-muted-foreground">
+              נסרקים <code className="text-[10px]">src/pages</code>, <code className="text-[10px]">src/components</code>{' '}
+              (ללא ui/), ו-<code className="text-[10px]">src/hooks</code>. קבצים חדשים יופיעו אחרי בנייה מחדש.
+            </p>
             <div className="space-y-4 max-h-[38vh] overflow-y-auto pe-1 border rounded-md p-3 bg-muted/10">
               {groups.map(({ group, items }) => {
                 const ids = items.map((i) => i.id);
@@ -290,7 +336,7 @@ export function PublishVersionDetailedDialog({
                           className="h-7 text-[11px]"
                           onClick={() => selectAllInGroup(ids, true)}
                         >
-                          סמן הכל
+                          בחר הכל
                         </Button>
                         <Button
                           type="button"
@@ -310,18 +356,19 @@ export function PublishVersionDetailedDialog({
                       {items.map((item) => (
                         <li key={item.id} className="flex items-start gap-2">
                           <Checkbox
-                            id={`pv-inv-${item.id}`}
+                            id={checkboxDomId(item.id)}
                             checked={selectedIds.has(item.id)}
                             onCheckedChange={(v) => toggleId(item.id, v === true)}
                             className="mt-0.5"
                           />
                           <label
-                            htmlFor={`pv-inv-${item.id}`}
+                            htmlFor={checkboxDomId(item.id)}
                             className="text-xs leading-snug cursor-pointer flex-1"
                           >
                             <span className="font-medium">{item.name}</span>
-                            <span className="text-muted-foreground ms-1">
-                              ({item.kind === 'form' ? 'טופס' : item.kind === 'page' ? 'עמוד' : 'כפתור'})
+                            <span className="text-muted-foreground ms-1">({kindLabel(item.kind)})</span>
+                            <span className="block text-[10px] text-muted-foreground/80 font-mono" dir="ltr">
+                              {item.id}
                             </span>
                           </label>
                         </li>
@@ -340,23 +387,13 @@ export function PublishVersionDetailedDialog({
         </div>
 
         <DialogFooter className="mt-2 flex flex-col sm:flex-row gap-2 sm:justify-between sm:items-center border-t border-border pt-3">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPublishingLocal || isSendingSnapshot}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPublishingFull}>
             ביטול
           </Button>
-          <div className="flex flex-wrap gap-2 justify-end">
-            <Button
-              variant="secondary"
-              onClick={onPublishLocalOnly}
-              disabled={isPublishingLocal || isSendingSnapshot}
-            >
-              {isPublishingLocal ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : null}
-              פרסם לכולם (Supabase סביבה נוכחית)
-            </Button>
-            <Button onClick={() => void handleSendVersion()} disabled={!canPublishSnapshot || isSendingSnapshot}>
-              {isSendingSnapshot ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : null}
-              שלח גרסה
-            </Button>
-          </div>
+          <Button onClick={() => void handlePublishAll()} disabled={!canPublishSnapshot || isPublishingFull}>
+            {isPublishingFull ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : null}
+            פרסם לכולם
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

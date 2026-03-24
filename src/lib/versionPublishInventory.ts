@@ -1,113 +1,113 @@
-import {
-  FLEET_UI_FEATURE_CATALOG,
-  FLEET_UI_FEATURE_FORM_CAR_HANDOVER_TOKEN,
-  FLEET_UI_FEATURE_FORM_PERIODIC_MAINTENANCE_TOKEN,
-  FLEET_UI_FEATURE_FORM_REPAIR_REPORT_TOKEN,
-  FLEET_UI_FEATURE_FORM_VEHICLE_STATUS_TOKEN,
-} from '@/lib/fleetPublishedUiFeatures';
 import type { VersionSnapshotFeature, VersionSnapshotFeatureType } from '@/lib/versionSnapshotTypes';
 
-export type VersionPublishInventoryKind = 'form' | 'button' | 'page';
+/** סוג תצוגה לפריט — נגזר מנתיב הקובץ (ללא רשימה סטטית). */
+export type VersionPublishInventoryKind = 'form' | 'page' | 'button' | 'hook';
 
 export type VersionPublishInventoryItem = {
   id: string;
   kind: VersionPublishInventoryKind;
   name: string;
   group: string;
-  /** לשיוך לטוקן UI_FEATURE (אופציונלי) */
-  token?: string;
 };
 
-function catalogItemsFromFeatureCatalog(): VersionPublishInventoryItem[] {
-  return FLEET_UI_FEATURE_CATALOG.map((e) => ({
-    id: e.token,
-    kind: e.category === 'forms' ? 'form' : e.category === 'dashboard' || e.category === 'header' ? 'button' : 'button',
-    name: e.title,
-    group:
-      e.category === 'forms'
-        ? 'טפסים ומסמכים (טוקני הרשאה)'
-        : e.category === 'dashboard'
-          ? 'כפתורי דשבורד'
-          : e.category === 'header'
-            ? 'כותרת'
-            : 'ניהול',
-    token: e.token,
-  }));
+const GROUP_PAGES = 'דפים (Pages)';
+const GROUP_FORMS = 'טפסים (Forms)';
+const GROUP_HOOKS = 'כלים (Hooks / Logic)';
+
+const GROUP_ORDER = [GROUP_PAGES, GROUP_FORMS, GROUP_HOOKS];
+
+const pagesGlob = import.meta.glob('../pages/**/*.tsx', { eager: false });
+const componentsGlob = import.meta.glob('../components/**/*.tsx', { eager: false });
+const hooksGlob = import.meta.glob('../hooks/**/*.{ts,tsx}', { eager: false });
+
+function shouldSkipPath(normalized: string): boolean {
+  if (normalized.includes('/ui/')) return true;
+  if (normalized.includes('.test.')) return true;
+  if (normalized.includes('.stories.')) return true;
+  return false;
 }
 
-/** טפסי מערכת מהקטלוג הגלובלי — חסרים מ־FLEET_UI_FEATURE_CATALOG אך בשימוש ב־bypass / הרשאות */
-const EXTRA_FORM_TOKEN_ITEMS: VersionPublishInventoryItem[] = [
-  {
-    id: FLEET_UI_FEATURE_FORM_VEHICLE_STATUS_TOKEN,
-    kind: 'form',
-    name: 'טופס סטטוס רכב',
-    group: 'טפסים ומסמכים (טוקני הרשאה)',
-    token: FLEET_UI_FEATURE_FORM_VEHICLE_STATUS_TOKEN,
-  },
-  {
-    id: FLEET_UI_FEATURE_FORM_CAR_HANDOVER_TOKEN,
-    kind: 'form',
-    name: 'טופס מסירת רכב',
-    group: 'טפסים ומסמכים (טוקני הרשאה)',
-    token: FLEET_UI_FEATURE_FORM_CAR_HANDOVER_TOKEN,
-  },
-  {
-    id: FLEET_UI_FEATURE_FORM_PERIODIC_MAINTENANCE_TOKEN,
-    kind: 'form',
-    name: 'טופס טיפול תקופתי',
-    group: 'טפסים ומסמכים (טוקני הרשאה)',
-    token: FLEET_UI_FEATURE_FORM_PERIODIC_MAINTENANCE_TOKEN,
-  },
-  {
-    id: FLEET_UI_FEATURE_FORM_REPAIR_REPORT_TOKEN,
-    kind: 'form',
-    name: 'טופס דיווח תיקון',
-    group: 'טפסים ומסמכים (טוקני הרשאה)',
-    token: FLEET_UI_FEATURE_FORM_REPAIR_REPORT_TOKEN,
-  },
-];
+function toInventoryPath(globKey: string): string {
+  return globKey.replace(/^\.\.\//, '');
+}
 
-/** עמודים / זרימות מרכזיות (מסלולי Router) */
-const ROUTE_FLOW_ITEMS: VersionPublishInventoryItem[] = [
-  { id: 'route_forms', kind: 'page', name: 'עמוד טפסים — /forms', group: 'עמודים וזרימות' },
-  { id: 'route_handover_wizard', kind: 'page', name: 'אשף מסירה/החזרה — /handover/wizard', group: 'עמודים וזרימות' },
-  { id: 'route_handover_delivery', kind: 'page', name: 'מסירת רכב — /handover/delivery', group: 'עמודים וזרימות' },
-  { id: 'route_handover_return', kind: 'page', name: 'החזרת רכב — /handover/return', group: 'עמודים וזרימות' },
-  { id: 'route_maintenance_add', kind: 'page', name: 'הוספת תחזוקה — /maintenance/add', group: 'עמודים וזרימות' },
-  { id: 'route_report_mileage', kind: 'page', name: 'דיווח ק״מ — /report-mileage', group: 'עמודים וזרימות' },
-  { id: 'route_vehicles_add', kind: 'page', name: 'הוספת רכב — /vehicles/add', group: 'עמודים וזרימות' },
-  { id: 'route_drivers_add', kind: 'page', name: 'הוספת נהג — /drivers/add', group: 'עמודים וזרימות' },
-  { id: 'route_team', kind: 'page', name: 'ניהול צוות — /team', group: 'עמודים וזרימות' },
-  { id: 'route_org_settings', kind: 'page', name: 'הגדרות ארגון — /admin/org-settings', group: 'עמודים וזרימות' },
-  { id: 'route_admin_settings', kind: 'page', name: 'הגדרות מערכת — /admin/settings', group: 'עמודים וזרימות' },
-];
+function displayNameFromPath(path: string): string {
+  const base = path.split('/').pop() ?? path;
+  return base.replace(/\.(tsx|ts)$/i, '');
+}
 
-function dedupeById(items: VersionPublishInventoryItem[]): VersionPublishInventoryItem[] {
-  const seen = new Set<string>();
-  const out: VersionPublishInventoryItem[] = [];
-  for (const it of items) {
-    if (seen.has(it.id)) continue;
-    seen.add(it.id);
-    out.push(it);
+function classify(normalizedPath: string): { group: string; kind: VersionPublishInventoryKind } {
+  const base = normalizedPath.split('/').pop() ?? '';
+  const hasForm = /Form/i.test(base);
+  const hasButton = /Button/i.test(base);
+
+  if (hasForm) {
+    return { group: GROUP_FORMS, kind: 'form' };
   }
-  return out;
+  if (normalizedPath.startsWith('hooks/')) {
+    return { group: GROUP_HOOKS, kind: 'hook' };
+  }
+  if (normalizedPath.startsWith('pages/')) {
+    return { group: GROUP_PAGES, kind: 'page' };
+  }
+  if (normalizedPath.startsWith('components/')) {
+    if (hasButton) {
+      return { group: GROUP_HOOKS, kind: 'button' };
+    }
+    return { group: GROUP_HOOKS, kind: 'hook' };
+  }
+  return { group: GROUP_HOOKS, kind: 'hook' };
 }
 
-/** מלאי לפרסום גרסה — טפסים, כפתורי UI מזוהים, ועמודים מרכזיים */
-export const VERSION_PUBLISH_INVENTORY: VersionPublishInventoryItem[] = dedupeById([
-  ...catalogItemsFromFeatureCatalog(),
-  ...EXTRA_FORM_TOKEN_ITEMS.filter((x) => !FLEET_UI_FEATURE_CATALOG.some((c) => c.token === x.id)),
-  ...ROUTE_FLOW_ITEMS,
-]);
+function scanInventory(): VersionPublishInventoryItem[] {
+  const keys = new Set<string>([
+    ...Object.keys(pagesGlob),
+    ...Object.keys(componentsGlob),
+    ...Object.keys(hooksGlob),
+  ]);
+
+  const items: VersionPublishInventoryItem[] = [];
+  for (const key of keys) {
+    const id = toInventoryPath(key);
+    if (shouldSkipPath(id)) continue;
+    if (!/^(pages|components|hooks)\//.test(id)) continue;
+    const { group, kind } = classify(id);
+    items.push({
+      id,
+      kind,
+      name: displayNameFromPath(id),
+      group,
+    });
+  }
+
+  const seen = new Set<string>();
+  return items.filter((it) => {
+    if (seen.has(it.id)) return false;
+    seen.add(it.id);
+    return true;
+  });
+}
+
+/** מלאי דינמי מ־import.meta.glob — מתעדכן אחרי בנייה / רענון dev כשמוסיפים קבצים. */
+export function getVersionPublishInventory(): VersionPublishInventoryItem[] {
+  return scanInventory();
+}
 
 export function buildVersionSnapshotFeaturesFromSelection(
   selectedIds: Set<string>
 ): VersionSnapshotFeature[] {
+  const inv = getVersionPublishInventory();
   const out: VersionSnapshotFeature[] = [];
-  for (const item of VERSION_PUBLISH_INVENTORY) {
+  for (const item of inv) {
     if (!selectedIds.has(item.id)) continue;
     const type: VersionSnapshotFeatureType =
-      item.kind === 'page' ? 'page' : item.kind === 'form' ? 'form' : 'button';
+      item.kind === 'page'
+        ? 'page'
+        : item.kind === 'form'
+          ? 'form'
+          : item.kind === 'button'
+            ? 'button'
+            : 'hook';
     out.push({
       id: item.id,
       type,
@@ -119,13 +119,21 @@ export function buildVersionSnapshotFeaturesFromSelection(
 
 export function versionPublishInventoryGroups(): { group: string; items: VersionPublishInventoryItem[] }[] {
   const map = new Map<string, VersionPublishInventoryItem[]>();
-  for (const it of VERSION_PUBLISH_INVENTORY) {
-    const g = it.group;
-    if (!map.has(g)) map.set(g, []);
-    map.get(g)!.push(it);
+  for (const it of getVersionPublishInventory()) {
+    if (!map.has(it.group)) map.set(it.group, []);
+    map.get(it.group)!.push(it);
   }
-  return Array.from(map.entries()).map(([group, items]) => ({
+  const entries = Array.from(map.entries()).map(([group, items]) => ({
     group,
     items: items.sort((a, b) => a.name.localeCompare(b.name, 'he')),
   }));
+  entries.sort((a, b) => {
+    const ia = GROUP_ORDER.indexOf(a.group);
+    const ib = GROUP_ORDER.indexOf(b.group);
+    const sa = ia === -1 ? GROUP_ORDER.length : ia;
+    const sb = ib === -1 ? GROUP_ORDER.length : ib;
+    if (sa !== sb) return sa - sb;
+    return a.group.localeCompare(b.group, 'he');
+  });
+  return entries;
 }
