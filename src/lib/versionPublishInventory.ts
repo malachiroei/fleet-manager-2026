@@ -1,7 +1,7 @@
 import type { VersionSnapshotFeature, VersionSnapshotFeatureType } from '@/lib/versionSnapshotTypes';
 
-/** סוג תצוגה לפריט — נגזר מנתיב הקובץ (ללא רשימה סטטית). */
-export type VersionPublishInventoryKind = 'form' | 'page' | 'button' | 'hook';
+/** סוג תצוגה לפריט — נגזר מנתיב הקובץ או מפריטי תשתית ידניים. */
+export type VersionPublishInventoryKind = 'form' | 'page' | 'button' | 'hook' | 'infra';
 
 export type VersionPublishInventoryItem = {
   id: string;
@@ -10,11 +10,28 @@ export type VersionPublishInventoryItem = {
   group: string;
 };
 
+const GROUP_INFRA = 'תשתית (Logic / Infrastructure)';
 const GROUP_PAGES = 'דפים (Pages)';
 const GROUP_FORMS = 'טפסים (Forms)';
 const GROUP_HOOKS = 'כלים (Hooks / Logic)';
 
-const GROUP_ORDER = [GROUP_PAGES, GROUP_FORMS, GROUP_HOOKS];
+const GROUP_ORDER = [GROUP_INFRA, GROUP_PAGES, GROUP_FORMS, GROUP_HOOKS];
+
+/** קבצי שורש — לא נסרקים ב-glob; נכללים במפורש לפרסום גרסה. */
+const ROOT_INFRA_ITEMS: VersionPublishInventoryItem[] = [
+  {
+    id: 'root/package.json',
+    kind: 'infra',
+    name: 'package.json',
+    group: GROUP_INFRA,
+  },
+  {
+    id: 'root/package-lock.json',
+    kind: 'infra',
+    name: 'package-lock.json',
+    group: GROUP_INFRA,
+  },
+];
 
 const pagesGlob = import.meta.glob('../pages/**/*.tsx', { eager: false });
 const componentsGlob = import.meta.glob('../components/**/*.tsx', { eager: false });
@@ -88,9 +105,9 @@ function scanInventory(): VersionPublishInventoryItem[] {
   });
 }
 
-/** מלאי דינמי מ־import.meta.glob — מתעדכן אחרי בנייה / רענון dev כשמוסיפים קבצים. */
+/** מלאי: קבצי תשתית בשורש + סריקת glob — מתעדכן אחרי בנייה / רענון dev כשמוסיפים קבצים. */
 export function getVersionPublishInventory(): VersionPublishInventoryItem[] {
-  return scanInventory();
+  return [...ROOT_INFRA_ITEMS, ...scanInventory()];
 }
 
 export function buildVersionSnapshotFeaturesFromSelection(
@@ -107,7 +124,9 @@ export function buildVersionSnapshotFeaturesFromSelection(
           ? 'form'
           : item.kind === 'button'
             ? 'button'
-            : 'hook';
+            : item.kind === 'infra'
+              ? 'infra'
+              : 'hook';
     out.push({
       id: item.id,
       type,

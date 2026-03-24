@@ -36,6 +36,7 @@ function kindLabel(kind: string): string {
   if (kind === 'page') return 'עמוד';
   if (kind === 'button') return 'כפתור';
   if (kind === 'hook') return 'לוגיקה';
+  if (kind === 'infra') return 'תשתית';
   return kind;
 }
 
@@ -318,8 +319,10 @@ export function PublishVersionDetailedDialog({
           <div className="space-y-2 border-t border-border pt-3">
             <p className="text-sm font-semibold">מלאי רכיבים (סריקה אוטומטית)</p>
             <p className="text-[11px] text-muted-foreground">
-              נסרקים <code className="text-[10px]">src/pages</code>, <code className="text-[10px]">src/components</code>{' '}
-              (ללא ui/), ו-<code className="text-[10px]">src/hooks</code>. קבצים חדשים יופיעו אחרי בנייה מחדש.
+              בקטגוריית התשתית: <code className="text-[10px]">package.json</code> ו־
+              <code className="text-[10px]">package-lock.json</code> בשורש. בנוסף נסרקים{' '}
+              <code className="text-[10px]">src/pages</code>, <code className="text-[10px]">src/components</code> (ללא
+              ui/), ו-<code className="text-[10px]">src/hooks</code> — קבצים חדשים יופיעו אחרי בנייה מחדש.
             </p>
             <div className="space-y-4 max-h-[38vh] overflow-y-auto pe-1 border rounded-md p-3 bg-muted/10">
               {groups.map(({ group, items }) => {
