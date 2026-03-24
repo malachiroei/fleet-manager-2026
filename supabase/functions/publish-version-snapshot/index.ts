@@ -169,6 +169,20 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const rawGithubToken = Deno.env.get('GITHUB_TOKEN');
+  const token = rawGithubToken?.trim();
+  console.log('Token check:', token ? 'Exists (starts with ' + token.slice(0, 4) + ')' : 'MISSING');
+  if (!token) {
+    console.error('CRITICAL: GITHUB_TOKEN is missing from environment variables');
+    return new Response(JSON.stringify({ ok: false, error: 'Missing Token' }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+  if (rawGithubToken != null && rawGithubToken !== token) {
+    console.warn('GITHUB_TOKEN had leading/trailing whitespace — trimmed for GitHub API');
+  }
+
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')?.trim();
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')?.trim();
@@ -209,14 +223,17 @@ serve(async (req) => {
     let body: { snapshot?: Record<string, unknown> };
     try {
       body = await req.json();
-    } catch {
+    } catch (jsonErr) {
+      console.error('req.json() failed:', jsonErr);
       return new Response(JSON.stringify({ ok: false, error: 'Invalid JSON body' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const snap = body.snapshot;
+    const { snapshot } = body;
+    console.log('Snapshot received:', !!snapshot);
+    const snap = snapshot;
     if (!snap || typeof snap !== 'object') {
       return new Response(JSON.stringify({ ok: false, error: 'Expected body.snapshot object' }), {
         status: 400,
@@ -230,20 +247,6 @@ serve(async (req) => {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
-    }
-
-    const rawGithubToken = Deno.env.get('GITHUB_TOKEN');
-    const token = rawGithubToken?.trim();
-    console.log('Token check:', token ? 'Exists (starts with ' + token.slice(0, 4) + ')' : 'MISSING');
-    if (!token) {
-      console.error('CRITICAL: GITHUB_TOKEN is missing from environment variables');
-      return new Response(JSON.stringify({ ok: false, error: 'Missing Token' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-    if (rawGithubToken != null && rawGithubToken !== token) {
-      console.warn('GITHUB_TOKEN had leading/trailing whitespace — trimmed for GitHub API');
     }
 
     const repo =
