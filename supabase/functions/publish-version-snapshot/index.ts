@@ -38,6 +38,19 @@ async function logGithubFullError(res: Response, context: string): Promise<strin
   return body;
 }
 
+/** שמות משתני סביבה זמינים (ללא ערכים) — לדיבוג חסרון סודות. */
+function listAvailableEnvKeys(): string[] {
+  try {
+    const o = Deno.env.toObject();
+    if (o && typeof o === 'object') {
+      return Object.keys(o).sort();
+    }
+  } catch (e) {
+    console.warn('listAvailableEnvKeys: Deno.env.toObject() failed', e);
+  }
+  return [];
+}
+
 /** תוכן טקסט מקובץ בריפו (תומך ב-base64 או download_url לקבצים גדולים). */
 async function fetchRepoFileText(
   owner: string,
@@ -231,23 +244,36 @@ serve(async (req) => {
       });
     }
 
-    const token = Deno.env.get('GITHUB_TOKEN')?.trim();
+    const rawGithubToken = Deno.env.get('GITHUB_TOKEN');
+    const token = rawGithubToken?.trim();
+    if (!token) {
+      console.log('Available keys:', listAvailableEnvKeys());
+      console.error('CRITICAL: GITHUB_TOKEN is missing from environment variables');
+      return new Response(JSON.stringify({ ok: false, error: 'Missing Token' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    if (rawGithubToken != null && rawGithubToken !== token) {
+      console.warn('GITHUB_TOKEN had leading/trailing whitespace — trimmed for GitHub API');
+    }
+
     const repo =
       Deno.env.get('GITHUB_REPO')?.trim() || Deno.env.get('PRODUCTION_GITHUB_REPO')?.trim();
     const branch = Deno.env.get('GITHUB_BRANCH')?.trim() || 'master';
     const path = Deno.env.get('GITHUB_VERSION_SNAPSHOT_PATH')?.trim() || DEFAULT_PATH;
 
-    if (!token || !repo) {
+    if (!repo) {
       return new Response(
         JSON.stringify({
           ok: false,
-          error: 'Missing GITHUB_TOKEN or GITHUB_REPO/PRODUCTION_GITHUB_REPO — set Supabase secrets for publish-version-snapshot',
+          error: 'Missing GITHUB_REPO or PRODUCTION_GITHUB_REPO — set Supabase secrets for publish-version-snapshot',
         }),
         { status: 501, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
-    console.log('Using Token starting with:', token ? token.slice(0, 4) : '(empty)');
+    console.log('Using Token starting with:', token.slice(0, 4));
 
     const [owner, name] = repo.split('/').map((s) => s.trim());
     if (!owner || !name) {
