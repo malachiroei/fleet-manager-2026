@@ -6,16 +6,18 @@ import { toast } from '@/hooks/use-toast';
 import { getDefaultPermissions } from '@/lib/permissions';
 import { sendInvitationEmail } from '@/lib/sendInvitationEmail';
 import { useAuth } from '@/hooks/useAuth';
+import { isSuperAdminPermissionBypass } from '@/lib/allowedFeatures';
 
 export const TEAM_MEMBERS_QUERY_KEY = ['team-members'] as const;
 const TEAM_QUERY_KEY = TEAM_MEMBERS_QUERY_KEY;
 export const ORG_INVITATIONS_QUERY_KEY = ['org-invitations'] as const;
 
-/** Super-admin: רועי — זיהוי לפי מייל בפרופיל בלבד (כמו בדרישת המשימה). */
+/** @deprecated השתמש ב-SUPER_ADMIN_PERMISSION_EMAIL / isSuperAdminPermissionBypass מ-allowedFeatures */
 export const SUPER_ADMIN_TEAM_VIEWER_EMAIL = 'malachiroei@gmail.com';
 
+/** תצוגת «כל הארגונים» וכו׳ — מזהה כמו PermissionGuard (אימייל + VITE_FLEET_SUPER_ADMIN_USER_IDS). */
 export function isRoeySuperAdminProfile(profile: Profile | null | undefined): boolean {
-  return profile?.email === 'malachiroei@gmail.com';
+  return isSuperAdminPermissionBypass(profile);
 }
 
 export interface TeamMemberSummary {

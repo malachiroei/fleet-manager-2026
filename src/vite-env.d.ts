@@ -24,6 +24,8 @@ interface ImportMetaEnv {
   /** fallback ל-ref סטייג׳ כש-NEXT_PUBLIC_SUPABASE_PROJECT_REF לא מוגדר */
   readonly NEXT_PUBLIC_FLEET_STAGING_DEFAULT_SUPABASE_REF?: string;
   readonly VITE_FLEET_STAGING_DEFAULT_SUPABASE_REF?: string;
+  /** profiles.id מופרדים בפסיק — חריג PermissionGuard כמו malachiroei@gmail.com */
+  readonly VITE_FLEET_SUPER_ADMIN_USER_IDS?: string;
 }
 
 interface ImportMeta {

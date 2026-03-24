@@ -95,8 +95,8 @@ export default function TeamManagementPage() {
 
   function accessFeaturesSummary(m: Profile): string {
     const list = normalizeAllowedFeaturesFromProfile(m.allowed_features);
-    if (list === null) return 'ברירת מחדל (מערכת ישנה)';
-    if (list.length === 0) return 'ללא הרשאות גסות (מפורש)';
+    if (list === null) return 'לא הוגדר מערך — חסום ב-PermissionGuard (מלבד סופר־אדמין)';
+    if (list.length === 0) return 'מערך ריק — חסום';
     return list.map((k) => ALLOWED_FEATURE_LABELS[k] ?? k).join(', ');
   }
 
