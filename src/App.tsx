@@ -132,13 +132,13 @@ function AppRoutes() {
       <Route path="/drivers/:id/edit" element={<ProtectedRoute><PermissionGuard permission="drivers"><EditDriverPage /></PermissionGuard></ProtectedRoute>} />
       <Route path="/compliance" element={<ProtectedRoute><PermissionGuard permission="compliance"><CompliancePage /></PermissionGuard></ProtectedRoute>} />
       <Route path="/procedure6-complaints" element={<ProtectedRoute><PermissionGuard permission="compliance"><Procedure6ComplaintsPage /></PermissionGuard></ProtectedRoute>} />
-      <Route path="/maintenance/add" element={<ProtectedRoute><AddMaintenancePage /></ProtectedRoute>} />
-      <Route path="/vehicles/transfers" element={<ProtectedRoute><TransfersPage /></ProtectedRoute>} />
-      <Route path="/handover/delivery" element={<ProtectedRoute><VehicleDeliveryPage /></ProtectedRoute>} />
-      <Route path="/handover/return" element={<ProtectedRoute><VehicleReturnPage /></ProtectedRoute>} />
-      <Route path="/handover/replacement" element={<ProtectedRoute><ReplacementVehicleHubPage /></ProtectedRoute>} />
-      <Route path="/handover/wizard" element={<ProtectedRoute><VehicleHandoverWizard /></ProtectedRoute>} />
-      <Route path="/report-mileage" element={<ProtectedRoute><ReportMileagePage /></ProtectedRoute>} />
+      <Route path="/maintenance/add" element={<ProtectedRoute><PermissionGuard permission="maintenance"><AddMaintenancePage /></PermissionGuard></ProtectedRoute>} />
+      <Route path="/vehicles/transfers" element={<ProtectedRoute><PermissionGuard permission="handover"><TransfersPage /></PermissionGuard></ProtectedRoute>} />
+      <Route path="/handover/delivery" element={<ProtectedRoute><PermissionGuard permission="vehicle_delivery"><VehicleDeliveryPage /></PermissionGuard></ProtectedRoute>} />
+      <Route path="/handover/return" element={<ProtectedRoute><PermissionGuard permission="handover"><VehicleReturnPage /></PermissionGuard></ProtectedRoute>} />
+      <Route path="/handover/replacement" element={<ProtectedRoute><PermissionGuard permission="replacement_car"><ReplacementVehicleHubPage /></PermissionGuard></ProtectedRoute>} />
+      <Route path="/handover/wizard" element={<ProtectedRoute><PermissionGuard permission="handover"><VehicleHandoverWizard /></PermissionGuard></ProtectedRoute>} />
+      <Route path="/report-mileage" element={<ProtectedRoute><PermissionGuard permission="report_mileage"><ReportMileagePage /></PermissionGuard></ProtectedRoute>} />
       <Route
         path="/admin/settings"
         element={
