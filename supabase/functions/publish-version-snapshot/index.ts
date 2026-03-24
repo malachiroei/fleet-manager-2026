@@ -4,8 +4,9 @@
  * סודות (Supabase Functions):
  * - GITHUB_TOKEN; יעד: GITHUB_REPO או PRODUCTION_GITHUB_REPO (owner/name); GITHUB_BRANCH=master (ברירת מחדל)
  * - אופציונלי GITHUB_VERSION_SNAPSHOT_PATH (default src/config/version_snapshot.json)
- * - סנכרון תלויות (מומלץ): GITHUB_DEPENDENCIES_SOURCE_REPO=owner/fleet-manager-dev, GITHUB_DEPENDENCIES_SOURCE_BRANCH=dev
- *   — מעתיק package.json ו-package-lock.json מהמקור לענף היעד בפרו לפני עדכון ה-snapshot.
+ * - סנכרון תלויות (חובה בכל פרסום): לפני version_snapshot — דוחף package.json + package-lock.json לענף היעד.
+ *   מקור: GITHUB_DEPENDENCIES_SOURCE_REPO (owner/name) או ברירת מחדל כשהיעד fleet-manager-2026 → owner/fleet-manager-dev.
+ *   ענף מקור: GITHUB_DEPENDENCIES_SOURCE_BRANCH (ברירת מחדל dev). נכשל אם ה-JSON לא תקין.
  * - אופציונלי PRODUCTION_SUPABASE_URL + PRODUCTION_SUPABASE_SERVICE_ROLE_KEY — עדכון system_settings בפרו
  *
  * גוף: { snapshot: { version, release_date, description, features[], ui_changes } }
@@ -122,6 +123,34 @@ async function putRepoFile(
   return { ok: true, commit_sha: commitSha };
 }
 
+/** מקור לתלויות: סוד מפורש או זיווג ידוע prod→staging */
+function resolveDependencySourceRepo(destOwner: string, destRepoName: string): {
+  repoFull: string;
+  owner: string;
+  name: string;
+  via: 'GITHUB_DEPENDENCIES_SOURCE_REPO' | 'default_fleet_manager_pair';
+} {
+  const explicit = Deno.env.get('GITHUB_DEPENDENCIES_SOURCE_REPO')?.trim();
+  if (explicit) {
+    const m = explicit.match(/^([^/\s]+)\/([^/\s]+)$/);
+    if (!m) {
+      throw new Error('GITHUB_DEPENDENCIES_SOURCE_REPO must be exactly owner/name');
+    }
+    return { repoFull: `${m[1]}/${m[2]}`, owner: m[1], name: m[2], via: 'GITHUB_DEPENDENCIES_SOURCE_REPO' };
+  }
+  if (destRepoName.toLowerCase() === 'fleet-manager-2026') {
+    return {
+      repoFull: `${destOwner}/fleet-manager-dev`,
+      owner: destOwner,
+      name: 'fleet-manager-dev',
+      via: 'default_fleet_manager_pair',
+    };
+  }
+  throw new Error(
+    `Cannot infer dependency source for ${destOwner}/${destRepoName}. Set secret GITHUB_DEPENDENCIES_SOURCE_REPO=owner/staging-repo`,
+  );
+}
+
 serve(async (req) => {
   console.log('--- STARTING PUBLISH PROCESS ---');
 
@@ -218,53 +247,56 @@ serve(async (req) => {
       });
     }
 
-    let dependenciesSync: Record<string, unknown> = {
-      skipped: true,
-      reason: 'Set GITHUB_DEPENDENCIES_SOURCE_REPO (and optionally GITHUB_DEPENDENCIES_SOURCE_BRANCH) to sync package files',
-    };
-
-    const depSourceRepoRaw = Deno.env.get('GITHUB_DEPENDENCIES_SOURCE_REPO')?.trim();
     const depSourceBranch = Deno.env.get('GITHUB_DEPENDENCIES_SOURCE_BRANCH')?.trim() || 'dev';
 
-    if (depSourceRepoRaw) {
-      const [so, sn] = depSourceRepoRaw.split('/').map((s) => s.trim());
-      if (!so || !sn) {
-        dependenciesSync = { skipped: true, reason: 'invalid GITHUB_DEPENDENCIES_SOURCE_REPO (expected owner/name)' };
-      } else {
+    let dependenciesSync: Record<string, unknown>;
+    try {
+      const src = resolveDependencySourceRepo(owner, name);
+      const depFiles = ['package.json', 'package-lock.json'] as const;
+      const fileResults: Record<string, unknown>[] = [];
+      for (const fp of depFiles) {
+        const content = await fetchRepoFileText(src.owner, src.name, fp, depSourceBranch, token);
         try {
-          const depFiles = ['package.json', 'package-lock.json'] as const;
-          const fileResults: Record<string, unknown>[] = [];
-          for (const fp of depFiles) {
-            const content = await fetchRepoFileText(so, sn, fp, depSourceBranch, token);
-            const put = await putRepoFile(
-              owner,
-              name,
-              fp,
-              branch,
-              content,
-              token,
-              `chore(release): sync ${fp} for ${version} from ${depSourceRepoRaw}@${depSourceBranch}`,
-            );
-            if (!put.ok) {
-              throw new Error(put.error);
-            }
-            fileResults.push({ path: fp, updated: true, commit_sha: put.commit_sha ?? null });
-          }
-          dependenciesSync = {
-            skipped: false,
-            source_repo: depSourceRepoRaw,
-            source_branch: depSourceBranch,
-            files: fileResults,
-          };
-        } catch (error) {
-          console.error('GITHUB API ERROR (dependencies sync):', error);
-          const detail = error instanceof Error ? error.message : String(error);
-          return new Response(
-            JSON.stringify({ ok: false, error: `Dependencies sync failed: ${detail}` }),
-            { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-          );
+          JSON.parse(content);
+        } catch {
+          throw new Error(`Source ${fp} is not valid JSON — aborting production sync`);
         }
+        const put = await putRepoFile(
+          owner,
+          name,
+          fp,
+          branch,
+          content,
+          token,
+          `chore(release): sync ${fp} for ${version} from ${src.repoFull}@${depSourceBranch}`,
+        );
+        if (!put.ok) {
+          throw new Error(put.error);
+        }
+        fileResults.push({ path: fp, updated: true, commit_sha: put.commit_sha ?? null });
       }
+      dependenciesSync = {
+        skipped: false,
+        source_repo: src.repoFull,
+        source_branch: depSourceBranch,
+        resolved_via: src.via,
+        files: fileResults,
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      const status = /GITHUB_DEPENDENCIES_SOURCE_REPO must be exactly owner\/name/.test(msg)
+        ? 400
+        : /Cannot infer dependency source/.test(msg)
+          ? 501
+          : 502;
+      console.error('DEPENDENCIES SYNC FAILED:', error);
+      return new Response(
+        JSON.stringify({ ok: false, error: `Dependencies sync failed: ${msg}` }),
+        {
+          status,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      );
     }
 
     let commitSha: string | undefined;
