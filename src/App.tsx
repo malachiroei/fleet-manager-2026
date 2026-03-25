@@ -49,10 +49,6 @@ import {
   FLEET_MANAGER_PRO_ORIGIN,
 } from "@/lib/testDeployUpdate";
 import { UpdateModal } from "@/components/UpdateModal";
-import { TestHostPendingSeed } from "@/components/TestHostPendingSeed";
-import { ProfileVersionHeartbeat } from "@/components/ProfileVersionHeartbeat";
-import { SupabaseEnvironmentLockOverlay } from "@/components/SupabaseEnvironmentLockOverlay";
-import { FleetEnvTestBadge } from "@/components/FleetEnvTestBadge";
 const queryClient = new QueryClient();
 
 /** נטען בדומיין הטסט: מנקה מטמון/SW/localStorage ומחזיר למקור (pro.com) */
@@ -155,6 +151,14 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/admin-settings"
+        element={
+          <ProtectedRoute>
+            <AdminSettingsPage />
+          </ProtectedRoute>
+        }
+      />
       <Route path="/admin/dashboard" element={<ProtectedRoute><AdminDashboardPage /></ProtectedRoute>} />
       <Route path="/admin/users" element={<ProtectedRoute><AdminUsersPage /></ProtectedRoute>} />
       <Route path="/admin/org-settings" element={<ProtectedRoute><OrgSettingsPage /></ProtectedRoute>} />
@@ -169,8 +173,6 @@ function AppRoutes() {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <SupabaseEnvironmentLockOverlay />
-    <FleetEnvTestBadge />
     <ForceUpdateProHandler />
     <ThemeProvider>
     <TooltipProvider>
@@ -178,8 +180,6 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
-          <TestHostPendingSeed />
-          <ProfileVersionHeartbeat />
           <ViewAsProvider>
             <AppErrorBoundary>
               <div className="flex min-h-screen flex-col">

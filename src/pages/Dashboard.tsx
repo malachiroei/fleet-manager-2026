@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useDashboardStats, useComplianceAlerts } from '@/hooks/useDashboard';
-import { useFleetManifestUiGates } from '@/hooks/useFleetManifestUiGates';
+import { useFeatureFlags } from '@/hooks/useFeatureFlags';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useAuth } from '@/hooks/useAuth';
 import { useViewAs } from '@/contexts/ViewAsContext';
@@ -13,7 +13,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import QuickOdometerDialog from '@/components/QuickOdometerDialog';
-import { ReleaseSnapshotSyncBanner } from '@/components/ReleaseSnapshotSyncBanner';
 import {
   Car,
   Users,
@@ -41,6 +40,7 @@ const statusCardConfig: Array<{
   color: string;
   link: string;
   permission?: PermissionKey;
+  featureFlagKey: string;
   getValue: (stats: { totalVehicles?: number; totalDrivers?: number } | null, alertCount?: number) => string | number;
   alertKey?: 'alert';
 }> = [
@@ -51,6 +51,7 @@ const statusCardConfig: Array<{
     color: 'from-blue-500 to-cyan-400',
     link: '/vehicles',
     permission: 'vehicles',
+    featureFlagKey: 'dashboard_vehicles',
     getValue: (stats) => stats?.totalVehicles ?? 0,
   },
   {
@@ -60,6 +61,7 @@ const statusCardConfig: Array<{
     color: 'from-purple-500 to-indigo-600',
     link: '/drivers',
     permission: 'drivers',
+    featureFlagKey: 'dashboard_drivers',
     getValue: (stats) => stats?.totalDrivers ?? 0,
   },
   {
@@ -69,6 +71,7 @@ const statusCardConfig: Array<{
     color: 'from-orange-500 to-yellow-400',
     link: '/compliance',
     permission: 'compliance',
+    featureFlagKey: 'dashboard_exception_alerts',
     getValue: (_, alertCount) => alertCount ?? 0,
     alertKey: 'alert',
   },
@@ -79,6 +82,7 @@ const statusCardConfig: Array<{
     color: 'from-teal-400 to-emerald-500',
     link: '/handover/replacement',
     permission: 'handover',
+    featureFlagKey: 'dashboard_replacement_car',
     getValue: () => '',
   },
 ];
@@ -163,11 +167,13 @@ export default function Dashboard() {
   const isMobile = useIsMobile();
   const { user, profile, hasPermission, isAdmin, isManager, isDriver, roles: userRoles, loading, activeOrgId } = useAuth();
   const { viewAsEmail, viewAsProfile } = useViewAs();
-  const manifestUi = useFleetManifestUiGates();
-  const showDashboardTreatmentCard =
-    manifestUi.ready && manifestUi.dashboardTreatment;
-  const showDashboardTestCard = manifestUi.ready && manifestUi.dashboardTest;
-  const showMaintenanceFormCard = manifestUi.ready && manifestUi.maintenanceForm;
+  const { data: featureFlags, isPending: featureFlagsPending, isError: featureFlagsError } = useFeatureFlags();
+  /** בטעינה, בשגיאה, או בלי נתונים עדיין — לא מסננים (מסך מלא); אחרי הצלחה — מסננים לפי flags */
+  const applyFeatureFlagFilters =
+    !featureFlagsPending && !featureFlagsError && featureFlags !== undefined;
+  const showDashboardTreatmentCard = false;
+  const showDashboardTestCard = false;
+  const showMaintenanceFormCard = false;
   const totalAlerts = (alerts?.filter(a => a.status === 'expired' || a.status === 'warning').length) ?? 0;
   const isStatsLoading = isLoading || !stats;
 
@@ -232,10 +238,17 @@ export default function Dashboard() {
   // Original behavior:
   // - For driver-only view: show ONLY "רכב חליפי" card.
   // - When viewing as another user: driver-only is determined by the target user's roles.
-  const visibleStatusCards =
-    !isStatsLoading && isDriverOnly
-      ? statusCardConfig.filter((card) => card.link === '/handover/replacement')
-      : statusCardConfig;
+  // כרטיסי דשבורד מסוננים לפי feature_flags רק כשהטעינה הסתיימה בהצלחה; בטעינה/שגיאה — כל הכרטיסים.
+  const visibleStatusCards = useMemo(() => {
+    let cards =
+      !isStatsLoading && isDriverOnly
+        ? statusCardConfig.filter((card) => card.link === '/handover/replacement')
+        : statusCardConfig;
+    if (applyFeatureFlagFilters) {
+      cards = cards.filter((card) => featureFlags?.[card.featureFlagKey] === true);
+    }
+    return cards;
+  }, [isStatsLoading, isDriverOnly, applyFeatureFlagFilters, featureFlags]);
 
   // Base quick actions; filtering happens afterwards
   const baseQuickLinks: {
@@ -246,60 +259,70 @@ export default function Dashboard() {
     permission?: PermissionKey;
     adminOnly?: boolean;
     showPendingBadge?: boolean;
+    featureFlagKey?: string;
   }[] = [
     {
       title: 'דיווח קילומטראז׳',
       href: '/report-mileage',
       icon: Gauge,
       permission: 'report_mileage',
+      featureFlagKey: 'qa_report_mileage',
     },
     {
       title: t('navigation.procedure6Complaints'),
       href: '/procedure6-complaints',
       icon: AlertTriangle,
       permission: 'procedure6_complaints',
+      featureFlagKey: 'qa_procedure6_complaints',
     },
     {
       title: 'טפסים',
       href: '/forms',
       icon: FileText,
       permission: 'forms',
+      featureFlagKey: 'qa_forms',
     },
     {
       title: 'הגדרות מערכת',
       href: '/admin/settings',
       icon: Settings,
       adminOnly: true,
+      featureFlagKey: 'qa_admin_settings',
     },
     {
       title: t('navigation.reportGeneration', { defaultValue: 'הפקת דוחות' }),
       href: '/reports',
       icon: BarChart3,
       permission: 'reports',
+      featureFlagKey: 'qa_reports',
     },
     {
       title: t('navigation.parkingReports'),
       href: '/reports/scan',
       icon: FileText,
       permission: 'reports',
+      featureFlagKey: 'qa_parking_reports',
     },
     {
       title: t('navigation.accidents'),
       href: '/compliance',
       icon: Plus,
       permission: 'compliance',
+      featureFlagKey: 'qa_accidents',
     },
     {
       title: t('navigation.vehicleDelivery'),
       href: '/handover/delivery',
       icon: Truck,
       permission: 'vehicle_delivery',
+      featureFlagKey: 'qa_vehicle_delivery',
     },
     {
       title: 'ניהול צוות',
       href: '/team',
       icon: UserCog,
       permission: 'manage_team',
+      featureFlagKey: 'qa_team',
     },
     {
       title: 'ניהול משתמשים',
@@ -307,6 +330,7 @@ export default function Dashboard() {
       icon: Users,
       adminOnly: true,
       showPendingBadge: true,
+      featureFlagKey: 'qa_users',
     },
   ];
 
@@ -326,6 +350,9 @@ export default function Dashboard() {
   const quickLinks = baseQuickLinks.filter((a) => {
     if (a.href === '/report-mileage') return canReportMileage;
     if (a.adminOnly && !isMainAdmin) return false;
+    if (a.featureFlagKey && applyFeatureFlagFilters && featureFlags?.[a.featureFlagKey] !== true) {
+      return false;
+    }
     return true;
   });
 
@@ -343,8 +370,6 @@ export default function Dashboard() {
           {t('dashboard.subtitle')}
         </p>
       </div>
-
-      <ReleaseSnapshotSyncBanner />
 
       {!isDriverOnly && !isStatsLoading && stats && stats.totalVehicles === 0 && stats.totalDrivers === 0 && (
         <Card className="border-dashed border-2 border-primary/30 bg-primary/5">

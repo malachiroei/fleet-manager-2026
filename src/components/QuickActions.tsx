@@ -2,39 +2,46 @@ import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent } from './ui/card';
-import { MapPin, Truck, AlertCircle, Repeat, ClipboardList } from 'lucide-react';
-import { useFleetManifestUiGates } from '@/hooks/useFleetManifestUiGates';
+import { MapPin, Truck, AlertCircle, Repeat } from 'lucide-react';
+import { useFeatureFlags } from '@/hooks/useFeatureFlags';
 
 type QuickActionItem = {
   title: string;
   href: string;
   icon: typeof MapPin;
   color: string;
+  featureFlagKey: string;
 };
 
 export function QuickActions() {
   const { t } = useTranslation();
-  const manifestUi = useFleetManifestUiGates();
+  const { data: featureFlags, isPending: featureFlagsPending, isError: featureFlagsError } =
+    useFeatureFlags();
+  const applyFeatureFlagFilters =
+    !featureFlagsPending && !featureFlagsError && featureFlags !== undefined;
 
   const quickActions = useMemo((): QuickActionItem[] => {
-    const base: QuickActionItem[] = [
+    const candidates: QuickActionItem[] = [
       {
         title: t('navigation.parkingReports'),
         href: '/reports/scan',
         icon: MapPin,
         color: 'bg-orange-500',
+        featureFlagKey: 'qa_parking_reports',
       },
       {
         title: t('navigation.vehicleDelivery'),
         href: '/handover/delivery',
         icon: Truck,
         color: 'bg-blue-500',
+        featureFlagKey: 'qa_vehicle_delivery',
       },
       {
         title: 'רכב חליפי',
         href: '/handover/replacement',
         icon: Repeat,
         color: 'bg-cyan-600',
+        featureFlagKey: 'qa_replacement_car',
       },
       {
         /** לא מקשר ל־/maintenance/add — רק כרטיס «עדכן טיפול» המאושר מופיע שם */
@@ -42,23 +49,13 @@ export function QuickActions() {
         href: '/compliance',
         icon: AlertCircle,
         color: 'bg-red-500',
+        featureFlagKey: 'qa_accidents',
       },
     ];
 
-    if (manifestUi.ready && manifestUi.maintenanceForm) {
-      return [
-        {
-          title: 'עדכן טיפול',
-          href: '/maintenance/add',
-          icon: ClipboardList,
-          color: 'bg-amber-600',
-        },
-        ...base,
-      ];
-    }
-
-    return base;
-  }, [t, manifestUi.ready, manifestUi.maintenanceForm]);
+    if (!applyFeatureFlagFilters) return candidates;
+    return candidates.filter((a) => featureFlags?.[a.featureFlagKey] === true);
+  }, [t, applyFeatureFlagFilters, featureFlags]);
 
   return (
     <div className="space-y-4">

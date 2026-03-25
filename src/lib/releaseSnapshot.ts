@@ -1,5 +1,4 @@
 import type { OrgSettings } from '@/hooks/useOrgSettings';
-import type { FleetManifestUiGates } from '@/hooks/useFleetManifestUiGates';
 import type { ProfilePermissions } from '@/types/fleet';
 import {
   compareSemverExtended,
@@ -7,7 +6,24 @@ import {
   normalizeVersion,
   toCanonicalThreePartVersion,
 } from '@/lib/versionManifest';
-import bundledSnapshot from '@/config/release_snapshot.json';
+
+/** מצב מניפסט UI לבניית סנאפשוט (ללא hook בגרסה זו) */
+export type FleetManifestUiGates = {
+  manifestVersion: string;
+  boldVersion?: boolean;
+  starInHeader?: boolean;
+  dashboardTreatment?: boolean;
+  dashboardTest?: boolean;
+  maintenanceForm?: boolean;
+  ready?: boolean;
+  manifestChangeLines?: string[];
+};
+
+export const EMPTY_FLEET_MANIFEST_UI_GATES: FleetManifestUiGates = {
+  ready: true,
+  manifestVersion: '',
+  manifestChangeLines: [],
+};
 
 /** תוכן הקובץ מהריפו (נכלל בבנדל פרודקשן) */
 export type ReleaseSnapshotFile = {
@@ -39,8 +55,16 @@ export type ReleaseSnapshotFile = {
   >;
 };
 
+const EMPTY_BUNDLED_RELEASE_SNAPSHOT: ReleaseSnapshotFile = {
+  version: '0.0.0',
+  generatedAt: '1970-01-01T00:00:00.000Z',
+  uiFeatures: {},
+  defaultPermissions: {},
+  uiSettingsTemplate: {},
+};
+
 export function getBundledReleaseSnapshot(): ReleaseSnapshotFile {
-  return bundledSnapshot as ReleaseSnapshotFile;
+  return EMPTY_BUNDLED_RELEASE_SNAPSHOT;
 }
 
 export function isSnapshotNewerThanAck(snapshotVersion: string, ackVersion: string | null | undefined): boolean {

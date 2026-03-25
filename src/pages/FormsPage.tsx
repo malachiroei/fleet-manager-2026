@@ -5,6 +5,7 @@ import { ArchiveRestore, Download, FileText, FolderCog, GripVertical, Loader2, M
 import { jsPDF } from 'jspdf';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
+import { useFeatureFlags } from '@/hooks/useFeatureFlags';
 import { OrgDocument, useOrgDocuments, useOrgDocumentsAdmin, useCreateOrgDocument, useUpdateOrgDocument } from '@/hooks/useOrgDocuments';
 import { useOrgSettings } from '@/hooks/useOrgSettings';
 import { useDrivers } from '@/hooks/useDrivers';
@@ -102,6 +103,10 @@ function arrayBufferToBase64(buffer: ArrayBuffer) {
 export default function FormsPage() {
   const queryClient = useQueryClient();
   const { user, isManager } = useAuth();
+  const { data: featureFlags, isPending: featureFlagsPending, isError: featureFlagsError } =
+    useFeatureFlags();
+  const applyFeatureFlagFilters =
+    !featureFlagsPending && !featureFlagsError && featureFlags !== undefined;
   const { data: orgSettings } = useOrgSettings();
   const [searchParams] = useSearchParams();
   const { data: drivers } = useDrivers();
@@ -744,18 +749,34 @@ ${STANDARD_INPUT_FOOTER_TEXT}
     }
   };
 
-  const formsWithCategory = useMemo(
-    () =>
-      (forms ?? []).map((form) => ({
-        ...form,
-        dbCategory: (form.category as FormsCategory | undefined) ?? DEFAULT_FORM_FOLDERS[0],
-        category:
-          (form.json_schema as any)?.custom_folder ??
-          (form.category as FormsCategory | undefined) ??
-          DEFAULT_FORM_FOLDERS[0],
-      })),
-    [forms],
-  );
+  const formsWithCategory = useMemo(() => {
+    const mapped = (forms ?? []).map((form) => ({
+      ...form,
+      dbCategory: (form.category as FormsCategory | undefined) ?? DEFAULT_FORM_FOLDERS[0],
+      category:
+        (form.json_schema as any)?.custom_folder ??
+        (form.category as FormsCategory | undefined) ??
+        DEFAULT_FORM_FOLDERS[0],
+    }));
+
+    if (!applyFeatureFlagFilters) return mapped;
+
+    if (featureFlags?.['qa_forms'] !== true) {
+      return [];
+    }
+
+    return mapped.filter((form) => {
+      const d = Boolean(form.include_in_delivery);
+      const r = Boolean(form.include_in_return);
+      if (!d && !r) return true;
+      if (d && !r) return featureFlags?.['form_delivery'] === true;
+      if (r && !d) return featureFlags?.['form_return'] === true;
+      return (
+        (d && featureFlags?.['form_delivery'] === true) ||
+        (r && featureFlags?.['form_return'] === true)
+      );
+    });
+  }, [forms, featureFlags, applyFeatureFlagFilters]);
 
   const folderOptions = useMemo(() => {
     const fromForms = formsWithCategory

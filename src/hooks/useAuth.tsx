@@ -138,8 +138,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchProfile = useCallback(async (userId: string) => {
     const applyPersonalRow = (row: Profile) => {
+      const raw = row as Profile & { organization_id?: string | null };
+      const orgIdFromDb = row.org_id ?? raw.organization_id ?? null;
       const next: Profile = {
         ...row,
+        org_id: orgIdFromDb,
         /** App-level mirror of auth uid — never read from missing DB column */
         user_id: userId,
         status: row.status && String(row.status).trim() ? row.status : 'active',
@@ -153,6 +156,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         id: next.id,
         status: next.status,
         email: next.email,
+        org_id: next.org_id,
         allowed_features: next.allowed_features ?? null,
         denied_features: next.denied_features ?? null,
       });
@@ -302,9 +306,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user]);
 
+  /**
+   * אם org_members ריק (RLS / לא מולא אחרי תיקון DB) אבל profiles.org_id קיים — משכפלים את רשימת
+   * הארגונים עם fallback, כדי ש-activeOrgId יוכל להיאתחל מ-memberOrganizations או מ-profile.
+   */
   useEffect(() => {
-    if (!user || memberOrganizations.length === 0) return;
+    if (!user?.id) return;
+    const pid = profile?.org_id?.trim() || null;
+    if (!pid) return;
+    if (memberOrganizations.length > 0) return;
+    void fetchMemberOrganizations(user.id, pid);
+  }, [user?.id, profile?.org_id, memberOrganizations.length, fetchMemberOrganizations]);
+
+  useEffect(() => {
+    if (!user) return;
+    if (profile === null) return;
     if (activeOrgInitializedRef.current) return;
+    const profileOrgId = profile.org_id?.trim() || null;
+    if (memberOrganizations.length === 0 && !profileOrgId) return;
+
     activeOrgInitializedRef.current = true;
     let stored: string | null = null;
     try {
@@ -312,14 +332,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       /* ignore */
     }
-    const validStored = stored && memberOrganizations.some((o) => o.id === stored);
+    const orgKnown = (id: string | null | undefined) =>
+      Boolean(id) && memberOrganizations.some((o) => o.id === id);
+    const validStored =
+      stored && (orgKnown(stored) || stored === profileOrgId);
     if (validStored) {
       setActiveOrgIdState(stored);
-    } else {
-      // Default to the first available org (org_members) when nothing was stored
+      return;
+    }
+    if (profileOrgId) {
+      setActiveOrgIdState(profileOrgId);
+      return;
+    }
+    if (memberOrganizations.length > 0) {
       setActiveOrgIdState(memberOrganizations[0]?.id ?? null);
     }
-  }, [user, memberOrganizations]);
+  }, [user, profile, memberOrganizations, profile?.org_id]);
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });

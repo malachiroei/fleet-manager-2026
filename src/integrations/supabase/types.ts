@@ -50,6 +50,33 @@ export type Database = {
         }
         Relationships: []
       }
+      feature_flags: {
+        Row: {
+          category: string | null
+          description: string | null
+          display_name_he: string | null
+          feature_key: string
+          id: string
+          is_enabled_globally: boolean
+        }
+        Insert: {
+          category?: string | null
+          description?: string | null
+          display_name_he?: string | null
+          feature_key: string
+          id?: string
+          is_enabled_globally?: boolean
+        }
+        Update: {
+          category?: string | null
+          description?: string | null
+          display_name_he?: string | null
+          feature_key?: string
+          id?: string
+          is_enabled_globally?: boolean
+        }
+        Relationships: []
+      }
       driver_documents: {
         Row: {
           created_at: string

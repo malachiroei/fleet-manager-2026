@@ -4,7 +4,6 @@ import { useVehicleSpecDirty } from '@/contexts/VehicleSpecDirtyContext';
 import { useViewAs } from '@/contexts/ViewAsContext';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks/useAuth';
-import { useFleetHeaderUiFeatures } from '@/hooks/useFleetHeaderUiFeatures';
 import { useOrganization } from '@/hooks/useOrganizations';
 import { useTeamMembersForSwitcher } from '@/hooks/useTeam';
 import { LanguageSwitcher } from './LanguageSwitcher';
@@ -79,8 +78,6 @@ export function AppLayout({ children }: AppLayoutProps) {
   const isProduction = isFleetManagerProHostname();
   /** באנר "גרסת בדיקה": מוסתר ב־fleet-manager-pro.com + www (ייצור) */
   const showStagingWarningBar = showFleetStagingEnvironmentBanner();
-  const { boldVersion: headerBoldVersion, starInHeader: headerStarInHeader, ready: headerUiReady } =
-    useFleetHeaderUiFeatures();
 
   /** ריענון כותרת אחרי כתיבת fleet-pro-acknowledged-version (לפני reload) */
   const [proAckBump, setProAckBump] = useState(0);
@@ -191,7 +188,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   const mainFleetOrgId = useMemo(() => {
     // Prefer explicit Main Fleet org id when present.
-    const explicitMainFleet = memberOrganizations.find((o) => o.id === '857f2311-2ec5-4d13-8e32-dacd450a9a77');
+    const explicitMainFleet = memberOrganizations.find((o) => o.id === '857f2311-2ec5-41d3-8e32-dacd450a9a77');
     if (explicitMainFleet) return explicitMainFleet.id;
 
     const mainFleet = memberOrganizations.find((o) => {
@@ -505,7 +502,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             value={activeOrgId ?? ''}
             onValueChange={(id) => {
               if (!id) return;
-              if (isMainAdmin && id === '857f2311-2ec5-4d13-8e32-dacd450a9a77') {
+              if (isMainAdmin && id === '857f2311-2ec5-41d3-8e32-dacd450a9a77') {
                 // Manual override: reset to admin view and main admin org
                 setViewAsEmail(null);
                 if (mainFleetOrgId) setActiveOrgId(mainFleetOrgId);
@@ -799,14 +796,8 @@ export function AppLayout({ children }: AppLayoutProps) {
           <span className="block truncate text-[10px] text-cyan-400/55">
             {orgName || 'הצי הראשי - רועי'}
           </span>
-          <span
-            className={cn(
-              'block truncate text-xs text-white/65',
-              headerUiReady && headerBoldVersion ? 'font-bold text-amber-300/95' : 'font-medium'
-            )}
-          >
+          <span className="block truncate text-xs text-white/65 font-medium">
             גרסה v{headerDisplayVersion}
-            {headerUiReady && headerStarInHeader ? <span className="ms-1" aria-hidden>⭐</span> : null}
           </span>
         </div>
       </div>
