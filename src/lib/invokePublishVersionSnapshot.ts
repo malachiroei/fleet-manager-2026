@@ -38,6 +38,13 @@ export async function invokePublishVersionSnapshot(
     throw new Error('Missing Supabase anon key — cannot invoke publish-version-snapshot');
   }
 
+  // Ensure we read the freshest session before invoking (publish is rare; extra call is acceptable).
+  try {
+    await supabase.auth.refreshSession();
+  } catch {
+    // ignore — if refresh fails we'll still try getSession and handle missing token
+  }
+
   let {
     data: { session },
   } = await supabase.auth.getSession();
@@ -58,7 +65,7 @@ export async function invokePublishVersionSnapshot(
   const featureIdsPreview = (snapshot.features ?? []).slice(0, 12).map((f) => f.id);
   console.log('Sending request to function...');
   console.log('publish-version-snapshot endpoint (must match Dashboard):', functionUrl);
-  console.log('Authorization: Bearer <JWT> present:', true);
+  console.log('Sending Token:', session?.access_token ? 'YES' : 'NO');
   console.log(
     '[invokePublishVersionSnapshot] body.snapshot.features count:',
     featureCount,
@@ -75,6 +82,10 @@ export async function invokePublishVersionSnapshot(
   });
   if (error) {
     if (error instanceof FunctionsHttpError) {
+      const status = (error as unknown as { context?: { status?: number } }).context?.status;
+      if (status === 401) {
+        throw new Error('סשן פג תוקף - נא לבצע התחברות מחדש');
+      }
       try {
         const j = (await error.context.json()) as {
           ok?: boolean;

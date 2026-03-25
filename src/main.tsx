@@ -40,6 +40,29 @@ void (async () => {
   postClearForceUpdateBypassToServiceWorkers();
 
   if (!isFleetManagerProProductionHost()) return;
+
+  /**
+   * EMERGENCY: disable Service Worker in production temporarily.
+   * Rationale: sw.js / old SW errors can block the app on fleet-manager-pro.com.
+   * Remove this block once the SW is verified stable again.
+   */
+  (window as any).__FLEET_DISABLE_SW__ = true;
+  try {
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for (const r of regs) {
+        try {
+          await r.unregister();
+        } catch {
+          // ignore
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  // Also remove old non-v2 SW leftovers (redundant after full unregister; kept as safety).
   await unregisterNonV2ServiceWorkers();
 })();
 

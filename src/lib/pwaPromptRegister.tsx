@@ -111,6 +111,25 @@ export function useRegisterSW(options?: RegisterSWOptions) {
   useEffect(() => {
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
 
+    // EMERGENCY: global kill-switch from main.tsx (production only).
+    if ((window as any).__FLEET_DISABLE_SW__ === true) {
+      void (async () => {
+        try {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          for (const r of regs) {
+            try {
+              await r.unregister();
+            } catch {
+              // ignore
+            }
+          }
+        } catch {
+          // ignore
+        }
+      })();
+      return;
+    }
+
     let registration: ServiceWorkerRegistration | null = null;
     let cancelled = false;
 

@@ -216,6 +216,8 @@ export function PublishVersionDetailedDialog({
       const msg = e instanceof Error ? e.message : String(e);
       if (msg === PUBLISH_REAUTH_MESSAGE) {
         toast.error(PUBLISH_REAUTH_MESSAGE);
+      } else if (msg.includes('סשן פג תוקף') || msg.toLowerCase().includes('401')) {
+        toast.error('סשן פג תוקף - נא לבצע התחברות מחדש');
       } else {
         toast.error(`פרסום נכשל: ${msg}`);
       }
