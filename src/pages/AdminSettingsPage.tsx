@@ -34,7 +34,7 @@ import {
   FLEET_PRO_ACK_VERSION_UPDATED_EVENT,
   version as codeVersion,
 } from '@/constants/version';
-import { triggerServiceWorkerUpdateCheck } from '@/lib/pwaServiceWorkerControl';
+import { clearAllBrowserCaches, triggerServiceWorkerUpdateCheck } from '@/lib/pwaServiceWorkerControl';
 import {
   clearFleetProUpdateModalSuppressFlag,
   hidePwaUpdateModal,
@@ -229,6 +229,10 @@ export default function AdminSettingsPage() {
     });
 
     const [latestManifestVersion, setLatestManifestVersion] = useState<string>(codeVersion);
+    /** GitHub: version_snapshot.json (best-effort) — להשוואה מול ה-Timestamp המקומי */
+    const [githubSnapshotVersion, setGithubSnapshotVersion] = useState<string>('');
+    const [githubSnapshotReleaseDate, setGithubSnapshotReleaseDate] = useState<string>('');
+    const [isGithubSnapshotLoading, setIsGithubSnapshotLoading] = useState(false);
 
     const restoreInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -311,6 +315,47 @@ export default function AdminSettingsPage() {
           // best-effort only
         }
       })();
+    }, []);
+
+    /** בדיקת GitHub: משווה נתוני גרסה מול version_snapshot.json (best-effort; ייתכן ריפו פרטי). */
+    useEffect(() => {
+      void (async () => {
+        setIsGithubSnapshotLoading(true);
+        try {
+          const url =
+            `https://raw.githubusercontent.com/malachiroei/fleet-manager-2026/master/src/config/version_snapshot.json?t=${Date.now()}`;
+          const res = await fetch(url, { cache: 'no-store' });
+          if (!res.ok) {
+            setGithubSnapshotVersion('');
+            setGithubSnapshotReleaseDate('');
+            return;
+          }
+          const j = (await res.json()) as { version?: unknown; release_date?: unknown };
+          setGithubSnapshotVersion(typeof j.version === 'string' ? j.version.trim() : '');
+          setGithubSnapshotReleaseDate(typeof j.release_date === 'string' ? j.release_date.trim() : '');
+        } catch {
+          setGithubSnapshotVersion('');
+          setGithubSnapshotReleaseDate('');
+        } finally {
+          setIsGithubSnapshotLoading(false);
+        }
+      })();
+    }, []);
+
+    const forceManualVersionUpdate = useCallback(async () => {
+      try {
+        await clearAllBrowserCaches();
+      } catch {
+        // ignore
+      }
+      const loc = window.location as Location & { reload?: (forceReload?: boolean) => void };
+      try {
+        loc.reload?.(true);
+        return;
+      } catch {
+        // ignore
+      }
+      window.location.reload();
     }, []);
 
     const sendTestEmail = async () => {
@@ -914,6 +959,16 @@ export default function AdminSettingsPage() {
                   <span className="text-muted-foreground">תאריך עדכון אחרון:</span>
                   <span className="font-medium">{lastUpdateDate}</span>
                 </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">version_snapshot.json ב-GitHub:</span>
+                  <span className="font-medium" dir="ltr">
+                    {isGithubSnapshotLoading
+                      ? 'טוען…'
+                      : githubSnapshotVersion || githubSnapshotReleaseDate
+                        ? `${githubSnapshotVersion || '—'} · ${githubSnapshotReleaseDate || '—'}`
+                        : 'לא זמין'}
+                  </span>
+                </div>
               </div>
               <div className="pt-3 border-t border-border mt-3 space-y-3">
                 <Button variant="outline" size="sm" onClick={runPrintTest}>
@@ -921,6 +976,14 @@ export default function AdminSettingsPage() {
                 </Button>
 
                 <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => void forceManualVersionUpdate()}
+                    disabled={isCheckingUpdates || isBackingUpSettings || isRestoringSettings}
+                  >
+                    עדכון גרסה ידני
+                  </Button>
                   <Button variant="outline" size="sm" onClick={backupSettings} disabled={isBackingUpSettings}>
                     {isBackingUpSettings ? (
                       <Loader2 className="h-4 w-4 animate-spin ml-2" />
