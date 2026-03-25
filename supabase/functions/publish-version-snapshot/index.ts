@@ -319,20 +319,12 @@ serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      if (email !== ALLOWED_PUBLISHER_EMAIL) {
-        return new Response(
-          JSON.stringify({
-            ok: false,
-            error: 'forbidden_publisher',
-            message: 'Publish allowed only for the designated publisher account',
-            allowed_email: ALLOWED_PUBLISHER_EMAIL,
-            got_email: email,
-          }),
-          {
-            status: 403,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          },
-        );
+      /** אבטחה לוגית בתוך הקוד: רק המייל המורשה יכול לפרסם. */
+      if (email !== 'malachiroei@gmail.com') {
+        return new Response(JSON.stringify({ error: 'unauthorized_user', got_email: email }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
     } else {
       console.warn(
