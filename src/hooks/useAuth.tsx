@@ -5,6 +5,7 @@ import type { AppRole, Profile } from '@/types/fleet';
 import { hasPermission as checkPermission, type PermissionKey } from '@/lib/permissions';
 
 const ACTIVE_ORG_STORAGE_KEY = 'fleet-manager-active-org';
+const EMERGENCY_ADMIN_EMAIL = 'malachiroei@gmail.com';
 
 export interface MemberOrganization {
   id: string;
@@ -269,17 +270,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const roleLower = (r: string) => String(r).toLowerCase();
-  const isAdmin = roles.some((r) => roleLower(r) === 'admin');
-  const isManager = roles.some((r) => roleLower(r) === 'admin' || roleLower(r) === 'fleet_manager');
-  const isDriver = roles.some((r) => {
+  const normalizedUserEmail = (user?.email ?? '').trim().toLowerCase();
+  const normalizedProfileEmail = (profile?.email ?? '').trim().toLowerCase();
+  const emergencyAdminOverride =
+    normalizedUserEmail === EMERGENCY_ADMIN_EMAIL ||
+    normalizedProfileEmail === EMERGENCY_ADMIN_EMAIL;
+
+  const baseIsAdmin = roles.some((r) => roleLower(r) === 'admin');
+  const baseIsManager = roles.some((r) => roleLower(r) === 'admin' || roleLower(r) === 'fleet_manager');
+  const isAdmin = emergencyAdminOverride || baseIsAdmin;
+  const isManager = emergencyAdminOverride || baseIsManager;
+  const isDriver = !emergencyAdminOverride && roles.some((r) => {
     const lower = roleLower(r);
     return lower === 'driver' || lower === 'employee' || lower === 'viewer';
   });
 
   const hasPermission = useCallback(
-    (permission: PermissionKey) =>
-      checkPermission(profile, permission, { isAdmin, isManager }),
-    [profile, isAdmin, isManager]
+    (permission: PermissionKey) => {
+      if (emergencyAdminOverride) return true;
+      return checkPermission(profile, permission, { isAdmin, isManager });
+    },
+    [emergencyAdminOverride, profile, isAdmin, isManager]
   );
 
   return (
