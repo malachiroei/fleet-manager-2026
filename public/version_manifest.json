@@ -1,0 +1,9 @@
+{
+  "version": "2.2.2",
+  "description": "Fix: Version display under logo and UI improvements.",
+  "changelog": [
+    "Update footer banner logic to respect VITE_APP_STATUS and hide in staging/dev.",
+    "Fix Supabase client to use VITE_SUPABASE_ANON_KEY and add safe env logging.",
+    "Fix: Version display under logo and UI improvements."
+  ]
+}

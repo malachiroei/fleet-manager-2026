@@ -1,0 +1,47 @@
+[
+    {
+        "id": "1",
+        "plate_number": "12-345-67",
+        "manufacturer": "טויוטה",
+        "model": "קורולה",
+        "year": 2023,
+        "current_odometer": 15000,
+        "next_maintenance_km": 30000,
+        "test_expiry": "2026-01-01",
+        "insurance_expiry": "2025-01-01",
+        "status": "valid",
+        "is_active": true,
+        "created_at": "2024-01-01T00:00:00Z",
+        "updated_at": "2024-01-01T00:00:00Z"
+    },
+    {
+        "id": "2",
+        "plate_number": "89-123-45",
+        "manufacturer": "יונדאי",
+        "model": "איוניק",
+        "year": 2022,
+        "current_odometer": 45000,
+        "next_maintenance_km": 60000,
+        "test_expiry": "2024-05-01",
+        "insurance_expiry": "2024-05-01",
+        "status": "warning",
+        "is_active": true,
+        "created_at": "2024-01-01T00:00:00Z",
+        "updated_at": "2024-01-01T00:00:00Z"
+    },
+    {
+        "id": "3",
+        "plate_number": "77-888-99",
+        "manufacturer": "קיה",
+        "model": "פיקנטו",
+        "year": 2024,
+        "current_odometer": 5000,
+        "next_maintenance_km": 15000,
+        "test_expiry": "2027-01-01",
+        "insurance_expiry": "2025-01-01",
+        "status": "valid",
+        "is_active": true,
+        "created_at": "2024-01-01T00:00:00Z",
+        "updated_at": "2024-01-01T00:00:00Z"
+    }
+]

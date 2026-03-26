@@ -1,0 +1,72 @@
+{
+  "common": {
+    "language": "שפה",
+    "hebrew": "עברית",
+    "english": "English",
+    "settings": "הגדרות",
+    "logout": "התנתקות",
+    "cancel": "ביטול",
+    "delete": "מחק",
+    "add": "הוסף",
+    "edit": "ערוך",
+    "view": "צפה",
+    "search": "חפש",
+    "noResults": "לא נמצאו תוצאות",
+    "deleteConfirm": "האם אתה בטוח?",
+    "deleteWarning": "פעולה זו תמחק את הפריט וכל הנתונים הקשורים אליו לצמיתות."
+  },
+  "navigation": {
+    "fleetManager": "מנהל הצי",
+    "proDashboard": "לוח בקרה Pro",
+    "home": "בית",
+    "vehicles": "רכבים",
+    "fleetManagement": "רכבים",
+    "vehicleDelivery": "מסירת רכב",
+    "exceptionAlerts": "התראות חריגה",
+    "operational": "תפעולי",
+    "drivers": "נהגים",
+    "mileageUpdate": "עדכון קילומטראז'",
+    "events": "אירועים",
+    "accidents": "תאונות",
+    "parkingReports": "דוחות חניה",
+    "procedure6Complaints": "תלונות נוהל 6",
+    "finance": "כספים",
+    "accounting": "חשבונאות",
+    "fuel": "דלק"
+  },
+  "dashboard": {
+    "title": "לוח בקרה",
+    "subtitle": "ברוכים הבאים ללוח הבקרה של ניהול הצי שלך",
+    "quickActions": "פעולות מהירות",
+    "fleetManagement": "ניהול הצי",
+    "drivers": "נהגים",
+    "manageYourFleet": "נהל את צי הרכבים שלך",
+    "manageDriverRoster": "נהל את רשימת הנהגים שלך",
+    "emptyStateTitle": "עדיין אין רכבים או נהגים בארגון",
+    "emptyStateDescription": "הוסף רכב או נהג כדי להתחיל לנהל את הצי. המספרים בלוח הבקרה יתעדכנו אוטומטית.",
+    "addFirstVehicle": "הוסף רכב ראשון",
+    "addFirstDriver": "הוסף נהג ראשון"
+  },
+  "vehicles": {
+    "title": "ניהול צי",
+    "subtitle": "נהל את צי הרכבים שלך",
+    "addVehicle": "הוסף רכב",
+    "addNewVehicle": "הוסף רכב חדש",
+    "noVehicles": "לא נמצאו רכבים",
+    "searchPlaceholder": "חפש לפי מספר רכב, יצרן...",
+    "deleteTitle": "מחק רכב?",
+    "deleteDescription": "פעולה זו תמחק את הרכב וכל הנתונים הקשורים אליו לצמיתות.",
+    "deleteButton": "מחק רכב"
+  },
+  "drivers": {
+    "title": "נהגים",
+    "subtitle": "נהל את רשימת הנהגים שלך",
+    "addDriver": "הוסף נהג",
+    "addNewDriver": "הוסף נהג חדש",
+    "noDrivers": "לא נמצאו נהגים",
+    "searchPlaceholder": "חפש לפי שם, ת.ז...",
+    "deleteTitle": "מחק נהג?",
+    "deleteDescription": "פעולה זו תמחק את פרטי הנהג וכל הנתונים הקשורים אליו לצמיתות.",
+    "deleteButton": "מחק נהג"
+  }
+}

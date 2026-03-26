@@ -1,0 +1,1470 @@
+import type { ChangeEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+ import { Link } from 'react-router-dom';
+ import { Button } from '@/components/ui/button';
+ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { supabase } from '@/integrations/supabase/client';
+import { FunctionsHttpError } from '@supabase/supabase-js';
+import PricingDataUploader from '@/components/PricingDataUploader';
+import FleetDataImporter from '@/components/FleetDataImporter';
+import {
+  ArrowRight,
+  Download,
+  Loader2,
+  Mail,
+  Monitor,
+  Plus,
+  Moon,
+  RefreshCw,
+  RotateCcw,
+  Send,
+  Settings,
+  Shield,
+  Sun,
+} from 'lucide-react';
+import { useTheme } from '@/hooks/useTheme';
+import { useAuth } from '@/hooks/useAuth';
+import { toast } from 'sonner';
+import { version as codeVersion } from '@/constants/version';
+import { clearAllBrowserCaches, triggerServiceWorkerUpdateCheck } from '@/lib/pwaServiceWorkerControl';
+import {
+  hidePwaUpdateModal,
+  showPwaUpdateModal,
+} from '@/lib/pwaUpdateModalBridge';
+import { parseManifestChanges } from '@/lib/pwaManifest';
+import {
+  pickLatestVersionManifest,
+  getTestStaticManifestUrl,
+  normalizeVersion,
+  compareSemver,
+  parseSemverSegments,
+  toCanonicalThreePartVersion,
+  versionNotOlderThanBundle,
+  isFleetManagerProHostname,
+} from '@/lib/versionManifest';
+import { isFleetProductionHost } from '@/lib/pwaPromptRegister';
+import { FLEET_KV_TABLE } from '@/lib/fleetKvTable';
+import {
+  groupFeatureFlagRowsByCategory,
+  isNestedUnderQaFormsRow,
+  QA_FORMS_NESTED_KEYS,
+  QA_FORMS_PARENT_KEY,
+  syncFeatureFlagsFromRegistry,
+  type FeatureFlagCategoryId,
+} from '@/lib/featureFlagRegistry';
+
+type FeatureFlagRow = {
+  id: string;
+  feature_key: string;
+  display_name_he: string | null;
+  description: string | null;
+  category: string | null;
+  is_enabled_globally: boolean;
+};
+
+const FEATURE_KEY_PATTERN = /^[a-z][a-z0-9_]*$/;
+
+const FEATURE_CATEGORY_ICONS: Record<string, string> = {
+  dashboard: '🏠',
+  quick_actions: '⚡',
+  forms: '📄',
+  other: '🔧',
+};
+
+function featureFlagRowMatchesQuery(row: FeatureFlagRow, q: string): boolean {
+  const needle = q.trim().toLowerCase();
+  if (!needle) return true;
+  const displayName = row.display_name_he?.trim() || row.feature_key;
+  const desc = row.description?.trim() || `שליטה על תצוגת ${displayName}`;
+  const hay = `${row.feature_key} ${displayName} ${desc}`.toLowerCase();
+  return hay.includes(needle);
+}
+
+function buildQuickActionsDisplayRows(
+  sectionRows: FeatureFlagRow[],
+  allRows: FeatureFlagRow[],
+): { row: FeatureFlagRow; nestedUnderQa: boolean }[] {
+  const byKey = new Map(allRows.map((r) => [r.feature_key, r]));
+  const sorted = [...sectionRows].sort((a, b) => a.feature_key.localeCompare(b.feature_key));
+  const out: { row: FeatureFlagRow; nestedUnderQa: boolean }[] = [];
+  for (const row of sorted) {
+    out.push({ row, nestedUnderQa: false });
+    if (row.feature_key === QA_FORMS_PARENT_KEY) {
+      for (const key of QA_FORMS_NESTED_KEYS) {
+        const child = byKey.get(key);
+        if (child) out.push({ row: child, nestedUnderQa: true });
+      }
+    }
+  }
+  return out;
+}
+
+export default function AdminSettingsPage() {
+    const { theme, setTheme } = useTheme();
+    const queryClient = useQueryClient();
+    const { isAdmin, profile, refreshProfile, user, roles } = useAuth();
+    const isAdminRoleOnly = roles.includes('admin');
+    const isFleetProDomain = isFleetManagerProHostname();
+    const [lastPricingUpload, setLastPricingUpload] = useState<string | null>(localStorage.getItem('last_pricing_upload'));
+    const lastVehicleUpload = localStorage.getItem('last_vehicle_upload');
+    const lastDriverUpload = localStorage.getItem('last_driver_upload');
+    const showDevTools = (() => {
+      if (typeof window === 'undefined') return false;
+      const host = (window.location.hostname || '').toLowerCase();
+      const isAllowedHost =
+        host.includes('localhost') ||
+        host.includes('127.0.0.1') ||
+        (host.includes('vercel.app') && (host.includes('dev') || host.includes('staging')));
+
+      // Safety: never show dev/admin tools in production hostnames.
+      // (Prevents enabling via localStorage flag in prod.)
+      if (!isAllowedHost) return false;
+
+      try {
+        const flag = localStorage.getItem('fleet-manager-dev-tools');
+        if (flag === '1' || flag === 'true') return true;
+      } catch {
+        // ignore
+      }
+
+      return true;
+    })();
+
+    const [addFeatureDialogOpen, setAddFeatureDialogOpen] = useState(false);
+    const [newFeatureKeyInput, setNewFeatureKeyInput] = useState('');
+    const [newFeatureNameHeInput, setNewFeatureNameHeInput] = useState('');
+    const [newFeatureDescriptionInput, setNewFeatureDescriptionInput] = useState('');
+    const [newFeatureCategoryInput, setNewFeatureCategoryInput] =
+      useState<FeatureFlagCategoryId>('quick_actions');
+    const [isInsertingFeature, setIsInsertingFeature] = useState(false);
+    const [isSyncingFeatureFlags, setIsSyncingFeatureFlags] = useState(false);
+    const [togglingFeatureId, setTogglingFeatureId] = useState<string | null>(null);
+
+    const { data: featureFlagRows = [], isLoading: featureFlagsTableLoading } = useQuery({
+      queryKey: ['feature-flags-admin', user?.id],
+      enabled: Boolean(user) && isAdminRoleOnly,
+      queryFn: async (): Promise<FeatureFlagRow[]> => {
+        const { data, error } = await supabase
+          .from('feature_flags')
+          .select('id, feature_key, display_name_he, description, category, is_enabled_globally')
+          .order('feature_key', { ascending: true });
+        if (error) throw error;
+        return (data ?? []) as FeatureFlagRow[];
+      },
+    });
+
+    const [featureFlagsSearch, setFeatureFlagsSearch] = useState('');
+    const [bulkTogglingSectionKey, setBulkTogglingSectionKey] = useState<string | null>(null);
+
+    const groupedFeatureFlagSections = useMemo(
+      () => groupFeatureFlagRowsByCategory(featureFlagRows),
+      [featureFlagRows],
+    );
+
+    /** תתי־טפסים מוצגים תחת «טפסים» בפעולות מהירות — לא בקבוצת הטפסים הנפרדת. */
+    const groupedFeatureFlagSectionsForUi = useMemo(() => {
+      const mapped = groupedFeatureFlagSections.map((section) =>
+        section.sectionKey === 'forms'
+          ? { ...section, rows: section.rows.filter((r) => !isNestedUnderQaFormsRow(r)) }
+          : section,
+      );
+      return mapped.filter((section) => section.rows.length > 0);
+    }, [groupedFeatureFlagSections]);
+
+    const groupedFeatureFlagSectionsByKey = useMemo(() => {
+      return new Map(groupedFeatureFlagSectionsForUi.map((s) => [s.sectionKey, s]));
+    }, [groupedFeatureFlagSectionsForUi]);
+
+    const filteredGroupedFeatureFlagSections = useMemo(() => {
+      const q = featureFlagsSearch.trim().toLowerCase();
+      if (!q) return groupedFeatureFlagSectionsForUi;
+
+      return groupedFeatureFlagSectionsForUi
+        .map((section) => {
+          if (section.sectionKey === 'quick_actions') {
+            return {
+              ...section,
+              rows: section.rows.filter((row) => {
+                if (featureFlagRowMatchesQuery(row, q)) return true;
+                if (row.feature_key !== QA_FORMS_PARENT_KEY) return false;
+                return QA_FORMS_NESTED_KEYS.some((key) => {
+                  const child = featureFlagRows.find((r) => r.feature_key === key);
+                  return child ? featureFlagRowMatchesQuery(child, q) : false;
+                });
+              }),
+            };
+          }
+          return {
+            ...section,
+            rows: section.rows.filter((row) => featureFlagRowMatchesQuery(row, q)),
+          };
+        })
+        .filter((section) => section.rows.length > 0);
+    }, [featureFlagsSearch, groupedFeatureFlagSectionsForUi, featureFlagRows]);
+
+    const invalidateFeatureFlagCaches = useCallback(() => {
+      void queryClient.invalidateQueries({ queryKey: ['feature-flags'] });
+      void queryClient.invalidateQueries({ queryKey: ['feature-flags-admin'] });
+    }, [queryClient]);
+
+    const handleFeatureFlagToggle = useCallback(
+      async (row: FeatureFlagRow, nextEnabled: boolean) => {
+        setTogglingFeatureId(row.id);
+        try {
+          const { error } = await supabase
+            .from('feature_flags')
+            .update({ is_enabled_globally: nextEnabled })
+            .eq('id', row.id);
+          if (error) throw error;
+          await invalidateFeatureFlagCaches();
+          toast.success(nextEnabled ? 'הפיצ׳ר הופעל' : 'הפיצ׳ר כובה');
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : 'עדכון נכשל';
+          toast.error(msg);
+        } finally {
+          setTogglingFeatureId(null);
+        }
+      },
+      [invalidateFeatureFlagCaches],
+    );
+
+    const handleBulkToggleSection = useCallback(
+      async (sectionKey: string, rows: FeatureFlagRow[], nextEnabled: boolean) => {
+        if (!rows.length) return;
+        if (bulkTogglingSectionKey) return;
+        setBulkTogglingSectionKey(sectionKey);
+        try {
+          const ids = rows.map((r) => r.id);
+          const { error } = await supabase
+            .from('feature_flags')
+            .update({ is_enabled_globally: nextEnabled })
+            .in('id', ids);
+          if (error) throw error;
+          await invalidateFeatureFlagCaches();
+          toast.success(nextEnabled ? 'כל הקטגוריה הופעלה' : 'כל הקטגוריה הושבתה');
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : 'Bulk עדכון נכשל';
+          toast.error(msg);
+        } finally {
+          setBulkTogglingSectionKey(null);
+        }
+      },
+      [bulkTogglingSectionKey, invalidateFeatureFlagCaches],
+    );
+
+    const handleAddFeatureFlag = useCallback(async () => {
+      const key = newFeatureKeyInput.trim().toLowerCase();
+      const nameHe = newFeatureNameHeInput.trim();
+      if (!FEATURE_KEY_PATTERN.test(key)) {
+        toast.error('מפתח לא תקין: אנגלית קטנה, ספרות ו־_, חייב להתחיל באות.');
+        return;
+      }
+      if (!nameHe) {
+        toast.error('נא למלא שם בעברית');
+        return;
+      }
+      setIsInsertingFeature(true);
+      try {
+        const { error } = await supabase.from('feature_flags').insert({
+          feature_key: key,
+          display_name_he: nameHe,
+          description: newFeatureDescriptionInput.trim() || null,
+          category: newFeatureCategoryInput,
+          is_enabled_globally: false,
+        });
+        if (error) throw error;
+        toast.success('הפיצ׳ר נוסף (כבוי כברירת מחדל)');
+        setAddFeatureDialogOpen(false);
+        setNewFeatureKeyInput('');
+        setNewFeatureNameHeInput('');
+        setNewFeatureDescriptionInput('');
+        setNewFeatureCategoryInput('quick_actions');
+        await invalidateFeatureFlagCaches();
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'הוספה נכשלה';
+        toast.error(msg);
+      } finally {
+        setIsInsertingFeature(false);
+      }
+    }, [
+      newFeatureKeyInput,
+      newFeatureNameHeInput,
+      newFeatureDescriptionInput,
+      newFeatureCategoryInput,
+      invalidateFeatureFlagCaches,
+    ]);
+
+    /** סנכרון מול `FEATURE_FLAG_REGISTRY` ב־`featureFlagRegistry.ts` (כל המפתחות מוגדרים שם) */
+    const handleSyncFeatureFlagsFromCode = useCallback(async () => {
+      setIsSyncingFeatureFlags(true);
+      try {
+        const { inserted, skipped } = await syncFeatureFlagsFromRegistry(supabase);
+        await invalidateFeatureFlagCaches();
+        toast.success(`סנכרון מהקוד הושלם: נוספו ${inserted} שורות, ${skipped} כבר היו קיימות`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'סנכרון נכשל';
+        toast.error(msg);
+      } finally {
+        setIsSyncingFeatureFlags(false);
+      }
+    }, [invalidateFeatureFlagCaches]);
+
+    // ── notification_emails — stored in system_settings ───────────────────────
+    const [notificationEmailsRaw, setNotificationEmailsRaw] = useState('malachiroei@gmail.com');
+    const [isSavingEmails, setIsSavingEmails] = useState(false);
+    const [isLoadingEmails, setIsLoadingEmails] = useState(true);
+
+    useEffect(() => {
+      (async () => {
+        try {
+          const { data, error } = await (supabase as any)
+            .from(FLEET_KV_TABLE)
+            .select('value')
+            .eq('key', 'notification_emails')
+            .maybeSingle();
+          if (error) throw error;
+          const arr: string[] = Array.isArray(data?.value) ? data.value : [];
+          if (arr.length > 0) setNotificationEmailsRaw(arr.join(', '));
+        } catch {
+          // fallback to localStorage value if table not yet migrated
+          const saved = localStorage.getItem('handover_notification_email');
+          if (saved) setNotificationEmailsRaw(saved);
+        } finally {
+          setIsLoadingEmails(false);
+        }
+      })();
+    }, []);
+
+    // ── last_pricing_upload_date — stored in system_settings (shared for all users)
+    useEffect(() => {
+      const handlePricingUploaded = (event: Event) => {
+        const detail = (event as CustomEvent<{ iso?: string }>).detail;
+        if (detail?.iso && typeof detail.iso === 'string') {
+          setLastPricingUpload(detail.iso);
+          localStorage.setItem('last_pricing_upload', detail.iso);
+        }
+      };
+
+      window.addEventListener('pricing-uploaded', handlePricingUploaded);
+
+      (async () => {
+        try {
+          const { data, error } = await (supabase as any)
+            .from(FLEET_KV_TABLE)
+            .select('key,value')
+            .in('key', ['last_pricing_upload_date', 'last_pricing_upload']);
+
+          if (error) throw error;
+          const rows = Array.isArray(data) ? data : [];
+          const picked =
+            rows.find((r: any) => r?.key === 'last_pricing_upload_date')?.value ??
+            rows.find((r: any) => r?.key === 'last_pricing_upload')?.value;
+
+          if (typeof picked === 'string' && picked.trim()) {
+            setLastPricingUpload(picked);
+            localStorage.setItem('last_pricing_upload', picked);
+          }
+        } catch (e) {
+          // best-effort; localStorage fallback already exists
+        }
+      })();
+
+      return () => {
+        window.removeEventListener('pricing-uploaded', handlePricingUploaded);
+      };
+    }, []);
+
+    const formatDateTimeForUi = (d: Date) => {
+      const date = d.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const time = d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', hour12: false });
+      return `${date} ${time}`;
+    };
+
+    const saveNotificationEmails = async () => {
+      const emails = notificationEmailsRaw
+        .split(/[\n,]+/)
+        .map((e) => e.trim())
+        .filter((e) => e.length > 0 && e.includes('@'));
+
+      if (emails.length === 0) {
+        toast.error('נא להזין לפחות כתובת מייל תקינה אחת');
+        return;
+      }
+
+      setIsSavingEmails(true);
+      try {
+        const { error } = await (supabase as any)
+          .from(FLEET_KV_TABLE)
+          .upsert({ key: 'notification_emails', value: emails }, { onConflict: 'key' });
+        if (error) throw error;
+        setNotificationEmailsRaw(emails.join(', '));
+        toast.success(`נשמרו ${emails.length} כתובות מייל להתראות`);
+      } catch (err) {
+        console.error(err);
+        toast.error('שמירה נכשלה — ודא שטבלת settings קיימת ב-Supabase');
+      } finally {
+        setIsSavingEmails(false);
+      }
+    };
+
+    // ── legacy single-email field (kept for test-email button) ────────────────
+    const [notificationEmail, setNotificationEmail] = useState(
+      localStorage.getItem('handover_notification_email') || 'malachiroei@gmail.com'
+    );
+    const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
+    const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
+    const [isBackingUpSettings, setIsBackingUpSettings] = useState(false);
+    const [isRestoringSettings, setIsRestoringSettings] = useState(false);
+    const DEFAULT_APP_VERSION = codeVersion;
+    const [appVersion, setAppVersion] = useState<string>(() => {
+      try {
+        return versionNotOlderThanBundle(localStorage.getItem('fleet-manager-app_version'), codeVersion);
+      } catch {
+        return codeVersion;
+      }
+    });
+    // Default visible timestamp for the last update (updated by the "עדכן" flow)
+    const [lastUpdateDate, setLastUpdateDate] = useState<string>(() => {
+      try {
+        const iso = localStorage.getItem('fleet-manager-last_update_date_iso');
+        if (iso) {
+          const ms = Date.parse(iso);
+          if (!Number.isNaN(ms)) return formatDateTimeForUi(new Date(ms));
+        }
+      } catch {
+        // ignore
+      }
+      return formatDateTimeForUi(new Date(2026, 2, 18, 13, 0, 0));
+    });
+
+    const [latestManifestVersion, setLatestManifestVersion] = useState<string>(codeVersion);
+    /** GitHub: version_snapshot.json (best-effort) — להשוואה מול ה-Timestamp המקומי */
+    const [githubSnapshotVersion, setGithubSnapshotVersion] = useState<string>('');
+    const [githubSnapshotReleaseDate, setGithubSnapshotReleaseDate] = useState<string>('');
+    const [isGithubSnapshotLoading, setIsGithubSnapshotLoading] = useState(false);
+
+    const restoreInputRef = useRef<HTMLInputElement | null>(null);
+
+    const formatDate = (iso: string | null) => {
+      if (!iso) return 'לא בוצעה';
+      const d = new Date(iso);
+      const date = d.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const time = d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', hour12: false });
+      return `${date} ${time}`;
+    };
+
+    // Load persisted version + last update timestamp (best-effort).
+    useEffect(() => {
+      (async () => {
+        try {
+          // Prefer local persistence (prevents resetting to older versions after simplified update).
+          try {
+            const localVersion = localStorage.getItem('fleet-manager-app_version');
+            const localLastIso = localStorage.getItem('fleet-manager-last_update_date_iso');
+            if (localVersion && localLastIso) {
+              const v = versionNotOlderThanBundle(localVersion, codeVersion);
+              setAppVersion(v);
+              if (v !== localVersion) {
+                try {
+                  localStorage.setItem('fleet-manager-app_version', v);
+                } catch {
+                  // ignore
+                }
+              }
+              const ms = Date.parse(localLastIso);
+              if (!Number.isNaN(ms)) {
+                setLastUpdateDate(formatDateTimeForUi(new Date(ms)));
+              } else {
+                setLastUpdateDate(localLastIso);
+              }
+              return;
+            }
+          } catch {
+            // ignore localStorage issues
+          }
+
+          const [versionRes, lastUpdateRes] = await Promise.all([
+            (supabase as any).from(FLEET_KV_TABLE).select('value').eq('key', 'app_version').maybeSingle(),
+            (supabase as any).from(FLEET_KV_TABLE).select('value').eq('key', 'last_update_date').maybeSingle(),
+          ]);
+
+          if (!versionRes?.error) {
+            const versionValue = versionRes?.data?.value;
+            if (typeof versionValue === 'string' && versionValue.trim()) {
+              const v = versionNotOlderThanBundle(versionValue, codeVersion);
+              setAppVersion(v);
+            }
+          }
+
+          if (!lastUpdateRes?.error) {
+            const lastUpdateValue = lastUpdateRes?.data?.value;
+            if (typeof lastUpdateValue === 'string' && lastUpdateValue.trim()) {
+              const ms = Date.parse(lastUpdateValue);
+              if (!Number.isNaN(ms)) {
+                setLastUpdateDate(formatDateTimeForUi(new Date(ms)));
+              } else {
+                setLastUpdateDate(lastUpdateValue);
+              }
+            }
+          }
+        } catch {
+          // ignore (RLS/migration not ready yet)
+        }
+      })();
+    }, []);
+
+    // Load latest version manifest for "latest version" coloring (DB או v-dev-only.json בטסט)
+    useEffect(() => {
+      (async () => {
+        try {
+          const picked = await pickLatestVersionManifest(supabase as any, getTestStaticManifestUrl());
+          const v = picked?.manifest?.version;
+          if (typeof v === 'string' && v.trim()) setLatestManifestVersion(v.trim());
+        } catch {
+          // best-effort only
+        }
+      })();
+    }, []);
+
+    /** בדיקת GitHub: משווה נתוני גרסה מול version_snapshot.json (best-effort; ייתכן ריפו פרטי). */
+    useEffect(() => {
+      void (async () => {
+        setIsGithubSnapshotLoading(true);
+        try {
+          const url =
+            `https://raw.githubusercontent.com/malachiroei/fleet-manager-2026/master/src/config/version_snapshot.json?t=${Date.now()}`;
+          const res = await fetch(url, { cache: 'no-store' });
+          if (!res.ok) {
+            setGithubSnapshotVersion('');
+            setGithubSnapshotReleaseDate('');
+            return;
+          }
+          const j = (await res.json()) as { version?: unknown; release_date?: unknown };
+          setGithubSnapshotVersion(typeof j.version === 'string' ? j.version.trim() : '');
+          setGithubSnapshotReleaseDate(typeof j.release_date === 'string' ? j.release_date.trim() : '');
+        } catch {
+          setGithubSnapshotVersion('');
+          setGithubSnapshotReleaseDate('');
+        } finally {
+          setIsGithubSnapshotLoading(false);
+        }
+      })();
+    }, []);
+
+    const forceManualVersionUpdate = useCallback(async () => {
+      try {
+        await clearAllBrowserCaches();
+      } catch {
+        // ignore
+      }
+      const loc = window.location as Location & { reload?: (forceReload?: boolean) => void };
+      try {
+        loc.reload?.(true);
+        return;
+      } catch {
+        // ignore
+      }
+      window.location.reload();
+    }, []);
+
+    const sendTestEmail = async () => {
+      if (!notificationEmail.trim() || !notificationEmail.includes('@')) {
+        toast.error('נא להזין כתובת מייל תקינה לפני בדיקה');
+        return;
+      }
+
+      setIsSendingTestEmail(true);
+      try {
+        localStorage.setItem('handover_notification_email', notificationEmail.trim());
+
+        const { error } = await supabase.functions.invoke('send-handover-notification', {
+          body: {
+            to: notificationEmail.trim(),
+            subject: 'בדיקת מייל - Fleet Manager 2026',
+            payload: {
+              handoverType: 'delivery',
+              assignmentMode: 'permanent',
+              vehicleLabel: 'בדיקת מערכת',
+              driverLabel: 'בדיקת מערכת',
+              odometerReading: 12345,
+              fuelLevel: 4,
+              notes: 'מייל בדיקה ממסך הגדרות',
+              reportUrl: window.location.origin,
+              sentAt: new Date().toISOString(),
+            },
+          },
+        });
+
+        if (error) {
+          throw error;
+        }
+
+        toast.success('מייל בדיקה נשלח בהצלחה');
+      } catch (error) {
+        let message = 'שגיאה לא ידועה';
+
+        if (error instanceof FunctionsHttpError) {
+          try {
+            const response = error.context;
+            const data = await response.json() as { error?: string; message?: string; details?: string };
+            message = data?.error || data?.message || data?.details || `HTTP ${response.status}`;
+          } catch {
+            message = error.message;
+          }
+        } else if (error instanceof Error) {
+          message = error.message;
+        }
+
+        if (message.includes('Missing RESEND_API_KEY')) {
+          message = 'חסר RESEND_API_KEY בפרויקט Supabase של הטסט';
+        }
+
+        toast.error(`שליחת מייל בדיקה נכשלה: ${message}`);
+      } finally {
+        setIsSendingTestEmail(false);
+      }
+    };
+
+    const runPrintTest = () => {
+      const printWindow = window.open('', '_blank', 'width=900,height=700');
+
+      if (!printWindow) {
+        toast.error('חלון ההדפסה נחסם על ידי הדפדפן. יש לאפשר חלונות קופצים ולנסות שוב');
+        return;
+      }
+
+      const generatedAt = new Date().toLocaleString('he-IL');
+
+      printWindow.document.write(`
+        <!doctype html>
+        <html lang="he" dir="rtl">
+          <head>
+            <meta charset="utf-8" />
+            <title>בדיקת הדפסה - Fleet Manager 2026</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 32px; color: #111827; }
+              h1 { margin: 0 0 12px; font-size: 24px; }
+              p { margin: 4px 0; font-size: 16px; }
+              .box { margin-top: 16px; border: 1px solid #d1d5db; border-radius: 10px; padding: 16px; }
+            </style>
+          </head>
+          <body>
+            <h1>בדיקת הדפסה</h1>
+            <p>המערכת פתחה בהצלחה חלון הדפסה.</p>
+            <p>תאריך יצירה: ${generatedAt}</p>
+            <div class="box">
+              <p>אם המסמך הודפס או הופיע בתצוגה מקדימה, בדיקת ההדפסה עברה בהצלחה.</p>
+            </div>
+          </body>
+        </html>
+      `);
+
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => {
+        printWindow.print();
+      }, 150);
+    };
+ 
+    const fetchBackupPayload = async () => {
+      const appIdentifier = 'fleet-manager-pro';
+      const version = '2.0';
+
+      const backupPayload: any = {
+        metadata: { appIdentifier, version },
+        exportedAt: new Date().toISOString(),
+        lastUpdateDate,
+        theme,
+      };
+
+      const includedParts: string[] = [];
+      const skippedParts: string[] = [];
+      const failures: Record<string, string> = {};
+
+      // Tables that we KNOW exist and are used in this app:
+      // - vehicles, drivers (core entities)
+      // - maintenance_logs (contains odometer_reading; treated as "odometer_logs" in backup)
+      // - organizations (fleet/org name used in AppLayout)
+      const tableStrategies: Array<{
+        tableName: string;
+        jsonKey: string;
+        selectVariants: string[];
+        // Conflict target suggestion for restore (not used during backup)
+        conflictTarget?: string;
+      }> = [
+        {
+          tableName: 'vehicles',
+          jsonKey: 'vehicles',
+          selectVariants: ['*'],
+        },
+        {
+          tableName: 'drivers',
+          jsonKey: 'drivers',
+          selectVariants: ['*'],
+        },
+        {
+          tableName: 'maintenance_logs',
+          // Backup key name requested by the user
+          jsonKey: 'odometer_logs',
+          selectVariants: ['*', 'id,vehicle_id,service_date,service_type,odometer_reading,garage_name,cost,notes,invoice_url,created_by,created_at'],
+        },
+        {
+          tableName: 'organizations',
+          jsonKey: 'organizations',
+          selectVariants: ['id,name,updated_at', 'id,name'],
+        },
+      ];
+
+      const fetchTable = async (tableName: string, jsonKey: string, selectVariants: string[]) => {
+        console.log(`[Backup] Start table '${tableName}' (jsonKey='${jsonKey}')`);
+        let lastErrorMessage = '';
+
+        for (const select of selectVariants) {
+          console.log(`[Backup] Attempt fetch '${tableName}' with select(${select})`);
+          try {
+            const { data, error } = await (supabase as any).from(tableName).select(select);
+            if (error) {
+              lastErrorMessage = typeof error?.message === 'string' ? error.message : JSON.stringify(error);
+              console.log(`[Backup] Failed '${tableName}' select(${select})`, error);
+              continue;
+            }
+
+            const rows = Array.isArray(data) ? data : data ? [data] : [];
+            backupPayload[jsonKey] = rows;
+            includedParts.push(jsonKey);
+            console.log(`[Backup] Success '${tableName}' rows=${rows.length}`);
+            return;
+          } catch (e) {
+            lastErrorMessage = e instanceof Error ? e.message : String(e);
+            console.log(`[Backup] Exception '${tableName}' select(${select})`, e);
+            continue;
+          }
+        }
+
+        const reason = lastErrorMessage
+          ? `All select variants failed. Last error: ${lastErrorMessage}`
+          : `All select variants failed: ${selectVariants.join(' | ')}`;
+
+        failures[tableName] = reason;
+        skippedParts.push(jsonKey);
+        console.log(`[Backup] Giving up '${tableName}' (jsonKey='${jsonKey}'):`, reason);
+      };
+
+      for (const s of tableStrategies) {
+        await fetchTable(s.tableName, s.jsonKey, s.selectVariants);
+      }
+
+      return { backupPayload, includedParts, skippedParts, failures };
+    };
+
+    const backupSettings = async () => {
+      setIsBackingUpSettings(true);
+      try {
+        const dateStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+
+        const { backupPayload, includedParts, skippedParts, failures } = await fetchBackupPayload();
+        const blob = new Blob([JSON.stringify(backupPayload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `fleet_manager_backup_${dateStr}.json`;
+        a.click();
+
+        URL.revokeObjectURL(url);
+
+        if (includedParts.length === 0) {
+          const failedList = Object.entries(failures)
+            .map(([tableName, reason]) => `${tableName}: ${reason}`)
+            .join(' | ');
+          toast.error(`Error: גיבוי נכשל (לא ניתן לקרוא אף טבלה). ${failedList}`);
+        } else if (skippedParts.length > 0) {
+          toast.success(`Success: גיבוי ירד למחשב. הושמטו: ${skippedParts.join(', ')}`);
+          const failedList = Object.entries(failures)
+            .map(([tableName, reason]) => `${tableName}: ${reason}`)
+            .join(' | ');
+          if (failedList) toast.error(`Failures: ${failedList}`);
+        } else {
+          toast.success('Success: גיבוי ירד למחשב');
+        }
+      } catch (err) {
+        console.error(err);
+        toast.error('Error: גיבוי ההגדרות נכשל');
+      } finally {
+        setIsBackingUpSettings(false);
+      }
+    };
+
+    const checkForUpdates = async () => {
+      setIsCheckingUpdates(true);
+      try {
+        type VersionManifest = { version: string; releaseDate?: string; changes?: unknown };
+
+        // חייב להתאים לגרסה שבאמת רצה בדפדפן (מהבילד), לא ל-appVersion מ-localStorage —
+        // אחרת מופיע מודאל עדכון למרות שהמסך כבר מציג את codeVersion מהבילד.
+        const picked = await pickLatestVersionManifest(supabase as any, getTestStaticManifestUrl());
+        if (!picked) throw new Error('לא ניתן לטעון מניפסט גרסה (ענן או v-dev-only.json)');
+
+        const latestManifest = picked.manifest as Partial<VersionManifest>;
+        const manifestChanges = parseManifestChanges(latestManifest);
+
+        const latestVersion = latestManifest?.version ? String(latestManifest.version) : '';
+        if (!latestVersion) throw new Error('Latest manifest missing "version"');
+
+        const latestNormalized = normalizeVersion(latestVersion);
+        const currentNormalized = normalizeVersion(codeVersion);
+
+        // אם הגרסה מהשרת זהה לגרסה הנוכחית בבילד — לסגור את מודאל ה-PWA.
+        if (latestNormalized === currentNormalized) {
+          hidePwaUpdateModal();
+          toast.success("אין עדכונים זמינים כרגע");
+        } else {
+          const cmp = compareSemver(latestNormalized, currentNormalized);
+          if (cmp > 0) {
+            try {
+              showPwaUpdateModal({
+                targetVersion: latestNormalized,
+                changes: manifestChanges,
+              });
+            } catch (e) {
+              console.warn("showPwaUpdateModal failed", e);
+            }
+            toast.success(`זמינה גרסה ${latestNormalized}. אשר עדכון בחלון שמופיע`);
+          } else {
+            hidePwaUpdateModal();
+            toast.success("אין עדכונים זמינים כרגע");
+          }
+        }
+      } catch (err) {
+        console.error(err);
+        const message = err instanceof Error ? err.message : 'שגיאה לא ידועה';
+        toast.error(`בדיקת עדכונים נכשלה: ${message}`);
+      } finally {
+        // במקור (ייצור): רק מודאל + אישור "עדכן עכשיו" — לא מושכים עדכון SW ברקע מכפתור זה
+        if (!isFleetProductionHost()) {
+          try {
+            await triggerServiceWorkerUpdateCheck();
+          } catch (swErr) {
+            console.warn('triggerServiceWorkerUpdateCheck:', swErr);
+          }
+        }
+        setIsCheckingUpdates(false);
+      }
+    };
+
+    const isValidFleetManagerBackup = (value: unknown): value is { metadata: { appIdentifier: string } } => {
+      if (!value || typeof value !== 'object') return false;
+      const obj = value as any;
+      return obj?.metadata?.appIdentifier === 'fleet-manager-pro';
+    };
+
+    const inferOnConflict = (rows: any[] | null | undefined): string | undefined => {
+      if (!rows || rows.length === 0) return undefined;
+      const first = rows[0];
+      if (!first || typeof first !== 'object') return undefined;
+      const keys = Object.keys(first);
+      if (keys.includes('id')) return 'id';
+      if (keys.includes('key')) return 'key';
+      return undefined;
+    };
+
+    const restoreSettingsFromFile = async (file: File) => {
+      setIsRestoringSettings(true);
+      try {
+        const raw = await file.text();
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          toast.error('Error: קובץ ה-JSON אינו תקין');
+          return;
+        }
+
+        if (!isValidFleetManagerBackup(parsed)) {
+          toast.error('Error: קובץ הגיבוי אינו תקין (metadata.appIdentifier לא תקין). בצע גיבוי חדש מהמערכת.');
+          return;
+        }
+
+        const backup = parsed as any;
+
+        const restoredParts: string[] = [];
+        const failedParts: string[] = [];
+
+        const tryUpsertTable = async (tableName: string, rows: unknown) => {
+          if (!Array.isArray(rows) || rows.length === 0) return;
+          try {
+            const rowsArr = rows as any[];
+            let conflictTarget: string | undefined;
+            if (tableName === 'maintenance_logs') conflictTarget = 'id';
+            if (tableName === 'organizations') conflictTarget = 'id';
+            if (tableName === 'vehicles') conflictTarget = 'id';
+            if (tableName === 'drivers') conflictTarget = 'id';
+            if (!conflictTarget) conflictTarget = inferOnConflict(rowsArr) ?? undefined;
+
+            const upsertResult = conflictTarget
+              ? await (supabase as any).from(tableName).upsert(rowsArr, { onConflict: conflictTarget })
+              : await (supabase as any).from(tableName).upsert(rowsArr);
+
+            if ((upsertResult as any)?.error) throw (upsertResult as any).error;
+            restoredParts.push(tableName);
+          } catch (e) {
+            console.error(`restoreSettingsFromFile: failed ${tableName}`, e);
+            failedParts.push(tableName);
+          }
+        };
+
+        // Restore only the tables that Backup exports.
+        await tryUpsertTable('vehicles', backup.vehicles);
+        await tryUpsertTable('drivers', backup.drivers);
+        await tryUpsertTable('maintenance_logs', backup.odometer_logs);
+        await tryUpsertTable('organizations', backup.organizations);
+
+        if (restoredParts.length > 0) {
+          toast.success('ההגדרות שוחזרו בהצלחה! מרענן את העמוד...');
+          toast.success(`שוחזרו בהצלחה: ${restoredParts.join(', ')}`);
+          setTimeout(() => window.location.reload(), 700);
+        } else {
+          toast.error('Error: לא שוחזרו נתונים');
+        }
+
+        if (failedParts.length > 0) {
+          toast.error(`שגיאה בשחזור עבור: ${failedParts.join(', ')}`);
+        }
+      } catch (err) {
+        console.error(err);
+        toast.error('Error: שחזור ההגדרות נכשל');
+      } finally {
+        setIsRestoringSettings(false);
+      }
+    };
+
+    const handleRestoreButtonClick = () => {
+      restoreInputRef.current?.click();
+    };
+
+    const handleRestoreFilePicked = async (e: ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      // Clear value so picking the same file again triggers change event.
+      e.target.value = '';
+      await restoreSettingsFromFile(file);
+    };
+
+   return (
+     <div className="min-h-screen bg-[#020617] text-white">
+       <header className="bg-card border-b border-border sticky top-0 z-10">
+         <div className="container py-4">
+           <div className="flex items-center gap-3">
+             <Link to="/">
+               <Button variant="ghost" size="icon">
+                 <ArrowRight className="h-5 w-5" />
+               </Button>
+             </Link>
+             <div className="flex items-center gap-2">
+               <Settings className="h-5 w-5" />
+               <h1 className="font-bold text-xl">הגדרות מנהל</h1>
+             </div>
+           </div>
+         </div>
+       </header>
+ 
+       <main className="container py-6 space-y-6">
+         {/* Pricing Data Uploader */}
+          <PricingDataUploader />
+
+          {/* Fleet Data Importer */}
+          <FleetDataImporter />
+
+          {isAdminRoleOnly ? (
+            <>
+              <Card>
+                <CardHeader>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-cyan-500/15">
+                        <Shield className="h-5 w-5 text-cyan-400" />
+                      </div>
+                      <div>
+                        <CardTitle>ניהול פיצ׳רים גלובליים</CardTitle>
+                        <CardDescription className="mt-1 max-w-2xl">
+                          שליטה ב־feature flags לכל המערכת. רק משתמש עם תפקיד <strong>admin</strong> רואה מקטע זה.
+                          עמודות מומלצות: <code className="text-xs">display_name_he</code>,{' '}
+                          <code className="text-xs">description</code>, <code className="text-xs">category</code>{' '}
+                          (<code className="text-xs">dashboard</code> | <code className="text-xs">quick_actions</code> |{' '}
+                          <code className="text-xs">forms</code>). קובץ דוגמה:{' '}
+                          <code className="text-xs">supabase/seed_feature_flags.sql</code>.
+                        </CardDescription>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2 shrink-0">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="gap-2"
+                        disabled={isSyncingFeatureFlags}
+                        onClick={() => void handleSyncFeatureFlagsFromCode()}
+                      >
+                        {isSyncingFeatureFlags ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-4 w-4" />
+                        )}
+                        סנכרן פיצ׳רים מהקוד
+                      </Button>
+                      <Button type="button" className="gap-2" onClick={() => setAddFeatureDialogOpen(true)}>
+                        <Plus className="h-4 w-4" />
+                        הוסף פיצ׳ר חדש
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {featureFlagsTableLoading ? (
+                    <div className="flex items-center gap-2 py-8 text-muted-foreground text-sm">
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      טוען פיצ׳רים…
+                    </div>
+                  ) : featureFlagRows.length === 0 ? (
+                    <div className="rounded-md border border-dashed border-border py-10 text-center text-muted-foreground text-sm">
+                      אין שורות בטבלה. לחץ «סנכרן פיצ׳רים מהקוד» או הוסף ידנית.
+                    </div>
+                  ) : (
+                    <div className="space-y-8">
+                      <div className="space-y-2">
+                        <Label htmlFor="feature-flags-search">חיפוש פיצ׳רים</Label>
+                        <Input
+                          id="feature-flags-search"
+                          placeholder="הקלד/י שם (בעברית) או מפתח…"
+                          value={featureFlagsSearch}
+                          onChange={(e) => setFeatureFlagsSearch(e.target.value)}
+                        />
+                      </div>
+
+                      {filteredGroupedFeatureFlagSections.map((section) => {
+                        const originalSection = groupedFeatureFlagSectionsByKey.get(section.sectionKey);
+                        const originalRows = originalSection?.rows ?? section.rows;
+                        const allEnabled =
+                          originalRows.length > 0 && originalRows.every((r) => r.is_enabled_globally);
+                        const nextEnabled = !allEnabled;
+                        const icon = FEATURE_CATEGORY_ICONS[section.sectionKey] ?? FEATURE_CATEGORY_ICONS.other;
+                        const showBulk =
+                          section.sectionKey === 'dashboard' ||
+                          section.sectionKey === 'quick_actions' ||
+                          section.sectionKey === 'forms';
+                        const qaFormsRow = featureFlagRows.find((r) => r.feature_key === QA_FORMS_PARENT_KEY);
+                        const parentFormsHubOn = qaFormsRow?.is_enabled_globally === true;
+                        const tableEntries =
+                          section.sectionKey === 'quick_actions'
+                            ? buildQuickActionsDisplayRows(section.rows, featureFlagRows)
+                            : section.rows.map((row) => ({ row, nestedUnderQa: false as boolean }));
+
+                        return (
+                        <div key={section.sectionKey} className="space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <h3 className="text-sm font-semibold text-cyan-200/90 border-b border-cyan-500/20 pb-1 flex items-center gap-2">
+                              <span aria-hidden>{icon}</span>
+                              {section.title}
+                            </h3>
+                            {showBulk ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={bulkTogglingSectionKey === section.sectionKey || originalRows.length === 0}
+                                onClick={() => void handleBulkToggleSection(section.sectionKey, originalRows, nextEnabled)}
+                              >
+                                {nextEnabled ? 'הפעל הכל' : 'כבה הכל'}
+                              </Button>
+                            ) : null}
+                          </div>
+                          <div className="rounded-md border border-border overflow-x-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="min-w-[140px]">שם הפיצ׳ר</TableHead>
+                                  <TableHead className="min-w-[200px]">תיאור</TableHead>
+                                  <TableHead className="min-w-[120px] text-muted-foreground font-mono text-xs">
+                                    מפתח
+                                  </TableHead>
+                                  <TableHead className="w-[120px] text-center">פעיל גלובלית</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {tableEntries.map(({ row, nestedUnderQa }) => {
+                                  const displayName =
+                                    row.display_name_he?.trim() || row.feature_key;
+                                  const desc = row.description?.trim() || `שליטה על תצוגת ${displayName}`;
+                                  const busy = togglingFeatureId === row.id;
+                                  const storedOn = row.is_enabled_globally === true;
+                                  const effectiveOn = storedOn && (!nestedUnderQa || parentFormsHubOn);
+                                  const switchDisabled = busy || (nestedUnderQa && !parentFormsHubOn);
+                                  return (
+                                    <TableRow
+                                      key={`${row.id}-${nestedUnderQa ? 'nested' : 'root'}`}
+                                      className={
+                                        nestedUnderQa
+                                          ? 'bg-slate-500/5 border-r-2 border-r-cyan-500/40'
+                                          : effectiveOn
+                                            ? 'bg-emerald-500/5'
+                                            : 'bg-muted/25'
+                                      }
+                                    >
+                                      <TableCell
+                                        className={`font-medium align-top ${nestedUnderQa ? 'pr-6' : ''}`}
+                                      >
+                                        <div className="flex items-center justify-between gap-3">
+                                          <span className="min-w-0 truncate flex items-center gap-2">
+                                            {nestedUnderQa ? (
+                                              <span className="text-cyan-400/80 text-lg leading-none" aria-hidden>
+                                                └
+                                              </span>
+                                            ) : null}
+                                            {displayName}
+                                          </span>
+                                          <span
+                                            className={effectiveOn
+                                              ? 'inline-flex items-center rounded-full border border-emerald-400/40 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-200 whitespace-nowrap'
+                                              : 'inline-flex items-center rounded-full border border-red-400/40 bg-red-500/10 px-2.5 py-0.5 text-xs font-semibold text-red-200 whitespace-nowrap'
+                                            }
+                                          >
+                                            {effectiveOn
+                                              ? 'פעיל'
+                                              : nestedUnderQa && storedOn && !parentFormsHubOn
+                                                ? 'מושבת (הורה כבוי)'
+                                                : 'מושבת'}
+                                          </span>
+                                        </div>
+                                      </TableCell>
+                                      <TableCell className="text-sm text-muted-foreground align-top max-w-md">
+                                        {desc}
+                                        {nestedUnderQa && !parentFormsHubOn ? (
+                                          <p className="mt-1 text-xs text-amber-200/90">
+                                            כבוי בפועל כל עוד «טפסים» (פעולות מהירות) מושבת.
+                                          </p>
+                                        ) : null}
+                                      </TableCell>
+                                      <TableCell className="align-top">
+                                        <code className="text-xs text-muted-foreground" dir="ltr">
+                                          {row.feature_key}
+                                        </code>
+                                      </TableCell>
+                                      <TableCell className="align-middle">
+                                        <div className="flex justify-center">
+                                          <Switch
+                                            checked={row.is_enabled_globally}
+                                            disabled={switchDisabled}
+                                            onCheckedChange={(v) => {
+                                              void handleFeatureFlagToggle(row, v);
+                                            }}
+                                            aria-label={`הפעלת ${displayName}`}
+                                          />
+                                        </div>
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </div>
+                      );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Dialog open={addFeatureDialogOpen} onOpenChange={setAddFeatureDialogOpen}>
+                <DialogContent className="sm:max-w-md" dir="rtl">
+                  <DialogHeader>
+                    <DialogTitle>הוספת פיצ׳ר</DialogTitle>
+                    <DialogDescription>
+                      מפתח באנגלית (snake_case), שם לתצוגה בעברית. אפשר להוסיף תיאור אופציונלי.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="ff-key">מפתח (אנגלית)</Label>
+                      <Input
+                        id="ff-key"
+                        dir="ltr"
+                        className="font-mono text-sm"
+                        placeholder="my_custom_feature"
+                        value={newFeatureKeyInput}
+                        onChange={(e) => setNewFeatureKeyInput(e.target.value)}
+                        autoComplete="off"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="ff-name-he">שם בעברית</Label>
+                      <Input
+                        id="ff-name-he"
+                        placeholder="למשל: רכב חליפי"
+                        value={newFeatureNameHeInput}
+                        onChange={(e) => setNewFeatureNameHeInput(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="ff-cat">קטגוריה</Label>
+                      <select
+                        id="ff-cat"
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={newFeatureCategoryInput}
+                        onChange={(e) => setNewFeatureCategoryInput(e.target.value as FeatureFlagCategoryId)}
+                      >
+                        <option value="dashboard">כרטיסי דשבורד</option>
+                        <option value="quick_actions">פעולות מהירות</option>
+                        <option value="forms">טפסים</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="ff-desc">תיאור (אופציונלי)</Label>
+                      <Textarea
+                        id="ff-desc"
+                        rows={2}
+                        placeholder="מה הפיצ׳ר משפיע עליו באפליקציה"
+                        value={newFeatureDescriptionInput}
+                        onChange={(e) => setNewFeatureDescriptionInput(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter className="gap-2 sm:gap-0">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setAddFeatureDialogOpen(false)}
+                      disabled={isInsertingFeature}
+                    >
+                      ביטול
+                    </Button>
+                    <Button type="button" onClick={() => void handleAddFeatureFlag()} disabled={isInsertingFeature}>
+                      {isInsertingFeature ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin ml-2" />
+                          שומר…
+                        </>
+                      ) : (
+                        'שמור'
+                      )}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </>
+          ) : null}
+
+          {/* Notification Emails — system_settings */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-500/10">
+                  <Mail className="h-5 w-5 text-cyan-400" />
+                </div>
+                <div>
+                  <CardTitle>כתובות מייל לקבלת התראות</CardTitle>
+                  <CardDescription>
+                    כל הכתובות ברשימה יקבלו עותק של הודעות מסירת רכב, החזרה ואשף המסירה הדיגיטלי.
+                    הפרד בין כתובות בפסיק או שורה חדשה.
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {isLoadingEmails ? (
+                <div className="flex items-center gap-2 text-muted-foreground text-sm py-4">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  טוען הגדרות...
+                </div>
+              ) : (
+                <>
+                  <Textarea
+                    value={notificationEmailsRaw}
+                    onChange={(e) => setNotificationEmailsRaw(e.target.value)}
+                    placeholder={"admin@company.com, fleet@company.com"}
+                    dir="ltr"
+                    rows={3}
+                    className="font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    כתובות תקינות זוהו:{' '}
+                    <strong>
+                      {notificationEmailsRaw
+                        .split(/[\n,]+/)
+                        .map((e) => e.trim())
+                        .filter((e) => e.includes('@')).length}
+                    </strong>
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={saveNotificationEmails} disabled={isSavingEmails}>
+                      {isSavingEmails ? <><Loader2 className="h-4 w-4 animate-spin ml-2" />שומר...</> : 'שמור רשימת מיילים'}
+                    </Button>
+                    <Button variant="outline" onClick={sendTestEmail} disabled={isSendingTestEmail}>
+                      {isSendingTestEmail ? 'שולח...' : 'בדיקת שליחה'}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Display Settings */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-500/10">
+                  <Monitor className="h-5 w-5 text-purple-400" />
+                </div>
+                <div>
+                  <CardTitle>הגדרות תצוגה</CardTitle>
+                  <CardDescription>בחר בין מצב כהה (קיימי) למצב בהיר. הבחירה נשמרת בקשיית הדפדפן.</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setTheme('dark')}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
+                    theme === 'dark'
+                      ? 'border-cyan-400 bg-cyan-500/15 text-cyan-300'
+                      : 'border-border bg-secondary/50 text-muted-foreground hover:border-cyan-400/50'
+                  }`}
+                >
+                  <Moon className="h-4 w-4" />
+                  מצב כהה
+                </button>
+                <button
+                  onClick={() => setTheme('light')}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
+                    theme === 'light'
+                      ? 'border-amber-400 bg-amber-500/15 text-amber-400'
+                      : 'border-border bg-secondary/50 text-muted-foreground hover:border-amber-400/50'
+                  }`}
+                >
+                  <Sun className="h-4 w-4" />
+                  מצב בהיר
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-3">
+                מצב פעיל כעת: <strong>{theme === 'dark' ? 'כהה 🌙' : 'בהיר ☀️'}</strong>
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* System Info */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-500/10">
+                  <Shield className="h-5 w-5 text-green-600" />
+                </div>
+                <div>
+                  <CardTitle>מידע מערכת</CardTitle>
+                  <CardDescription>
+                    Fleet Manager Pro — גרסת בנדל (מהקוד המפורסם){' '}
+                    <span className={codeVersion === latestManifestVersion ? 'text-[#10b981]' : undefined}>
+                      {codeVersion}
+                    </span>
+                    <span className="text-muted-foreground text-xs block mt-1">
+                      מניפסט אחרון (ענן / v-dev-only): {latestManifestVersion}
+                    </span>
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">טעינת קובץ משרד התחבורה אחרונה:</span>
+                  <span className="font-medium">{formatDate(lastPricingUpload)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">טעינת רכבים אחרונה:</span>
+                  <span className="font-medium">{formatDate(lastVehicleUpload)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">טעינת נהגים אחרונה:</span>
+                  <span className="font-medium">{formatDate(lastDriverUpload)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">תאריך עדכון אחרון:</span>
+                  <span className="font-medium">{lastUpdateDate}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">version_snapshot.json ב-GitHub:</span>
+                  <span className="font-medium" dir="ltr">
+                    {isGithubSnapshotLoading
+                      ? 'טוען…'
+                      : githubSnapshotVersion || githubSnapshotReleaseDate
+                        ? `${githubSnapshotVersion || '—'} · ${githubSnapshotReleaseDate || '—'}`
+                        : 'לא זמין'}
+                  </span>
+                </div>
+              </div>
+              <div className="pt-3 border-t border-border mt-3 space-y-3">
+                <Button variant="outline" size="sm" onClick={runPrintTest}>
+                  בדיקת הדפסה
+                </Button>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => void forceManualVersionUpdate()}
+                    disabled={isCheckingUpdates || isBackingUpSettings || isRestoringSettings}
+                  >
+                    עדכון גרסה ידני
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={backupSettings} disabled={isBackingUpSettings}>
+                    {isBackingUpSettings ? (
+                      <Loader2 className="h-4 w-4 animate-spin ml-2" />
+                    ) : (
+                      <Download className="h-4 w-4 ml-2" />
+                    )}
+                    גיבוי הגדרות
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRestoreButtonClick}
+                    disabled={isRestoringSettings || isBackingUpSettings}
+                  >
+                    {isRestoringSettings ? (
+                      <Loader2 className="h-4 w-4 animate-spin ml-2" />
+                    ) : (
+                      <RotateCcw className="h-4 w-4 ml-2" />
+                    )}
+                    שחזור הגדרות
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={checkForUpdates} disabled={isCheckingUpdates}>
+                    {isCheckingUpdates ? (
+                      <Loader2 className="h-4 w-4 animate-spin ml-2" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4 ml-2" />
+                    )}
+                    בדוק עדכונים
+                  </Button>
+                </div>
+
+                <input
+                  ref={restoreInputRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={handleRestoreFilePicked}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+       </main>
+     </div>
+   );
+ }
