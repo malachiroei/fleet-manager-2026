@@ -31,6 +31,10 @@ export interface TeamMemberSummary {
 export type UseTeamMembersOptions = {
   /** סופר־אדמין: טוען את כל ה-profiles; אחרת מסנן לפי org_id */
   loadAllOrgs?: boolean;
+  /** Subject manager id for hierarchy scope (supports View As depth). */
+  subjectManagerUserId?: string | null;
+  /** Subject system-admin flag (supports View As depth). */
+  subjectIsSystemAdmin?: boolean;
 };
 
 /**
@@ -40,19 +44,49 @@ export type UseTeamMembersOptions = {
 export function useTeamMembers(orgId: string | null | undefined, options?: UseTeamMembersOptions) {
   const { profile } = useAuth();
   const loadAllOrgs = options?.loadAllOrgs === true;
+  const subjectManagerUserId = options?.subjectManagerUserId ?? null;
+  const subjectIsSystemAdmin = options?.subjectIsSystemAdmin === true;
 
   const enabled = Boolean(profile) && (loadAllOrgs || Boolean(orgId));
 
   return useQuery({
-    queryKey: [...TEAM_QUERY_KEY, loadAllOrgs ? 'all-orgs' : 'org', orgId ?? 'none'],
+    queryKey: [
+      ...TEAM_QUERY_KEY,
+      loadAllOrgs ? 'all-orgs' : 'org',
+      orgId ?? 'none',
+      subjectManagerUserId ?? 'none',
+      subjectIsSystemAdmin ? 'sys-admin' : 'regular',
+    ],
     enabled,
     queryFn: async (): Promise<Profile[]> => {
       let q = supabase.from('profiles').select('*').order('full_name', { ascending: true });
       if (!loadAllOrgs && orgId) {
         q = q.eq('org_id', orgId);
       }
+      if (!loadAllOrgs) {
+        if (subjectIsSystemAdmin) {
+          // System admins can see full org team, including unmanaged (NULL) rows.
+        } else if (subjectManagerUserId) {
+          // Manager sees only directly managed users; never self.
+          q = q.eq('managed_by_user_id', subjectManagerUserId).neq('id', subjectManagerUserId);
+        } else {
+          return [];
+        }
+      }
       const { data, error } = await q;
       if (error) {
+        // Backward-compatible fallback for DBs that still use parent_admin_id only.
+        if (!loadAllOrgs && subjectManagerUserId && error.message?.includes('managed_by_user_id')) {
+          let fallback = supabase.from('profiles').select('*').order('full_name', { ascending: true });
+          if (orgId) fallback = fallback.eq('org_id', orgId);
+          fallback = fallback.eq('parent_admin_id', subjectManagerUserId).neq('id', subjectManagerUserId);
+          const fallbackRes = await fallback;
+          if (fallbackRes.error) {
+            console.error('Supabase Error (useTeamMembers fallback):', fallbackRes.error);
+            return [];
+          }
+          return (fallbackRes.data ?? []) as Profile[];
+        }
         console.error('Supabase Error (useTeamMembers):', error);
         return [];
       }
@@ -250,7 +284,9 @@ export function useApproveMember() {
         .update({
           status: 'active',
           permissions: nextPerms,
-          ...(parentAdminProfileId ? { parent_admin_id: parentAdminProfileId } : {}),
+          ...(parentAdminProfileId
+            ? { parent_admin_id: parentAdminProfileId, managed_by_user_id: parentAdminProfileId }
+            : {}),
           updated_at: new Date().toISOString(),
         })
         .eq('id', profileId)

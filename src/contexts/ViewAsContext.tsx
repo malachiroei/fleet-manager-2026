@@ -24,7 +24,7 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!normalizedEmail || !activeOrgId) {
+      if (!normalizedEmail) {
         setViewAsProfile(null);
         setViewAsLoading(false);
         return;
@@ -32,20 +32,72 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
 
       setViewAsLoading(true);
       try {
-        // IMPORTANT: keep org silo — only resolve a profile within the active org
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('id, full_name, email, phone, org_id, permissions, status, is_system_admin, created_at, updated_at')
-          .eq('org_id', activeOrgId)
-          .eq('email', normalizedEmail)
-          .maybeSingle();
+        // First try active org (if present), then fallback to global email lookup.
+        // This prevents "orange bar active but profile null" when org context is out of sync.
+        let row: Profile | null = null;
+        let error: { message: string } | null = null;
+
+        if (activeOrgId) {
+          const scoped = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('org_id', activeOrgId)
+            .ilike('email', normalizedEmail)
+            .maybeSingle();
+          if (scoped.error) {
+            error = { message: scoped.error.message };
+          } else {
+            row = (scoped.data as Profile | null) ?? null;
+          }
+        }
+
+        if (!row) {
+          const globalLookup = await supabase
+            .from('profiles')
+            .select('*')
+            .ilike('email', normalizedEmail)
+            .limit(25);
+          if (globalLookup.error) {
+            error = { message: globalLookup.error.message };
+          } else {
+            const matches = (globalLookup.data ?? []) as Profile[];
+            const exact = matches.filter(
+              (p) => (p.email ?? '').trim().toLowerCase() === normalizedEmail
+            );
+            const pool = exact.length > 0 ? exact : matches;
+            const preferred =
+              (activeOrgId ? pool.find((p) => p.org_id === activeOrgId) : null) ??
+              pool[0] ??
+              null;
+            row = preferred;
+          }
+        }
         if (cancelled) return;
         if (error) {
           console.warn('[ViewAs] failed to resolve profile', { message: error.message });
           setViewAsProfile(null);
           return;
         }
-        setViewAsProfile((data as Profile | null) ?? null);
+        if (!row) {
+          console.warn('[ViewAs] no profile found for email', {
+            email: normalizedEmail,
+            activeOrgId,
+          });
+          setViewAsProfile(null);
+          return;
+        }
+        const resolvedProfile: Profile = {
+          ...row,
+          user_id: row.user_id ?? row.id,
+        };
+        console.log('[ViewAs] resolved profile', {
+          email: normalizedEmail,
+          activeOrgId,
+          resolvedId: resolvedProfile.id,
+          resolvedUserId: resolvedProfile.user_id,
+          resolvedOrgId: resolvedProfile.org_id,
+        });
+        setViewAsProfile(resolvedProfile);
       } finally {
         if (!cancelled) setViewAsLoading(false);
       }

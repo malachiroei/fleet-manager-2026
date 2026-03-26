@@ -23,6 +23,8 @@ export interface Profile {
   email: string | null;
   phone: string | null;
   org_id: string | null;
+  /** Direct manager (profiles.id). Null = top level/unmanaged. */
+  managed_by_user_id?: string | null;
   /** מנהל ישיר (profiles.id); null = רמת על — תואם עמודת parent_admin_id ב-DB */
   parent_admin_id?: string | null;
   /** JSON object of permission keys to boolean. e.g. { "vehicles": true, "manage_team": true } */
@@ -78,6 +80,8 @@ export interface Vehicle {
   ignition_code: string | null;
   is_active: boolean;
   assigned_driver_id: string | null;
+  /** מנהל צי בלעדי; null = משותף לכל המנהלים בארגון */
+  managed_by_user_id?: string | null;
   pickup_date: string | null;
   road_ascent_year: number | null;
   road_ascent_month: number | null;
@@ -138,6 +142,8 @@ export interface Driver {
   id: string;
   org_id: string | null;
   user_id: string | null;
+  /** מנהל צי בלעדי; null = משותף לכל המנהלים בארגון */
+  managed_by_user_id?: string | null;
   full_name: string;
   id_number: string;
   phone: string | null;

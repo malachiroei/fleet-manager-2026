@@ -146,13 +146,14 @@ export function AppLayout({ children }: AppLayoutProps) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!viewAsEmail || !viewAsProfile?.user_id) return;
+      const viewAsAuthId = viewAsProfile?.id ?? viewAsProfile?.user_id;
+      if (!viewAsEmail || !viewAsAuthId) return;
 
       try {
         const { data: membership, error } = await (supabase as any)
           .from('org_members')
           .select('org_id')
-          .eq('user_id', viewAsProfile.user_id)
+          .eq('user_id', viewAsAuthId)
           .maybeSingle();
         const nextOrgId = (membership as any)?.org_id as string | undefined;
         if (!cancelled && nextOrgId && activeOrgId !== nextOrgId) {
@@ -169,7 +170,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     return () => {
       cancelled = true;
     };
-  }, [viewAsEmail, viewAsProfile?.user_id, activeOrgId, setActiveOrgId]);
+  }, [viewAsEmail, viewAsProfile?.id, viewAsProfile?.user_id, activeOrgId, setActiveOrgId]);
 
   console.log('CURRENT PROFILE STATUS:', profile?.status);
 

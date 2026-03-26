@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useDashboardStats, useComplianceAlerts } from '@/hooks/useDashboard';
-import { useFeatureFlags } from '@/hooks/useFeatureFlags';
+import { isFeatureEnabled, useFeatureFlags } from '@/hooks/useFeatureFlags';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useAuth } from '@/hooks/useAuth';
 import { useViewAs } from '@/contexts/ViewAsContext';
@@ -166,11 +166,10 @@ export default function Dashboard() {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
   const { user, profile, hasPermission, isAdmin, isManager, isDriver, roles: userRoles, loading, activeOrgId } = useAuth();
-  const { viewAsEmail, viewAsProfile } = useViewAs();
+  const { viewAsEmail } = useViewAs();
   const { data: featureFlags, isPending: featureFlagsPending, isError: featureFlagsError } = useFeatureFlags();
-  /** בטעינה, בשגיאה, או בלי נתונים עדיין — לא מסננים (מסך מלא); אחרי הצלחה — מסננים לפי flags */
-  const applyFeatureFlagFilters =
-    !featureFlagsPending && !featureFlagsError && featureFlags !== undefined;
+  /** Feature flags are source-of-truth for dashboard card visibility. */
+  const canEvaluateFeatureFlags = !featureFlagsPending && !featureFlagsError && featureFlags !== undefined;
   const showDashboardTreatmentCard = false;
   const showDashboardTestCard = false;
   const showMaintenanceFormCard = false;
@@ -180,26 +179,19 @@ export default function Dashboard() {
   console.log('Current Active Org ID:', activeOrgId);
 
   useEffect(() => {
-    if (!activeOrgId) return;
-    // Manual refresh trigger when org context switches (impersonation/org switcher).
+    if (!activeOrgId && !viewAsEmail) return;
     queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
     queryClient.invalidateQueries({ queryKey: ['compliance-alerts'] });
     queryClient.invalidateQueries({ queryKey: ['vehicles'] });
     queryClient.invalidateQueries({ queryKey: ['drivers'] });
-  }, [activeOrgId, queryClient]);
+    queryClient.invalidateQueries({ queryKey: ['feature-flags'] });
+  }, [activeOrgId, viewAsEmail, queryClient]);
 
   const email = user?.email || '';
   const isMainAdmin = email.toLowerCase() === 'malachiroei@gmail.com';
   const isSystemAdmin = ['malachiroei@gmail.com', 'ravidmalachi@gmail.com'].includes(email);
   const isOwner = isMainAdmin;
   const effectiveIsAdmin = isOwner || isAdmin;
-  // Hardcoded view-mode override for ROEIMA21:
-  // This bypasses any remaining role/loading/org alignment issues and ensures
-  // the driver user always gets the single-button dashboard.
-  const isDriverOnly =
-    (viewAsEmail?.toLowerCase() === 'roeima21@gmail.com') ||
-    (user?.email?.toLowerCase() === 'roeima21@gmail.com');
-
   const { data: pendingUsersCount = 0 } = useQuery({
     queryKey: ['pending-users-count'],
     enabled: isMainAdmin,
@@ -232,23 +224,7 @@ export default function Dashboard() {
     isManager,
     isDriver,
     loadingAuth: loading,
-    isDriverOnly,
   });
-
-  // Original behavior:
-  // - For driver-only view: show ONLY "רכב חליפי" card.
-  // - When viewing as another user: driver-only is determined by the target user's roles.
-  // כרטיסי דשבורד מסוננים לפי feature_flags רק כשהטעינה הסתיימה בהצלחה; בטעינה/שגיאה — כל הכרטיסים.
-  const visibleStatusCards = useMemo(() => {
-    let cards =
-      !isStatsLoading && isDriverOnly
-        ? statusCardConfig.filter((card) => card.link === '/handover/replacement')
-        : statusCardConfig;
-    if (applyFeatureFlagFilters) {
-      cards = cards.filter((card) => featureFlags?.[card.featureFlagKey] === true);
-    }
-    return cards;
-  }, [isStatsLoading, isDriverOnly, applyFeatureFlagFilters, featureFlags]);
 
   // Base quick actions; filtering happens afterwards
   const baseQuickLinks: {
@@ -323,14 +299,7 @@ export default function Dashboard() {
       icon: UserCog,
       permission: 'manage_team',
       featureFlagKey: 'qa_team',
-    },
-    {
-      title: 'ניהול משתמשים',
-      href: '/admin/users',
-      icon: Users,
-      adminOnly: true,
       showPendingBadge: true,
-      featureFlagKey: 'qa_users',
     },
   ];
 
@@ -347,14 +316,26 @@ export default function Dashboard() {
     : profile?.permissions?.report_mileage === true;
 
   const canReportMileage = forceMileageForMalachiroei || canReportMileageFromPermissions;
-  const quickLinks = baseQuickLinks.filter((a) => {
+
+  const visibleStatusCards = useMemo(() => {
+    if (!canEvaluateFeatureFlags) return statusCardConfig;
+    return statusCardConfig.filter((card) => isFeatureEnabled(featureFlags, card.featureFlagKey));
+  }, [canEvaluateFeatureFlags, featureFlags]);
+
+  const visibleQuickLinksByFlags = useMemo(() => {
+    if (!canEvaluateFeatureFlags) return baseQuickLinks;
+    return baseQuickLinks.filter((a) => {
+      if (!a.featureFlagKey) return true;
+      return isFeatureEnabled(featureFlags, a.featureFlagKey);
+    });
+  }, [canEvaluateFeatureFlags, featureFlags, baseQuickLinks]);
+
+  const quickLinks = visibleQuickLinksByFlags.filter((a) => {
     if (a.href === '/report-mileage') return canReportMileage;
     if (a.adminOnly && !isMainAdmin) return false;
-    if (a.featureFlagKey && applyFeatureFlagFilters && featureFlags?.[a.featureFlagKey] !== true) {
-      return false;
-    }
     return true;
   });
+
 
   const devFeatureToast = () => {
     toast.info('פונקציה זו בפיתוח');
@@ -371,7 +352,7 @@ export default function Dashboard() {
         </p>
       </div>
 
-      {!isDriverOnly && !isStatsLoading && stats && stats.totalVehicles === 0 && stats.totalDrivers === 0 && (
+      {!isStatsLoading && stats && stats.totalVehicles === 0 && stats.totalDrivers === 0 && (
         <Card className="border-dashed border-2 border-primary/30 bg-primary/5">
           <CardContent className="p-6 md:p-8 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-right">
             <div className="flex-1 space-y-1">

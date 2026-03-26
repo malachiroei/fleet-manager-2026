@@ -41,10 +41,31 @@ type OverrideRow = {
   is_enabled: boolean;
 };
 
+type SubjectProfileLite = {
+  id: string;
+  permissions: Record<string, boolean> | null;
+};
+
+const FEATURE_PERMISSION_DEFAULTS: Record<string, string | null> = {
+  dashboard_vehicles: 'vehicles',
+  dashboard_drivers: 'drivers',
+  dashboard_exception_alerts: 'compliance',
+  dashboard_replacement_car: 'handover',
+  qa_team: 'manage_team',
+  qa_reports: 'reports',
+  qa_parking_reports: 'reports',
+  qa_vehicle_delivery: 'vehicle_delivery',
+  qa_report_mileage: 'report_mileage',
+  qa_forms: 'forms',
+  qa_accidents: 'compliance',
+  qa_admin_settings: 'admin_access',
+};
+
 export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, userLabel }: Props) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [optimisticOverrides, setOptimisticOverrides] = useState<Record<string, boolean>>({});
 
   const { data: featureFlags = [] as FeatureFlagRow[], isLoading: isFlagsLoading, isError: isFlagsError } = useQuery({
     queryKey: ['feature-flags-user-overrides-list'],
@@ -62,14 +83,30 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
 
   const { data: overrideRows = [] as OverrideRow[], isLoading: isOverridesLoading, isError: isOverridesError } = useQuery({
     queryKey: ['user-feature-overrides', userId],
-    enabled: open && Boolean(userId),
+    enabled: open && typeof userId === 'string' && userId.length > 0,
     queryFn: async () => {
+      console.log('[FeatureOverrides] loading overrides for user_id', userId);
       const { data, error } = await (supabase as any)
         .from('user_feature_overrides')
         .select('feature_key, is_enabled')
         .eq('user_id', userId);
       if (error) throw error;
       return (data ?? []) as OverrideRow[];
+    },
+    staleTime: 60_000,
+  });
+
+  const { data: subjectProfile } = useQuery({
+    queryKey: ['feature-overrides-subject-profile', userId],
+    enabled: open && typeof userId === 'string' && userId.length > 0,
+    queryFn: async (): Promise<SubjectProfileLite | null> => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, permissions')
+        .eq('id', userId as string)
+        .maybeSingle();
+      if (error) throw error;
+      return (data ?? null) as SubjectProfileLite | null;
     },
     staleTime: 60_000,
   });
@@ -83,6 +120,22 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
     }
     return m;
   }, [overrideRows]);
+
+  const effectiveOverrideMap = useMemo(() => {
+    const m = new Map(overrideMap);
+    for (const [key, val] of Object.entries(optimisticOverrides)) {
+      m.set(key, val === true);
+    }
+    return m;
+  }, [overrideMap, optimisticOverrides]);
+
+  const permissionDefaultForFlag = (featureKey: string): boolean | null => {
+    const permissionKey = FEATURE_PERMISSION_DEFAULTS[featureKey];
+    if (!permissionKey) return null;
+    const perms = subjectProfile?.permissions;
+    if (!perms || typeof perms !== 'object') return null;
+    return perms[permissionKey] === true;
+  };
 
   const flagsWithoutNestedDuplicates = useMemo(
     () => featureFlags.filter((f) => !NESTED_UNDER_QA_SET.has(f.feature_key)),
@@ -121,8 +174,10 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
   const mergedEffective = (featureKey: string) => {
     const flag = featureFlags.find((f) => f.feature_key === featureKey);
     if (!flag) return false;
-    if (overrideMap.has(featureKey)) return overrideMap.get(featureKey) as boolean;
-    return flag.is_enabled_globally === true;
+    if (effectiveOverrideMap.has(featureKey)) return effectiveOverrideMap.get(featureKey) as boolean;
+    const permissionDefault = permissionDefaultForFlag(featureKey);
+    if (permissionDefault !== null) return permissionDefault;
+    return flag.is_enabled_globally === true; // fallback: org/global flag default
   };
 
   const qaFormsEffective = mergedEffective(QA_FORMS_PARENT_KEY);
@@ -135,26 +190,59 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
   };
 
   const storedToggleValue = (flag: FeatureFlagRow) => {
-    if (overrideMap.has(flag.feature_key)) return overrideMap.get(flag.feature_key) as boolean;
+    if (effectiveOverrideMap.has(flag.feature_key)) return effectiveOverrideMap.get(flag.feature_key) as boolean;
+    const permissionDefault = permissionDefaultForFlag(flag.feature_key);
+    if (permissionDefault !== null) return permissionDefault;
     return flag.is_enabled_globally === true;
   };
 
   const handleToggle = async (featureKey: string, nextEnabled: boolean) => {
     if (!userId) return;
     if (savingKey) return;
+    console.log('[FeatureOverrides] saving override', {
+      userId,
+      featureKey,
+      nextEnabled,
+    });
+    const previous = effectiveOverrideMap.get(featureKey);
+    setOptimisticOverrides((prev) => ({ ...prev, [featureKey]: nextEnabled }));
     setSavingKey(featureKey);
     try {
-      const { error } = await (supabase as any).from('user_feature_overrides').upsert(
-        { user_id: userId, feature_key: featureKey, is_enabled: nextEnabled },
+      const { data: upserted, error } = await (supabase as any).from('user_feature_overrides').upsert(
+        {
+          user_id: userId,
+          feature_key: featureKey,
+          is_enabled: nextEnabled,
+          updated_at: new Date().toISOString(),
+        },
         { onConflict: 'user_id,feature_key' },
-      );
+      ).select('user_id, feature_key, is_enabled');
       if (error) throw error;
+      if (!upserted || upserted.length === 0) {
+        throw new Error('Override save did not return rows (possible RLS rejection).');
+      }
 
       await queryClient.invalidateQueries({ queryKey: ['user-feature-overrides', userId] });
+      await queryClient.invalidateQueries({ queryKey: ['user-feature-overrides'] });
       await queryClient.invalidateQueries({ queryKey: ['feature-flags'] });
+      await queryClient.invalidateQueries({ queryKey: ['feature-flags', userId] });
+      setOptimisticOverrides((prev) => {
+        const next = { ...prev };
+        delete next[featureKey];
+        return next;
+      });
       toast.success(nextEnabled ? 'הoverride הופעל' : 'הoverride הושבת');
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'עדכון נכשל';
+      setOptimisticOverrides((prev) => {
+        const next = { ...prev };
+        if (previous === undefined) delete next[featureKey];
+        else next[featureKey] = previous;
+        return next;
+      });
+      const msg =
+        e instanceof Error
+          ? e.message
+          : 'עדכון נכשל (ייתכן חסימת RLS בהרשאות user_feature_overrides)';
       toast.error(msg);
     } finally {
       setSavingKey(null);

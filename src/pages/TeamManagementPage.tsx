@@ -10,6 +10,8 @@ import {
   ORG_INVITATIONS_QUERY_KEY,
   isRoeySuperAdminProfile,
 } from '@/hooks/useTeam';
+import { useViewAs } from '@/contexts/ViewAsContext';
+import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
 import { getDefaultPermissions } from '@/lib/permissions';
 import {
   buildReleaseSnapshotPayload,
@@ -41,6 +43,8 @@ import type { Profile } from '@/types/fleet';
  */
 export default function TeamManagementPage() {
   const { profile, activeOrgId, hasPermission, isAdmin, isManager } = useAuth();
+  const { viewAsProfile } = useViewAs();
+  const { effectiveUserId } = useImpersonationFleetScope();
   const manifestUi = EMPTY_FLEET_MANIFEST_UI_GATES;
   const queryClient = useQueryClient();
   const orgId = activeOrgId ?? null;
@@ -49,8 +53,11 @@ export default function TeamManagementPage() {
   const isSuperAdminTeamView = isRoeySuperAdminProfile(profile);
   const showPushToPro = isSuperAdminTeamView;
   const [pushBusy, setPushBusy] = useState(false);
+  const subjectIsSystemAdmin = (viewAsProfile?.is_system_admin ?? profile?.is_system_admin) === true;
   const { data: members, isLoading, isFetching: membersFetching } = useTeamMembers(orgId, {
     loadAllOrgs: isSuperAdminTeamView,
+    subjectManagerUserId: effectiveUserId,
+    subjectIsSystemAdmin,
   });
   const { data: invitations, isLoading: invitationsLoading, isFetching: invitationsFetching } =
     useOrgInvitations(orgId);
@@ -360,7 +367,7 @@ export default function TeamManagementPage() {
           setFeatureOverridesDialogOpen(o === true);
           if (!o) setFeatureOverridesMember(null);
         }}
-        userId={featureOverridesMember?.user_id ?? null}
+        userId={featureOverridesMember?.id ?? featureOverridesMember?.user_id ?? null}
         userLabel={featureOverridesMember?.full_name ?? featureOverridesMember?.email ?? null}
       />
     </div>

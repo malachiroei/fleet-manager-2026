@@ -83,22 +83,22 @@ export function MobileNav() {
             {isAdmin && (profile?.email ?? '').toLowerCase() === 'malachiroei@gmail.com' && (
               <nav className="px-1">
                 <Link
-                  to="/admin/users"
+                  to="/team"
                   onClick={() => setOpen(false)}
                   className="block"
                 >
                   <Button
-                    variant={location.pathname === '/admin/users' ? 'default' : 'ghost'}
+                    variant={location.pathname === '/team' ? 'default' : 'ghost'}
                     className={cn(
                       'w-full gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                       isRtl ? 'flex-row-reverse justify-end text-right' : 'justify-start text-left',
-                      location.pathname === '/admin/users'
+                      location.pathname === '/team'
                         ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-400/40'
                         : 'text-white/70 hover:bg-cyan-500/10 hover:text-white'
                     )}
                   >
                     <User className="h-5 w-5" />
-                    ניהול משתמשים
+                    ניהול צוות
                   </Button>
                 </Link>
               </nav>

@@ -192,6 +192,7 @@ export type Database = {
           updated_at: string
           user_id: string | null
           work_start_date: string | null
+          managed_by_user_id: string | null
         }
         Insert: {
           address?: string | null
@@ -205,6 +206,7 @@ export type Database = {
           email?: string | null
           employee_number?: string | null
           full_name: string
+          managed_by_user_id?: string | null
           group_code?: string | null
           group_name?: string | null
           health_declaration_date?: string | null
@@ -240,6 +242,7 @@ export type Database = {
           email?: string | null
           employee_number?: string | null
           full_name?: string
+          managed_by_user_id?: string | null
           group_code?: string | null
           group_name?: string | null
           health_declaration_date?: string | null
@@ -262,6 +265,7 @@ export type Database = {
           updated_at?: string
           user_id?: string | null
           work_start_date?: string | null
+          managed_by_user_id?: string | null
         }
         Relationships: []
       }
@@ -470,6 +474,7 @@ export type Database = {
           email: string | null
           phone: string | null
           org_id: string | null
+          managed_by_user_id: string | null
           /** מנהל ישיר בהיררכיה; null = ללא הורה */
           parent_admin_id: string | null
           permissions: Json | null
@@ -492,6 +497,7 @@ export type Database = {
           email?: string | null
           phone?: string | null
           org_id?: string | null
+          managed_by_user_id?: string | null
           parent_admin_id?: string | null
           permissions?: Json | null
           status?: string
@@ -511,6 +517,7 @@ export type Database = {
           email?: string | null
           phone?: string | null
           org_id?: string | null
+          managed_by_user_id?: string | null
           parent_admin_id?: string | null
           permissions?: Json | null
           status?: string
@@ -661,6 +668,7 @@ export type Database = {
         Row: {
           adjusted_price: number | null
           assigned_driver_id: string | null
+          managed_by_user_id: string | null
           base_index: number | null
           chassis_number: string | null
           color: string | null
@@ -719,6 +727,7 @@ export type Database = {
         Insert: {
           adjusted_price?: number | null
           assigned_driver_id?: string | null
+          managed_by_user_id?: string | null
           base_index?: number | null
           chassis_number?: string | null
           color?: string | null
@@ -777,6 +786,7 @@ export type Database = {
         Update: {
           adjusted_price?: number | null
           assigned_driver_id?: string | null
+          managed_by_user_id?: string | null
           base_index?: number | null
           chassis_number?: string | null
           color?: string | null
