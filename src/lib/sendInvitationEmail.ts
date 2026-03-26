@@ -99,16 +99,14 @@ async function resolveAuthorizationBearer(anon: string): Promise<string> {
     return serviceRole;
   }
 
-  let {
-    data: { session },
-  } = await supabase.auth.getSession();
+  let sessionRes = await supabase.auth.getSession();
+  let session = sessionRes?.data?.session ?? null;
   let token = session?.access_token;
 
   if (!token) {
     await supabase.auth.refreshSession();
-    ({
-      data: { session },
-    } = await supabase.auth.getSession());
+    sessionRes = await supabase.auth.getSession();
+    session = sessionRes?.data?.session ?? null;
     token = session?.access_token;
   }
 
@@ -168,8 +166,8 @@ export async function sendInvitationEmail(params: {
     body,
   });
 
-  const invokeErr = invokeResult.error;
-  const data = invokeResult.data as { error?: string; message?: string } | null | undefined;
+  const invokeErr = invokeResult?.error ?? null;
+  const data = (invokeResult?.data as { error?: string; message?: string } | null | undefined) ?? null;
 
   console.log('[sendInvitationEmail] after invoke', {
     hasSdkError: Boolean(invokeErr),

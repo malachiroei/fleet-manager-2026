@@ -132,11 +132,13 @@ export default function TeamManagementPage() {
       toast.info('הקובץ ירד, כעת העלה אותו ל-Git כדי לעדכן את הפרו');
 
       const sessionRes = await supabase.auth.getSession();
-      const bearer = sessionRes.data.session?.access_token ?? getSupabaseAnonKey();
-      const { data, error } = await supabase.functions.invoke('push-release-snapshot', {
+      const bearer = sessionRes?.data?.session?.access_token ?? getSupabaseAnonKey();
+      const invokeRes = await supabase.functions.invoke('push-release-snapshot', {
         headers: { Authorization: `Bearer ${bearer}` },
         body: { snapshot },
       });
+      const data = invokeRes?.data ?? null;
+      const error = invokeRes?.error ?? null;
       const ok = !error && data && typeof data === 'object' && (data as { ok?: boolean }).ok === true;
       if (ok) {
         toast.success('בנוסף: נדחף לריפו הטסט ב-GitHub (לא פרודקשן; פרסום גרסה בלבד מעדכן את הפרו).');

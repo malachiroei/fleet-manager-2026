@@ -45,15 +45,13 @@ export async function invokePublishVersionSnapshot(
     // ignore — if refresh fails we'll still try getSession and handle missing token
   }
 
-  let {
-    data: { session },
-  } = await supabase.auth.getSession();
+  let sessionRes = await supabase.auth.getSession();
+  let session = sessionRes?.data?.session ?? null;
 
   if (!session?.access_token) {
     await supabase.auth.refreshSession();
-    ({
-      data: { session },
-    } = await supabase.auth.getSession());
+    sessionRes = await supabase.auth.getSession();
+    session = sessionRes?.data?.session ?? null;
   }
 
   if (!session?.access_token) {
@@ -73,13 +71,15 @@ export async function invokePublishVersionSnapshot(
     featureIdsPreview,
   );
 
-  const { data, error } = await supabase.functions.invoke('publish-version-snapshot', {
+  const invokeRes = await supabase.functions.invoke('publish-version-snapshot', {
     body: { snapshot },
     headers: {
       Authorization: `Bearer ${session.access_token}`,
       apikey: anon,
     },
   });
+  const error = invokeRes?.error ?? null;
+  const data = invokeRes?.data ?? null;
   if (error) {
     if (error instanceof FunctionsHttpError) {
       const status = (error as unknown as { context?: { status?: number } }).context?.status;
