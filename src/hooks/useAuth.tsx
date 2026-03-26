@@ -162,18 +162,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     };
 
-    const res = await supabase
-      .from('profiles')
-      .select(PROFILE_SELECT_STAR)
-      .eq('id', userId)
-      .single();
+    let res:
+      | {
+          data: Profile | null;
+          error: { message?: string; code?: string } | null;
+        }
+      | null = null;
+    try {
+      const queryRes = await supabase
+        .from('profiles')
+        .select(PROFILE_SELECT_STAR)
+        .eq('id', userId)
+        .single();
+      res = {
+        data: (queryRes?.data as Profile | null) ?? null,
+        error: (queryRes?.error as { message?: string; code?: string } | null) ?? null,
+      };
+    } catch (e) {
+      const err = e as { message?: string; code?: string } | null;
+      res = {
+        data: null,
+        error: {
+          message: err?.message ?? 'Unexpected profile fetch failure',
+          code: err?.code,
+        },
+      };
+    }
 
-    if (!res.error && res.data) {
+    if (!res?.error && res?.data) {
       applyPersonalRow(res.data as Profile);
       return;
     }
 
-    const err = res.error;
+    const err = res?.error;
     const msg = err?.message ?? '';
     const code = err?.code ?? '';
     const noRow =
@@ -182,7 +203,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (noRow) {
       const { data: authData } = await supabase.auth.getUser();
       const email =
-        authData.user?.id === userId ? (authData.user.email ?? null) : null;
+        authData?.user?.id === userId ? (authData.user.email ?? null) : null;
       console.warn('[Auth] no profiles row for auth uid — using placeholder until row exists', { userId });
       applyPersonalRow(buildPersonalProfilePlaceholder(userId, email, 'no_profile_row'));
       return;
@@ -195,7 +216,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const { data: authData } = await supabase.auth.getUser();
     const email =
-      authData.user?.id === userId ? (authData.user.email ?? null) : null;
+      authData?.user?.id === userId ? (authData.user.email ?? null) : null;
     applyPersonalRow(buildPersonalProfilePlaceholder(userId, email, 'profile_fetch_error'));
   }, []);
 
@@ -203,10 +224,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   fetchProfileRef.current = fetchProfile;
 
   const fetchMemberOrganizations = useCallback(async (userId: string, fallbackOrgId?: string | null) => {
-    const { data: rows, error: memError } = await (supabase as any)
-      .from('org_members')
-      .select('org_id')
-      .eq('user_id', userId);
+    let rows: Array<{ org_id: string }> | null = null;
+    let memError: { message?: string } | null = null;
+    try {
+      const res = await (supabase as any)
+        .from('org_members')
+        .select('org_id')
+        .eq('user_id', userId);
+      rows = (res?.data as Array<{ org_id: string }> | null) ?? null;
+      memError = (res?.error as { message?: string } | null) ?? null;
+    } catch (e) {
+      memError = e as { message?: string } | null;
+    }
     let orgIds = memError || !rows?.length ? [] : rows.map((r: { org_id: string }) => r.org_id);
     if (orgIds.length === 0 && fallbackOrgId) {
       orgIds = [fallbackOrgId];
@@ -215,10 +244,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setMemberOrganizations([]);
       return;
     }
-    const { data: orgs, error: orgError } = await supabase
-      .from('organizations')
-      .select('id, name')
-      .in('id', orgIds);
+    let orgs: Array<{ id: string; name: string }> | null = null;
+    let orgError: { message?: string } | null = null;
+    try {
+      const orgRes = await supabase
+        .from('organizations')
+        .select('id, name')
+        .in('id', orgIds);
+      orgs = (orgRes?.data as Array<{ id: string; name: string }> | null) ?? null;
+      orgError = (orgRes?.error as { message?: string } | null) ?? null;
+    } catch (e) {
+      orgError = e as { message?: string } | null;
+    }
     if (orgError || !orgs?.length) {
       setMemberOrganizations([]);
       return;
@@ -228,15 +265,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+      (_event, session) => {
+        setLoading(true);
         setSession(session);
         setUser(session?.user ?? null);
 
         if (session?.user) {
           setTimeout(() => {
-            void fetchUserRoles(session.user.id);
-            void fetchProfileRef.current(session.user.id);
-            void fetchMemberOrganizations(session.user.id);
+            void (async () => {
+              await Promise.allSettled([
+                fetchUserRoles(session.user.id),
+                fetchProfileRef.current(session.user.id),
+                fetchMemberOrganizations(session.user.id),
+              ]);
+              setLoading(false);
+            })();
           }, 0);
         } else {
           setRoles([]);
@@ -244,22 +287,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setMemberOrganizations([]);
           setActiveOrgIdState(null);
           activeOrgInitializedRef.current = false;
+          setLoading(false);
         }
-        setLoading(false);
       }
     );
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
+    void (async () => {
+      try {
+        const sessionRes = await supabase.auth.getSession();
+        const session = sessionRes?.data?.session ?? null;
+        setSession(session);
+        setUser(session?.user ?? null);
 
-      if (session?.user) {
-        void fetchUserRoles(session.user.id);
-        void fetchProfileRef.current(session.user.id);
-        void fetchMemberOrganizations(session.user.id);
+        if (session?.user) {
+          await Promise.allSettled([
+            fetchUserRoles(session.user.id),
+            fetchProfileRef.current(session.user.id),
+            fetchMemberOrganizations(session.user.id),
+          ]);
+        }
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
-    });
+    })();
 
     return () => subscription.unsubscribe();
   }, [fetchUserRoles, fetchMemberOrganizations]);

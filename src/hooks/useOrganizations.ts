@@ -41,7 +41,9 @@ export function useUpdateOrganization() {
       email?: string | null;
       release_snapshot_ack_version?: string | null;
     }) => {
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      const sessionRes = await supabase.auth.getSession();
+      const session = sessionRes?.data?.session ?? null;
+      const sessionError = sessionRes?.error ?? null;
       if (sessionError) throw sessionError;
       if (!session) {
         throw new Error('Not authenticated. Sign in and try again.');
