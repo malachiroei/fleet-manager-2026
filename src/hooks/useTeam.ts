@@ -4,9 +4,21 @@ import type { Profile } from '@/types/fleet';
 import type { ProfilePermissions } from '@/types/fleet';
 import { toast } from '@/hooks/use-toast';
 import { getDefaultPermissions } from '@/lib/permissions';
+import { sendInvitationEmail } from '@/lib/sendInvitationEmail';
+import { useAuth } from '@/hooks/useAuth';
+import { isSuperAdminPermissionBypass } from '@/lib/allowedFeatures';
 
-const TEAM_QUERY_KEY = ['team-members'] as const;
-const INVITATIONS_QUERY_KEY = ['org-invitations'] as const;
+export const TEAM_MEMBERS_QUERY_KEY = ['team-members'] as const;
+const TEAM_QUERY_KEY = TEAM_MEMBERS_QUERY_KEY;
+export const ORG_INVITATIONS_QUERY_KEY = ['org-invitations'] as const;
+
+/** @deprecated השתמש ב-SUPER_ADMIN_PERMISSION_EMAIL / isSuperAdminPermissionBypass מ-allowedFeatures */
+export const SUPER_ADMIN_TEAM_VIEWER_EMAIL = 'malachiroei@gmail.com';
+
+/** תצוגת «כל הארגונים» וכו׳ — מזהה כמו PermissionGuard (אימייל + VITE_FLEET_SUPER_ADMIN_USER_IDS). */
+export function isRoeySuperAdminProfile(profile: Profile | null | undefined): boolean {
+  return isSuperAdminPermissionBypass(profile);
+}
 
 export interface TeamMemberSummary {
   id: string;
@@ -16,20 +28,68 @@ export interface TeamMemberSummary {
   source: 'profile' | 'invitation';
 }
 
-export function useTeamMembers(orgId: string | null | undefined) {
-  return useQuery({
-    queryKey: [...TEAM_QUERY_KEY, orgId ?? null],
-    enabled: !!orgId,
-    queryFn: async (): Promise<Profile[]> => {
-      if (!orgId) return [];
-      const { data, error } = await supabase
-        .from('profiles')
-        // Keep this select minimal and aligned with actual columns to avoid 400 errors
-        .select('id, full_name, email, org_id, status')
-        .eq('org_id', orgId)
-        .order('full_name');
+export type UseTeamMembersOptions = {
+  /** סופר־אדמין: טוען את כל ה-profiles; אחרת מסנן לפי org_id */
+  loadAllOrgs?: boolean;
+  /** Subject manager id for hierarchy scope (supports View As depth). */
+  subjectManagerUserId?: string | null;
+  /** Subject system-admin flag (supports View As depth). */
+  subjectIsSystemAdmin?: boolean;
+};
 
-      if (error) throw error;
+/**
+ * profiles.id אמור להתאים ל-auth.users.id (האפליקציה נשענת על כך).
+ * ברירת מחדל: רק פרופילים עם org_id = הארגון הפעיל (פחות רעש, תואם RLS חדש).
+ */
+export function useTeamMembers(orgId: string | null | undefined, options?: UseTeamMembersOptions) {
+  const { profile } = useAuth();
+  const loadAllOrgs = options?.loadAllOrgs === true;
+  const subjectManagerUserId = options?.subjectManagerUserId ?? null;
+  const subjectIsSystemAdmin = options?.subjectIsSystemAdmin === true;
+
+  const enabled = Boolean(profile) && (loadAllOrgs || Boolean(orgId));
+
+  return useQuery({
+    queryKey: [
+      ...TEAM_QUERY_KEY,
+      loadAllOrgs ? 'all-orgs' : 'org',
+      orgId ?? 'none',
+      subjectManagerUserId ?? 'none',
+      subjectIsSystemAdmin ? 'sys-admin' : 'regular',
+    ],
+    enabled,
+    queryFn: async (): Promise<Profile[]> => {
+      let q = supabase.from('profiles').select('*').order('full_name', { ascending: true });
+      if (!loadAllOrgs && orgId) {
+        q = q.eq('org_id', orgId);
+      }
+      if (!loadAllOrgs) {
+        if (subjectIsSystemAdmin) {
+          // System admins can see full org team, including unmanaged (NULL) rows.
+        } else if (subjectManagerUserId) {
+          // Manager sees only directly managed users; never self.
+          q = q.eq('managed_by_user_id', subjectManagerUserId).neq('id', subjectManagerUserId);
+        } else {
+          return [];
+        }
+      }
+      const { data, error } = await q;
+      if (error) {
+        // Backward-compatible fallback for DBs that still use parent_admin_id only.
+        if (!loadAllOrgs && subjectManagerUserId && error.message?.includes('managed_by_user_id')) {
+          let fallback = supabase.from('profiles').select('*').order('full_name', { ascending: true });
+          if (orgId) fallback = fallback.eq('org_id', orgId);
+          fallback = fallback.eq('parent_admin_id', subjectManagerUserId).neq('id', subjectManagerUserId);
+          const fallbackRes = await fallback;
+          if (fallbackRes.error) {
+            console.error('Supabase Error (useTeamMembers fallback):', fallbackRes.error);
+            return [];
+          }
+          return (fallbackRes.data ?? []) as Profile[];
+        }
+        console.error('Supabase Error (useTeamMembers):', error);
+        return [];
+      }
       return (data ?? []) as Profile[];
     },
   });
@@ -37,26 +97,27 @@ export function useTeamMembers(orgId: string | null | undefined) {
 
 export interface OrgInvitation {
   id: string;
-  org_id: string;
   email: string;
-  permissions: ProfilePermissions | null;
-  invited_by: string | null;
-  created_at: string;
+  org_id?: string | null;
+  role?: string | null;
+  status?: string | null;
+  permissions?: ProfilePermissions | null;
+  invited_by?: string | null;
+  created_at?: string;
 }
 
-export function useOrgInvitations(orgId: string | null | undefined) {
-  return useQuery({
-    queryKey: [...INVITATIONS_QUERY_KEY, orgId ?? null],
-    enabled: !!orgId,
-    queryFn: async (): Promise<OrgInvitation[]> => {
-      if (!orgId) return [];
-      const { data, error } = await (supabase as any)
-        .from('org_invitations')
-        .select('id, org_id, email, permissions, invited_by, created_at')
-        .eq('org_id', orgId)
-        .order('created_at', { ascending: false });
+export function useOrgInvitations(_orgId: string | null | undefined) {
+  const { profile } = useAuth();
 
-      if (error) throw error;
+  return useQuery({
+    queryKey: [...ORG_INVITATIONS_QUERY_KEY, 'all-unfiltered'],
+    enabled: !!profile,
+    queryFn: async (): Promise<OrgInvitation[]> => {
+      const { data, error } = await (supabase as any).from('org_invitations').select('*');
+      if (error) {
+        console.error('Supabase Error:', error);
+        return [];
+      }
       return (data ?? []) as OrgInvitation[];
     },
   });
@@ -79,8 +140,6 @@ export function useTeamMembersForSwitcher(orgId: string | null | undefined) {
         .order('full_name');
 
       if (error) throw error;
-
-      console.log('RAW DATA FROM DB (team-members-switcher):', { orgId, data });
 
       const profiles = (data ?? []) as { id: string; full_name: string | null; email: string | null; org_id: string | null }[];
 
@@ -125,32 +184,35 @@ export function useCreateInvitation() {
           permissions: { ...permissions, report_mileage: true },
           invited_by: invitedBy,
         })
-        .select()
+        .select('id, email, org_id')
         .single();
 
       if (error) throw error;
       const invitation = data as OrgInvitation;
+      const inviteOrgId = String(invitation.org_id ?? orgId);
+      const inviteEmail = String(invitation.email ?? email.trim().toLowerCase());
 
       let emailSent = false;
       try {
-        const { error: fnError } = await supabase.functions.invoke('send-invite', {
-          body: { org_id: orgId, email: invitation.email },
+        const mail = await sendInvitationEmail({
+          orgId: inviteOrgId,
+          email: inviteEmail,
         });
-        emailSent = !fnError;
+        emailSent = mail.ok;
       } catch {
         // Invitation is saved; email failure is non-fatal
       }
 
       return { invitation, emailSent };
     },
-    onSuccess: (result, variables) => {
-      queryClient.invalidateQueries({ queryKey: [...INVITATIONS_QUERY_KEY, variables.orgId] });
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ORG_INVITATIONS_QUERY_KEY });
       if (result.emailSent) {
         toast({ title: 'ההזמנה נשמרה ומייל ההזמנה נשלח' });
       } else {
         toast({
-          title: 'ההזמנה נשמרה',
-          description: 'שליחת מייל ההזמנה נכשלה. ניתן לשלוח שוב מאוחר יותר.',
+          title: 'ההזמנה נשמרה במערכת',
+          description: 'אם המייל נכשל — פרטי השגיאה הוצגו בהודעה אדומה.',
         });
       }
     },
@@ -196,7 +258,14 @@ export function useApproveMember() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ profileId }: { profileId: string }) => {
+    mutationFn: async ({
+      profileId,
+      parentAdminProfileId,
+    }: {
+      profileId: string;
+      /** profiles.id של המאשר — נשמר כ-parent_admin_id אצל המשתמש המאושר */
+      parentAdminProfileId: string | null;
+    }) => {
       const { data: existing, error: existingError } = await (supabase as any)
         .from('profiles')
         .select('permissions')
@@ -212,7 +281,14 @@ export function useApproveMember() {
 
       const { data, error } = await (supabase as any)
         .from('profiles')
-        .update({ status: 'active', permissions: nextPerms, updated_at: new Date().toISOString() })
+        .update({
+          status: 'active',
+          permissions: nextPerms,
+          ...(parentAdminProfileId
+            ? { parent_admin_id: parentAdminProfileId, managed_by_user_id: parentAdminProfileId }
+            : {}),
+          updated_at: new Date().toISOString(),
+        })
         .eq('id', profileId)
         .select()
         .single();
@@ -227,6 +303,36 @@ export function useApproveMember() {
     },
     onError: (err: Error) => {
       toast({ title: 'שגיאה באישור משתמש', description: err.message, variant: 'destructive' });
+    },
+  });
+}
+
+/** מסנכרן target_version של חבר צוות לגרסת המנהל (עדכון שקט — טוסט בלבד). */
+export function useSyncMemberTargetVersion() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      memberProfileId,
+      targetVersion,
+    }: {
+      memberProfileId: string;
+      targetVersion: string;
+    }) => {
+      const v = String(targetVersion ?? '').trim();
+      if (!v) throw new Error('חסרה גרסת יעד');
+      const { error } = await (supabase as any)
+        .from('profiles')
+        .update({ target_version: v, updated_at: new Date().toISOString() })
+        .eq('id', memberProfileId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: TEAM_QUERY_KEY });
+      toast({ title: 'גרסת היעד עודכנה' });
+    },
+    onError: (err: Error) => {
+      toast({ title: 'עדכון גרסה נכשל', description: err.message, variant: 'destructive' });
     },
   });
 }

@@ -1,0 +1,127 @@
+{
+    "schema_version":  "ui-sync-bundle.v1",
+    "feature_flag_registry":  [
+                                  {
+                                      "category":  "dashboard",
+                                      "key":  "dashboard_vehicles",
+                                      "description":  "כרטיס דשבורד — ניהול צי רכבים",
+                                      "display_name_he":  "רכבים",
+                                      "ui_mapping":  "Dashboard status cards -\u003e רכבים"
+                                  },
+                                  {
+                                      "category":  "dashboard",
+                                      "key":  "dashboard_drivers",
+                                      "description":  "כרטיס דשבורד — ניהול נהגים",
+                                      "display_name_he":  "נהגים",
+                                      "ui_mapping":  "Dashboard status cards -\u003e נהגים"
+                                  },
+                                  {
+                                      "category":  "dashboard",
+                                      "key":  "dashboard_replacement_car",
+                                      "description":  "כרטיס דשבורד — מרכז רכב חליפי",
+                                      "display_name_he":  "רכב חליפי",
+                                      "ui_mapping":  "Dashboard status cards -\u003e רכב חליפי"
+                                  },
+                                  {
+                                      "category":  "dashboard",
+                                      "key":  "dashboard_exception_alerts",
+                                      "description":  "כרטיס דשבורד — התראות ציות וחריגות",
+                                      "display_name_he":  "התראות חריגה",
+                                      "ui_mapping":  "Dashboard status cards -\u003e התראות חריגה"
+                                  },
+                                  {
+                                      "category":  "quick_actions",
+                                      "key":  "qa_procedure6_complaints",
+                                      "description":  "קישור מהיר — תלונות נוהל 6",
+                                      "display_name_he":  "תלונות נוהל 6",
+                                      "ui_mapping":  "Dashboard quick actions -\u003e תלונות נוהל 6"
+                                  },
+                                  {
+                                      "category":  "quick_actions",
+                                      "key":  "qa_report_mileage",
+                                      "description":  "קישור מהיר — דיווח ק״מ",
+                                      "display_name_he":  "דיווח קילומטראז׳",
+                                      "ui_mapping":  "Dashboard quick actions -\u003e דיווח קילומטראז׳"
+                                  },
+                                  {
+                                      "category":  "quick_actions",
+                                      "key":  "qa_admin_settings",
+                                      "description":  "קישור מהיר — הגדרות מנהל",
+                                      "display_name_he":  "הגדרות מערכת",
+                                      "ui_mapping":  "Dashboard quick actions -\u003e הגדרות מערכת"
+                                  },
+                                  {
+                                      "category":  "quick_actions",
+                                      "key":  "qa_forms",
+                                      "description":  "קישור מהיר — מרכז הטפסים",
+                                      "display_name_he":  "טפסים",
+                                      "ui_mapping":  "Dashboard quick actions + Forms center gate"
+                                  },
+                                  {
+                                      "category":  "quick_actions",
+                                      "key":  "qa_parking_reports",
+                                      "description":  "קישור מהיר — דוחות סריקת חניה",
+                                      "display_name_he":  "דוחות חניה",
+                                      "ui_mapping":  "Dashboard quick actions -\u003e דוחות חניה"
+                                  },
+                                  {
+                                      "category":  "quick_actions",
+                                      "key":  "qa_reports",
+                                      "description":  "קישור מהיר — דוחות וייצוא",
+                                      "display_name_he":  "הפקת דוחות",
+                                      "ui_mapping":  "Dashboard quick actions -\u003e הפקת דוחות"
+                                  },
+                                  {
+                                      "category":  "quick_actions",
+                                      "key":  "qa_accidents",
+                                      "description":  "קישור מהיר — ציות / תאונות",
+                                      "display_name_he":  "תאונות",
+                                      "ui_mapping":  "Dashboard quick actions -\u003e תאונות/ציות"
+                                  },
+                                  {
+                                      "category":  "quick_actions",
+                                      "key":  "qa_vehicle_delivery",
+                                      "description":  "קישור מהיר — טופס מסירת רכב",
+                                      "display_name_he":  "מסירת רכב",
+                                      "ui_mapping":  "Dashboard quick actions -\u003e מסירת רכב"
+                                  },
+                                  {
+                                      "category":  "quick_actions",
+                                      "key":  "qa_replacement_car",
+                                      "description":  "קישור מהיר בסרגל — מרכז רכב חליפי",
+                                      "display_name_he":  "רכב חליפי",
+                                      "ui_mapping":  "Dashboard quick actions -\u003e רכב חליפי"
+                                  },
+                                  {
+                                      "category":  "quick_actions",
+                                      "key":  "qa_team",
+                                      "description":  "קישור מהיר — ניהול צוות",
+                                      "display_name_he":  "ניהול צוות",
+                                      "ui_mapping":  "Dashboard quick actions -\u003e ניהול צוות"
+                                  },
+                                  {
+                                      "category":  "quick_actions",
+                                      "key":  "qa_users",
+                                      "description":  "קישור מהיר — משתמשים ואישורים",
+                                      "display_name_he":  "ניהול משתמשים",
+                                      "ui_mapping":  "Dashboard quick actions -\u003e ניהול משתמשים"
+                                  },
+                                  {
+                                      "category":  "forms",
+                                      "key":  "form_delivery",
+                                      "description":  "הצגת טפסים המסומנים לשימוש במסירה (במרכז הטפסים)",
+                                      "display_name_he":  "טופס מסירה",
+                                      "ui_mapping":  "Forms center delivery forms visibility"
+                                  },
+                                  {
+                                      "category":  "forms",
+                                      "key":  "form_return",
+                                      "description":  "הצגת טפסים המסומנים לשימוש בהחזרה (במרכז הטפסים)",
+                                      "display_name_he":  "טופס החזרה",
+                                      "ui_mapping":  "Forms center return forms visibility"
+                                  }
+                              ],
+    "ui_version":  "2.7.67",
+    "generated_at":  "2026-03-26T21:06:29.2065650Z",
+    "source_repo":  "malachiroei/fleet-manager-dev"
+}

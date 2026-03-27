@@ -50,6 +50,33 @@ export type Database = {
         }
         Relationships: []
       }
+      feature_flags: {
+        Row: {
+          category: string | null
+          description: string | null
+          display_name_he: string | null
+          feature_key: string
+          id: string
+          is_enabled_globally: boolean
+        }
+        Insert: {
+          category?: string | null
+          description?: string | null
+          display_name_he?: string | null
+          feature_key: string
+          id?: string
+          is_enabled_globally?: boolean
+        }
+        Update: {
+          category?: string | null
+          description?: string | null
+          display_name_he?: string | null
+          feature_key?: string
+          id?: string
+          is_enabled_globally?: boolean
+        }
+        Relationships: []
+      }
       driver_documents: {
         Row: {
           created_at: string
@@ -165,6 +192,7 @@ export type Database = {
           updated_at: string
           user_id: string | null
           work_start_date: string | null
+          managed_by_user_id: string | null
         }
         Insert: {
           address?: string | null
@@ -178,6 +206,7 @@ export type Database = {
           email?: string | null
           employee_number?: string | null
           full_name: string
+          managed_by_user_id?: string | null
           group_code?: string | null
           group_name?: string | null
           health_declaration_date?: string | null
@@ -213,6 +242,7 @@ export type Database = {
           email?: string | null
           employee_number?: string | null
           full_name?: string
+          managed_by_user_id?: string | null
           group_code?: string | null
           group_name?: string | null
           health_declaration_date?: string | null
@@ -235,6 +265,7 @@ export type Database = {
           updated_at?: string
           user_id?: string | null
           work_start_date?: string | null
+          managed_by_user_id?: string | null
         }
         Relationships: []
       }
@@ -429,35 +460,119 @@ export type Database = {
         }
         Relationships: []
       }
+      /**
+       * profiles: מפתח ראשי = id (תואם auth.users.id / auth.uid()).
+       * סינון באפליקציה — רק .eq('id', user.id), לא user_id.
+       * user_id בעמודות: אופציונלי/legacy; ייתכן NULL ב-DB.
+       */
       profiles: {
         Row: {
-          created_at: string
-          email: string | null
-          full_name: string
           id: string
-          phone: string | null
+          created_at: string
           updated_at: string
-          user_id: string
+          full_name: string
+          email: string | null
+          phone: string | null
+          org_id: string | null
+          managed_by_user_id: string | null
+          /** מנהל ישיר בהיררכיה; null = ללא הורה */
+          parent_admin_id: string | null
+          permissions: Json | null
+          status: string
+          is_system_admin: boolean | null
+          current_app_version: string | null
+          target_version: string | null
+          /** Per-user UI feature tokens (UI_FEATURE_*) in addition to global manifest */
+          allowed_features: Json | null
+          /** Per-user UI_FEATURE_* deny list (overrides manifest + grants); optional migration */
+          denied_features: Json | null
+          /** Manifest version when UI permissions were saved — personal denies apply only after user ack ≥ this */
+          ui_denied_features_anchor_version: string | null
+          /** legacy; may be null — use id for joins and RLS */
+          user_id: string | null
         }
         Insert: {
-          created_at?: string
-          email?: string | null
+          id: string
           full_name: string
-          id?: string
+          email?: string | null
           phone?: string | null
+          org_id?: string | null
+          managed_by_user_id?: string | null
+          parent_admin_id?: string | null
+          permissions?: Json | null
+          status?: string
+          is_system_admin?: boolean | null
+          current_app_version?: string | null
+          target_version?: string | null
+          allowed_features?: Json | null
+          denied_features?: Json | null
+          ui_denied_features_anchor_version?: string | null
+          created_at?: string
           updated_at?: string
-          user_id: string
+          user_id?: string | null
         }
         Update: {
-          created_at?: string
-          email?: string | null
-          full_name?: string
           id?: string
+          full_name?: string
+          email?: string | null
           phone?: string | null
+          org_id?: string | null
+          managed_by_user_id?: string | null
+          parent_admin_id?: string | null
+          permissions?: Json | null
+          status?: string
+          is_system_admin?: boolean | null
+          current_app_version?: string | null
+          target_version?: string | null
+          allowed_features?: Json | null
+          denied_features?: Json | null
+          ui_denied_features_anchor_version?: string | null
+          created_at?: string
           updated_at?: string
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: []
+      }
+      maintenance_records: {
+        Row: {
+          id: string
+          created_at: string
+          vehicle_id: string
+          service_type: string
+          odometer: number
+          date: string
+          notes: string | null
+          created_by: string | null
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          vehicle_id: string
+          service_type: string
+          odometer: number
+          date: string
+          notes?: string | null
+          created_by?: string | null
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          vehicle_id?: string
+          service_type?: string
+          odometer?: number
+          date?: string
+          notes?: string | null
+          created_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "maintenance_records_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {
@@ -553,6 +668,7 @@ export type Database = {
         Row: {
           adjusted_price: number | null
           assigned_driver_id: string | null
+          managed_by_user_id: string | null
           base_index: number | null
           chassis_number: string | null
           color: string | null
@@ -611,6 +727,7 @@ export type Database = {
         Insert: {
           adjusted_price?: number | null
           assigned_driver_id?: string | null
+          managed_by_user_id?: string | null
           base_index?: number | null
           chassis_number?: string | null
           color?: string | null
@@ -669,6 +786,7 @@ export type Database = {
         Update: {
           adjusted_price?: number | null
           assigned_driver_id?: string | null
+          managed_by_user_id?: string | null
           base_index?: number | null
           chassis_number?: string | null
           color?: string | null

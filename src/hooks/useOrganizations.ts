@@ -13,9 +13,10 @@ export function useOrganization(orgId?: string | null) {
     queryFn: async (): Promise<Organization | null> => {
       if (!orgId) return null;
 
+      // עמודות בסיס בלבד — בטסט לעיתים אין migration ל-release_snapshot_ack_version
       const { data, error } = await supabase
         .from('organizations')
-        .select('id, name, email, created_at, updated_at')
+        .select('id, name, email')
         .eq('id', orgId)
         .maybeSingle();
 
@@ -33,12 +34,16 @@ export function useUpdateOrganization() {
       id,
       name,
       email,
+      release_snapshot_ack_version,
     }: {
       id: string;
       name?: string;
       email?: string | null;
+      release_snapshot_ack_version?: string | null;
     }) => {
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      const sessionRes = await supabase.auth.getSession();
+      const session = sessionRes?.data?.session ?? null;
+      const sessionError = sessionRes?.error ?? null;
       if (sessionError) throw sessionError;
       if (!session) {
         throw new Error('Not authenticated. Sign in and try again.');
@@ -47,12 +52,15 @@ export function useUpdateOrganization() {
       const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
       if (name !== undefined) updates.name = name;
       if (email !== undefined) updates.email = email;
+      if (release_snapshot_ack_version !== undefined) {
+        updates.release_snapshot_ack_version = release_snapshot_ack_version;
+      }
 
       const { data, error } = await supabase
         .from('organizations')
         .update(updates)
         .eq('id', id)
-        .select()
+        .select('id, name, email')
         .maybeSingle();
 
       if (error) throw error;
@@ -76,7 +84,7 @@ export function useOrganizations() {
     queryFn: async (): Promise<OrganizationWithUserCount[]> => {
       const { data: orgs, error: orgsError } = await supabase
         .from('organizations')
-        .select('id, name, email, created_at, updated_at')
+        .select('id, name')
         .order('name');
 
       if (orgsError) throw orgsError;

@@ -5,13 +5,14 @@
  * From: Fleet Manager Pro <invites@fleet-manager-pro.com> (verified domain).
  * Sends to the email provided in the request body.
  *
- * Request body: { org_id: string, email: string }
+ * Request body: { org_id: string, email: string, app_origin?: string }
  * Secret: RESEND_API_KEY (npx supabase secrets set RESEND_API_KEY=re_...)
  * Invite link base URL: always https://fleet-manager-pro.com (no vercel.app).
  */
 
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { supabasePublicObjectUrl } from '../_shared/supabasePublicUrl.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -23,6 +24,21 @@ const APP_URL_DEFAULT = 'https://fleet-manager-pro.com';
 
 const FROM_EMAIL = 'Fleet Manager Pro <invites@fleet-manager-pro.com>';
 
+function normalizeOrigin(raw: string): string {
+  return raw.trim().replace(/\/+$/, '');
+}
+
+function shouldForceProductionInvite(appOrigin: string): boolean {
+  if (!appOrigin) return false;
+  const origin = appOrigin.toLowerCase();
+  return (
+    origin.includes('localhost') ||
+    origin.includes('127.0.0.1') ||
+    origin.includes('staging') ||
+    origin.includes('test')
+  );
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -31,9 +47,9 @@ serve(async (req) => {
   console.log('[send-invite] Request received', { method: req.method });
 
   try {
-    let body: { org_id?: string; email?: string };
+    let body: { org_id?: string; email?: string; app_origin?: string };
     try {
-      body = (await req.json()) as { org_id?: string; email?: string };
+      body = (await req.json()) as { org_id?: string; email?: string; app_origin?: string };
     } catch (parseErr) {
       console.error('[send-invite] Invalid JSON body:', parseErr);
       return new Response(
@@ -45,6 +61,9 @@ serve(async (req) => {
     const orgId = typeof body.org_id === 'string' ? body.org_id.trim() : '';
     const emailRaw = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
     const email = emailRaw && emailRaw.includes('@') ? emailRaw : '';
+    const appOriginBody = typeof body.app_origin === 'string' ? normalizeOrigin(body.app_origin) : '';
+    const appOriginHeader = normalizeOrigin(req.headers.get('origin') ?? '');
+    const appOrigin = appOriginBody || appOriginHeader;
 
     if (!orgId) {
       return new Response(
@@ -79,6 +98,9 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const appUrl = APP_URL_DEFAULT.replace(/\/$/, '');
+    const forceProductionInvite = shouldForceProductionInvite(appOrigin);
+    const inviteBaseUrl = forceProductionInvite ? APP_URL_DEFAULT : appUrl;
+    const inviteUrl = `${inviteBaseUrl}/auth?org_id=${encodeURIComponent(orgId)}`;
 
     let organizationName = 'הארגון';
     if (supabaseUrl && serviceRoleKey) {
@@ -93,14 +115,24 @@ serve(async (req) => {
       organizationName = (orgRow as { name?: string } | null)?.name?.trim() || organizationName;
     }
 
+    const logoUrl = supabaseUrl ? supabasePublicObjectUrl(supabaseUrl, 'logos/logo.jpg') : '';
     const html = `
 <div dir="rtl" style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 560px; margin: 0 auto;">
+  <div style="margin: 0 0 12px; text-align: right;">
+    <img src="${logoUrl}" alt="Fleet Manager Pro" style="height: 40px; width: auto; display: inline-block;" />
+  </div>
   <h1 style="color: #0f172a;">הזמנה להצטרף לצוות</h1>
   <p><strong>${organizationName}</strong> מזמין/ה אותך להצטרף לצוות.</p>
   <p>ההזמנה נרשמה עבור: <strong>${email}</strong></p>
-  <p><a href="${appUrl}/auth/callback" style="color: #0891b2;">קבל את ההזמנה ופתח את האפליקציה</a></p>
+  <p><a href="${inviteUrl}" style="color: #0891b2;">קבל את ההזמנה ופתח את האפליקציה</a></p>
   <p style="color: #64748b; font-size: 12px;">Fleet Manager Pro</p>
 </div>`.trim();
+
+    console.log('[send-invite] invite URL resolved', {
+      app_origin: appOrigin || '(missing)',
+      force_production: forceProductionInvite,
+      invite_url: inviteUrl,
+    });
 
     const resendPayload = {
       from: FROM_EMAIL,

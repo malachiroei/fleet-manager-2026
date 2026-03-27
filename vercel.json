@@ -1,21 +1,41 @@
 {
   "headers": [
     {
-      "source": "/app-icon-192.png",
-      "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT" },
+        { "key": "Access-Control-Allow-Headers", "value": "*" }
+      ]
     },
     {
-      "source": "/app-icon-512.png",
-      "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
-    },
-    {
-      "source": "/site.webmanifest(.*)",
-      "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
+      "source": "/assets/(.*).js",
+      "headers": [
+        { "key": "Content-Type", "value": "application/javascript; charset=utf-8" }
+      ]
     }
   ],
   "rewrites": [
-    { "source": "/favicon.ico", "destination": "/app-icon-512.png" },
-    { "source": "/favicon.png", "destination": "/app-icon-512.png" },
-    { "source": "/(.*)", "destination": "/" }
+    {
+      "source": "/v.json",
+      "destination": "/api/block-v-json",
+      "has": [{ "type": "host", "value": "fleet-manager-pro.com" }]
+    },
+    {
+      "source": "/v.json",
+      "destination": "/api/block-v-json",
+      "has": [{ "type": "host", "value": "www.fleet-manager-pro.com" }]
+    },
+    {
+      "source": "/v-dev-only.json",
+      "destination": "/api/block-v-json",
+      "has": [{ "type": "host", "value": "fleet-manager-pro.com" }]
+    },
+    {
+      "source": "/v-dev-only.json",
+      "destination": "/api/block-v-json",
+      "has": [{ "type": "host", "value": "www.fleet-manager-pro.com" }]
+    },
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

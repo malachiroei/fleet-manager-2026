@@ -1,4 +1,4 @@
-import { ReactNode, useEffect } from 'react';
+import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useVehicleSpecDirty } from '@/contexts/VehicleSpecDirtyContext';
 import { useViewAs } from '@/contexts/ViewAsContext';
@@ -9,7 +9,7 @@ import { useTeamMembersForSwitcher } from '@/hooks/useTeam';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { AIChatAssistant } from './AIChatAssistant';
 import { useTheme } from '@/hooks/useTheme';
-import { Sun, Moon, Building2, LogOut, Home, ArrowRight, ChevronDown, Building, Settings } from 'lucide-react';
+import { Sun, Moon, Building2, LogOut, Home, ArrowRight, ChevronDown, Building, Settings, UserCog } from 'lucide-react';
 import { PwaInstallButton } from './PwaInstallButton';
 import { Button } from './ui/button';
 import {
@@ -21,21 +21,48 @@ import {
   DropdownMenuRadioItem,
 } from './ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-
-const appLogo = '/og-image.png';
+import { getBrandLogoUrl } from '@/components/BrandLogo';
+import { supabase } from '@/integrations/supabase/client';
+import {
+  version as bundleVersion,
+  FLEET_PRO_ACK_VERSION_STORAGE_KEY,
+  FLEET_PRO_ACK_VERSION_UPDATED_EVENT,
+  FLEET_PRO_DEFAULT_HEADER_VERSION,
+} from '@/constants/version';
+import {
+  compareSemverExtended,
+  isFleetManagerProHostname,
+  normalizeVersion,
+  showFleetStagingEnvironmentBanner,
+  toCanonicalThreePartVersion,
+} from '@/lib/versionManifest';
 
 interface AppLayoutProps {
   children: ReactNode;
 }
-
-const MAIN_ADMIN_ORG_ID = '857f2311-2ec5-4d13-8e32-dacd450a9a77';
 
 export function AppLayout({ children }: AppLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const { theme, toggleTheme } = useTheme();
-  const { user, signOut, profile, activeOrgId, memberOrganizations, setActiveOrgId, isAdmin, isManager } = useAuth();
+  const {
+    user,
+    signOut,
+    profile,
+    activeOrgId,
+    memberOrganizations,
+    setActiveOrgId,
+    isAdmin,
+    isManager,
+    isDriver,
+  } = useAuth();
+  const isDriverOnlyHeader = Boolean(isDriver && !isManager && !isAdmin);
+  /** מנהל ארגון / מנהל צי — כפתורי ניהול בכותרת (ארגון, צוות) */
+  const isOrgAdminOrManager = (isAdmin || isManager) && !isDriverOnlyHeader;
+  /** בולטים בזהב/ענבר כדי שלא יפספסו */
+  const managementNavClass =
+    'relative z-[9999] !flex items-center justify-center border-2 !border-solid !border-[gold] bg-amber-500/25 text-amber-50 shadow-[0_0_18px_rgba(251,191,36,0.45)] hover:bg-amber-500/40 hover:text-white hover:!border-[#ffd700]';
   const email = (user?.email ?? '').toLowerCase();
   const name = (profile?.full_name?.trim()) || user?.user_metadata?.full_name || email.split('@')[0] || '';
   const initials = (name || email || '?').slice(0, 2).toUpperCase();
@@ -45,7 +72,67 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { data: organization } = useOrganization(activeOrgId ?? null);
   const orgName = organization?.name?.trim() ?? '';
   const { data: teamMembers = [], error: teamMembersError } = useTeamMembersForSwitcher(activeOrgId ?? null as any);
-  const { viewAsEmail, setViewAsEmail } = useViewAs();
+  const { viewAsEmail, setViewAsEmail, viewAsProfile } = useViewAs();
+
+  /** קיר קשיח ייצור: fleet-manager-pro.com + www (גרסה בכותרת וכו') */
+  const isProduction = isFleetManagerProHostname();
+  /** באנר "גרסת בדיקה": מוסתר ב־fleet-manager-pro.com + www (ייצור) */
+  const showStagingWarningBar = showFleetStagingEnvironmentBanner();
+
+  /** ריענון כותרת אחרי כתיבת fleet-pro-acknowledged-version (לפני reload) */
+  const [proAckBump, setProAckBump] = useState(0);
+  useEffect(() => {
+    if (!isProduction) return;
+    const bump = () => setProAckBump((n) => n + 1);
+    window.addEventListener(FLEET_PRO_ACK_VERSION_UPDATED_EVENT, bump);
+    return () => window.removeEventListener(FLEET_PRO_ACK_VERSION_UPDATED_EVENT, bump);
+  }, [isProduction]);
+
+  /**
+   * ייצור: אחרי `FLEET_PRO_ACK_VERSION_UPDATED_EVENT` — אם `fleet-pro-acknowledged-version` בפועל השתנה,
+   * רענון קשיח כדי לסנכרן gates / מצב React עם localStorage (פרסום, שמירת הרשאות, «עדכן עכשיו»).
+   */
+  const lastProAckSeenRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isProduction) return;
+    try {
+      lastProAckSeenRef.current = localStorage.getItem(FLEET_PRO_ACK_VERSION_STORAGE_KEY);
+    } catch {
+      lastProAckSeenRef.current = null;
+    }
+    const onAckEvent = () => {
+      let next = '';
+      try {
+        next = localStorage.getItem(FLEET_PRO_ACK_VERSION_STORAGE_KEY)?.trim() ?? '';
+      } catch {
+        return;
+      }
+      const prev = (lastProAckSeenRef.current ?? '').trim();
+      if (next && next !== prev) {
+        lastProAckSeenRef.current = next;
+        window.location.reload();
+      }
+    };
+    window.addEventListener(FLEET_PRO_ACK_VERSION_UPDATED_EVENT, onAckEvent);
+    return () => window.removeEventListener(FLEET_PRO_ACK_VERSION_UPDATED_EVENT, onAckEvent);
+  }, [isProduction]);
+
+  /** מוצג בכותרת — בטסט = גרסת בנדל; בייצור = מאושרת או ברירת מחדל עד "עדכן עכשיו" */
+  const headerDisplayVersion = useMemo(() => {
+    if (!isProduction) return normalizeVersion(bundleVersion);
+    let ack = FLEET_PRO_DEFAULT_HEADER_VERSION;
+    try {
+      const stored = localStorage.getItem(FLEET_PRO_ACK_VERSION_STORAGE_KEY);
+      if (stored?.trim()) ack = stored.trim();
+    } catch {
+      // ignore
+    }
+    const ackN = toCanonicalThreePartVersion(normalizeVersion(ack)) || normalizeVersion(ack);
+    const bundleN = toCanonicalThreePartVersion(normalizeVersion(bundleVersion)) || normalizeVersion(bundleVersion);
+    /** בנדל חדש יותר מהמאושר — מציגים את המאושר עד "עדכן עכשיו" (semver מורחב) */
+    if (compareSemverExtended(bundleN, ackN) > 0) return ackN;
+    return bundleN;
+  }, [isProduction, bundleVersion, proAckBump]);
 
   useEffect(() => {
     console.log('TeamMembers for Org:', activeOrgId, {
@@ -54,20 +141,77 @@ export function AppLayout({ children }: AppLayoutProps) {
     });
   }, [activeOrgId, teamMembers, teamMembersError]);
 
+  // When impersonating, ensure the active org is taken from the target user's org_members.
+  // This prevents stale org context (and blank dashboard due to orgId=null) after switching users.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const viewAsAuthId = viewAsProfile?.id ?? viewAsProfile?.user_id;
+      if (!viewAsEmail || !viewAsAuthId) return;
+
+      try {
+        const { data: membership, error } = await (supabase as any)
+          .from('org_members')
+          .select('org_id')
+          .eq('user_id', viewAsAuthId)
+          .maybeSingle();
+        const nextOrgId = (membership as any)?.org_id as string | undefined;
+        if (!cancelled && nextOrgId && activeOrgId !== nextOrgId) {
+          console.log('[Impersonation] Setting activeOrgId from org_members', {
+            viewAsEmail,
+            nextOrgId,
+          });
+          setActiveOrgId(nextOrgId);
+        }
+      } catch (err) {
+        console.warn('[Impersonation] Failed to resolve org_members org_id', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [viewAsEmail, viewAsProfile?.id, viewAsProfile?.user_id, activeOrgId, setActiveOrgId]);
+
   console.log('CURRENT PROFILE STATUS:', profile?.status);
 
   const isMainAdmin = email === 'malachiroei@gmail.com';
+  const canAccessGoldenManagementLinks = isOrgAdminOrManager && isMainAdmin;
   const isDriverRoei = email === 'roeima21@gmail.com';
   const isRavid = email === 'ravidmalachi@gmail.com';
+
+  const viewAsBannerVisible = (isMainAdmin || isRavid) && Boolean(viewAsEmail);
+  const headerStickyTopClass = showStagingWarningBar
+    ? viewAsBannerVisible
+      ? 'top-24'
+      : 'top-12'
+    : 'top-0';
+  const viewAsStickyTopClass = showStagingWarningBar ? 'top-12' : 'top-0';
+
+  const mainFleetOrgId = useMemo(() => {
+    // Prefer explicit Main Fleet org id when present.
+    const explicitMainFleet = memberOrganizations.find((o) => o.id === '857f2311-2ec5-41d3-8e32-dacd450a9a77');
+    if (explicitMainFleet) return explicitMainFleet.id;
+
+    const mainFleet = memberOrganizations.find((o) => {
+      const name = (o.name ?? '').toLowerCase();
+      // Prefer explicit English name when available, otherwise fallback to the Hebrew "Ravid fleet" naming.
+      return (
+        (name.includes('main') && name.includes('fleet')) ||
+        name.includes('רביד צי') ||
+        name.includes('רביד') // very soft fallback
+      );
+    });
+    return mainFleet?.id ?? memberOrganizations[0]?.id ?? null;
+  }, [memberOrganizations]);
 
   // Ensure main admin is always on the main admin org when not impersonating
   useEffect(() => {
     if (!isMainAdmin) return;
     if (viewAsEmail) return; // when impersonating, org follows the impersonated user
-    if (activeOrgId !== '857f2311-2ec5-4d13-8e32-dacd450a9a77') {
-      setActiveOrgId('857f2311-2ec5-4d13-8e32-dacd450a9a77');
+    if (mainFleetOrgId && activeOrgId !== mainFleetOrgId) {
+      setActiveOrgId(mainFleetOrgId);
     }
-  }, [isMainAdmin, viewAsEmail, activeOrgId, setActiveOrgId]);
+  }, [isMainAdmin, viewAsEmail, activeOrgId, setActiveOrgId, mainFleetOrgId]);
 
   // Ensure Roei (driver-only) is always locked to his org and cannot switch orgs
   useEffect(() => {
@@ -105,7 +249,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const MobileSettingsMenu = () => {
     // ארגונים זמינים (כמו ב-OrgSwitcher)
     const orgItems = isMainAdmin
-      ? memberOrganizations.filter((org) => (org.name || '').trim() === 'רביד צי רכבים')
+      ? (mainFleetOrgId ? memberOrganizations.filter((org) => org.id === mainFleetOrgId) : memberOrganizations)
       : memberOrganizations;
 
     // חברי צוות זמינים (אותה לוגיקה כמו OrgSwitcher)
@@ -142,10 +286,19 @@ export function AppLayout({ children }: AppLayoutProps) {
           <Button
             type="button"
             variant="ghost"
-            size="icon"
-            className="flex sm:hidden h-8 w-8 rounded-lg border border-cyan-400/30 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20 hover:text-white"
+            title="ניהול"
+            aria-label="ניהול"
+            className={cn(
+              'relative z-[9999] flex sm:hidden h-8 rounded-lg border transition-colors',
+              isOrgAdminOrManager
+                ? cn('gap-1 px-2 min-w-[4.5rem]', managementNavClass)
+                : 'w-8 px-0 justify-center border-cyan-400/30 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20 hover:text-white'
+            )}
           >
-            <Settings className="h-4 w-4" />
+            <Settings className={cn('h-4 w-4 shrink-0', isOrgAdminOrManager && 'text-amber-200')} />
+            {isOrgAdminOrManager ? (
+              <span className="text-[11px] font-semibold leading-none text-amber-100">ניהול</span>
+            ) : null}
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align={isRtl ? 'start' : 'end'} className="min-w-[220px]">
@@ -166,9 +319,9 @@ export function AppLayout({ children }: AppLayoutProps) {
                   key={org.id}
                   className="text-xs cursor-pointer"
                   onClick={() => {
-                    if (isMainAdmin && org.id === '857f2311-2ec5-4d13-8e32-dacd450a9a77') {
+                    if (isMainAdmin && mainFleetOrgId && org.id === mainFleetOrgId) {
                       setViewAsEmail(null);
-                      setActiveOrgId('857f2311-2ec5-4d13-8e32-dacd450a9a77');
+                      setActiveOrgId(mainFleetOrgId);
                     } else {
                       setActiveOrgId(org.id);
                     }
@@ -233,12 +386,28 @@ export function AppLayout({ children }: AppLayoutProps) {
                 </span>
               </button>
             </DropdownMenuItem>
-            <DropdownMenuItem asChild className="cursor-pointer">
-              <Link to="/admin/org-settings" className="w-full flex items-center justify-between text-xs">
-                <span>ארגון</span>
-                <Building2 className="h-3.5 w-3.5" />
-              </Link>
-            </DropdownMenuItem>
+            {canAccessGoldenManagementLinks ? (
+              <DropdownMenuItem asChild className="cursor-pointer">
+                <Link
+                  to="/admin/org-settings"
+                  className="w-full flex items-center justify-between text-xs text-amber-700 dark:text-amber-200"
+                >
+                  <span className="font-medium">ארגון</span>
+                  <Building2 className="h-3.5 w-3.5 text-amber-600 dark:text-amber-300" />
+                </Link>
+              </DropdownMenuItem>
+            ) : null}
+            {canAccessGoldenManagementLinks ? (
+              <DropdownMenuItem asChild className="cursor-pointer">
+                <Link
+                  to="/team"
+                  className="w-full flex items-center justify-between text-xs text-amber-700 dark:text-amber-200"
+                >
+                  <span className="font-medium">ניהול צוות</span>
+                  <UserCog className="h-3.5 w-3.5 text-amber-600 dark:text-amber-300" />
+                </Link>
+              </DropdownMenuItem>
+            ) : null}
           </div>
 
           {/* Logout */}
@@ -264,7 +433,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     if (memberOrganizations.length === 0 && !isMainAdmin && !isRavid) return null;
     // For the org list at the top: for main admin, prefer only the primary org "רביד צי רכבים"
     const orgItems = isMainAdmin
-      ? memberOrganizations.filter((org) => (org.name || '').trim() === 'רביד צי רכבים')
+      ? (mainFleetOrgId ? memberOrganizations.filter((org) => org.id === mainFleetOrgId) : memberOrganizations)
       : memberOrganizations;
 
     // Team members view:
@@ -315,7 +484,8 @@ export function AppLayout({ children }: AppLayoutProps) {
           >
             <Building className="h-3.5 w-3.5" />
             <span className="hidden sm:inline max-w-[120px] truncate">
-              {organization?.name ?? (orgName || 'החלף צי')}
+              {organization?.name ??
+                (orgName || (isMainAdmin ? 'הצי הראשי - רועי' : 'החלף צי'))}
             </span>
             <ChevronDown className="h-3.5 w-3.5 opacity-70" />
           </Button>
@@ -333,10 +503,10 @@ export function AppLayout({ children }: AppLayoutProps) {
             value={activeOrgId ?? ''}
             onValueChange={(id) => {
               if (!id) return;
-              if (isMainAdmin && id === '857f2311-2ec5-4d13-8e32-dacd450a9a77') {
+              if (isMainAdmin && id === '857f2311-2ec5-41d3-8e32-dacd450a9a77') {
                 // Manual override: reset to admin view and main admin org
                 setViewAsEmail(null);
-                setActiveOrgId('857f2311-2ec5-4d13-8e32-dacd450a9a77');
+                if (mainFleetOrgId) setActiveOrgId(mainFleetOrgId);
               } else {
                 setActiveOrgId(id);
               }
@@ -394,28 +564,59 @@ export function AppLayout({ children }: AppLayoutProps) {
   const TopToolsBlock = () => (
     <div
       className={cn(
-        'flex items-center gap-2 sm:gap-3 shrink-0',
+        'relative z-[9999] flex items-center gap-2 sm:gap-3 shrink-0',
         isRtl ? 'flex-row-reverse' : ''
       )}
     >
-      {/* Mobile: רק גלגל שיניים (תפריט הגדרות) בשורה העליונה */}
-      <div className="flex items-center gap-2 sm:hidden">
+      {/* Mobile: ניהול צוות (מנהל/מנהל צי) + תפריט הגדרות */}
+      <div className="relative z-[9999] flex items-center gap-2 sm:hidden">
+        {canAccessGoldenManagementLinks ? (
+          <Link
+            to="/team"
+            className={cn(
+              'flex h-8 items-center gap-1 rounded-lg border px-2 transition-colors',
+              managementNavClass
+            )}
+          >
+            <UserCog className="h-3.5 w-3.5 shrink-0 text-amber-200" />
+            <span className="text-[11px] font-semibold leading-none text-amber-50">ניהול</span>
+          </Link>
+        ) : null}
         <MobileSettingsMenu />
       </div>
 
       {/* Desktop: שורת הכלים המלאה כמו קודם */}
-      <div className="hidden sm:flex items-center gap-3">
+      <div className="relative z-[9999] hidden sm:flex items-center gap-3">
         <PwaInstallButton />
             <ThemeToggle />
             <LanguageSwitcher />
         <OrgSwitcher />
-        <Link
-          to="/admin/org-settings"
-          className="flex h-8 items-center gap-1.5 rounded-lg border border-cyan-400/20 bg-cyan-500/10 px-2.5 text-xs font-medium text-cyan-100 hover:bg-cyan-500/20"
-        >
-          <Building2 className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">ארגון</span>
-        </Link>
+        {canAccessGoldenManagementLinks ? (
+          <Link
+            to="/admin/org-settings"
+            className={cn(
+              'flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors',
+              managementNavClass
+            )}
+          >
+            <Building2 className="h-3.5 w-3.5 text-amber-200" />
+            <span className="hidden sm:inline">ארגון</span>
+          </Link>
+        ) : null}
+        {canAccessGoldenManagementLinks ? (
+          <Link
+            to="/team"
+            className={cn(
+              'flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors',
+              managementNavClass
+            )}
+          >
+            <UserCog className="h-3.5 w-3.5 text-amber-200" />
+            <span className="hidden sm:inline">ניהול</span>
+            <span className="hidden sm:inline text-amber-200/90">·</span>
+            <span className="hidden sm:inline">צוות</span>
+          </Link>
+        ) : null}
         {viewAsEmail && (
           <Button
             type="button"
@@ -582,11 +783,11 @@ export function AppLayout({ children }: AppLayoutProps) {
         {t('navigation.home')}
       </Link>
       <div className={cn('flex min-w-0 items-center gap-2 sm:gap-3', isRtl && 'flex-row-reverse')}>
-        <div className="h-10 w-14 shrink-0 overflow-hidden rounded-lg bg-[#0a1525] p-1 flex items-center justify-center">
+        <div className="h-12 w-16 shrink-0 overflow-hidden rounded-lg bg-[#0a1525] p-2 flex items-center justify-center">
           <img
-            src={appLogo}
+            src={getBrandLogoUrl()}
             alt=""
-            className="h-full w-full object-contain object-center scale-[2] origin-center"
+            className="max-h-12 w-full object-contain object-center"
           />
         </div>
         <div className={cn('min-w-0', isRtl ? 'text-right' : 'text-left')}>
@@ -594,7 +795,10 @@ export function AppLayout({ children }: AppLayoutProps) {
             {t('navigation.fleetManager')}
           </span>
           <span className="block truncate text-[10px] text-cyan-400/55">
-            {orgName || (user ? '—' : t('navigation.proDashboard'))}
+            {orgName || 'הצי הראשי - רועי'}
+          </span>
+          <span className="block truncate text-xs text-white/65 font-medium">
+            גרסה v{headerDisplayVersion}
           </span>
         </div>
       </div>
@@ -603,14 +807,31 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   return (
     <div
-      className="flex min-h-[100dvh] flex-col overflow-x-hidden bg-[#020617]"
+      className={cn(
+        'flex min-h-[100dvh] flex-col overflow-x-hidden bg-[#020617]',
+        showStagingWarningBar && 'pt-12'
+      )}
       dir={isRtl ? 'rtl' : 'ltr'}
     >
+      {showStagingWarningBar ? (
+        <div
+          className="fixed left-0 right-0 top-0 z-[999] flex h-12 items-center justify-center border-b border-red-400/60 bg-red-600 px-4 text-center shadow-md"
+          role="banner"
+          aria-label="גרסת בדיקה"
+        >
+          <span className="text-sm font-bold tracking-wide text-white sm:text-base">
+            גרסת בדיקה / Test Version
+          </span>
+        </div>
+      ) : null}
       {(isMainAdmin || isRavid) && viewAsEmail && (
-        <div className="sticky top-0 z-50 w-full bg-amber-500 text-black shadow-md">
+        <div
+          className={cn('sticky z-50 w-full bg-amber-500 text-black shadow-md', viewAsStickyTopClass)}
+        >
           <div className="mx-auto flex max-w-[1920px] items-center justify-between px-4 py-2 text-xs sm:text-sm">
             <span className="font-medium">
-              אתה נמצא כרגע בתצוגת נהג: <span className="font-bold">{viewAsEmail}</span>
+              אתה נמצא כרגע בתצוגת משתמש:{' '}
+              <span className="font-bold">{viewAsProfile?.full_name || viewAsEmail}</span>
             </span>
             <Button
               size="sm"
@@ -620,7 +841,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                 // Manual override: reset impersonation and org to admin defaults for main admin
                 if (isMainAdmin) {
                   setViewAsEmail(null);
-                  setActiveOrgId('857f2311-2ec5-4d13-8e32-dacd450a9a77');
+                  if (mainFleetOrgId) setActiveOrgId(mainFleetOrgId);
                 } else {
                   setViewAsEmail(null);
                 }
@@ -631,7 +852,12 @@ export function AppLayout({ children }: AppLayoutProps) {
           </div>
         </div>
       )}
-      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0d1b2e] min-h-[4.25rem] sm:min-h-0">
+      <header
+        className={cn(
+          'sticky z-40 border-b border-white/10 bg-[#0d1b2e] min-h-[4.25rem] sm:min-h-0',
+          headerStickyTopClass
+        )}
+      >
         <div className="mx-auto flex max-w-[1920px] w-full flex-col gap-0 sm:gap-1 px-4 sm:px-6 py-3 sm:py-3">
           {/* Row 1: לוגו + בית + גלגל שיניים */}
           <div className="flex w-full items-center justify-between gap-2 sm:gap-4 min-h-10 sm:min-h-0">

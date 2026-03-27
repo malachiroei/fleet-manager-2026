@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 import { useEffect, useState, useRef, useMemo, useCallback, type FormEvent } from 'react';
 import { flushSync } from 'react-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -9,6 +10,7 @@ import {
 } from '@/contexts/VehicleSpecDirtyContext';
 import { useVehicles, fetchActiveDriverAssignments } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
+import { supabase } from '@/integrations/supabase/client';
 import {
   useCreateHandover,
   uploadHandoverPhoto,
@@ -30,7 +32,6 @@ import FuelLevelSelector from '@/components/FuelLevelSelector';
 import PhotoUpload from '@/components/PhotoUpload';
 import VehicleDamage3DSelector from '@/components/VehicleDamage3DSelector';
 import { ArrowRight, ArrowLeft, Loader2, Truck, Camera } from 'lucide-react';
-import { toast } from 'sonner';
 import {
   cloneEmptyDamageReport,
   hasAnyDamage,
@@ -58,7 +59,7 @@ export default function VehicleDeliveryPage() {
   const { data: drivers } = useDrivers();
   const { data: orgDocuments } = useOrgDocuments();
   const createHandover = useCreateHandover();
-  const { user } = useAuth();
+  const { user, profile, activeOrgId } = useAuth();
   const signatureRef = useRef<SignaturePadRef>(null);
   const replacementApprovalSignatureRef = useRef<SignaturePadRef>(null);
   const forcedMode = searchParams.get('mode') === 'replacement' ? 'replacement' : 'permanent';
@@ -182,23 +183,71 @@ export default function VehicleDeliveryPage() {
     e.preventDefault();
     
     if (!selectedVehicle || !selectedDriver) {
-      toast.error('נא לבחור רכב ונהג');
+      try {
+        toast.error('נא לבחור רכב ונהג');
+      } catch {
+        // non-blocking
+      }
+      return;
+    }
+
+    // Keep flow resilient: prefer profile.org_id, fallback to activeOrgId (selected org switcher)
+    let orgId: string | null = profile?.org_id || activeOrgId || null;
+    if (!orgId && user?.id) {
+      // Fallback from DB so org_id won't block submission:
+      // pick the newest org membership, and verify it exists in organizations.
+      const { data: membership, error: memErr } = await (supabase as any)
+        .from('org_members')
+        .select('org_id')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const memberOrgId = (membership as any)?.org_id as string | undefined;
+      if (!memErr && memberOrgId) {
+        const { data: orgRow, error: orgErr } = await (supabase as any)
+          .from('organizations')
+          .select('id')
+          .eq('id', memberOrgId)
+          .maybeSingle();
+        const verifiedOrgId = (orgRow as any)?.id as string | undefined;
+        if (!orgErr && verifiedOrgId) orgId = verifiedOrgId;
+      }
+    }
+    if (!orgId) {
+      try {
+        toast.error('שגיאה: לא נמצאה חברה פעילה למשתמש. נסה לבחור חברה או להתחבר מחדש.');
+      } catch {
+        // non-blocking
+      }
       return;
     }
 
     if (signatureRef.current?.isEmpty()) {
-      toast.error('נא לחתום על הטופס');
+      try {
+        toast.error('נא לחתום על הטופס');
+      } catch {
+        // non-blocking
+      }
       return;
     }
 
     if (assignmentMode === 'replacement') {
       if (!replacementApprovalChecked) {
-        toast.error('נא לאשר את הצהרת מסירת הרכב החליפי');
+        try {
+          toast.error('נא לאשר את הצהרת מסירת הרכב החליפי');
+        } catch {
+          // non-blocking
+        }
         return;
       }
 
       if (replacementApprovalSignatureRef.current?.isEmpty()) {
-        toast.error('נא לחתום על טופס האישור לרכב חליפי');
+        try {
+          toast.error('נא לחתום על טופס האישור לרכב חליפי');
+        } catch {
+          // non-blocking
+        }
         return;
       }
     }
@@ -236,7 +285,11 @@ export default function VehicleDeliveryPage() {
       const leftUrl = photoResults[3].status === 'fulfilled' ? photoResults[3].value : null;
 
       if (photoResults.some((result) => result.status === 'rejected')) {
-        toast.warning('המסירה תירשם, אך חלק מהתמונות לא נשמרו בשרת');
+        try {
+          toast.warning('המסירה תירשם, אך חלק מהתמונות לא נשמרו בשרת');
+        } catch {
+          // non-blocking
+        }
       }
 
       // Upload signature
@@ -247,12 +300,17 @@ export default function VehicleDeliveryPage() {
           signatureUrl = await uploadSignature(signatureDataUrl, selectedVehicle, 'delivery');
         } catch (signatureError) {
           console.error('Signature upload error:', signatureError);
-          toast.warning('המסירה תירשם, אך החתימה לא נשמרה בשרת');
+          try {
+            toast.warning('המסירה תירשם, אך החתימה לא נשמרה בשרת');
+          } catch {
+            // non-blocking
+          }
         }
       }
 
       // Create handover record
       const handover = await createHandover.mutateAsync({
+        org_id: orgId,
         vehicle_id: selectedVehicle,
         driver_id: selectedDriver,
         handover_type: 'delivery',
@@ -268,6 +326,10 @@ export default function VehicleDeliveryPage() {
         notes: mergedNotes || null,
         created_by: user?.id || null,
       });
+
+      // If profile.org_id was missing, we can still resolve org from the created handover row
+      // (kept for continuity/debugging; wizard/email flow doesn't rely on it directly here)
+      const resolvedOrgId = profile?.org_id || (handover as any)?.org_id;
 
       let reportUrl = '';
       try {
@@ -305,16 +367,28 @@ export default function VehicleDeliveryPage() {
       } catch (archiveError) {
         console.error('Archive form copy error:', archiveError);
         const message = archiveError instanceof Error ? archiveError.message : 'שגיאה לא ידועה';
-        toast.error(`שמירת PDF נכשלה: ${message}`);
+        try {
+          toast.error(`שמירת PDF נכשלה: ${message}`);
+        } catch {
+          // non-blocking
+        }
         return;
       }
 
       if (!reportUrl) {
-        toast.error('שמירת PDF נכשלה: לא התקבל קישור קובץ');
+        try {
+          toast.error('שמירת PDF נכשלה: לא התקבל קישור קובץ');
+        } catch {
+          // non-blocking
+        }
         return;
       }
 
-      toast.success(assignmentMode === 'replacement' ? 'מסירת רכב חליפי נרשמה בהצלחה' : 'מסירת רכב נרשמה בהצלחה');
+      try {
+        toast.success(assignmentMode === 'replacement' ? 'מסירת רכב חליפי נרשמה בהצלחה' : 'מסירת רכב נרשמה בהצלחה');
+      } catch {
+        // non-blocking
+      }
 
       // Always continue to the wizard. Final email/send is executed only at
       // the wizard completion step ("סיים וחתום").
@@ -332,7 +406,11 @@ export default function VehicleDeliveryPage() {
       window.location.assign(wizardUrl);
     } catch (error) {
       console.error('Error creating handover:', error);
-      toast.error(`שגיאה ברישום מסירת הרכב: ${getErrorMessage(error)}`);
+      try {
+        toast.error(`שגיאה ברישום מסירת הרכב: ${getErrorMessage(error)}`);
+      } catch {
+        // non-blocking
+      }
     } finally {
       setIsSubmitting(false);
     }

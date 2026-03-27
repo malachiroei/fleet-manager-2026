@@ -1,9 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { getSupabaseAnonKey, getSupabasePublishableKey, getSupabaseUrl } from '@/integrations/supabase/publicEnv';
 import type { VehicleHandover } from '@/types/fleet';
 import { useAuth } from '@/hooks/useAuth';
+import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import hebrewFontUrl from '@/assets/fonts/NotoSansHebrew.ttf?url';
+import { fleetPublicStorageObjectUrl } from '@/lib/supabase/fleetPublicStorageUrl';
 import {
   DAMAGE_SIDES,
   DAMAGE_SIDE_LABELS,
@@ -92,7 +95,9 @@ function arrayBufferToBase64(buffer: ArrayBuffer) {
 
 let cachedHebrewFontBase64: string | null = null;
 let cachedPdfCarImage: { dataUrl: string; format: 'PNG' | 'JPEG' } | null = null;
-const FUTURISTIC_CAR_UI_PATH = '/car.png';
+function getFuturisticCarPublicUrl(): string {
+  return fleetPublicStorageObjectUrl('logos/car.jpg');
+}
 
 async function getPdfCarImage() {
   if (cachedPdfCarImage) {
@@ -100,7 +105,7 @@ async function getPdfCarImage() {
   }
 
   const candidates = [
-    FUTURISTIC_CAR_UI_PATH,
+    getFuturisticCarPublicUrl(),
     typeof window !== 'undefined' ? `${window.location.origin}/car.png` : null,
   ].filter(Boolean) as string[];
 
@@ -1364,13 +1369,18 @@ export async function archiveHandoverSubmission(input: ArchiveHandoverInput): Pr
       handoverId: input.handoverId,
       message: msg,
     });
-    // שיוך רכב לנהג לא התעדכן — מציגים שגיאה כדי שידעו להריץ migration או לבדוק מצב מסירה (קבוע מול חליפי)
-    toast.error('שיוך נהג–רכב לא עודכן', {
-      description:
-        msg +
-        ' — מסירה קבועה בלבד יוצרת שיוך פעיל. מסירה חליפית נרשמת בהיסטורי בלבד. אם חסרה פונקציה sync_assignment_from_handover — הרץ migration.',
-      duration: 14_000,
-    });
+    // Keep the flow resilient: UI toast must never crash archive/email flow.
+    try {
+      // שיוך רכב לנהג לא התעדכן — מציגים שגיאה כדי שידעו להריץ migration או לבדוק מצב מסירה (קבוע מול חליפי)
+      toast.error('שיוך נהג–רכב לא עודכן', {
+        description:
+          msg +
+          ' — מסירה קבועה בלבד יוצרת שיוך פעיל. מסירה חליפית נרשמת בהיסטורי בלבד. אם חסרה פונקציה sync_assignment_from_handover — הרץ migration.',
+        duration: 14_000,
+      });
+    } catch (toastErr) {
+      console.warn('[archiveHandoverSubmission] toast failed (non-blocking):', toastErr);
+    }
   }
   // רענון שיוכים — הקרואים אחרי archive (דפי מסירה/החזרה) צריכים לקרוא invalidateQueries ל-active-driver-vehicle-assignments
 
@@ -1566,11 +1576,29 @@ export async function sendHandoverNotificationEmail(input: SendHandoverEmailInpu
     return;
   }
 
+  // Log the most useful details we have before retrying/failing.
+  try {
+    console.error('[sendHandoverNotificationEmail] Edge function returned error', {
+      sdkError: error ? { name: error.name, message: error.message } : null,
+      data,
+      to: toEmail,
+      subject: body.subject,
+      attachments: (input.additionalAttachments ?? []).map((f) => f.filename),
+    });
+  } catch {
+    // non-blocking
+  }
+
   // Some SDK versions may surface generic non-2xx errors even when the function is reachable.
   // Retry once via direct HTTPS call to capture a concrete response and avoid false negatives.
   try {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-    const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+    const supabaseUrl = getSupabaseUrl();
+    const anonKey = getSupabaseAnonKey() || getSupabasePublishableKey();
+    if (!supabaseUrl || !anonKey) {
+      throw new Error(
+        `Missing Supabase URL/anon key for fallback call (url=${Boolean(supabaseUrl)}, anon/publishable=${Boolean(anonKey)}). Set VITE_* or NEXT_PUBLIC_* env on Vercel.`,
+      );
+    }
     const endpoint = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/send-handover-notification`;
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -1584,6 +1612,15 @@ export async function sendHandoverNotificationEmail(input: SendHandoverEmailInpu
 
     const text = await response.text();
     if (!response.ok) {
+      try {
+        console.error('[sendHandoverNotificationEmail] Edge function HTTP error', {
+          status: response.status,
+          statusText: response.statusText,
+          body: text,
+        });
+      } catch {
+        // non-blocking
+      }
       throw new Error(`HTTP ${response.status}: ${text || 'response body is empty'}`);
     }
 

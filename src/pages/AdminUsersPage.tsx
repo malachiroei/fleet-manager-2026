@@ -25,15 +25,13 @@ interface PendingUser {
 }
 
 export default function AdminUsersPage() {
-  const { profile, loading } = useAuth();
+  const { user, profile, loading } = useAuth();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
   const isMainAdmin =
-    profile?.email?.toLowerCase() === 'malachiroei@gmail.com' ||
-    localStorage.getItem('is_admin') === 'true';
-
-  console.log('Am I Admin?', isMainAdmin, 'Profile email:', profile?.email);
+    (profile?.email?.toLowerCase() === 'malachiroei@gmail.com') ||
+    (user?.email?.toLowerCase() === 'malachiroei@gmail.com');
 
   // Main admin only: fetch ALL non-active profiles. Do NOT filter by org_id.
   const pendingQuery = useQuery({
@@ -68,7 +66,7 @@ export default function AdminUsersPage() {
 
       const { error } = await supabase
         .from('profiles')
-        .update({ status: 'active', permissions: nextPerms })
+        .update({ status: 'active', permissions: nextPerms, updated_at: new Date().toISOString() })
         .eq('id', profileId);
       if (error) throw error;
     },
@@ -201,9 +199,6 @@ export default function AdminUsersPage() {
       </div>
     );
   }
-
-  // Quick override: if logged in as main admin email, always render admin content.
-  if (profile?.email === 'malachiroei@gmail.com') return renderAdminContent();
 
   if (!isMainAdmin) {
     // toast + redirect happens in useEffect above

@@ -37,8 +37,13 @@ export function MobileNav() {
         className="flex w-72 flex-col border-white/10 bg-[#020617] p-4 text-white sm:w-80"
       >
         <SheetHeader>
-          <SheetTitle className={cn('flex items-center gap-3', isRtl ? 'text-right' : 'text-left')}>
-            <BrandLogo size="sidebar" className="drop-shadow-[0_0_12px_rgba(255,255,255,0.2)]" />
+          <SheetTitle
+            className={cn(
+              'flex items-center gap-3',
+              isRtl ? 'flex-row-reverse justify-end text-right' : 'justify-start text-left',
+            )}
+          >
+            <BrandLogo size="sidebar" className="mx-2 drop-shadow-[0_0_12px_rgba(255,255,255,0.2)]" />
             <div>
               <h1 className="font-bold text-base leading-tight text-white">{orgName || t('navigation.fleetManager')}</h1>
               <p className="text-xs text-cyan-400/60 truncate" title={email}>{email || t('navigation.proDashboard')}</p>
@@ -78,22 +83,22 @@ export function MobileNav() {
             {isAdmin && (profile?.email ?? '').toLowerCase() === 'malachiroei@gmail.com' && (
               <nav className="px-1">
                 <Link
-                  to="/admin/users"
+                  to="/team"
                   onClick={() => setOpen(false)}
                   className="block"
                 >
                   <Button
-                    variant={location.pathname === '/admin/users' ? 'default' : 'ghost'}
+                    variant={location.pathname === '/team' ? 'default' : 'ghost'}
                     className={cn(
                       'w-full gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                       isRtl ? 'flex-row-reverse justify-end text-right' : 'justify-start text-left',
-                      location.pathname === '/admin/users'
+                      location.pathname === '/team'
                         ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-400/40'
                         : 'text-white/70 hover:bg-cyan-500/10 hover:text-white'
                     )}
                   >
                     <User className="h-5 w-5" />
-                    ניהול משתמשים
+                    ניהול צוות
                   </Button>
                 </Link>
               </nav>

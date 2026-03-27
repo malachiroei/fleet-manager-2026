@@ -6,6 +6,7 @@ export const PERMISSION_KEYS = [
   'drivers',
   'handover',
   'vehicle_delivery',
+  'replacement_car',
   'procedure6_complaints',
   'mileage_update',
   'report_mileage',
@@ -26,6 +27,7 @@ export const PERMISSION_LABELS: Record<PermissionKey, string> = {
   drivers: 'נהגים',
   handover: 'מסירות / החזרות',
   vehicle_delivery: 'מסירת רכב',
+  replacement_car: 'רכב חליפי',
   procedure6_complaints: 'תלונות נוהל 6',
   mileage_update: 'עדכון קילומטראז',
   report_mileage: 'דיווח קילומטראז׳',
@@ -41,7 +43,7 @@ export const PERMISSION_LABELS: Record<PermissionKey, string> = {
 
 /**
  * Returns true if the profile has the given permission.
- * - Admins and fleet_managers (from user_roles) have all permissions.
+ * - Admins and fleet managers (from memberships.role) have all permissions.
  * - When profile.permissions is null or empty, treat as having all permissions so new users
  *   see the full dashboard and layout like existing users (no "empty" broken UI).
  */

@@ -178,10 +178,17 @@ export function useUploadPricingData() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (rows: Omit<PricingData, 'id' | 'created_at' | 'updated_at'>[]) => {
+    mutationFn: async ({
+      rows,
+      onProgress,
+    }: {
+      rows: Omit<PricingData, 'id' | 'created_at' | 'updated_at'>[];
+      onProgress?: (progress: { inserted: number; total: number; phase: 'deleting' | 'inserting' }) => void;
+    }) => {
       if (rows.length === 0) return { insertedCount: 0 };
 
       // Delete existing data first
+      onProgress?.({ inserted: 0, total: rows.length, phase: 'deleting' });
       const { error: deleteError } = await supabase
         .from('pricing_data')
         .delete()
@@ -200,12 +207,16 @@ export function useUploadPricingData() {
 
         if (error) throw error;
         insertedCount += chunk.length;
+        onProgress?.({ inserted: insertedCount, total: rows.length, phase: 'inserting' });
       }
 
       return { insertedCount };
     },
     onSuccess: (data) => {
+      // Refresh any cached pricing lookups/counts after upload.
       queryClient.invalidateQueries({ queryKey: ['pricing-data'] });
+      queryClient.invalidateQueries({ queryKey: ['pricing-row-count'] });
+      queryClient.invalidateQueries({ queryKey: ['pricing-lookup'] });
       toast({ title: `נטענו ${data?.insertedCount || 0} רשומות מחירון בהצלחה` });
     },
     onError: (error) => {
@@ -216,9 +227,15 @@ export function useUploadPricingData() {
 
 export function useSyncVehiclesFromPricing() {
   const queryClient = useQueryClient();
+  const { activeOrgId } = useAuth();
 
   return useMutation({
     mutationFn: async () => {
+      // Resolve inside mutation to avoid stale/undefined references at runtime.
+      const orgId = activeOrgId ?? null;
+      if (!orgId) {
+        throw new Error('orgId חסר — ודא שהמשתמש משויך לארגון (activeOrgId)');
+      }
       // Guard: make sure pricing_data table actually has rows
       const { count: pricingCount, error: countError } = await supabase
         .from('pricing_data')
@@ -236,6 +253,7 @@ export function useSyncVehiclesFromPricing() {
       const { data: vehiclesData, error: vehiclesError } = await supabase
         .from('vehicles')
         .select('*')
+        .eq('org_id', orgId)
         .eq('is_active', true);
 
       if (vehiclesError) throw vehiclesError;

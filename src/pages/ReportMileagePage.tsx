@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-const STORAGE_BUCKET = 'mileage_photos';
+const STORAGE_BUCKET = 'mileage-reports';
 
 function sanitizeFileExt(name: string): string {
   const idx = name.lastIndexOf('.');
@@ -25,18 +25,31 @@ function sanitizeFileExt(name: string): string {
 
 export default function ReportMileagePage() {
   const navigate = useNavigate();
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, activeOrgId } = useAuth();
   const { data: vehicles = [] } = useVehicles();
   const queryClient = useQueryClient();
 
   useEffect(() => {
     if (loading) return;
-    const allowed = profile?.permissions?.report_mileage === true;
+    const email =
+      (profile?.email ?? user?.email ?? '').trim().toLowerCase();
+
+    // Master override for staging unblock.
+    const isMaster = email === 'malachiroei@gmail.com';
+
+    const allowed = isMaster || (
+      Array.isArray(profile?.permissions)
+        ? profile?.permissions
+            .map((p: any) => String(p).trim().toLowerCase())
+            .includes('report_mileage')
+        : profile?.permissions?.report_mileage === true
+    );
+
     if (!allowed) {
       toast({ title: 'אין לך הרשאה לדווח קילומטראז׳', variant: 'destructive' });
       navigate('/', { replace: true });
     }
-  }, [loading, navigate, profile?.permissions]);
+  }, [loading, navigate, profile?.permissions, profile?.email, user?.email]);
 
   const [vehicleSearch, setVehicleSearch] = useState('');
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
@@ -111,13 +124,36 @@ export default function ReportMileagePage() {
       const id = (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
       const path = `${selectedVehicle.id}/${id}.${ext}`;
 
+      console.log('Step 1: Uploading photo...', {
+        bucket: STORAGE_BUCKET,
+        objectPath: path,
+        fileName: photoFile.name,
+      });
+
       const { error: uploadError } = await supabase.storage
         .from(STORAGE_BUCKET)
         .upload(path, photoFile, { upsert: false, contentType: photoFile.type || undefined });
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error('[ReportMileagePage] storage upload failed', uploadError);
+        throw uploadError;
+      }
 
-      const { data: urlData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
-      const photoUrl = urlData.publicUrl;
+      const { data: urlData, error: urlError } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+      if (urlError) {
+        console.error('[ReportMileagePage] getPublicUrl failed', urlError);
+        throw urlError;
+      }
+      const photoUrl = urlData?.publicUrl;
+      if (!photoUrl) {
+        console.error('[ReportMileagePage] missing photoUrl from getPublicUrl', {
+          bucket: STORAGE_BUCKET,
+          objectPath: path,
+          urlData,
+        });
+        throw new Error('Missing photoUrl from getPublicUrl');
+      }
+
+      console.log('Step 2: Photo URL:', photoUrl);
 
       const payload: Record<string, unknown> = {
         vehicle_id: selectedVehicle.id,
@@ -126,38 +162,118 @@ export default function ReportMileagePage() {
         user_id: user.id,
       };
 
-      const { error: insertError } = await supabase.from('mileage_logs').insert(payload as any);
-      if (insertError) throw insertError;
+      console.log('Step 3: Inserting to mileage_logs...', payload);
 
-      // Best-effort schema cache/watch refresh (non-fatal if it fails)
+      const { error: insertError } = await supabase.from('mileage_logs').insert(payload as any);
+      if (insertError) {
+        console.error('[ReportMileagePage] mileage_logs insert failed', insertError);
+        console.error('[ReportMileagePage] mileage_logs insert payload', payload);
+        throw insertError;
+      }
+
+      // Create a "Documents" history record (matches the Vehicle Detail "מסמכים" tab).
+      // Note: vehicle_documents is used by VehicleDetailPage to render doc.title + doc.created_at.
       try {
-        await supabase.rpc('pgrst_watch');
-      } catch {
-        // ignore
+        const title = `עדכון ק"מ - ${odometerValue.toLocaleString('he-IL')} ק"מ`;
+
+        const { error: vehicleDocError } = await supabase.from('vehicle_documents').insert({
+          vehicle_id: selectedVehicle.id,
+          title,
+          file_url: photoUrl,
+          document_type: 'mileage_update',
+          metadata: {
+            odometer_value: odometerValue,
+            photo_url: photoUrl,
+            user_id: user.id,
+          },
+        } as any);
+
+        if (vehicleDocError) {
+          console.error('[ReportMileagePage] vehicle_documents insert failed', vehicleDocError);
+        }
+      } catch (vehicleDocErr) {
+        // Non-fatal: mileage is already saved; we don't want to block the user flow.
+        console.error('[ReportMileagePage] vehicle_documents insert threw', vehicleDocErr);
+      }
+
+      // Keep UI in sync: update the vehicle odometer immediately.
+      // NOTE: Multi-tenancy: we include `org_id` in the where-clause.
+      const orgId = selectedVehicle.org_id ?? profile?.org_id ?? activeOrgId ?? null;
+      if (!orgId) {
+        console.error('[ReportMileagePage] missing orgId for vehicles odometer update', {
+          vehicleId: selectedVehicle.id,
+          selectedVehicleOrgId: selectedVehicle.org_id,
+          profileOrgId: profile?.org_id,
+          activeOrgId,
+        });
+      }
+
+      const { error: updateError } = await supabase
+        .from('vehicles')
+        .update({ current_odometer: odometerValue })
+        .eq('id', selectedVehicle.id)
+        .eq('org_id', orgId as string);
+
+      if (updateError) {
+        console.error('Failed to update vehicle odometer:', updateError);
       }
 
       // Send notification email (direct invoke; DB trigger not required)
       try {
-        await supabase.functions.invoke('send-mileage-notification', {
-          body: {
-            to: 'malachiroei@gmail.com',
-            subject: `עדכון קילומטראז' - ${selectedVehicle.plate_number}`,
-            odometerReading: odometerValue,
-            reportUrl: photoUrl,
-          },
+        console.log('Step 4: Invoking Edge Function...');
+        const payload = {
+          to: 'malachiroei@gmail.com',
+          subject: `עדכון קילומטראז' - ${selectedVehicle.plate_number}`,
+          odometerReading: odometerValue,
+          reportUrl: photoUrl,
+        };
+
+        console.log('[send-mileage-notification] storage target', {
+          bucket: STORAGE_BUCKET,
+          objectPath: path,
+          photoUrl,
         });
+
+        console.log('[send-mileage-notification] invoking', {
+          function: 'send-mileage-notification',
+          payload,
+        });
+
+        const sessionRes = await supabase.auth.getSession();
+        const token = sessionRes?.data?.session?.access_token ?? null;
+
+        console.log('[send-mileage-notification] auth token present?', Boolean(token));
+
+        const invokeResult = await supabase.functions.invoke('send-mileage-notification', {
+          headers: {
+            Authorization: `Bearer ${token ?? ''}`,
+          },
+          body: payload,
+        });
+
+        // In Supabase JS, invoke often returns `{ data, error }` without throwing.
+        const maybeError = (invokeResult as any)?.error ?? null;
+        if (maybeError) {
+          console.error('[send-mileage-notification] invoke returned error', maybeError);
+          console.error('[send-mileage-notification] invokeResult raw', invokeResult);
+        } else {
+          console.log('[send-mileage-notification] invoke success', (invokeResult as any)?.data ?? invokeResult);
+        }
       } catch (notifyErr) {
         // Non-fatal: mileage is already saved
-        console.error('[send-mileage-notification] failed:', notifyErr);
+        console.error('[send-mileage-notification] threw:', notifyErr);
       }
 
-      // Invalidate vehicle queries so Vehicle Detail "מד אוץ" card refreshes
-      queryClient.invalidateQueries({ queryKey: ['vehicle', selectedVehicle.id] });
-      queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+      // Invalidate vehicle queries so Vehicle Detail "מד אוץ" card refreshes.
+      // useVehicle/useVehicles query keys include `orgId`, so invalidate with the exact prefix.
+      queryClient.invalidateQueries({ queryKey: ['vehicle', selectedVehicle.id, orgId] });
+      queryClient.invalidateQueries({ queryKey: ['vehicles', orgId] });
+      queryClient.invalidateQueries({ queryKey: ['vehicle-documents', selectedVehicle.id] });
 
       toast({ title: 'דיווח קילומטראז׳ נשלח בהצלחה' });
       navigate('/');
     } catch (err: any) {
+      console.error('[ReportMileagePage] submit failed', err);
       toast({
         title: 'שגיאה בשליחת הדיווח',
         description: err?.message ?? 'נסו שוב',

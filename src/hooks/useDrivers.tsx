@@ -4,28 +4,60 @@ import type { Driver, DriverSummary } from '@/types/fleet';
 import { toast } from '@/hooks/use-toast';
 import { formatSupabaseError } from '@/lib/supabaseError';
 import { useAuth } from '@/hooks/useAuth';
+import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
 
 export function useDrivers() {
-  const { activeOrgId } = useAuth();
-  const orgId = activeOrgId ?? null;
+  const {
+    effectiveOrgId,
+    isImpersonating,
+    isDriverContextOnly,
+    impersonatedUserId,
+    fleetListReady,
+    applyFleetManagerSlice,
+    fleetManagerListUserId,
+  } = useImpersonationFleetScope();
+
+  const orgId = effectiveOrgId;
 
   return useQuery({
-    queryKey: ['drivers', orgId],
-    enabled: orgId != null,
+    queryKey: [
+      'drivers',
+      orgId,
+      isImpersonating,
+      isDriverContextOnly,
+      impersonatedUserId,
+      applyFleetManagerSlice,
+      fleetManagerListUserId,
+    ],
+    enabled: fleetListReady && orgId != null,
     queryFn: async () => {
       if (orgId == null) return [] as DriverSummary[];
-      const { data, error } = await supabase
-        .from('drivers')
-        .select('*')
-        .eq('org_id', orgId)
-        .order('full_name');
+      console.log(
+        '[Debug Scope] applyFleetManagerSlice:',
+        applyFleetManagerSlice,
+        'Target ID:',
+        fleetManagerListUserId
+      );
+
+      let base = supabase.from('drivers').select('*').eq('org_id', orgId);
+      if (isDriverContextOnly && impersonatedUserId) {
+        base = base.eq('user_id', impersonatedUserId);
+      } else if (applyFleetManagerSlice && fleetManagerListUserId) {
+        base = base.eq('managed_by_user_id', fleetManagerListUserId);
+      }
+      const { data, error } = await base.order('full_name');
 
       if (error) {
-        const fallback = await supabase
+        let fallbackQ = supabase
           .from('drivers')
           .select('id, full_name, id_number, license_expiry, phone, email, address, job_title, department, license_number, health_declaration_date, safety_training_date, regulation_585b_date, license_front_url, license_back_url, health_declaration_url, status')
-          .eq('org_id', orgId)
-          .order('full_name');
+          .eq('org_id', orgId);
+        if (isDriverContextOnly && impersonatedUserId) {
+          fallbackQ = fallbackQ.eq('user_id', impersonatedUserId);
+        } else if (applyFleetManagerSlice && fleetManagerListUserId) {
+          fallbackQ = fallbackQ.eq('managed_by_user_id', fleetManagerListUserId);
+        }
+        const fallback = await fallbackQ.order('full_name');
         if (fallback.error) {
           throw new Error(
             [fallback.error.message, fallback.error.code ? `code=${fallback.error.code}` : null, fallback.error.details ? `details=${fallback.error.details}` : null, fallback.error.hint ? `hint=${fallback.error.hint}` : null]
@@ -64,20 +96,24 @@ function mapRowToDriverSummary(row: Record<string, unknown>): DriverSummary {
 }
 
 export function useDriver(id: string) {
-  const { activeOrgId } = useAuth();
-  const orgId = activeOrgId ?? null;
+  const {
+    effectiveOrgId,
+    fleetListReady,
+    applyFleetManagerSlice,
+    fleetManagerListUserId,
+  } = useImpersonationFleetScope();
+  const orgId = effectiveOrgId;
 
   return useQuery({
-    queryKey: ['driver', id, orgId],
-    enabled: !!id && orgId != null,
+    queryKey: ['driver', id, orgId, applyFleetManagerSlice, fleetManagerListUserId],
+    enabled: !!id && orgId != null && fleetListReady,
     queryFn: async () => {
       if (orgId == null) return null;
-      const { data, error } = await supabase
-        .from('drivers')
-        .select('*')
-        .eq('id', id)
-        .eq('org_id', orgId)
-        .maybeSingle();
+      let q = supabase.from('drivers').select('*').eq('id', id).eq('org_id', orgId);
+      if (applyFleetManagerSlice && fleetManagerListUserId) {
+        q = q.eq('managed_by_user_id', fleetManagerListUserId);
+      }
+      const { data, error } = await q.maybeSingle();
       if (error) throw error;
       return data as Driver | null;
     },
@@ -86,7 +122,7 @@ export function useDriver(id: string) {
 
 export function useCreateDriver() {
   const queryClient = useQueryClient();
-  const { activeOrgId, profile } = useAuth();
+  const { activeOrgId, profile, user } = useAuth();
 
   return useMutation({
     mutationFn: async (driver: Partial<Omit<Driver, 'id' | 'created_at' | 'updated_at' | 'status'>> & {
@@ -98,6 +134,10 @@ export function useCreateDriver() {
       const effectiveOrgId = activeOrgId ?? profile?.org_id;
       if (effectiveOrgId != null && row.org_id == null) {
         row.org_id = effectiveOrgId;
+      }
+      const ownerId = profile?.id ?? user?.id;
+      if (ownerId != null && row.managed_by_user_id === undefined) {
+        row.managed_by_user_id = ownerId;
       }
       const { data, error } = await supabase
         .from('drivers')

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { fleetPublicStorageObjectUrl } from '@/lib/supabase/fleetPublicStorageUrl';
 import { cn } from '@/lib/utils';
 import {
   DAMAGE_SIDE_LABELS,
@@ -9,8 +10,6 @@ import {
   type VehicleDamageType,
 } from '@/lib/vehicleDamage';
 import { Sparkles, Target } from 'lucide-react';
-
-const realisticTopCar = '/car.png';
 
 interface VehicleDamage3DSelectorProps {
   value: VehicleDamageReport;
@@ -32,6 +31,7 @@ const SIDE_MARKER_ANCHOR: Record<VehicleDamageSide, { x: number; y: number }> = 
 };
 
 export default function VehicleDamage3DSelector({ value, onChange }: VehicleDamage3DSelectorProps) {
+  const realisticTopCar = useMemo(() => fleetPublicStorageObjectUrl('logos/car.jpg'), []);
   const [activeSide, setActiveSide] = useState<VehicleDamageSide>('front');
   const [pickerSide, setPickerSide] = useState<VehicleDamageSide | null>(null);
 
@@ -137,6 +137,7 @@ export default function VehicleDamage3DSelector({ value, onChange }: VehicleDama
               <img
                 src={realisticTopCar}
                 alt="הדמיית רכב"
+                // Rotate 90° so the car faces UP (per ops spec)
                 className="h-full w-full rotate-90 scale-[1.18] origin-center select-none object-contain object-center drop-shadow-[0_24px_45px_rgba(0,0,0,0.62)]"
                 draggable={false}
               />

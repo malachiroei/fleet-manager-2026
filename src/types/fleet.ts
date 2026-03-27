@@ -9,6 +9,8 @@ export interface Organization {
   email?: string | null;
   created_at?: string;
   updated_at?: string;
+  /** גרסת release_snapshot.json שסונכרנה לארגון (DB) */
+  release_snapshot_ack_version?: string | null;
 }
 
 /** Permission flags stored as JSON in profiles.permissions. Used to hide/show routes and actions. */
@@ -21,11 +23,31 @@ export interface Profile {
   email: string | null;
   phone: string | null;
   org_id: string | null;
+  /** Direct manager (profiles.id). Null = top level/unmanaged. */
+  managed_by_user_id?: string | null;
+  /** מנהל ישיר (profiles.id); null = רמת על — תואם עמודת parent_admin_id ב-DB */
+  parent_admin_id?: string | null;
   /** JSON object of permission keys to boolean. e.g. { "vehicles": true, "manage_team": true } */
   permissions: ProfilePermissions | null;
   status: string;
+  /** Server-side system admin flag (from DB). */
+  is_system_admin?: boolean | null;
   created_at: string;
   updated_at: string;
+  /** דו״ח heartbeat מהלקוח (גרסת בנדל) */
+  current_app_version?: string | null;
+  /** אופציונלי: מודאל עדכון משווה מול זה במקום מניפסט גלובלי */
+  target_version?: string | null;
+  /** טוקני UI_FEATURE_* נוספים למשתמש (מעבר למניפסט הגלובלי); JSONB מערך מחרוזות ב-Supabase. גם `!UI_FEATURE_*` לחסימה אישית */
+  allowed_features?: string[] | null;
+  /**
+   * אופציונלי: מערך טוקנים חסומים (חלופה/תוספת ל־`!` ב־allowed_features). דורש עמודה ב-DB — ראו docs.
+   */
+  denied_features?: string[] | null;
+  /**
+   * גרסת מניפסט גלובלי (נורמלית) בשעת שמירת הרשאות UI — חסימות אישיות חלות רק אחרי ack ≥ ערך זה.
+   */
+  ui_denied_features_anchor_version?: string | null;
 }
 
 export interface UserRole {
@@ -58,6 +80,8 @@ export interface Vehicle {
   ignition_code: string | null;
   is_active: boolean;
   assigned_driver_id: string | null;
+  /** מנהל צי בלעדי; null = משותף לכל המנהלים בארגון */
+  managed_by_user_id?: string | null;
   pickup_date: string | null;
   road_ascent_year: number | null;
   road_ascent_month: number | null;
@@ -118,6 +142,8 @@ export interface Driver {
   id: string;
   org_id: string | null;
   user_id: string | null;
+  /** מנהל צי בלעדי; null = משותף לכל המנהלים בארגון */
+  managed_by_user_id?: string | null;
   full_name: string;
   id_number: string;
   phone: string | null;

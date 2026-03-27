@@ -27,6 +27,7 @@
 
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { supabasePublicObjectUrl } from '../_shared/supabasePublicUrl.ts';
 
 // ── CORS ────────────────────────────────────────────────────────────────────
 const corsHeaders = {
@@ -157,7 +158,7 @@ serve(async (req) => {
     // ── Supabase admin client ────────────────────────────────────────────────
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    // ── 0. Resolve CC recipients from system_settings ────────────────────────
+    // ── 0. Resolve CC recipients from public.system_settings ─────────────────
     let ccEmails: string[] = [fallbackManagerEmail];
     try {
       const { data: settingsRow } = await supabase
@@ -249,12 +250,16 @@ serve(async (req) => {
       .join('');
 
     const sentAt = new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
+    const logoUrl = supabasePublicObjectUrl(supabaseUrl, 'logos/logo.jpg');
 
     const html = `
 <div dir="rtl" style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f8fafc;">
 
   <!-- Header -->
   <div style="background: linear-gradient(135deg, #0d1b2e 0%, #1e3a5f 100%); padding: 32px 28px; border-radius: 12px 12px 0 0;">
+    <div style="margin: 0 0 14px; text-align: right;">
+      <img src="${logoUrl}" alt="Fleet Manager Pro" style="height: 44px; width: auto; display: inline-block;" />
+    </div>
     <h1 style="color: #22d3ee; margin: 0 0 6px; font-size: 22px;">✅ אשף מסירת רכב — הושלם בהצלחה</h1>
     <p style="color: rgba(255,255,255,0.6); margin: 0; font-size: 14px;">מערכת ניהול ציי רכב — Fleet Manager 2026</p>
   </div>
@@ -286,7 +291,7 @@ serve(async (req) => {
     `.trim();
 
     // ── 5. Send via Resend ────────────────────────────────────────────────────
-    // Driver gets the email; all system_settings addresses are CC'd
+    // Driver gets the email; all system_settings.notification_emails addresses are CC'd
     const recipients = [driverEmail];
     for (const cc of ccEmails) {
       if (cc !== driverEmail && !recipients.includes(cc)) {

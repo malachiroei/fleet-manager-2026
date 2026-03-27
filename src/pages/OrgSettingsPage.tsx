@@ -10,8 +10,10 @@ import { Switch } from '@/components/ui/switch';
 import {
   ArrowRight, Building2, FileText, Heart, Loader2, Save,
   Upload, ExternalLink, Trash2, Plus, Pencil, FileCheck, Tag,
+  Download, RotateCcw, RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { getTestStaticManifestUrl, isFleetManagerProHostname } from '@/lib/versionManifest';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrganization, useUpdateOrganization } from '@/hooks/useOrganizations';
 import { useOrgSettings, useUpdateOrgSettings, uploadTemplatePdf } from '@/hooks/useOrgSettings';
@@ -176,7 +178,9 @@ const ORG_DETAILS_EDIT_CODE = '2101';
 
 // ─── Main Page ─────────────────────────────────────────────────────
 export default function OrgSettingsPage() {
-  const { activeOrgId, isAdmin, isManager, isDriver, hasPermission } = useAuth();
+  const { activeOrgId, isAdmin, isManager, isDriver, hasPermission, user, profile } = useAuth();
+  const isRoeyMainAdmin =
+    (profile?.email ?? user?.email ?? '').trim().toLowerCase() === 'malachiroei@gmail.com';
   const isDriverOnly = Boolean(isDriver && !isManager && !isAdmin);
   const readOnly = isDriverOnly || !hasPermission('admin_access');
 
@@ -185,6 +189,10 @@ export default function OrgSettingsPage() {
   const updateOrganization = useUpdateOrganization();
   const { data: settings, isLoading: settingsLoading } = useOrgSettings(orgId);
   const updateSettings = useUpdateOrgSettings();
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
+  const restoreInputRef = useRef<HTMLInputElement>(null);
 
   // Tab 1 state — name & email from organizations; rest from organization_settings
   const [orgName, setOrgName] = useState('');
@@ -234,7 +242,7 @@ export default function OrgSettingsPage() {
         });
       }
       await updateSettings.mutateAsync({
-        organization_id: orgId ?? undefined,
+        org_id: orgId ?? undefined,
         org_id_number: orgIdNumber.trim(),
         health_statement_text: healthText,
         vehicle_policy_text: policyText,
@@ -249,7 +257,7 @@ export default function OrgSettingsPage() {
   };
 
   // Tab 3 — UI Labels
-  const { data: labels, isLoading: labelsLoading } = useUiLabels();
+  const { data: labels, isLoading: labelsLoading } = useUiLabels(orgId);
   const updateLabels = useUpdateUiLabels();
   const [labelEdits, setLabelEdits] = useState<Record<string, { custom_label: string; is_visible: boolean }>>({});
   const [savingLabels, setSavingLabels] = useState(false);
@@ -277,6 +285,117 @@ export default function OrgSettingsPage() {
       toast.error('שמירה נכשלה');
     }
     finally { setSavingLabels(false); }
+  };
+
+  const downloadJsonFile = (filename: string, obj: unknown) => {
+    const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const backupSystemTools = async () => {
+    setIsBackingUp(true);
+    try {
+      const d = new Date();
+      const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const yyyy = d.getFullYear();
+      const dateStr = `${dd}-${mm}-${yyyy}`;
+
+      const payload = {
+        metadata: {
+          appIdentifier: 'fleet-manager-pro',
+          createdAt: d.toISOString(),
+          scope: 'org-settings',
+        },
+        organization: organization ?? null,
+        organization_settings: settings ?? null,
+        ui_labels: labels ?? [],
+      };
+
+      downloadJsonFile(`fleet_manager_backup_${dateStr}.json`, payload);
+      toast.success('הגיבוי הורד בהצלחה');
+    } catch (e) {
+      console.error(e);
+      toast.error('גיבוי נכשל');
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
+  const handleRestorePicked = async (file: File) => {
+    setIsRestoring(true);
+    try {
+      const raw = await file.text();
+      const parsed = JSON.parse(raw) as any;
+      if (parsed?.metadata?.appIdentifier !== 'fleet-manager-pro') {
+        toast.error('קובץ הגיבוי אינו תקין');
+        return;
+      }
+
+      if (parsed?.organization && orgId) {
+        const name = String(parsed.organization?.name ?? '').trim();
+        const email = parsed.organization?.email ?? null;
+        if (name) {
+          await updateOrganization.mutateAsync({ id: orgId, name, email });
+        }
+      }
+
+      if (parsed?.organization_settings && orgId) {
+        await updateSettings.mutateAsync({ ...(parsed.organization_settings ?? {}), org_id: orgId });
+      }
+
+      if (Array.isArray(parsed?.ui_labels) && orgId) {
+        await updateLabels.mutateAsync(
+          (parsed.ui_labels as any[]).map((l) => ({
+            key: String(l?.key ?? ''),
+            custom_label: String(l?.custom_label ?? ''),
+            is_visible: l?.is_visible !== false,
+          }))
+        );
+      }
+
+      toast.success('השחזור הושלם בהצלחה');
+      window.location.reload();
+    } catch (e) {
+      console.error(e);
+      toast.error('שחזור נכשל');
+    } finally {
+      setIsRestoring(false);
+      if (restoreInputRef.current) restoreInputRef.current.value = '';
+    }
+  };
+
+  const restoreSystemTools = () => restoreInputRef.current?.click();
+
+  const checkForUpdates = async () => {
+    if (typeof window !== 'undefined' && isFleetManagerProHostname()) {
+      toast.error('בדיקת מניפסט סטטי חסומה בייצור — השתמשו במודאל העדכון / Supabase.');
+      return;
+    }
+    setIsCheckingUpdates(true);
+    try {
+      const manifestUrl = getTestStaticManifestUrl().trim();
+      if (!manifestUrl) {
+        toast.error('אין מניפסט סטטי זמין בדומיין זה.');
+        return;
+      }
+      const res = await fetch(`${manifestUrl}?t=${Date.now()}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = (await res.json()) as { version?: unknown };
+      const latest = typeof json.version === 'string' ? json.version : '';
+      if (!latest) throw new Error('manifest missing version');
+      toast.success(`נבדק בהצלחה. גרסה זמינה: ${latest}`);
+    } catch (e) {
+      console.error(e);
+      toast.error('בדיקת עדכונים נכשלה');
+    } finally {
+      setIsCheckingUpdates(false);
+    }
   };
 
   // Tab 4 — Dynamic Documents
@@ -316,13 +435,41 @@ export default function OrgSettingsPage() {
     <div className="min-h-screen bg-background">
       <div className="max-w-4xl mx-auto p-6 space-y-6" dir="rtl">
 
-        <div className="flex items-center gap-4">
-          <Link to="/admin/settings">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-4">
+          <Link to={isRoeyMainAdmin ? '/admin/settings' : '/'}>
             <Button variant="ghost" size="icon" className="rounded-full"><ArrowRight className="h-5 w-5" /></Button>
           </Link>
           <div>
             <h1 className="text-2xl font-bold text-foreground">הגדרות ארגון</h1>
             <p className="text-muted-foreground text-sm">ניהול פרטי חברה, תבניות PDF, שמות מותאמים ומסמכים נוספים</p>
+          </div>
+          </div>
+
+          {/* Always visible in Production: Backup / Restore / Check updates */}
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={backupSystemTools} disabled={isBackingUp || isRestoring}>
+              {isBackingUp ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : <Download className="h-4 w-4 ml-2" />}
+              גיבוי
+            </Button>
+            <Button variant="outline" size="sm" onClick={restoreSystemTools} disabled={isRestoring || isBackingUp}>
+              {isRestoring ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : <RotateCcw className="h-4 w-4 ml-2" />}
+              שחזור
+            </Button>
+            <Button variant="outline" size="sm" onClick={checkForUpdates} disabled={isCheckingUpdates}>
+              {isCheckingUpdates ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : <RefreshCw className="h-4 w-4 ml-2" />}
+              בדוק עדכונים
+            </Button>
+            <input
+              ref={restoreInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void handleRestorePicked(f);
+              }}
+            />
           </div>
         </div>
 

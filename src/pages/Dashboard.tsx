@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useDashboardStats, useComplianceAlerts } from '@/hooks/useDashboard';
+import { isFeatureEnabled, useFeatureFlags } from '@/hooks/useFeatureFlags';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useAuth } from '@/hooks/useAuth';
 import { useViewAs } from '@/contexts/ViewAsContext';
@@ -11,9 +13,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import QuickOdometerDialog from '@/components/QuickOdometerDialog';
-import { 
-  Car, 
-  Users, 
+import {
+  Car,
+  Users,
   AlertTriangle,
   BarChart3,
   FileText,
@@ -23,11 +25,13 @@ import {
   Repeat,
   Gauge,
   Settings,
-  Calculator,
-  Droplet,
-  UserCog
+  UserCog,
+  Wrench,
+  FlaskConical,
+  ClipboardList,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 const statusCardConfig: Array<{
   titleKey: 'navigation.fleetManagement' | 'navigation.drivers' | 'navigation.exceptionAlerts' | 'dashboard.replacementVehicle';
@@ -36,6 +40,7 @@ const statusCardConfig: Array<{
   color: string;
   link: string;
   permission?: PermissionKey;
+  featureFlagKey: string;
   getValue: (stats: { totalVehicles?: number; totalDrivers?: number } | null, alertCount?: number) => string | number;
   alertKey?: 'alert';
 }> = [
@@ -46,6 +51,7 @@ const statusCardConfig: Array<{
     color: 'from-blue-500 to-cyan-400',
     link: '/vehicles',
     permission: 'vehicles',
+    featureFlagKey: 'dashboard_vehicles',
     getValue: (stats) => stats?.totalVehicles ?? 0,
   },
   {
@@ -55,6 +61,7 @@ const statusCardConfig: Array<{
     color: 'from-purple-500 to-indigo-600',
     link: '/drivers',
     permission: 'drivers',
+    featureFlagKey: 'dashboard_drivers',
     getValue: (stats) => stats?.totalDrivers ?? 0,
   },
   {
@@ -64,6 +71,7 @@ const statusCardConfig: Array<{
     color: 'from-orange-500 to-yellow-400',
     link: '/compliance',
     permission: 'compliance',
+    featureFlagKey: 'dashboard_exception_alerts',
     getValue: (_, alertCount) => alertCount ?? 0,
     alertKey: 'alert',
   },
@@ -74,6 +82,7 @@ const statusCardConfig: Array<{
     color: 'from-teal-400 to-emerald-500',
     link: '/handover/replacement',
     permission: 'handover',
+    featureFlagKey: 'dashboard_replacement_car',
     getValue: () => '',
   },
 ];
@@ -150,35 +159,39 @@ function StatusCard({
 }
 
 export default function Dashboard() {
+  const queryClient = useQueryClient();
   const { data: stats, isLoading } = useDashboardStats();
   const { data: alerts } = useComplianceAlerts();
   const [showOdometerDialog, setShowOdometerDialog] = useState(false);
   const { t } = useTranslation();
   const isMobile = useIsMobile();
-  const { user, profile, hasPermission, isAdmin, isManager, isDriver, roles: userRoles, loading } = useAuth();
+  const { user, profile, hasPermission, isAdmin, isManager, isDriver, roles: userRoles, loading, activeOrgId } = useAuth();
   const { viewAsEmail } = useViewAs();
+  const { data: featureFlags, isPending: featureFlagsPending, isError: featureFlagsError } = useFeatureFlags();
+  /** Feature flags are source-of-truth for dashboard card visibility. */
+  const canEvaluateFeatureFlags = !featureFlagsPending && !featureFlagsError && featureFlags !== undefined;
+  const showDashboardTreatmentCard = false;
+  const showDashboardTestCard = false;
+  const showMaintenanceFormCard = false;
   const totalAlerts = (alerts?.filter(a => a.status === 'expired' || a.status === 'warning').length) ?? 0;
   const isStatsLoading = isLoading || !stats;
+
+  console.log('Current Active Org ID:', activeOrgId);
+
+  useEffect(() => {
+    if (!activeOrgId && !viewAsEmail) return;
+    queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+    queryClient.invalidateQueries({ queryKey: ['compliance-alerts'] });
+    queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+    queryClient.invalidateQueries({ queryKey: ['drivers'] });
+    queryClient.invalidateQueries({ queryKey: ['feature-flags'] });
+  }, [activeOrgId, viewAsEmail, queryClient]);
 
   const email = user?.email || '';
   const isMainAdmin = email.toLowerCase() === 'malachiroei@gmail.com';
   const isSystemAdmin = ['malachiroei@gmail.com', 'ravidmalachi@gmail.com'].includes(email);
   const isOwner = isMainAdmin;
   const effectiveIsAdmin = isOwner || isAdmin;
-  // Treat this email as main admin regardless of role flags.
-  // Driver-only:
-  // - כשמתחברים כנהג / Viewer ללא הרשאות אדמין/מנהל.
-  // - כשרביד (sub-admin) נמצא בתצוגה כ-ROEI (viewAsEmail פעיל, אבל לא isMainAdmin).
-  // - כשמנהל ראשי בתצוגה כ-Ravid -> עדיין רואים דשבורד מלא (לא driver-only).
-  const isDriverOnly = viewAsEmail
-    ? !isMainAdmin // main admin in view-as mode ≠ driver-only; others (כמו רביד) בתצוגה כנהג כן.
-    : Boolean(
-        (isDriver || userRoles?.includes('viewer')) &&
-          !effectiveIsAdmin &&
-          !isManager &&
-          !isSystemAdmin
-      );
-
   const { data: pendingUsersCount = 0 } = useQuery({
     queryKey: ['pending-users-count'],
     enabled: isMainAdmin,
@@ -211,12 +224,7 @@ export default function Dashboard() {
     isManager,
     isDriver,
     loadingAuth: loading,
-    isDriverOnly,
   });
-
-  const visibleStatusCards = (!loading && isDriverOnly)
-    ? statusCardConfig.filter((card) => card.link === '/handover/replacement')
-    : statusCardConfig;
 
   // Base quick actions; filtering happens afterwards
   const baseQuickLinks: {
@@ -227,77 +235,111 @@ export default function Dashboard() {
     permission?: PermissionKey;
     adminOnly?: boolean;
     showPendingBadge?: boolean;
+    featureFlagKey?: string;
   }[] = [
     {
-      title: 'דווח קילומטראז׳',
+      title: 'דיווח קילומטראז׳',
       href: '/report-mileage',
       icon: Gauge,
       permission: 'report_mileage',
+      featureFlagKey: 'qa_report_mileage',
     },
     {
       title: t('navigation.procedure6Complaints'),
       href: '/procedure6-complaints',
       icon: AlertTriangle,
       permission: 'procedure6_complaints',
+      featureFlagKey: 'qa_procedure6_complaints',
     },
     {
       title: 'טפסים',
       href: '/forms',
       icon: FileText,
       permission: 'forms',
+      featureFlagKey: 'qa_forms',
     },
     {
       title: 'הגדרות מערכת',
       href: '/admin/settings',
       icon: Settings,
       adminOnly: true,
+      featureFlagKey: 'qa_admin_settings',
     },
     {
       title: t('navigation.reportGeneration', { defaultValue: 'הפקת דוחות' }),
       href: '/reports',
       icon: BarChart3,
       permission: 'reports',
+      featureFlagKey: 'qa_reports',
     },
     {
       title: t('navigation.parkingReports'),
       href: '/reports/scan',
       icon: FileText,
       permission: 'reports',
+      featureFlagKey: 'qa_parking_reports',
     },
     {
       title: t('navigation.accidents'),
-      href: '/maintenance/add',
+      href: '/compliance',
       icon: Plus,
-      permission: 'maintenance',
+      permission: 'compliance',
+      featureFlagKey: 'qa_accidents',
     },
     {
       title: t('navigation.vehicleDelivery'),
       href: '/handover/delivery',
       icon: Truck,
       permission: 'vehicle_delivery',
+      featureFlagKey: 'qa_vehicle_delivery',
     },
     {
       title: 'ניהול צוות',
       href: '/team',
       icon: UserCog,
       permission: 'manage_team',
-    },
-    {
-      title: 'ניהול משתמשים',
-      href: '/admin/users',
-      icon: Users,
-      adminOnly: true,
+      featureFlagKey: 'qa_team',
       showPendingBadge: true,
     },
   ];
 
-  // Emergency: always use all quick actions, especially for main admin.
-  // But keep "Report Mileage" strictly behind its permission flag.
-  const canReportMileage = profile?.permissions?.report_mileage === true;
-  const quickLinks = baseQuickLinks.filter((a) => {
+  // Keep "Mileage Report" behind permission, but add a forced override to unblock staging:
+  // - If `profile.email` is exactly malachiroei@gmail.com, always show it (independent of permissions).
+  // - Permissions may be stored as an array or an object map.
+  const forceMileageForMalachiroei =
+    (profile?.email ?? user?.email ?? '').trim().toLowerCase() === 'malachiroei@gmail.com';
+
+  const canReportMileageFromPermissions = Array.isArray(profile?.permissions)
+    ? profile.permissions
+        .map((p) => String(p).trim().toLowerCase())
+        .includes('report_mileage')
+    : profile?.permissions?.report_mileage === true;
+
+  const canReportMileage = forceMileageForMalachiroei || canReportMileageFromPermissions;
+
+  const visibleStatusCards = useMemo(() => {
+    if (!canEvaluateFeatureFlags) return statusCardConfig;
+    return statusCardConfig.filter((card) => isFeatureEnabled(featureFlags, card.featureFlagKey));
+  }, [canEvaluateFeatureFlags, featureFlags]);
+
+  const visibleQuickLinksByFlags = useMemo(() => {
+    if (!canEvaluateFeatureFlags) return baseQuickLinks;
+    return baseQuickLinks.filter((a) => {
+      if (!a.featureFlagKey) return true;
+      return isFeatureEnabled(featureFlags, a.featureFlagKey);
+    });
+  }, [canEvaluateFeatureFlags, featureFlags, baseQuickLinks]);
+
+  const quickLinks = visibleQuickLinksByFlags.filter((a) => {
     if (a.href === '/report-mileage') return canReportMileage;
+    if (a.adminOnly && !isMainAdmin) return false;
     return true;
   });
+
+
+  const devFeatureToast = () => {
+    toast.info('פונקציה זו בפיתוח');
+  };
 
   return (
     <div className="container py-6 md:py-8 pb-32 sm:pb-8 space-y-6 md:space-y-8 relative z-[1]">
@@ -310,7 +352,7 @@ export default function Dashboard() {
         </p>
       </div>
 
-      {!isDriverOnly && !isStatsLoading && stats && stats.totalVehicles === 0 && stats.totalDrivers === 0 && (
+      {!isStatsLoading && stats && stats.totalVehicles === 0 && stats.totalDrivers === 0 && (
         <Card className="border-dashed border-2 border-primary/30 bg-primary/5">
           <CardContent className="p-6 md:p-8 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-right">
             <div className="flex-1 space-y-1">
@@ -380,6 +422,78 @@ export default function Dashboard() {
           <section className="space-y-3 pb-4">
             <h2 className="text-base font-semibold text-foreground">{t('dashboard.quickActions')}</h2>
             <div className="grid grid-cols-1 gap-3">
+              {showDashboardTreatmentCard ? (
+                <Card
+                  role="button"
+                  tabIndex={0}
+                  className="h-full min-h-[48px] cursor-pointer touch-manipulation border-primary/35 bg-primary/[0.07] shadow-sm transition-all duration-200 hover:shadow-md hover:border-primary/50"
+                  style={{ touchAction: 'manipulation' }}
+                  onClick={() => devFeatureToast()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      devFeatureToast();
+                    }
+                  }}
+                >
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/20 text-primary">
+                      <Wrench className="h-4.5 w-4.5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-foreground truncate">עדכן טיפול</p>
+                      <span className="text-[11px] text-muted-foreground">בקרוב</span>
+                    </div>
+                    <ChevronLeft className="h-4 w-4 text-muted-foreground shrink-0" />
+                  </CardContent>
+                </Card>
+              ) : null}
+              {showDashboardTestCard ? (
+                <Card
+                  role="button"
+                  tabIndex={0}
+                  className="h-full min-h-[48px] cursor-pointer touch-manipulation border-primary/35 bg-primary/[0.07] shadow-sm transition-all duration-200 hover:shadow-md hover:border-primary/50"
+                  style={{ touchAction: 'manipulation' }}
+                  onClick={() => devFeatureToast()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      devFeatureToast();
+                    }
+                  }}
+                >
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/20 text-primary">
+                      <FlaskConical className="h-4.5 w-4.5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-foreground truncate">כפתור בדיקה</p>
+                      <span className="text-[11px] text-muted-foreground">בקרוב</span>
+                    </div>
+                    <ChevronLeft className="h-4 w-4 text-muted-foreground shrink-0" />
+                  </CardContent>
+                </Card>
+              ) : null}
+              {showMaintenanceFormCard ? (
+                <Link
+                  to="/maintenance/add"
+                  className="block touch-manipulation cursor-pointer"
+                  style={{ touchAction: 'manipulation' }}
+                >
+                  <Card className="h-full min-h-[48px] transition-all duration-200 hover:shadow-md border-primary/35 bg-primary/[0.07] shadow-sm hover:border-primary/50">
+                    <CardContent className="p-4 flex items-center gap-3">
+                      <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/20 text-primary">
+                        <ClipboardList className="h-4.5 w-4.5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-foreground truncate">עדכן טיפול</p>
+                        <span className="text-[11px] text-muted-foreground">טופס תחזוקה — הוספת רישום</span>
+                      </div>
+                      <ChevronLeft className="h-4 w-4 text-muted-foreground shrink-0" />
+                    </CardContent>
+                  </Card>
+                </Link>
+              ) : null}
               {quickLinks.map((action, idx) =>
                 action.disabled ? (
                   <Card key={`${action.title}-${idx}`} className="h-full cursor-not-allowed opacity-55 touch-manipulation min-h-[48px]">
@@ -443,6 +557,84 @@ export default function Dashboard() {
           <section className="space-y-3">
             <h2 className="text-lg font-semibold text-foreground">{t('dashboard.quickActions')}</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+              {showDashboardTreatmentCard ? (
+                <Card
+                  role="button"
+                  tabIndex={0}
+                  className="h-full min-h-[48px] cursor-pointer touch-manipulation border-primary/35 bg-primary/[0.07] shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-primary/50"
+                  style={{ touchAction: 'manipulation' }}
+                  onClick={() => devFeatureToast()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      devFeatureToast();
+                    }
+                  }}
+                >
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary/20 text-primary">
+                      <Wrench className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-foreground truncate">טיפול רכב</p>
+                      <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                        בקרוב
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : null}
+              {showDashboardTestCard ? (
+                <Card
+                  role="button"
+                  tabIndex={0}
+                  className="h-full min-h-[48px] cursor-pointer touch-manipulation border-primary/35 bg-primary/[0.07] shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-primary/50"
+                  style={{ touchAction: 'manipulation' }}
+                  onClick={() => devFeatureToast()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      devFeatureToast();
+                    }
+                  }}
+                >
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary/20 text-primary">
+                      <FlaskConical className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-foreground truncate">כפתור בדיקה</p>
+                      <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                        בקרוב
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : null}
+              {showMaintenanceFormCard ? (
+                <Link
+                  to="/maintenance/add"
+                  className="block touch-manipulation cursor-pointer"
+                  style={{ touchAction: 'manipulation' }}
+                >
+                  <Card className="h-full min-h-[48px] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md border-primary/35 bg-primary/[0.07] shadow-sm hover:border-primary/50">
+                    <CardContent className="p-4 flex items-center gap-3">
+                      <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary/20 text-primary">
+                        <ClipboardList className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-foreground truncate">עדכן טיפול</p>
+                        <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                          טופס תחזוקה — הוספת רישום
+                          <ChevronLeft className="h-3.5 w-3.5" />
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              ) : null}
               {quickLinks.map((action, idx) =>
                 action.disabled ? (
                   <Card key={`${action.title}-${idx}`} className="h-full cursor-not-allowed opacity-55 touch-manipulation">

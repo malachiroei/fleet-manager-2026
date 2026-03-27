@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
-import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { canAccessRouteWithAllowedFeatures } from '@/lib/allowedFeatures';
 import type { PermissionKey } from '@/lib/permissions';
 
 interface PermissionGuardProps {
@@ -9,22 +9,18 @@ interface PermissionGuardProps {
 }
 
 /**
- * Renders children if the current user can access the route.
- * Admins and fleet managers (from user_roles) always have access.
- * Users with an active org (activeOrgId or profile.org_id) are allowed during permissions refactor.
- * Other users need the specific permission in their profile.
+ * ברירת מחדל מחמירה: תוכן חסום אלא אם ב-profiles.allowed_features מופיעים המפתחות הנדרשים (JSONB).
+ * חריג: סופר־אדמין (malachiroei@gmail.com או VITE_FLEET_SUPER_ADMIN_USER_IDS) — תמיד מורשה.
+ * אין גישה → null.
  */
 export function PermissionGuard({ permission, children }: PermissionGuardProps) {
-  const { hasPermission, isAdmin, isManager, activeOrgId } = useAuth();
+  const { profile } = useAuth();
 
-  if (isAdmin || isManager) {
-    return <>{children}</>;
+  const allowed = canAccessRouteWithAllowedFeatures(profile, permission);
+
+  if (!allowed) {
+    return null;
   }
-  if (activeOrgId != null) {
-    return <>{children}</>;
-  }
-  if (!hasPermission(permission)) {
-    return <Navigate to="/" replace />;
-  }
+
   return <>{children}</>;
 }

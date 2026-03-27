@@ -53,14 +53,87 @@ function mergeWithDefaults(dbRows: UiLabel[]): UiLabel[] {
   });
 }
 
-export function useUiLabels() {
+function labelsFromOrgPayload(payload: unknown): UiLabel[] {
+  if (!payload) return [];
+  if (typeof payload !== 'object') return [];
+
+  // Support common shapes:
+  // 1) { [key]: { custom_label, is_visible } | string }
+  // 2) { labels: { [key]: ... } }
+  const obj = payload as Record<string, unknown>;
+  const labelsObj =
+    (obj['labels'] && typeof obj['labels'] === 'object' ? obj['labels'] : obj) as Record<string, unknown>;
+
+  const defMap = new Map(DEFAULT_UI_LABELS.map((d) => [d.key, d]));
+
+  const out: UiLabel[] = [];
+  for (const [key, raw] of Object.entries(labelsObj)) {
+    const def = defMap.get(key);
+    if (!def) continue;
+
+    let custom_label = '';
+    let is_visible = true;
+
+    if (typeof raw === 'string') {
+      custom_label = raw;
+    } else if (raw && typeof raw === 'object') {
+      const r = raw as Record<string, unknown>;
+      custom_label = String(r.custom_label ?? r.label ?? '');
+      if (typeof r.is_visible === 'boolean') is_visible = r.is_visible;
+      if (typeof r.visible === 'boolean') is_visible = r.visible;
+    }
+
+    out.push({
+      id: key,
+      key,
+      default_label: def.default_label,
+      custom_label,
+      is_visible,
+      group_name: def.group_name,
+      updated_at: '',
+    });
+  }
+  return out;
+}
+
+export function useUiLabels(organizationId?: string | null) {
   return useQuery<UiLabel[]>({
-    queryKey: QUERY_KEY,
+    queryKey: [...QUERY_KEY, organizationId ?? null],
     queryFn: async () => {
+      // Production stores custom labels in organization metadata.
+      // Best-effort: try `organizations.custom_labels` (or `settings.custom_labels`).
+      if (organizationId) {
+        try {
+          const { data: orgRow, error: orgErr } = await (supabase as any)
+            .from('organizations')
+            .select('custom_labels, settings')
+            .eq('id', organizationId)
+            .maybeSingle();
+
+          if (!orgErr && orgRow) {
+            const payload = (orgRow.custom_labels ?? orgRow.settings?.custom_labels ?? orgRow.settings) as unknown;
+            const parsed = labelsFromOrgPayload(payload);
+            if (parsed.length > 0) {
+              return mergeWithDefaults(parsed);
+            }
+          }
+        } catch (e) {
+          // If the columns don't exist in this environment (or RLS blocks access),
+          // fall back to ui_customization.
+          console.warn('[useUiLabels] org custom labels fetch failed, falling back', e);
+        }
+      }
+
       const { data, error } = await (supabase as any)
         .from('ui_customization')
         .select('*');
-      if (error) throw error;
+      if (error) {
+        // If RLS/permissions prevent reading customization rows (common during staging),
+        // still render the UI using hardcoded defaults instead of returning `undefined`
+        // (which would make the "custom labels" table appear empty).
+        console.error('[useUiLabels] ui_customization fetch failed:', error);
+        return mergeWithDefaults([] as UiLabel[]);
+      }
       return mergeWithDefaults((data ?? []) as UiLabel[]);
     },
     staleTime: 5 * 60 * 1000,

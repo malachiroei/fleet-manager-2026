@@ -2281,7 +2281,11 @@ export default function VehicleHandoverWizard() {
           : 'כל המסמכים נחתמו ונשלח מייל בהצלחה!',
       );
     } catch (emailErr) {
-      console.warn('[Wizard] Email failed:', emailErr);
+      const message = emailErr instanceof Error ? emailErr.message : String(emailErr);
+      console.error('[Wizard] Email failed:', message);
+      if (emailErr instanceof Error && emailErr.stack) {
+        console.error('[Wizard] Email stack:', emailErr.stack);
+      }
       toast.success('המסמכים נשמרו. שליחת המייל נכשלה.');
     }
 

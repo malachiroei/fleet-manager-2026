@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import type { Vehicle } from '@/types/fleet';
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
+import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
 
 export interface ActiveDriverVehicleAssignment {
   id: string;
@@ -32,28 +33,49 @@ export async function fetchActiveDriverAssignments(driverId: string, excludeVehi
 }
 
 export function useActiveDriverVehicleAssignments() {
-  const { activeOrgId } = useAuth();
-  const orgId = activeOrgId ?? null;
+  const {
+    effectiveOrgId,
+    isDriverContextOnly,
+    scopedDriverId,
+    fleetListReady,
+    applyFleetManagerSlice,
+    fleetManagerListUserId,
+  } = useImpersonationFleetScope();
 
   return useQuery({
-    queryKey: ['active-driver-vehicle-assignments', orgId],
-    enabled: orgId != null,
+    queryKey: [
+      'active-driver-vehicle-assignments',
+      effectiveOrgId,
+      isDriverContextOnly,
+      scopedDriverId,
+      applyFleetManagerSlice,
+      fleetManagerListUserId,
+    ],
+    enabled: fleetListReady && effectiveOrgId != null,
     queryFn: async () => {
+      const orgId = effectiveOrgId;
       if (orgId == null) return [] as ActiveDriverVehicleAssignment[];
-      const { data: vehicleIds, error: vehiclesError } = await supabase
-        .from('vehicles')
-        .select('id')
-        .eq('org_id', orgId);
+      let vehiclesQuery = supabase.from('vehicles').select('id').eq('org_id', orgId);
+      if (isDriverContextOnly && scopedDriverId) {
+        vehiclesQuery = vehiclesQuery.eq('assigned_driver_id', scopedDriverId);
+      } else if (applyFleetManagerSlice && fleetManagerListUserId) {
+        vehiclesQuery = vehiclesQuery.eq('managed_by_user_id', fleetManagerListUserId);
+      }
+      const { data: vehicleIds, error: vehiclesError } = await vehiclesQuery;
       if (vehiclesError) throw vehiclesError;
       const ids = (vehicleIds ?? []).map((r) => r.id);
       if (ids.length === 0) return [] as ActiveDriverVehicleAssignment[];
-      const { data, error } = await supabase
+      let assignQuery = supabase
         .from('driver_vehicle_assignments')
         .select('id, driver_id, vehicle_id, assigned_at, assigned_by, vehicle:vehicles(id, manufacturer, model, plate_number)')
         .is('unassigned_at', null)
         .not('driver_id', 'is', null)
         .in('vehicle_id', ids)
         .order('assigned_at', { ascending: false });
+      if (isDriverContextOnly && scopedDriverId) {
+        assignQuery = assignQuery.eq('driver_id', scopedDriverId);
+      }
+      const { data, error } = await assignQuery;
       if (error) throw error;
       return (data ?? []) as unknown as ActiveDriverVehicleAssignment[];
     },
@@ -61,19 +83,44 @@ export function useActiveDriverVehicleAssignments() {
 }
 
 export function useVehicles() {
-  const { activeOrgId } = useAuth();
-  const orgId = activeOrgId ?? null;
+  const {
+    effectiveOrgId,
+    fleetListReady,
+    isDriverContextOnly,
+    scopedDriverId,
+    applyFleetManagerSlice,
+    fleetManagerListUserId,
+  } = useImpersonationFleetScope();
 
   return useQuery({
-    queryKey: ['vehicles', orgId],
-    enabled: orgId != null,
+    queryKey: [
+      'vehicles',
+      effectiveOrgId,
+      isDriverContextOnly,
+      scopedDriverId,
+      applyFleetManagerSlice,
+      fleetManagerListUserId,
+    ],
+    enabled: fleetListReady && effectiveOrgId != null,
     queryFn: async () => {
-      if (orgId == null) return [] as Vehicle[];
-      const { data, error } = await supabase
+      if (effectiveOrgId == null) return [] as Vehicle[];
+      console.log(
+        '[Debug Scope] applyFleetManagerSlice:',
+        applyFleetManagerSlice,
+        'Target ID:',
+        fleetManagerListUserId
+      );
+      let q = supabase
         .from('vehicles')
         .select('*')
-        .eq('org_id', orgId)
+        .eq('org_id', effectiveOrgId)
         .order('plate_number');
+      if (isDriverContextOnly && scopedDriverId) {
+        q = q.eq('assigned_driver_id', scopedDriverId);
+      } else if (applyFleetManagerSlice && fleetManagerListUserId) {
+        q = q.eq('managed_by_user_id', fleetManagerListUserId);
+      }
+      const { data, error } = await q;
       if (error) throw error;
       return (data ?? []) as Vehicle[];
     },
@@ -81,18 +128,22 @@ export function useVehicles() {
 }
 
 export function useVehicle(id: string) {
-  const { activeOrgId } = useAuth();
-  const orgId = activeOrgId ?? undefined;
+  const {
+    effectiveOrgId,
+    applyFleetManagerSlice,
+    fleetManagerListUserId,
+  } = useImpersonationFleetScope();
+  const orgId = effectiveOrgId ?? undefined;
 
   return useQuery({
-    queryKey: ['vehicle', id, orgId],
+    queryKey: ['vehicle', id, orgId, applyFleetManagerSlice, fleetManagerListUserId],
     queryFn: async () => {
-      let query = supabase
-        .from('vehicles')
-        .select('*')
-        .eq('id', id);
+      let query = supabase.from('vehicles').select('*').eq('id', id);
       if (orgId != null) {
-        query = query.or(`org_id.eq.${orgId},org_id.is.null`);
+        query = query.eq('org_id', orgId);
+        if (applyFleetManagerSlice && fleetManagerListUserId) {
+          query = query.eq('managed_by_user_id', fleetManagerListUserId);
+        }
       }
       const { data, error } = await query.maybeSingle();
       if (error) throw error;
@@ -104,7 +155,7 @@ export function useVehicle(id: string) {
 
 export function useCreateVehicle() {
   const queryClient = useQueryClient();
-  const { activeOrgId, profile } = useAuth();
+  const { activeOrgId, profile, user } = useAuth();
 
   return useMutation({
     mutationFn: async (newVehicle: Partial<Vehicle>) => {
@@ -112,6 +163,10 @@ export function useCreateVehicle() {
       const effectiveOrgId = activeOrgId ?? profile?.org_id;
       if (effectiveOrgId != null && row.org_id == null) {
         row.org_id = effectiveOrgId;
+      }
+      const ownerId = profile?.id ?? user?.id;
+      if (ownerId != null && row.managed_by_user_id === undefined) {
+        row.managed_by_user_id = ownerId;
       }
       const { data, error } = await supabase
         .from('vehicles')

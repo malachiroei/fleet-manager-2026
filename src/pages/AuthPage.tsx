@@ -8,8 +8,10 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2 } from 'lucide-react';
+import { getBrandLogoUrl } from '@/components/BrandLogo';
 import { PwaInstallButton } from '@/components/PwaInstallButton';
 import { toast } from '@/hooks/use-toast';
+import { toast as sonnerToast } from 'sonner';
 
 const RESET_PASSWORD_REDIRECT = () => `${window.location.origin}/reset-password`;
 
@@ -79,15 +81,13 @@ export default function AuthPage() {
 
     if (error) {
       if (error.message.includes('already registered')) {
-        toast({
-          title: 'שגיאה בהרשמה',
-          description: 'כתובת האימייל כבר רשומה במערכת',
-          variant: 'destructive'
-        });
+        sonnerToast.error('שגיאה בהרשמה: כתובת האימייל כבר רשומה במערכת');
       } else {
+        const detailedMessage = `שגיאת API בהרשמה: ${error.message}`;
+        sonnerToast.error(detailedMessage);
         toast({
           title: 'שגיאה בהרשמה',
-          description: error.message,
+          description: detailedMessage,
           variant: 'destructive'
         });
       }
@@ -138,7 +138,7 @@ export default function AuthPage() {
           {/* Dark strip so the white car pops; same idea as dashboard logo box */}
           <div className="mx-auto -mt-1 mb-3 flex justify-center rounded-2xl bg-[#0a1525] px-8 py-6">
             <img
-              src="/og-image.png"
+              src={getBrandLogoUrl()}
               alt="Fleet Manager"
               className="h-auto w-72 max-w-full object-contain object-center drop-shadow-[0_0_24px_rgba(255,255,255,0.4)]"
             />

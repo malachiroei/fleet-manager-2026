@@ -8,6 +8,7 @@ import { Progress } from '@/components/ui/progress';
 import { Upload, FileSpreadsheet, Loader2, Check, AlertCircle, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
+import { supabase } from '@/integrations/supabase/client';
 
 interface ParsedRow {
   manufacturer_code: string;
@@ -37,6 +38,8 @@ const normalizeHeader = (value: string) =>
     .replace(/[\x00-\x1f]/g, '')
     .trim()
     .toLowerCase()
+    .replace(/_/g, ' ')
+    .replace(/-/g, ' ')
     .replace(/\s+/g, ' ');
 
 const normalizeCode = (value: string | undefined) => (value || '').trim();
@@ -56,7 +59,7 @@ const parseInteger = (value: string | undefined): number | null => {
 
 // Column name patterns for detection
 const COLUMN_PATTERNS: Record<string, string[]> = {
-  tax_year: ['שנת מס', 'שנה מס', 'tax_year'],
+  usage_year: ['שנת מס', 'שנה מס', 'tax_year', 'usage_year', 'usage year'],
   registration_year: ['שנת רישום', 'שנת רשום', 'registration_year'],
   vehicle_type_code: ['קוד סוג רכב', 'סוג רכב', 'vehicle_type_code'],
   manufacturer_code: ['קוד תוצר', 'סמל יצרן', 'מק"ט יצרן', 'manufacturer_code'],
@@ -69,7 +72,7 @@ const COLUMN_PATTERNS: Record<string, string[]> = {
   drive_type: ['סוג הנעה', 'הנעה', 'drive_type'],
   green_score: ['ציון ירוק', 'green_score'],
   pollution_level: ['דרגת זיהום', 'זיהום', 'pollution_level'],
-  engine_volume: ['נפח מנוע', 'engine_volume', 'נפח'],
+  engine_volume_cc: ['נפח מנוע', 'engine_volume', 'engine_volume_cc', 'נפח'],
   weight: ['משקל', 'weight'],
   effective_date: ['תאריך תחולה', 'effective_date', 'תחולה'],
   list_price: ['מחיר מחירון', 'מחירון', 'list_price'],
@@ -79,7 +82,7 @@ const COLUMN_PATTERNS: Record<string, string[]> = {
 
 // Positional column mapping for the standard Israeli pricing CSV
 const POSITIONAL_COLUMNS = [
-  'tax_year',           // 0
+  'usage_year',         // 0
   'registration_year',  // 1
   'vehicle_type_code',  // 2
   'manufacturer_code',  // 3
@@ -92,7 +95,7 @@ const POSITIONAL_COLUMNS = [
   'drive_type',         // 10
   'green_score',        // 11
   'pollution_level',    // 12
-  'engine_volume',      // 13
+  'engine_volume_cc',  // 13
   'weight',             // 14
   'effective_date',     // 15
   'list_price',         // 16
@@ -105,31 +108,36 @@ function detectColumnIndex(headers: string[], field: string): number {
   if (!patterns) return -1;
   return headers.findIndex((h) => {
     const norm = normalizeHeader(h);
-    return patterns.some((p) => norm.includes(p.toLowerCase()));
+    return patterns.some((p) => {
+      const pNorm = normalizeHeader(p);
+      return pNorm.length > 0 && norm.includes(pNorm);
+    });
   });
 }
 
 function buildColumnMap(headers: string[]): Record<string, number> {
-  const map: Record<string, number> = {};
-  
-  // For the standard Israeli pricing CSV (19 columns), always use positional mapping
-  // as header encoding is unreliable (windows-1255 / ISO-8859-8)
-  if (headers.length >= 19) {
-    for (let i = 0; i < POSITIONAL_COLUMNS.length && i < headers.length; i++) {
-      map[POSITIONAL_COLUMNS[i]] = i;
-    }
-    return map;
-  }
-  
-  // For other formats, try header-based detection
+  const headerMap: Record<string, number> = {};
+
+  // Prefer header-based detection whenever possible. Some exports may contain
+  // extra columns, which makes positional mapping unreliable even if headers.length >= 19.
   for (const field of Object.keys(COLUMN_PATTERNS)) {
     const idx = detectColumnIndex(headers, field);
-    if (idx !== -1) {
-      map[field] = idx;
-    }
+    if (idx !== -1) headerMap[field] = idx;
   }
-  
-  return map;
+
+  const hasRequiredHeaderFields =
+    typeof headerMap.manufacturer_code === 'number' && typeof headerMap.model_code === 'number';
+
+  // If we can reliably detect the required keys from headers, use headerMap.
+  if (hasRequiredHeaderFields) return headerMap;
+
+  // Fallback: positional mapping for the legacy "standard" format where headers are garbled.
+  const positionalMap: Record<string, number> = {};
+  const len = Math.min(POSITIONAL_COLUMNS.length, headers.length);
+  for (let i = 0; i < len; i++) {
+    positionalMap[POSITIONAL_COLUMNS[i]] = i;
+  }
+  return positionalMap;
 }
 
 function extractRow(values: string[], colMap: Record<string, number>): ParsedRow | null {
@@ -146,7 +154,7 @@ function extractRow(values: string[], colMap: Record<string, number>): ParsedRow
     manufacturer_code: manufacturerCode,
     model_code: modelCode,
     usage_value: parseNumber(get('usage_value')),
-    usage_year: parseInteger(get('tax_year')),
+    usage_year: parseInteger(get('usage_year')),
     adjusted_price: parseNumber(get('adjusted_price')),
     registration_year: parseInteger(get('registration_year')),
     vehicle_type_code: get('vehicle_type_code') || null,
@@ -158,7 +166,7 @@ function extractRow(values: string[], colMap: Record<string, number>): ParsedRow
     drive_type: get('drive_type') || null,
     green_score: parseInteger(get('green_score')),
     pollution_level: parseInteger(get('pollution_level')),
-    engine_volume_cc: parseInteger(get('engine_volume')),
+    engine_volume_cc: parseInteger(get('engine_volume_cc')),
     weight: parseInteger(get('weight')),
     list_price: parseNumber(get('list_price')),
     effective_date: get('effective_date') || null,
@@ -263,30 +271,34 @@ export default function PricingDataUploader() {
     setUploadStartTime(Date.now());
     setEstimatedTimeLeft('מחשב...');
     try {
-      // Simulate progress based on chunk processing
-      const totalChunks = Math.ceil(parsedRows.length / 1000);
-      let completedChunks = 0;
-      
-      const progressInterval = setInterval(() => {
-        if (uploadStartTime) {
-          const elapsed = (Date.now() - (uploadStartTime || Date.now())) / 1000;
-          const progress = Math.min(uploadProgress + 2, 95);
-          setUploadProgress(progress);
-          if (progress > 10) {
-            const totalEstimate = (elapsed / progress) * 100;
-            const remaining = Math.max(0, totalEstimate - elapsed);
+      const startMs = Date.now();
+
+      await uploadMutation.mutateAsync({
+        rows: parsedRows,
+        onProgress: ({ inserted, total, phase }) => {
+          // Phase-aware progress: deleting -> small bump; inserting -> proportional.
+          const base = phase === 'deleting' ? 2 : 5;
+          const pct = total > 0 ? Math.min(99, Math.round(base + (inserted / total) * (100 - base))) : base;
+          setUploadProgress(pct);
+
+          const elapsedSec = (Date.now() - startMs) / 1000;
+          if (pct > 5 && elapsedSec > 1) {
+            const totalEstimate = (elapsedSec / pct) * 100;
+            const remaining = Math.max(0, totalEstimate - elapsedSec);
             setEstimatedTimeLeft(remaining < 60 ? `${Math.ceil(remaining)} שניות` : `${Math.ceil(remaining / 60)} דקות`);
           }
-        }
-      }, 500);
+        },
+      });
 
-      await uploadMutation.mutateAsync(parsedRows);
-      clearInterval(progressInterval);
       setUploadProgress(100);
       setEstimatedTimeLeft('');
       
-      // Save last upload timestamp
-      localStorage.setItem('last_pricing_upload', new Date().toISOString());
+      // Save last upload timestamp (local only, to avoid RLS/schema mismatches)
+      const uploadedAtIso = new Date().toISOString();
+      localStorage.setItem('last_pricing_upload', uploadedAtIso);
+
+      // Notify AdminSettings page in the same tab (instant UI refresh)
+      window.dispatchEvent(new CustomEvent('pricing-uploaded', { detail: { iso: uploadedAtIso } }));
       refetchCount();
       
       setTimeout(() => {

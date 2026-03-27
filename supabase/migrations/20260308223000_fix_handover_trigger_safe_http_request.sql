@@ -15,7 +15,7 @@ begin
   if has_http_request then
     perform
       supabase_functions.http_request(
-        'https://cesstoohvlbvyreznwqd.supabase.co/functions/v1/send-handover-email',
+        'https://hojopkvnajvexnwolyeu.supabase.co/functions/v1/send-handover-email',
         'POST',
         '{"Content-Type": "application/json"}'::jsonb,
         jsonb_build_object(
