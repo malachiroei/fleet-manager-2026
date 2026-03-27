@@ -240,7 +240,7 @@ export default function ReportMileagePage() {
         });
 
         const sessionRes = await supabase.auth.getSession();
-        const token = sessionRes?.data?.session?.access_token ?? null;
+        const token = sessionRes.data.session?.access_token;
 
         console.log('[send-mileage-notification] auth token present?', Boolean(token));
 
@@ -252,7 +252,7 @@ export default function ReportMileagePage() {
         });
 
         // In Supabase JS, invoke often returns `{ data, error }` without throwing.
-        const maybeError = (invokeResult as any)?.error ?? null;
+        const maybeError = (invokeResult as any)?.error;
         if (maybeError) {
           console.error('[send-mileage-notification] invoke returned error', maybeError);
           console.error('[send-mileage-notification] invokeResult raw', invokeResult);
