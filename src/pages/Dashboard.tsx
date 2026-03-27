@@ -4,9 +4,10 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useDashboardStats, useComplianceAlerts } from '@/hooks/useDashboard';
-import { isFeatureEnabled, useFeatureFlags } from '@/hooks/useFeatureFlags';
+import { useFeatureFlags } from '@/hooks/useFeatureFlags';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useAuth } from '@/hooks/useAuth';
+import { usePermissions } from '@/hooks/usePermissions';
 import { useViewAs } from '@/contexts/ViewAsContext';
 import type { PermissionKey } from '@/lib/permissions';
 import { Button } from '@/components/ui/button';
@@ -167,9 +168,8 @@ export default function Dashboard() {
   const isMobile = useIsMobile();
   const { user, profile, hasPermission, isAdmin, isManager, isDriver, roles: userRoles, loading, activeOrgId } = useAuth();
   const { viewAsEmail } = useViewAs();
-  const { data: featureFlags, isPending: featureFlagsPending, isError: featureFlagsError } = useFeatureFlags();
-  /** Feature flags are source-of-truth for dashboard card visibility. */
-  const canEvaluateFeatureFlags = !featureFlagsPending && !featureFlagsError && featureFlags !== undefined;
+  useFeatureFlags();
+  const { canAccessUi } = usePermissions();
   const showDashboardTreatmentCard = false;
   const showDashboardTestCard = false;
   const showMaintenanceFormCard = false;
@@ -294,12 +294,27 @@ export default function Dashboard() {
       featureFlagKey: 'qa_vehicle_delivery',
     },
     {
+      title: 'רכב חליפי',
+      href: '/handover/replacement',
+      icon: Repeat,
+      permission: 'replacement_car',
+      featureFlagKey: 'qa_replacement_car',
+    },
+    {
       title: 'ניהול צוות',
       href: '/team',
       icon: UserCog,
       permission: 'manage_team',
       featureFlagKey: 'qa_team',
       showPendingBadge: true,
+    },
+    {
+      title: 'ניהול משתמשים',
+      href: '/admin/users',
+      icon: Users,
+      adminOnly: true,
+      permission: 'admin_access',
+      featureFlagKey: 'qa_users',
     },
   ];
 
@@ -318,17 +333,16 @@ export default function Dashboard() {
   const canReportMileage = forceMileageForMalachiroei || canReportMileageFromPermissions;
 
   const visibleStatusCards = useMemo(() => {
-    if (!canEvaluateFeatureFlags) return statusCardConfig;
-    return statusCardConfig.filter((card) => isFeatureEnabled(featureFlags, card.featureFlagKey));
-  }, [canEvaluateFeatureFlags, featureFlags]);
+    return statusCardConfig.filter((card) =>
+      canAccessUi({ permission: card.permission, featureKey: card.featureFlagKey }),
+    );
+  }, [canAccessUi]);
 
   const visibleQuickLinksByFlags = useMemo(() => {
-    if (!canEvaluateFeatureFlags) return baseQuickLinks;
     return baseQuickLinks.filter((a) => {
-      if (!a.featureFlagKey) return true;
-      return isFeatureEnabled(featureFlags, a.featureFlagKey);
+      return canAccessUi({ permission: a.permission, featureKey: a.featureFlagKey });
     });
-  }, [canEvaluateFeatureFlags, featureFlags, baseQuickLinks]);
+  }, [baseQuickLinks, canAccessUi]);
 
   const quickLinks = visibleQuickLinksByFlags.filter((a) => {
     if (a.href === '/report-mileage') return canReportMileage;

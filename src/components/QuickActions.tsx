@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Card, CardContent } from './ui/card';
 import { MapPin, Truck, AlertCircle, Repeat } from 'lucide-react';
 import { useFeatureFlags } from '@/hooks/useFeatureFlags';
+import { usePermissions } from '@/hooks/usePermissions';
 
 type QuickActionItem = {
   title: string;
@@ -15,10 +16,8 @@ type QuickActionItem = {
 
 export function QuickActions() {
   const { t } = useTranslation();
-  const { data: featureFlags, isPending: featureFlagsPending, isError: featureFlagsError } =
-    useFeatureFlags();
-  const applyFeatureFlagFilters =
-    !featureFlagsPending && !featureFlagsError && featureFlags !== undefined;
+  useFeatureFlags();
+  const { canAccessFeature } = usePermissions();
 
   const quickActions = useMemo((): QuickActionItem[] => {
     const candidates: QuickActionItem[] = [
@@ -53,9 +52,8 @@ export function QuickActions() {
       },
     ];
 
-    if (!applyFeatureFlagFilters) return candidates;
-    return candidates.filter((a) => featureFlags?.[a.featureFlagKey] === true);
-  }, [t, applyFeatureFlagFilters, featureFlags]);
+    return candidates.filter((a) => canAccessFeature(a.featureFlagKey));
+  }, [t, canAccessFeature]);
 
   return (
     <div className="space-y-4">

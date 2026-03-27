@@ -14,7 +14,7 @@ interface ComplianceItem {
 }
 
 export function useDashboardStats() {
-  const { roles: loggedInRoles } = useAuth();
+  const { roles: loggedInRoles, user } = useAuth();
   const {
     effectiveOrgId,
     effectiveUserId,
@@ -48,6 +48,8 @@ export function useDashboardStats() {
       if (!effectiveOrgId || !effectiveUserId) {
         return { totalVehicles: 0, totalDrivers: 0, alertsCount: 0, warningCount: 0, expiredCount: 0 };
       }
+      const normalizedEmail = (user?.email ?? '').trim().toLowerCase();
+      const isMainAdmin = normalizedEmail === 'malachiroei@gmail.com';
       console.log(
         '[Debug Scope] applyFleetManagerSlice:',
         applyFleetManagerSlice,
@@ -88,6 +90,18 @@ export function useDashboardStats() {
 
         vehiclesCount = (vRows ?? []).length;
         driversCount = (dRows ?? []).length;
+
+        // Owner fallback: if active org is empty, show global fleet totals.
+        if (isMainAdmin && vehiclesCount === 0 && driversCount === 0) {
+          const [gv, gd] = await Promise.all([
+            supabase.from('vehicles').select('id'),
+            supabase.from('drivers').select('id'),
+          ]);
+          if (gv.error) throw gv.error;
+          if (gd.error) throw gd.error;
+          vehiclesCount = (gv.data ?? []).length;
+          driversCount = (gd.data ?? []).length;
+        }
       }
 
       return {

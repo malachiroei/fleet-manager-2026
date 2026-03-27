@@ -28,7 +28,17 @@ export type FeatureFlagRegistryEntry = {
   key: string;
   display_name_he: string;
   description: string;
+  /** Human-readable UI location this toggle controls (for admin clarity). */
+  ui_mapping: string;
   category: FeatureFlagCategoryId;
+};
+
+export type UiSyncBundle = {
+  schema_version: 'ui-sync-bundle.v1';
+  ui_version: string;
+  generated_at: string;
+  source_repo: string;
+  feature_flag_registry: FeatureFlagRegistryEntry[];
 };
 
 /**
@@ -40,105 +50,136 @@ export const FEATURE_FLAG_REGISTRY: FeatureFlagRegistryEntry[] = [
     key: 'dashboard_vehicles',
     display_name_he: 'רכבים',
     description: 'כרטיס דשבורד — ניהול צי רכבים',
+    ui_mapping: 'Dashboard status cards -> רכבים',
     category: 'dashboard',
   },
   {
     key: 'dashboard_drivers',
     display_name_he: 'נהגים',
     description: 'כרטיס דשבורד — ניהול נהגים',
+    ui_mapping: 'Dashboard status cards -> נהגים',
     category: 'dashboard',
   },
   {
     key: 'dashboard_replacement_car',
     display_name_he: 'רכב חליפי',
     description: 'כרטיס דשבורד — מרכז רכב חליפי',
+    ui_mapping: 'Dashboard status cards -> רכב חליפי',
     category: 'dashboard',
   },
   {
     key: 'dashboard_exception_alerts',
     display_name_he: 'התראות חריגה',
     description: 'כרטיס דשבורד — התראות ציות וחריגות',
+    ui_mapping: 'Dashboard status cards -> התראות חריגה',
     category: 'dashboard',
   },
   {
     key: 'qa_procedure6_complaints',
     display_name_he: 'תלונות נוהל 6',
     description: 'קישור מהיר — תלונות נוהל 6',
+    ui_mapping: 'Dashboard quick actions -> תלונות נוהל 6',
     category: 'quick_actions',
   },
   {
     key: 'qa_report_mileage',
     display_name_he: 'דיווח קילומטראז׳',
     description: 'קישור מהיר — דיווח ק״מ',
+    ui_mapping: 'Dashboard quick actions -> דיווח קילומטראז׳',
     category: 'quick_actions',
   },
   {
     key: 'qa_admin_settings',
     display_name_he: 'הגדרות מערכת',
     description: 'קישור מהיר — הגדרות מנהל',
+    ui_mapping: 'Dashboard quick actions -> הגדרות מערכת',
     category: 'quick_actions',
   },
   {
     key: 'qa_forms',
     display_name_he: 'טפסים',
     description: 'קישור מהיר — מרכז הטפסים',
+    ui_mapping: 'Dashboard quick actions + Forms center gate',
     category: 'quick_actions',
   },
   {
     key: 'qa_parking_reports',
     display_name_he: 'דוחות חניה',
     description: 'קישור מהיר — דוחות סריקת חניה',
+    ui_mapping: 'Dashboard quick actions -> דוחות חניה',
     category: 'quick_actions',
   },
   {
     key: 'qa_reports',
     display_name_he: 'הפקת דוחות',
     description: 'קישור מהיר — דוחות וייצוא',
+    ui_mapping: 'Dashboard quick actions -> הפקת דוחות',
     category: 'quick_actions',
   },
   {
     key: 'qa_accidents',
     display_name_he: 'תאונות',
     description: 'קישור מהיר — ציות / תאונות',
+    ui_mapping: 'Dashboard quick actions -> תאונות/ציות',
     category: 'quick_actions',
   },
   {
     key: 'qa_vehicle_delivery',
     display_name_he: 'מסירת רכב',
     description: 'קישור מהיר — טופס מסירת רכב',
+    ui_mapping: 'Dashboard quick actions -> מסירת רכב',
     category: 'quick_actions',
   },
   {
     key: 'qa_replacement_car',
-    display_name_he: 'רכב חליפי (פעולות מהירות)',
+    display_name_he: 'רכב חליפי',
     description: 'קישור מהיר בסרגל — מרכז רכב חליפי',
+    ui_mapping: 'Dashboard quick actions -> רכב חליפי',
     category: 'quick_actions',
   },
   {
     key: 'qa_team',
     display_name_he: 'ניהול צוות',
     description: 'קישור מהיר — ניהול צוות',
+    ui_mapping: 'Dashboard quick actions -> ניהול צוות',
     category: 'quick_actions',
   },
   {
     key: 'qa_users',
     display_name_he: 'ניהול משתמשים',
     description: 'קישור מהיר — משתמשים ואישורים',
+    ui_mapping: 'Dashboard quick actions -> ניהול משתמשים',
     category: 'quick_actions',
   },
   {
     key: 'form_delivery',
     display_name_he: 'טופס מסירה',
     description: 'הצגת טפסים המסומנים לשימוש במסירה (במרכז הטפסים)',
+    ui_mapping: 'Forms center delivery forms visibility',
     category: 'forms',
   },
   {
     key: 'form_return',
     display_name_he: 'טופס החזרה',
     description: 'הצגת טפסים המסומנים לשימוש בהחזרה (במרכז הטפסים)',
+    ui_mapping: 'Forms center return forms visibility',
     category: 'forms',
   },
 ];
+
+/**
+ * Build a portable JSON bundle for cross-environment UI sync.
+ * The bundle is uploaded from test and consumed by production.
+ */
+export function createUiSyncBundle(uiVersion: string): UiSyncBundle {
+  return {
+    schema_version: 'ui-sync-bundle.v1',
+    ui_version: String(uiVersion || '').trim() || '0.0.0',
+    generated_at: new Date().toISOString(),
+    source_repo: 'malachiroei/fleet-manager-dev',
+    feature_flag_registry: FEATURE_FLAG_REGISTRY,
+  };
+}
 
 const registryByKey = new Map(FEATURE_FLAG_REGISTRY.map((e) => [e.key, e]));
 

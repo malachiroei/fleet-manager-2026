@@ -9,16 +9,18 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { QA_FORMS_NESTED_KEYS, QA_FORMS_PARENT_KEY } from '@/lib/featureFlagRegistry';
+import { QA_FORMS_NESTED_KEYS, QA_FORMS_PARENT_KEY, registryEntryForKey } from '@/lib/featureFlagRegistry';
 
 const NESTED_UNDER_QA_SET = new Set<string>(QA_FORMS_NESTED_KEYS);
 
 function flagMatchesQuery(flag: FeatureFlagRow, q: string): boolean {
   const needle = q.trim().toLowerCase();
   if (!needle) return true;
-  const name = flag.display_name_he?.trim() || flag.feature_key;
-  const desc = flag.description?.trim() || '';
-  return `${flag.feature_key} ${name} ${desc}`.toLowerCase().includes(needle);
+  const reg = registryEntryForKey(flag.feature_key);
+  const name = reg?.display_name_he || flag.display_name_he?.trim() || flag.feature_key;
+  const desc = reg?.description || flag.description?.trim() || '';
+  const uiMapping = reg?.ui_mapping || '';
+  return `${flag.feature_key} ${name} ${desc} ${uiMapping}`.toLowerCase().includes(needle);
 }
 
 type Props = {
@@ -222,6 +224,16 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
         throw new Error('Override save did not return rows (possible RLS rejection).');
       }
 
+      // Instant UX: update resolved feature-flags cache for this subject user
+      // so gated UI disappears/appears immediately in view-as mode.
+      queryClient.setQueryData<Record<string, boolean> | undefined>(
+        ['feature-flags', userId],
+        (prev) => ({
+          ...(prev ?? {}),
+          [featureKey]: nextEnabled,
+        }),
+      );
+
       await queryClient.invalidateQueries({ queryKey: ['user-feature-overrides', userId] });
       await queryClient.invalidateQueries({ queryKey: ['user-feature-overrides'] });
       await queryClient.invalidateQueries({ queryKey: ['feature-flags'] });
@@ -293,8 +305,10 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
                 </TableHeader>
                 <TableBody>
                   {tableRows.map(({ flag, nestedUnderQa }) => {
-                    const displayName = flag.display_name_he?.trim() || flag.feature_key;
-                    const desc = flag.description?.trim() || `שליטה על תצוגת ${displayName}`;
+                    const reg = registryEntryForKey(flag.feature_key);
+                    const displayName = reg?.display_name_he || flag.display_name_he?.trim() || flag.feature_key;
+                    const desc = reg?.description || flag.description?.trim() || `שליטה על תצוגת ${displayName}`;
+                    const uiMapping = reg?.ui_mapping ?? '';
                     const mergedOn = mergedEffective(flag.feature_key);
                     const effectiveUi = effectiveEnabledForUi(flag, nestedUnderQa);
                     const stored = storedToggleValue(flag);
@@ -338,6 +352,11 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground align-top max-w-md">
                           {desc}
+                          {uiMapping ? (
+                            <p className="mt-1 text-xs text-cyan-200/80">
+                              מיפוי UI: {uiMapping}
+                            </p>
+                          ) : null}
                           {nestedUnderQa && qaFormsEffective !== true ? (
                             <p className="mt-1 text-xs text-amber-200/90">
                               כבוי בפועל כל עוד «טפסים» (פעולות מהירות) מושבת.

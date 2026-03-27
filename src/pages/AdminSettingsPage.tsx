@@ -52,10 +52,12 @@ import {
 import { isFleetProductionHost } from '@/lib/pwaPromptRegister';
 import { FLEET_KV_TABLE } from '@/lib/fleetKvTable';
 import {
+  createUiSyncBundle,
   groupFeatureFlagRowsByCategory,
   isNestedUnderQaFormsRow,
   QA_FORMS_NESTED_KEYS,
   QA_FORMS_PARENT_KEY,
+  registryEntryForKey,
   syncFeatureFlagsFromRegistry,
   type FeatureFlagCategoryId,
 } from '@/lib/featureFlagRegistry';
@@ -78,12 +80,18 @@ const FEATURE_CATEGORY_ICONS: Record<string, string> = {
   other: '🔧',
 };
 
+const UI_SYNC_ALLOWED_EMAIL = 'malachiroei@gmail.com';
+const UI_SYNC_PROD_REPO = 'malachiroei/fleet-manager-2026';
+const UI_SYNC_BUNDLE_PATH = 'ui-sync-bundle.json';
+
 function featureFlagRowMatchesQuery(row: FeatureFlagRow, q: string): boolean {
   const needle = q.trim().toLowerCase();
   if (!needle) return true;
-  const displayName = row.display_name_he?.trim() || row.feature_key;
-  const desc = row.description?.trim() || `שליטה על תצוגת ${displayName}`;
-  const hay = `${row.feature_key} ${displayName} ${desc}`.toLowerCase();
+  const reg = registryEntryForKey(row.feature_key);
+  const displayName = reg?.display_name_he || row.display_name_he?.trim() || row.feature_key;
+  const desc = reg?.description || row.description?.trim() || `שליטה על תצוגת ${displayName}`;
+  const uiMapping = reg?.ui_mapping || '';
+  const hay = `${row.feature_key} ${displayName} ${desc} ${uiMapping}`.toLowerCase();
   return hay.includes(needle);
 }
 
@@ -145,6 +153,7 @@ export default function AdminSettingsPage() {
       useState<FeatureFlagCategoryId>('quick_actions');
     const [isInsertingFeature, setIsInsertingFeature] = useState(false);
     const [isSyncingFeatureFlags, setIsSyncingFeatureFlags] = useState(false);
+    const [isPublishingUiSyncBundle, setIsPublishingUiSyncBundle] = useState(false);
     const [togglingFeatureId, setTogglingFeatureId] = useState<string | null>(null);
 
     const { data: featureFlagRows = [], isLoading: featureFlagsTableLoading } = useQuery({
@@ -315,6 +324,76 @@ export default function AdminSettingsPage() {
         setIsSyncingFeatureFlags(false);
       }
     }, [invalidateFeatureFlagCaches]);
+
+    const canPublishUiToProduction = (user?.email ?? '').trim().toLowerCase() === UI_SYNC_ALLOWED_EMAIL;
+
+    const handlePublishUiUpdatesToProduction = useCallback(async () => {
+      const githubToken = String(import.meta.env.VITE_GITHUB_UI_SYNC_TOKEN ?? '').trim();
+      if (!githubToken) {
+        toast.error('חסר VITE_GITHUB_UI_SYNC_TOKEN בקובץ הסביבה של הטסט');
+        return;
+      }
+      if (!canPublishUiToProduction) {
+        toast.error('אין הרשאה להפצת עדכוני UI לפרודקשן');
+        return;
+      }
+
+      setIsPublishingUiSyncBundle(true);
+      try {
+        const bundle = createUiSyncBundle(codeVersion);
+        const owner = 'malachiroei';
+        const repo = 'fleet-manager-2026';
+        const branch = 'main';
+        const path = UI_SYNC_BUNDLE_PATH;
+        const apiBase = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+        const headers: Record<string, string> = {
+          Authorization: `Bearer ${githubToken}`,
+          Accept: 'application/vnd.github+json',
+          'Content-Type': 'application/json',
+        };
+
+        let currentSha: string | undefined;
+        const getRes = await fetch(`${apiBase}?ref=${encodeURIComponent(branch)}`, { method: 'GET', headers });
+        if (getRes.ok) {
+          const getJson = (await getRes.json()) as { sha?: unknown };
+          if (typeof getJson.sha === 'string' && getJson.sha.trim()) currentSha = getJson.sha.trim();
+        } else if (getRes.status !== 404) {
+          const t = await getRes.text();
+          throw new Error(`GitHub read failed (${getRes.status}): ${t || 'unknown error'}`);
+        }
+
+        const bundleJson = JSON.stringify(bundle, null, 2);
+        const base64Content = btoa(unescape(encodeURIComponent(bundleJson)));
+        const putBody: {
+          message: string;
+          content: string;
+          branch: string;
+          sha?: string;
+        } = {
+          message: `chore(ui-sync): publish UI bundle ${bundle.ui_version}`,
+          content: base64Content,
+          branch,
+        };
+        if (currentSha) putBody.sha = currentSha;
+
+        const putRes = await fetch(apiBase, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify(putBody),
+        });
+        if (!putRes.ok) {
+          const t = await putRes.text();
+          throw new Error(`GitHub upload failed (${putRes.status}): ${t || 'unknown error'}`);
+        }
+
+        toast.success(`עודכן ${UI_SYNC_BUNDLE_PATH} ב-${UI_SYNC_PROD_REPO}`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'הפצת UI נכשלה';
+        toast.error(msg);
+      } finally {
+        setIsPublishingUiSyncBundle(false);
+      }
+    }, [canPublishUiToProduction]);
 
     // ── notification_emails — stored in system_settings ───────────────────────
     const [notificationEmailsRaw, setNotificationEmailsRaw] = useState('malachiroei@gmail.com');
@@ -1098,9 +1177,12 @@ export default function AdminSettingsPage() {
                               </TableHeader>
                               <TableBody>
                                 {tableEntries.map(({ row, nestedUnderQa }) => {
+                                  const reg = registryEntryForKey(row.feature_key);
                                   const displayName =
-                                    row.display_name_he?.trim() || row.feature_key;
-                                  const desc = row.description?.trim() || `שליטה על תצוגת ${displayName}`;
+                                    reg?.display_name_he || row.display_name_he?.trim() || row.feature_key;
+                                  const desc =
+                                    reg?.description || row.description?.trim() || `שליטה על תצוגת ${displayName}`;
+                                  const uiMapping = reg?.ui_mapping ?? '';
                                   const busy = togglingFeatureId === row.id;
                                   const storedOn = row.is_enabled_globally === true;
                                   const effectiveOn = storedOn && (!nestedUnderQa || parentFormsHubOn);
@@ -1144,6 +1226,11 @@ export default function AdminSettingsPage() {
                                       </TableCell>
                                       <TableCell className="text-sm text-muted-foreground align-top max-w-md">
                                         {desc}
+                                        {uiMapping ? (
+                                          <p className="mt-1 text-xs text-cyan-200/80">
+                                            מיפוי UI: {uiMapping}
+                                          </p>
+                                        ) : null}
                                         {nestedUnderQa && !parentFormsHubOn ? (
                                           <p className="mt-1 text-xs text-amber-200/90">
                                             כבוי בפועל כל עוד «טפסים» (פעולות מהירות) מושבת.
@@ -1257,6 +1344,35 @@ export default function AdminSettingsPage() {
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>סנכרון בין סביבות</CardTitle>
+                  <CardDescription>
+                    מייצא את ה־UI registry והגרסה לקובץ JSON ושולח אותו לריפו הפרודקשן ב־GitHub.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <Button
+                    type="button"
+                    className="gap-2"
+                    disabled={isPublishingUiSyncBundle || !canPublishUiToProduction}
+                    onClick={() => void handlePublishUiUpdatesToProduction()}
+                  >
+                    {isPublishingUiSyncBundle ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Send className="h-4 w-4" />
+                    )}
+                    הפץ עדכוני UI לפרודקשן
+                  </Button>
+                  {!canPublishUiToProduction ? (
+                    <p className="text-xs text-muted-foreground">
+                      כפתור זה זמין רק למשתמש {UI_SYNC_ALLOWED_EMAIL}
+                    </p>
+                  ) : null}
+                </CardContent>
+              </Card>
             </>
           ) : null}
 
