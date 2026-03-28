@@ -264,54 +264,79 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setLoading(true);
-        setSession(session);
-        setUser(session?.user ?? null);
+    const auth = supabase?.auth;
+    if (
+      !auth ||
+      typeof auth !== 'object' ||
+      typeof auth.onAuthStateChange !== 'function'
+    ) {
+      // Blocked/misconfigured client (e.g. env guard proxy) or wrong bundle — avoid TypeError in production.
+      // eslint-disable-next-line no-console
+      console.error(
+        '[AuthProvider] supabase.auth.onAuthStateChange is not available. Check VITE_/NEXT_PUBLIC_ Supabase URL and anon key.',
+      );
+      setLoading(false);
+      return;
+    }
 
-        if (session?.user) {
-          setTimeout(() => {
-            void (async () => {
-              await Promise.allSettled([
-                fetchUserRoles(session.user.id),
-                fetchProfileRef.current(session.user.id),
-                fetchMemberOrganizations(session.user.id),
-              ]);
-              setLoading(false);
-            })();
-          }, 0);
-        } else {
-          setRoles([]);
-          setProfile(null);
-          setMemberOrganizations([]);
-          setActiveOrgIdState(null);
-          activeOrgInitializedRef.current = false;
-          setLoading(false);
-        }
+    const { data } = auth.onAuthStateChange((_event, session) => {
+      setLoading(true);
+      setSession(session);
+      setUser(session?.user ?? null);
+
+      if (session?.user) {
+        setTimeout(() => {
+          void (async () => {
+            await Promise.allSettled([
+              fetchUserRoles(session.user.id),
+              fetchProfileRef.current(session.user.id),
+              fetchMemberOrganizations(session.user.id),
+            ]);
+            setLoading(false);
+          })();
+        }, 0);
+      } else {
+        setRoles([]);
+        setProfile(null);
+        setMemberOrganizations([]);
+        setActiveOrgIdState(null);
+        activeOrgInitializedRef.current = false;
+        setLoading(false);
       }
-    );
+    });
+
+    const subscription = data?.subscription;
 
     void (async () => {
       try {
-        const sessionRes = await supabase.auth.getSession();
-        const session = sessionRes?.data?.session ?? null;
-        setSession(session);
-        setUser(session?.user ?? null);
+        if (typeof auth.getSession === 'function') {
+          const sessionRes = await auth.getSession();
+          const session = sessionRes?.data?.session ?? null;
+          setSession(session);
+          setUser(session?.user ?? null);
 
-        if (session?.user) {
-          await Promise.allSettled([
-            fetchUserRoles(session.user.id),
-            fetchProfileRef.current(session.user.id),
-            fetchMemberOrganizations(session.user.id),
-          ]);
+          if (session?.user) {
+            await Promise.allSettled([
+              fetchUserRoles(session.user.id),
+              fetchProfileRef.current(session.user.id),
+              fetchMemberOrganizations(session.user.id),
+            ]);
+          }
         }
       } finally {
         setLoading(false);
       }
     })();
 
-    return () => subscription.unsubscribe();
+    return () => {
+      try {
+        if (subscription && typeof subscription.unsubscribe === 'function') {
+          subscription.unsubscribe();
+        }
+      } catch {
+        // ignore cleanup errors (e.g. client already torn down)
+      }
+    };
   }, [fetchUserRoles, fetchMemberOrganizations]);
 
   const refreshProfile = useCallback(async () => {
