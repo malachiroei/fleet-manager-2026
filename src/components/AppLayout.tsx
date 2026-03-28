@@ -800,7 +800,7 @@ export function AppLayout({ children }: AppLayoutProps) {
           <span className="flex min-w-0 max-w-full items-baseline gap-1 text-xs text-white/65 font-medium">
             <span className="min-w-0 truncate">גרסה v{headerDisplayVersion}</span>
             <span
-              className="shrink-0 text-6xl font-black leading-none text-orange-600 drop-shadow-[0_0_12px_rgba(220,38,38,0.45),0_0_8px_rgba(234,88,12,0.65)]"
+              className="shrink-0 text-6xl font-black leading-none text-emerald-400 drop-shadow-[0_0_12px_rgba(52,211,153,0.55),0_0_8px_rgba(16,185,129,0.5)]"
               aria-hidden
             >
               *
