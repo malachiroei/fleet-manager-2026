@@ -798,7 +798,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             {orgName || 'הצי הראשי - רועי'}
           </span>
           <span className="block truncate text-xs text-white/65 font-medium">
-            גרסה v{headerDisplayVersion}
+            גרסה v{headerDisplayVersion}*
           </span>
         </div>
       </div>
