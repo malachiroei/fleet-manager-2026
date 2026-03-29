@@ -21,17 +21,15 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 const STORAGE_BUCKET = 'mileage-reports';
+/** Drop legacy drafts that embedded huge base64 (avoids parse/memory issues on load). */
+const DRAFT_RAW_MAX_CHARS = 65536;
 
-const DRAFT_JSON_VERSION = 2 as const;
-const THUMB_MAX_EDGE = 320;
-const THUMB_JPEG_QUALITY = 0.28;
+const DRAFT_JSON_VERSION = 3 as const;
 
+/** Persisted draft: only small text fields (no photos / thumbnails). */
 type MileageReportDraftNormalized = {
-  vehicleSearch: string;
   selectedVehicleId: string;
   odometer: string;
-  photoThumbnailDataUrl: string | null;
-  updatedAt: string;
 };
 
 /** Current key (includes user + org). Legacy: `fleet-report-mileage-draft:…` */
@@ -45,10 +43,19 @@ function legacyDraftStorageKey(userId: string, orgKey: string): string {
 
 function readDraftRaw(userId: string, orgKey: string): string | null {
   try {
-    return (
-      localStorage.getItem(draftStorageKey(userId, orgKey)) ??
-      localStorage.getItem(legacyDraftStorageKey(userId, orgKey))
-    );
+    const primaryKey = draftStorageKey(userId, orgKey);
+    const legacyKey = legacyDraftStorageKey(userId, orgKey);
+    let raw = localStorage.getItem(primaryKey) ?? localStorage.getItem(legacyKey);
+    if (raw && raw.length > DRAFT_RAW_MAX_CHARS) {
+      try {
+        localStorage.removeItem(primaryKey);
+        localStorage.removeItem(legacyKey);
+      } catch {
+        // ignore
+      }
+      return null;
+    }
+    return raw;
   } catch {
     return null;
   }
@@ -59,16 +66,10 @@ function parseDraft(raw: string | null): MileageReportDraftNormalized | null {
   try {
     const o = JSON.parse(raw) as Record<string, unknown>;
     const v = o?.v;
-    if (v !== 1 && v !== 2) return null;
-    const thumbRaw = o.photoThumbnailDataUrl;
-    const thumb =
-      typeof thumbRaw === 'string' && thumbRaw.startsWith('data:') ? thumbRaw : null;
+    if (v !== 1 && v !== 2 && v !== 3) return null;
     return {
-      vehicleSearch: typeof o.vehicleSearch === 'string' ? o.vehicleSearch : '',
       selectedVehicleId: typeof o.selectedVehicleId === 'string' ? o.selectedVehicleId : '',
       odometer: typeof o.odometer === 'string' ? o.odometer : '',
-      photoThumbnailDataUrl: thumb,
-      updatedAt: typeof o.updatedAt === 'string' ? o.updatedAt : '',
     };
   } catch {
     return null;
@@ -76,85 +77,7 @@ function parseDraft(raw: string | null): MileageReportDraftNormalized | null {
 }
 
 function draftHasValues(d: MileageReportDraftNormalized): boolean {
-  return Boolean(
-    d.vehicleSearch.trim() ||
-      d.selectedVehicleId.trim() ||
-      d.odometer.trim() ||
-      (d.photoThumbnailDataUrl && d.photoThumbnailDataUrl.length > 32),
-  );
-}
-
-function fileToThumbnailDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new globalThis.Image();
-    const objectUrl = URL.createObjectURL(file);
-    img.onload = () => {
-      try {
-        let w = img.naturalWidth;
-        let h = img.naturalHeight;
-        if (!w || !h) {
-          reject(new Error('Invalid image dimensions'));
-          return;
-        }
-        const scale = Math.min(1, THUMB_MAX_EDGE / w, THUMB_MAX_EDGE / h);
-        w = Math.max(1, Math.round(w * scale));
-        h = Math.max(1, Math.round(h * scale));
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          reject(new Error('No canvas context'));
-          return;
-        }
-        ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', THUMB_JPEG_QUALITY));
-      } catch (e) {
-        reject(e instanceof Error ? e : new Error(String(e)));
-      } finally {
-        URL.revokeObjectURL(objectUrl);
-      }
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error('Failed to load image'));
-    };
-    img.src = objectUrl;
-  });
-}
-
-async function dataUrlToFile(dataUrl: string, filename: string): Promise<File> {
-  const res = await fetch(dataUrl);
-  const blob = await res.blob();
-  const type = blob.type && blob.type.startsWith('image/') ? blob.type : 'image/jpeg';
-  return new File([blob], filename, { type });
-}
-
-function isQuotaExceededError(e: unknown): boolean {
-  if (e instanceof DOMException && e.name === 'QuotaExceededError') return true;
-  if (e instanceof Error && /quota|exceeded|storage/i.test(e.message)) return true;
-  return false;
-}
-
-/** Detach bytes from the `<input>` so clearing `value` on mobile does not drop the capture. */
-function cloneFileForStableState(source: File): File {
-  try {
-    return new File([source], source.name || 'capture.jpg', {
-      type: source.type || 'image/jpeg',
-      lastModified: source.lastModified,
-    });
-  } catch {
-    try {
-      const blob = source.slice(0, source.size, source.type || 'image/jpeg');
-      return new File([blob], source.name || 'capture.jpg', { type: source.type || 'image/jpeg' });
-    } catch {
-      return source;
-    }
-  }
-}
-
-function toastError(title: string, description?: string) {
-  toast({ title, description, variant: 'destructive' });
+  return Boolean(d.selectedVehicleId.trim() || d.odometer.trim());
 }
 
 function sanitizeFileExt(name: string): string {
@@ -196,29 +119,21 @@ export default function ReportMileagePage() {
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
   const [odometer, setOdometer] = useState('');
   const [photoFile, setPhotoFile] = useState<File | null>(null);
-  /** Object-URL preview while a `File` is in memory (full resolution). */
   const [blobPreviewUrl, setBlobPreviewUrl] = useState<string | null>(null);
-  /** JPEG data URL for draft persistence / post-reload preview (thumbnail). */
-  const [photoThumbnailDataUrl, setPhotoThumbnailDataUrl] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [showDraftRecoveredBanner, setShowDraftRecoveredBanner] = useState(false);
 
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const galleryInputRef = useRef<HTMLInputElement | null>(null);
-  const draftFieldsRef = useRef({
-    vehicleSearch: '',
-    selectedVehicleId: '',
-    odometer: '',
-    photoThumbnailDataUrl: null as string | null,
-  });
+  const blobUrlRef = useRef<string | null>(null);
+  const draftFieldsRef = useRef({ selectedVehicleId: '', odometer: '' });
   const allowPersistDraftRef = useRef(false);
   /** Same user+org as last restore in this mount cycle — skips Strict Mode duplicate effect. */
   const lastRestoredCompositeRef = useRef<string | null>(null);
   /** Avoid clearing localStorage on Strict Mode’s fake unmount before the first paint. */
   const draftMountReadyRef = useRef(false);
-  const quotaDraftToastShownRef = useRef(false);
 
-  draftFieldsRef.current = { vehicleSearch, selectedVehicleId, odometer, photoThumbnailDataUrl };
+  draftFieldsRef.current = { selectedVehicleId, odometer };
 
   const orgKeyForDraft = String(activeOrgId ?? profile?.org_id ?? '');
 
@@ -231,10 +146,8 @@ export default function ReportMileagePage() {
     try {
       serialized = JSON.stringify({
         v: DRAFT_JSON_VERSION,
-        vehicleSearch: d.vehicleSearch,
         selectedVehicleId: d.selectedVehicleId,
         odometer: d.odometer,
-        photoThumbnailDataUrl: d.photoThumbnailDataUrl,
         updatedAt: new Date().toISOString(),
       });
     } catch {
@@ -242,21 +155,13 @@ export default function ReportMileagePage() {
     }
     try {
       localStorage.setItem(draftStorageKey(uid, orgKey), serialized);
-      quotaDraftToastShownRef.current = false;
       try {
         localStorage.removeItem(legacyDraftStorageKey(uid, orgKey));
       } catch {
         // ignore
       }
-    } catch (e) {
-      if (isQuotaExceededError(e)) {
-        if (!quotaDraftToastShownRef.current) {
-          quotaDraftToastShownRef.current = true;
-          toast({
-            title: 'התמונה גדולה מדי לשמירה אוטומטית, אך ניתן להמשיך בשליחה',
-          });
-        }
-      }
+    } catch {
+      // Quota / private mode — tiny payload; fail silently
     }
   }, [user?.id, activeOrgId, profile?.org_id]);
 
@@ -287,6 +192,16 @@ export default function ReportMileagePage() {
     };
   }, [clearDraftFromStorage]);
 
+  /** Revoke preview object URL on unmount (and avoid leaks across navigations). */
+  useEffect(() => {
+    return () => {
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
+    };
+  }, []);
+
   useEffect(() => {
     if (loading || !user?.id) return;
     const composite = `${user.id}:${orgKeyForDraft}`;
@@ -305,15 +220,17 @@ export default function ReportMileagePage() {
     try {
       const parsed = parseDraft(readDraftRaw(user.id, orgKeyForDraft));
       if (parsed && draftHasValues(parsed)) {
-        const thumb = parsed.photoThumbnailDataUrl;
-        setVehicleSearch(parsed.vehicleSearch);
         setSelectedVehicleId(parsed.selectedVehicleId);
         setOdometer(parsed.odometer);
         setPhotoFile(null);
-        setPhotoThumbnailDataUrl(thumb);
+        if (blobUrlRef.current) {
+          URL.revokeObjectURL(blobUrlRef.current);
+          blobUrlRef.current = null;
+        }
+        setBlobPreviewUrl(null);
         toast({
           title: 'משחזרים נתונים…',
-          description: 'השדות מולאו מהטיוטה שנשמרה (למשל לפני פתיחת המצלמה או ריענון).',
+          description: 'הרכב והקילומטראז׳ שוחזרו מהטיוטה. יש לצלם או לבחור תמונה מחדש לפני השליחה.',
         });
         setShowDraftRecoveredBanner(true);
       }
@@ -329,7 +246,7 @@ export default function ReportMileagePage() {
   useEffect(() => {
     if (!user?.id || loading || !allowPersistDraftRef.current) return;
     flushDraftToStorage();
-  }, [vehicleSearch, selectedVehicleId, odometer, photoThumbnailDataUrl, user?.id, loading, flushDraftToStorage]);
+  }, [selectedVehicleId, odometer, user?.id, loading, flushDraftToStorage]);
 
   const filteredVehicles = useMemo(() => {
     const q = vehicleSearch.trim().toLowerCase();
@@ -347,26 +264,21 @@ export default function ReportMileagePage() {
     [vehicles, selectedVehicleId]
   );
 
-  useEffect(() => {
-    if (!photoFile) {
-      setBlobPreviewUrl(null);
-      return;
-    }
-    const url = URL.createObjectURL(photoFile);
-    setBlobPreviewUrl(url);
-    return () => {
-      URL.revokeObjectURL(url);
-    };
-  }, [photoFile]);
-
-  const photoDisplaySrc = blobPreviewUrl ?? photoThumbnailDataUrl ?? undefined;
-  const hasPhotoForSubmit = Boolean(photoFile || (photoThumbnailDataUrl && photoThumbnailDataUrl.startsWith('data:')));
+  const photoDisplaySrc = blobPreviewUrl ?? undefined;
+  const hasPhotoForSubmit = Boolean(photoFile);
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const input = e.currentTarget;
-    const raw = input.files?.[0] ?? null;
+    const file = input.files?.[0] ?? null;
 
-    const resetInputValueLater = () => {
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+    }
+
+    if (!file) {
+      setPhotoFile(null);
+      setBlobPreviewUrl(null);
       window.setTimeout(() => {
         try {
           input.value = '';
@@ -374,45 +286,15 @@ export default function ReportMileagePage() {
           // ignore
         }
       }, 0);
-    };
-
-    if (!raw) {
-      setPhotoFile(null);
-      setPhotoThumbnailDataUrl(null);
-      resetInputValueLater();
       return;
     }
 
-    if (raw.size === 0) {
-      toastError('שגיאה בקריאת קובץ מהמצלמה או מהגלריה', 'הקובץ ריק — נסו שוב.');
-      setPhotoFile(null);
-      setPhotoThumbnailDataUrl(null);
-      resetInputValueLater();
-      return;
-    }
-
-    const stableFile = cloneFileForStableState(raw);
-
-    setPhotoFile(stableFile);
-    setPhotoThumbnailDataUrl(null);
+    const url = URL.createObjectURL(file);
+    blobUrlRef.current = url;
+    setPhotoFile(file);
+    setBlobPreviewUrl(url);
 
     window.setTimeout(() => {
-      try {
-        void fileToThumbnailDataUrl(stableFile)
-          .then((dataUrl) => {
-            setPhotoThumbnailDataUrl(dataUrl);
-          })
-          .catch((err) => {
-            console.warn('[ReportMileagePage] thumbnail failed', err);
-            toastError(
-              'שגיאה ביצירת תמונה מקדימה',
-              'התמונה המלאה עדיין זמינה לשליחה; שמירת טיוטה אוטומטית עשויה להיות חלקית.',
-            );
-          });
-      } catch (thumbStartErr) {
-        console.error('[ReportMileagePage] thumbnail start', thumbStartErr);
-        toastError('שגיאה ביצירת תמונה מקדימה', 'התמונה המלאה עדיין זמינה לשליחה.');
-      }
       try {
         input.value = '';
       } catch {
@@ -459,20 +341,7 @@ export default function ReportMileagePage() {
 
     setSubmitting(true);
     try {
-      let fileForUpload: File | null = photoFile;
-      if (!fileForUpload && photoThumbnailDataUrl?.startsWith('data:')) {
-        try {
-          fileForUpload = await dataUrlToFile(photoThumbnailDataUrl, 'odometer-mileage-draft.jpg');
-        } catch (convErr) {
-          console.error('[ReportMileagePage] dataUrlToFile failed', convErr);
-          toast({
-            title: 'לא ניתן להשתמש בתמונה השמורה',
-            description: 'נא לבחור תמונה מחדש מהגלריה או מהמצלמה.',
-            variant: 'destructive',
-          });
-          return;
-        }
-      }
+      const fileForUpload = photoFile;
       if (!fileForUpload) {
         toast({ title: 'נא לצרף תמונה של לוח השעונים', variant: 'destructive' });
         return;
@@ -685,7 +554,7 @@ export default function ReportMileagePage() {
                     role="status"
                   >
                     <p className="min-w-0 pt-0.5 leading-snug">
-                      הוחזרה טיוטה אוטומטית — בדקו את הרכב והקילומטראז׳ והתמונה לפני השליחה.
+                      הוחזרה טיוטה אוטומטית (רכב וקילומטראז׳) — יש לצלם או לבחור תמונה לפני השליחה.
                     </p>
                     <button
                       type="button"
@@ -827,7 +696,6 @@ export default function ReportMileagePage() {
                   {photoDisplaySrc ? (
                     <div className="overflow-hidden rounded-xl border border-border">
                       <img
-                        key={photoDisplaySrc.startsWith('data:') ? `data:${photoDisplaySrc.length}` : photoDisplaySrc}
                         src={photoDisplaySrc}
                         alt="תצוגה מקדימה"
                         className="w-full h-56 object-cover bg-black"
