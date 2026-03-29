@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, Camera, ChevronDown, Gauge, Image as ImageIcon, Loader2, X } from 'lucide-react';
+import { ArrowRight, Camera, Gauge, Loader2, Trash2 } from 'lucide-react';
 
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
@@ -13,72 +13,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 
 const STORAGE_BUCKET = 'mileage-reports';
-/** Drop legacy drafts that embedded huge base64 (avoids parse/memory issues on load). */
-const DRAFT_RAW_MAX_CHARS = 65536;
-
-const DRAFT_JSON_VERSION = 3 as const;
-
-/** Persisted draft: only small text fields (no photos / thumbnails). */
-type MileageReportDraftNormalized = {
-  selectedVehicleId: string;
-  odometer: string;
-};
-
-/** Current key (includes user + org). Legacy: `fleet-report-mileage-draft:…` */
-function draftStorageKey(userId: string, orgKey: string): string {
-  return `mileage_report_draft:${userId}:${orgKey}`;
-}
-
-function legacyDraftStorageKey(userId: string, orgKey: string): string {
-  return `fleet-report-mileage-draft:${userId}:${orgKey}`;
-}
-
-function readDraftRaw(userId: string, orgKey: string): string | null {
-  try {
-    const primaryKey = draftStorageKey(userId, orgKey);
-    const legacyKey = legacyDraftStorageKey(userId, orgKey);
-    let raw = localStorage.getItem(primaryKey) ?? localStorage.getItem(legacyKey);
-    if (raw && raw.length > DRAFT_RAW_MAX_CHARS) {
-      try {
-        localStorage.removeItem(primaryKey);
-        localStorage.removeItem(legacyKey);
-      } catch {
-        // ignore
-      }
-      return null;
-    }
-    return raw;
-  } catch {
-    return null;
-  }
-}
-
-function parseDraft(raw: string | null): MileageReportDraftNormalized | null {
-  if (!raw) return null;
-  try {
-    const o = JSON.parse(raw) as Record<string, unknown>;
-    const v = o?.v;
-    if (v !== 1 && v !== 2 && v !== 3) return null;
-    return {
-      selectedVehicleId: typeof o.selectedVehicleId === 'string' ? o.selectedVehicleId : '',
-      odometer: typeof o.odometer === 'string' ? o.odometer : '',
-    };
-  } catch {
-    return null;
-  }
-}
-
-function draftHasValues(d: MileageReportDraftNormalized): boolean {
-  return Boolean(d.selectedVehicleId.trim() || d.odometer.trim());
-}
 
 function sanitizeFileExt(name: string): string {
   const idx = name.lastIndexOf('.');
@@ -98,7 +34,6 @@ export default function ReportMileagePage() {
     const email =
       (profile?.email ?? user?.email ?? '').trim().toLowerCase();
 
-    // Master override for staging unblock.
     const isMaster = email === 'malachiroei@gmail.com';
 
     const allowed = isMaster || (
@@ -121,77 +56,10 @@ export default function ReportMileagePage() {
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [blobPreviewUrl, setBlobPreviewUrl] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [showDraftRecoveredBanner, setShowDraftRecoveredBanner] = useState(false);
 
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const blobUrlRef = useRef<string | null>(null);
-  const draftFieldsRef = useRef({ selectedVehicleId: '', odometer: '' });
-  const allowPersistDraftRef = useRef(false);
-  /** Same user+org as last restore in this mount cycle — skips Strict Mode duplicate effect. */
-  const lastRestoredCompositeRef = useRef<string | null>(null);
-  /** Avoid clearing localStorage on Strict Mode’s fake unmount before the first paint. */
-  const draftMountReadyRef = useRef(false);
 
-  draftFieldsRef.current = { selectedVehicleId, odometer };
-
-  const orgKeyForDraft = String(activeOrgId ?? profile?.org_id ?? '');
-
-  const flushDraftToStorage = useCallback(() => {
-    const uid = user?.id;
-    if (!uid) return;
-    const orgKey = String(activeOrgId ?? profile?.org_id ?? '');
-    const d = draftFieldsRef.current;
-    let serialized: string;
-    try {
-      serialized = JSON.stringify({
-        v: DRAFT_JSON_VERSION,
-        selectedVehicleId: d.selectedVehicleId,
-        odometer: d.odometer,
-        updatedAt: new Date().toISOString(),
-      });
-    } catch {
-      return;
-    }
-    try {
-      localStorage.setItem(draftStorageKey(uid, orgKey), serialized);
-      try {
-        localStorage.removeItem(legacyDraftStorageKey(uid, orgKey));
-      } catch {
-        // ignore
-      }
-    } catch {
-      // Quota / private mode — tiny payload; fail silently
-    }
-  }, [user?.id, activeOrgId, profile?.org_id]);
-
-  const clearDraftFromStorage = useCallback(() => {
-    const uid = user?.id;
-    if (!uid) return;
-    const orgKey = String(activeOrgId ?? profile?.org_id ?? '');
-    try {
-      localStorage.removeItem(draftStorageKey(uid, orgKey));
-      localStorage.removeItem(legacyDraftStorageKey(uid, orgKey));
-    } catch {
-      // ignore
-    }
-  }, [user?.id, activeOrgId, profile?.org_id]);
-
-  /** Leaving the screen (menu, back, etc.): drop draft so the next visit starts clean. */
-  useEffect(() => {
-    let raf = 0;
-    raf = requestAnimationFrame(() => {
-      draftMountReadyRef.current = true;
-    });
-    return () => {
-      cancelAnimationFrame(raf);
-      if (draftMountReadyRef.current) {
-        clearDraftFromStorage();
-      }
-      draftMountReadyRef.current = false;
-    };
-  }, [clearDraftFromStorage]);
-
-  /** Revoke preview object URL on unmount (and avoid leaks across navigations). */
   useEffect(() => {
     return () => {
       if (blobUrlRef.current) {
@@ -200,52 +68,6 @@ export default function ReportMileagePage() {
       }
     };
   }, []);
-
-  useEffect(() => {
-    if (loading || !user?.id) return;
-    const composite = `${user.id}:${orgKeyForDraft}`;
-
-    if (lastRestoredCompositeRef.current === composite) {
-      queueMicrotask(() => {
-        allowPersistDraftRef.current = true;
-      });
-      return;
-    }
-
-    lastRestoredCompositeRef.current = composite;
-    allowPersistDraftRef.current = false;
-    setShowDraftRecoveredBanner(false);
-
-    try {
-      const parsed = parseDraft(readDraftRaw(user.id, orgKeyForDraft));
-      if (parsed && draftHasValues(parsed)) {
-        setSelectedVehicleId(parsed.selectedVehicleId);
-        setOdometer(parsed.odometer);
-        setPhotoFile(null);
-        if (blobUrlRef.current) {
-          URL.revokeObjectURL(blobUrlRef.current);
-          blobUrlRef.current = null;
-        }
-        setBlobPreviewUrl(null);
-        toast({
-          title: 'משחזרים נתונים…',
-          description: 'הרכב והקילומטראז׳ שוחזרו מהטיוטה. יש לצלם או לבחור תמונה מחדש לפני השליחה.',
-        });
-        setShowDraftRecoveredBanner(true);
-      }
-    } catch {
-      // ignore corrupt draft
-    }
-
-    queueMicrotask(() => {
-      allowPersistDraftRef.current = true;
-    });
-  }, [loading, user?.id, orgKeyForDraft]);
-
-  useEffect(() => {
-    if (!user?.id || loading || !allowPersistDraftRef.current) return;
-    flushDraftToStorage();
-  }, [selectedVehicleId, odometer, user?.id, loading, flushDraftToStorage]);
 
   const filteredVehicles = useMemo(() => {
     const q = vehicleSearch.trim().toLowerCase();
@@ -263,8 +85,7 @@ export default function ReportMileagePage() {
     [vehicles, selectedVehicleId]
   );
 
-  const photoDisplaySrc = blobPreviewUrl ?? undefined;
-  const hasPhotoForSubmit = Boolean(photoFile);
+  const hasPhoto = Boolean(photoFile);
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const input = e.currentTarget;
@@ -278,11 +99,7 @@ export default function ReportMileagePage() {
     if (!file) {
       setPhotoFile(null);
       setBlobPreviewUrl(null);
-      try {
-        input.value = '';
-      } catch {
-        // ignore
-      }
+      input.value = '';
       return;
     }
 
@@ -290,16 +107,22 @@ export default function ReportMileagePage() {
     blobUrlRef.current = url;
     setPhotoFile(file);
     setBlobPreviewUrl(url);
+    input.value = '';
+  }, []);
 
-    try {
-      input.value = '';
-    } catch {
-      // ignore
+  const clearPhoto = useCallback(() => {
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+    }
+    setPhotoFile(null);
+    setBlobPreviewUrl(null);
+    if (photoInputRef.current) {
+      photoInputRef.current.value = '';
     }
   }, []);
 
-  const openPhotoPicker = () => {
-    flushDraftToStorage();
+  const openCamera = () => {
     photoInputRef.current?.click();
   };
 
@@ -324,32 +147,20 @@ export default function ReportMileagePage() {
       });
       return;
     }
-    if (!hasPhotoForSubmit) {
+    if (!photoFile) {
       toast({ title: 'נא לצרף תמונה של לוח השעונים', variant: 'destructive' });
       return;
     }
 
     setSubmitting(true);
     try {
-      const fileForUpload = photoFile;
-      if (!fileForUpload) {
-        toast({ title: 'נא לצרף תמונה של לוח השעונים', variant: 'destructive' });
-        return;
-      }
-
-      const ext = sanitizeFileExt(fileForUpload.name);
+      const ext = sanitizeFileExt(photoFile.name);
       const id = (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
       const path = `${selectedVehicle.id}/${id}.${ext}`;
 
-      console.log('Step 1: Uploading photo...', {
-        bucket: STORAGE_BUCKET,
-        objectPath: path,
-        fileName: fileForUpload.name,
-      });
-
       const { error: uploadError } = await supabase.storage
         .from(STORAGE_BUCKET)
-        .upload(path, fileForUpload, { upsert: false, contentType: fileForUpload.type || undefined });
+        .upload(path, photoFile, { upsert: false, contentType: photoFile.type || undefined });
       if (uploadError) {
         console.error('[ReportMileagePage] storage upload failed', uploadError);
         throw uploadError;
@@ -362,15 +173,8 @@ export default function ReportMileagePage() {
       }
       const photoUrl = urlData?.publicUrl;
       if (!photoUrl) {
-        console.error('[ReportMileagePage] missing photoUrl from getPublicUrl', {
-          bucket: STORAGE_BUCKET,
-          objectPath: path,
-          urlData,
-        });
         throw new Error('Missing photoUrl from getPublicUrl');
       }
-
-      console.log('Step 2: Photo URL:', photoUrl);
 
       const payload: Record<string, unknown> = {
         vehicle_id: selectedVehicle.id,
@@ -379,17 +183,12 @@ export default function ReportMileagePage() {
         user_id: user.id,
       };
 
-      console.log('Step 3: Inserting to mileage_logs...', payload);
-
       const { error: insertError } = await supabase.from('mileage_logs').insert(payload as any);
       if (insertError) {
         console.error('[ReportMileagePage] mileage_logs insert failed', insertError);
-        console.error('[ReportMileagePage] mileage_logs insert payload', payload);
         throw insertError;
       }
 
-      // Create a "Documents" history record (matches the Vehicle Detail "מסמכים" tab).
-      // Note: vehicle_documents is used by VehicleDetailPage to render doc.title + doc.created_at.
       try {
         const title = `עדכון ק"מ - ${odometerValue.toLocaleString('he-IL')} ק"מ`;
 
@@ -409,12 +208,9 @@ export default function ReportMileagePage() {
           console.error('[ReportMileagePage] vehicle_documents insert failed', vehicleDocError);
         }
       } catch (vehicleDocErr) {
-        // Non-fatal: mileage is already saved; we don't want to block the user flow.
         console.error('[ReportMileagePage] vehicle_documents insert threw', vehicleDocErr);
       }
 
-      // Keep UI in sync: update the vehicle odometer immediately.
-      // NOTE: Multi-tenancy: we include `org_id` in the where-clause.
       const orgId = selectedVehicle.org_id ?? profile?.org_id ?? activeOrgId ?? null;
       if (!orgId) {
         console.error('[ReportMileagePage] missing orgId for vehicles odometer update', {
@@ -435,60 +231,36 @@ export default function ReportMileagePage() {
         console.error('Failed to update vehicle odometer:', updateError);
       }
 
-      // Send notification email (direct invoke; DB trigger not required)
       try {
-        console.log('Step 4: Invoking Edge Function...');
-        const payload = {
+        const notifyPayload = {
           to: 'malachiroei@gmail.com',
           subject: `עדכון קילומטראז' - ${selectedVehicle.plate_number}`,
           odometerReading: odometerValue,
           reportUrl: photoUrl,
         };
 
-        console.log('[send-mileage-notification] storage target', {
-          bucket: STORAGE_BUCKET,
-          objectPath: path,
-          photoUrl,
-        });
-
-        console.log('[send-mileage-notification] invoking', {
-          function: 'send-mileage-notification',
-          payload,
-        });
-
         const sessionRes = await supabase.auth.getSession();
         const token = sessionRes?.data?.session?.access_token ?? null;
-
-        console.log('[send-mileage-notification] auth token present?', Boolean(token));
 
         const invokeResult = await supabase.functions.invoke('send-mileage-notification', {
           headers: {
             Authorization: `Bearer ${token ?? ''}`,
           },
-          body: payload,
+          body: notifyPayload,
         });
 
-        // In Supabase JS, invoke often returns `{ data, error }` without throwing.
         const maybeError = (invokeResult as any)?.error ?? null;
         if (maybeError) {
           console.error('[send-mileage-notification] invoke returned error', maybeError);
-          console.error('[send-mileage-notification] invokeResult raw', invokeResult);
-        } else {
-          console.log('[send-mileage-notification] invoke success', (invokeResult as any)?.data ?? invokeResult);
         }
       } catch (notifyErr) {
-        // Non-fatal: mileage is already saved
         console.error('[send-mileage-notification] threw:', notifyErr);
       }
 
-      // Invalidate vehicle queries so Vehicle Detail "מד אוץ" card refreshes.
-      // useVehicle/useVehicles query keys include `orgId`, so invalidate with the exact prefix.
       queryClient.invalidateQueries({ queryKey: ['vehicle', selectedVehicle.id, orgId] });
       queryClient.invalidateQueries({ queryKey: ['vehicles', orgId] });
       queryClient.invalidateQueries({ queryKey: ['vehicle-documents', selectedVehicle.id] });
 
-      clearDraftFromStorage();
-      setShowDraftRecoveredBanner(false);
       toast({ title: 'דיווח קילומטראז׳ נשלח בהצלחה' });
       navigate('/');
     } catch (err: any) {
@@ -508,7 +280,7 @@ export default function ReportMileagePage() {
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
           <div className="flex items-center gap-3">
-            <Link to="/" onClick={() => clearDraftFromStorage()}>
+            <Link to="/">
               <Button variant="ghost" size="icon" type="button">
                 <ArrowRight className="h-5 w-5" />
               </Button>
@@ -538,24 +310,6 @@ export default function ReportMileagePage() {
               </div>
             ) : (
               <form onSubmit={submit} className="space-y-6">
-                {showDraftRecoveredBanner ? (
-                  <div
-                    className="relative rounded-lg border border-amber-400/40 bg-amber-500/10 pe-10 ps-3 py-2.5 text-sm text-amber-100"
-                    role="status"
-                  >
-                    <p className="min-w-0 pt-0.5 leading-snug">
-                      הוחזרה טיוטה אוטומטית (רכב וקילומטראז׳) — יש לצלם או לבחור תמונה לפני השליחה.
-                    </p>
-                    <button
-                      type="button"
-                      className="absolute end-1.5 top-1.5 rounded-md p-1.5 text-amber-200/90 transition-colors hover:bg-amber-500/20 hover:text-amber-50"
-                      aria-label="סגור הודעה"
-                      onClick={() => setShowDraftRecoveredBanner(false)}
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                ) : null}
                 <div className="space-y-2">
                   <Label htmlFor="vehicle-search">חיפוש רכב</Label>
                   <Input
@@ -614,66 +368,43 @@ export default function ReportMileagePage() {
                     id="mileage-report-photo"
                     type="file"
                     accept="image/*"
+                    capture="environment"
                     className="sr-only"
                     onChange={handleFileChange}
                   />
-                  {!hasPhotoForSubmit ? (
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {!hasPhoto ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-14 w-full gap-2 text-base"
+                      onClick={openCamera}
+                      aria-controls="mileage-report-photo"
+                    >
+                      <Camera className="h-5 w-5 shrink-0" />
+                      צלם תמונה
+                    </Button>
+                  ) : null}
+                  {blobPreviewUrl ? (
+                    <div className="space-y-3">
+                      <div className="overflow-hidden rounded-xl border border-border">
+                        <img
+                          src={blobPreviewUrl}
+                          alt="תצוגה מקדימה"
+                          className="w-full h-56 object-cover bg-black"
+                          loading="eager"
+                          decoding="async"
+                        />
+                      </div>
                       <Button
                         type="button"
                         variant="outline"
-                        className="h-12 gap-2"
-                        onClick={openPhotoPicker}
-                        aria-controls="mileage-report-photo"
+                        className="w-full h-11 gap-2"
+                        onClick={clearPhoto}
+                        disabled={submitting}
                       >
-                        <Camera className="h-4 w-4 shrink-0" />
-                        צלם תמונה
+                        <Trash2 className="h-4 w-4 shrink-0" />
+                        מחק תמונה
                       </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-12 gap-2"
-                        onClick={openPhotoPicker}
-                        aria-controls="mileage-report-photo"
-                      >
-                        <ImageIcon className="h-4 w-4 shrink-0" />
-                        בחר מהגלריה
-                      </Button>
-                    </div>
-                  ) : (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button type="button" variant="outline" className="h-12 w-full gap-2">
-                          <Camera className="h-4 w-4 shrink-0" />
-                          החלף תמונה
-                          <ChevronDown className="ms-auto h-4 w-4 shrink-0 opacity-70" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="min-w-[12rem]">
-                        <DropdownMenuItem className="gap-2" onSelect={() => openPhotoPicker()}>
-                          <Camera className="h-4 w-4" />
-                          צילום מחדש
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="gap-2" onSelect={() => openPhotoPicker()}>
-                          <ImageIcon className="h-4 w-4" />
-                          בחר מהגלריה
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    שני הכפתורים פותחים את בורר הקבצים של המערכת (מצלמה / קבצים / גלריה). מומלץ לבחור
-                    &quot;מצלמה&quot; מתוך התפריט שיפתח.
-                  </p>
-                  {photoDisplaySrc ? (
-                    <div className="overflow-hidden rounded-xl border border-border">
-                      <img
-                        src={photoDisplaySrc}
-                        alt="תצוגה מקדימה"
-                        className="w-full h-56 object-cover bg-black"
-                        loading="eager"
-                        decoding="async"
-                      />
                     </div>
                   ) : null}
                 </div>
@@ -687,10 +418,7 @@ export default function ReportMileagePage() {
                     type="button"
                     variant="outline"
                     className="h-12"
-                    onClick={() => {
-                      clearDraftFromStorage();
-                      navigate('/');
-                    }}
+                    onClick={() => navigate('/')}
                     disabled={submitting}
                   >
                     ביטול
@@ -704,4 +432,3 @@ export default function ReportMileagePage() {
     </div>
   );
 }
-
