@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Camera, Gauge, Loader2 } from 'lucide-react';
 
@@ -15,6 +15,41 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const STORAGE_BUCKET = 'mileage-reports';
+
+const DRAFT_JSON_VERSION = 1;
+
+type MileageReportDraftV1 = {
+  v: typeof DRAFT_JSON_VERSION;
+  vehicleSearch: string;
+  selectedVehicleId: string;
+  odometer: string;
+  updatedAt: string;
+};
+
+function draftStorageKey(userId: string, orgKey: string): string {
+  return `fleet-report-mileage-draft:${userId}:${orgKey}`;
+}
+
+function parseDraft(raw: string | null): MileageReportDraftV1 | null {
+  if (!raw) return null;
+  try {
+    const o = JSON.parse(raw) as Partial<MileageReportDraftV1>;
+    if (o?.v !== DRAFT_JSON_VERSION) return null;
+    return {
+      v: DRAFT_JSON_VERSION,
+      vehicleSearch: typeof o.vehicleSearch === 'string' ? o.vehicleSearch : '',
+      selectedVehicleId: typeof o.selectedVehicleId === 'string' ? o.selectedVehicleId : '',
+      odometer: typeof o.odometer === 'string' ? o.odometer : '',
+      updatedAt: typeof o.updatedAt === 'string' ? o.updatedAt : '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+function draftHasValues(d: MileageReportDraftV1): boolean {
+  return Boolean(d.vehicleSearch.trim() || d.selectedVehicleId.trim() || d.odometer.trim());
+}
 
 function sanitizeFileExt(name: string): string {
   const idx = name.lastIndexOf('.');
@@ -57,8 +92,88 @@ export default function ReportMileagePage() {
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [showDraftRecoveredBanner, setShowDraftRecoveredBanner] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const draftFieldsRef = useRef({ vehicleSearch: '', selectedVehicleId: '', odometer: '' });
+  const allowPersistDraftRef = useRef(false);
+  /** Same user+org as last restore in this mount cycle — skips Strict Mode duplicate effect. */
+  const lastRestoredCompositeRef = useRef<string | null>(null);
+
+  draftFieldsRef.current = { vehicleSearch, selectedVehicleId, odometer };
+
+  const orgKeyForDraft = String(activeOrgId ?? profile?.org_id ?? '');
+
+  const flushDraftToStorage = useCallback(() => {
+    const uid = user?.id;
+    if (!uid) return;
+    const orgKey = String(activeOrgId ?? profile?.org_id ?? '');
+    const d = draftFieldsRef.current;
+    try {
+      const payload: MileageReportDraftV1 = {
+        v: DRAFT_JSON_VERSION,
+        vehicleSearch: d.vehicleSearch,
+        selectedVehicleId: d.selectedVehicleId,
+        odometer: d.odometer,
+        updatedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(draftStorageKey(uid, orgKey), JSON.stringify(payload));
+    } catch {
+      // ignore quota / private mode
+    }
+  }, [user?.id, activeOrgId, profile?.org_id]);
+
+  const clearDraftFromStorage = useCallback(() => {
+    const uid = user?.id;
+    if (!uid) return;
+    const orgKey = String(activeOrgId ?? profile?.org_id ?? '');
+    try {
+      localStorage.removeItem(draftStorageKey(uid, orgKey));
+    } catch {
+      // ignore
+    }
+  }, [user?.id, activeOrgId, profile?.org_id]);
+
+  useEffect(() => {
+    if (loading || !user?.id) return;
+    const composite = `${user.id}:${orgKeyForDraft}`;
+
+    if (lastRestoredCompositeRef.current === composite) {
+      queueMicrotask(() => {
+        allowPersistDraftRef.current = true;
+      });
+      return;
+    }
+
+    lastRestoredCompositeRef.current = composite;
+    allowPersistDraftRef.current = false;
+    setShowDraftRecoveredBanner(false);
+
+    try {
+      const parsed = parseDraft(localStorage.getItem(draftStorageKey(user.id, orgKeyForDraft)));
+      if (parsed && draftHasValues(parsed)) {
+        setVehicleSearch(parsed.vehicleSearch);
+        setSelectedVehicleId(parsed.selectedVehicleId);
+        setOdometer(parsed.odometer);
+        toast({
+          title: 'משחזרים נתונים…',
+          description: 'השדות מולאו מהטיוטה שנשמרה (למשל לפני פתיחת המצלמה או ריענון).',
+        });
+        setShowDraftRecoveredBanner(true);
+      }
+    } catch {
+      // ignore corrupt draft
+    }
+
+    queueMicrotask(() => {
+      allowPersistDraftRef.current = true;
+    });
+  }, [loading, user?.id, orgKeyForDraft]);
+
+  useEffect(() => {
+    if (!user?.id || loading || !allowPersistDraftRef.current) return;
+    flushDraftToStorage();
+  }, [vehicleSearch, selectedVehicleId, odometer, user?.id, loading, flushDraftToStorage]);
 
   const filteredVehicles = useMemo(() => {
     const q = vehicleSearch.trim().toLowerCase();
@@ -89,6 +204,7 @@ export default function ReportMileagePage() {
   }, [photoFile]);
 
   const pickPhoto = () => {
+    flushDraftToStorage();
     fileInputRef.current?.click();
   };
 
@@ -270,6 +386,8 @@ export default function ReportMileagePage() {
       queryClient.invalidateQueries({ queryKey: ['vehicles', orgId] });
       queryClient.invalidateQueries({ queryKey: ['vehicle-documents', selectedVehicle.id] });
 
+      clearDraftFromStorage();
+      setShowDraftRecoveredBanner(false);
       toast({ title: 'דיווח קילומטראז׳ נשלח בהצלחה' });
       navigate('/');
     } catch (err: any) {
@@ -319,6 +437,14 @@ export default function ReportMileagePage() {
               </div>
             ) : (
               <form onSubmit={submit} className="space-y-6">
+                {showDraftRecoveredBanner ? (
+                  <p
+                    className="rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100"
+                    role="status"
+                  >
+                    הוחזרה טיוטה אוטומטית — בדקו את הרכב והקילומטראז׳ לפני השליחה.
+                  </p>
+                ) : null}
                 <div className="space-y-2">
                   <Label htmlFor="vehicle-search">חיפוש רכב</Label>
                   <Input
