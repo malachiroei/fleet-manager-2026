@@ -23,9 +23,6 @@ import {
 const STORAGE_BUCKET = 'mileage-reports';
 /** Drop legacy drafts that embedded huge base64 (avoids parse/memory issues on load). */
 const DRAFT_RAW_MAX_CHARS = 65536;
-const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
-/** Brief pause after camera returns before `createObjectURL` (main thread / memory). */
-const PHOTO_PROCESS_DELAY_MS = 48;
 
 const DRAFT_JSON_VERSION = 3 as const;
 
@@ -126,8 +123,7 @@ export default function ReportMileagePage() {
   const [submitting, setSubmitting] = useState(false);
   const [showDraftRecoveredBanner, setShowDraftRecoveredBanner] = useState(false);
 
-  const cameraInputRef = useRef<HTMLInputElement | null>(null);
-  const galleryInputRef = useRef<HTMLInputElement | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
   const blobUrlRef = useRef<string | null>(null);
   const draftFieldsRef = useRef({ selectedVehicleId: '', odometer: '' });
   const allowPersistDraftRef = useRef(false);
@@ -282,71 +278,29 @@ export default function ReportMileagePage() {
     if (!file) {
       setPhotoFile(null);
       setBlobPreviewUrl(null);
-      window.setTimeout(() => {
-        try {
-          input.value = '';
-        } catch {
-          // ignore
-        }
-      }, 0);
-      return;
-    }
-
-    if (file.size > MAX_PHOTO_BYTES) {
-      toast({
-        title: 'התמונה גדולה מדי',
-        description: `הקובץ כ-${(file.size / (1024 * 1024)).toFixed(1)} MB; מקסימום מומלץ 10 MB. צלמו ברזולוציה נמוכה יותר או דחסו לפני ההעלאה.`,
-        variant: 'destructive',
-      });
-      window.setTimeout(() => {
-        try {
-          input.value = '';
-        } catch {
-          // ignore
-        }
-      }, 0);
-      return;
-    }
-
-    const processingToast = toast({
-      title: 'מעבד תמונה…',
-      description: 'אנא המתן',
-    });
-
-    window.setTimeout(() => {
-      try {
-        const url = URL.createObjectURL(file);
-        blobUrlRef.current = url;
-        setPhotoFile(file);
-        setBlobPreviewUrl(url);
-      } catch (readErr) {
-        console.error('[ReportMileagePage] createObjectURL failed', readErr);
-        toast({
-          title: 'שגיאה בקריאת קובץ מהמצלמה או מהגלריה',
-          description: 'לא ניתן ליצור תצוגה מקדימה. נסו שוב או בחרו קובץ אחר.',
-          variant: 'destructive',
-        });
-        setPhotoFile(null);
-        setBlobPreviewUrl(null);
-      } finally {
-        processingToast.dismiss();
-      }
       try {
         input.value = '';
       } catch {
         // ignore
       }
-    }, PHOTO_PROCESS_DELAY_MS);
+      return;
+    }
+
+    const url = URL.createObjectURL(file);
+    blobUrlRef.current = url;
+    setPhotoFile(file);
+    setBlobPreviewUrl(url);
+
+    try {
+      input.value = '';
+    } catch {
+      // ignore
+    }
   }, []);
 
-  const openCameraPicker = () => {
+  const openPhotoPicker = () => {
     flushDraftToStorage();
-    cameraInputRef.current?.click();
-  };
-
-  const openGalleryPicker = () => {
-    flushDraftToStorage();
-    galleryInputRef.current?.click();
+    photoInputRef.current?.click();
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -655,19 +609,9 @@ export default function ReportMileagePage() {
 
                 <div className="space-y-2">
                   <Label>תמונה של לוח השעונים</Label>
-                  {/* Boolean `capture` (not `environment`) — some mobile engines handle it better. If still unstable, remove `capture` so only `accept` remains (OS picker). */}
                   <input
-                    ref={cameraInputRef}
-                    id="mileage-report-photo-camera"
-                    type="file"
-                    accept="image/*"
-                    capture
-                    className="sr-only"
-                    onChange={handleFileChange}
-                  />
-                  <input
-                    ref={galleryInputRef}
-                    id="mileage-report-photo-gallery"
+                    ref={photoInputRef}
+                    id="mileage-report-photo"
                     type="file"
                     accept="image/*"
                     className="sr-only"
@@ -679,8 +623,8 @@ export default function ReportMileagePage() {
                         type="button"
                         variant="outline"
                         className="h-12 gap-2"
-                        onClick={openCameraPicker}
-                        aria-controls="mileage-report-photo-camera"
+                        onClick={openPhotoPicker}
+                        aria-controls="mileage-report-photo"
                       >
                         <Camera className="h-4 w-4 shrink-0" />
                         צלם תמונה
@@ -689,8 +633,8 @@ export default function ReportMileagePage() {
                         type="button"
                         variant="outline"
                         className="h-12 gap-2"
-                        onClick={openGalleryPicker}
-                        aria-controls="mileage-report-photo-gallery"
+                        onClick={openPhotoPicker}
+                        aria-controls="mileage-report-photo"
                       >
                         <ImageIcon className="h-4 w-4 shrink-0" />
                         בחר מהגלריה
@@ -706,21 +650,11 @@ export default function ReportMileagePage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="min-w-[12rem]">
-                        <DropdownMenuItem
-                          className="gap-2"
-                          onSelect={() => {
-                            window.setTimeout(() => openCameraPicker(), 0);
-                          }}
-                        >
+                        <DropdownMenuItem className="gap-2" onSelect={() => openPhotoPicker()}>
                           <Camera className="h-4 w-4" />
                           צילום מחדש
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="gap-2"
-                          onSelect={() => {
-                            window.setTimeout(() => openGalleryPicker(), 0);
-                          }}
-                        >
+                        <DropdownMenuItem className="gap-2" onSelect={() => openPhotoPicker()}>
                           <ImageIcon className="h-4 w-4" />
                           בחר מהגלריה
                         </DropdownMenuItem>
@@ -728,8 +662,8 @@ export default function ReportMileagePage() {
                     </DropdownMenu>
                   )}
                   <p className="text-xs text-muted-foreground">
-                    צילום — מצלמת המכשיר (ללא כיוון קשיח); גלריה — קבצים קיימים. אם הצילום קורס, נסו &quot;בחר
-                    מהגלריה&quot; ובחרו מצלמה מתפריט המערכת.
+                    שני הכפתורים פותחים את בורר הקבצים של המערכת (מצלמה / קבצים / גלריה). מומלץ לבחור
+                    &quot;מצלמה&quot; מתוך התפריט שיפתח.
                   </p>
                   {photoDisplaySrc ? (
                     <div className="overflow-hidden rounded-xl border border-border">
