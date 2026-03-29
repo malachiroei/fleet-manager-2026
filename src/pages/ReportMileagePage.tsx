@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, Camera, Gauge, Loader2 } from 'lucide-react';
+import { ArrowRight, Camera, ChevronDown, Gauge, Image as ImageIcon, Loader2, X } from 'lucide-react';
 
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
@@ -13,6 +13,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 const STORAGE_BUCKET = 'mileage-reports';
 
@@ -171,7 +177,8 @@ export default function ReportMileagePage() {
   const [submitting, setSubmitting] = useState(false);
   const [showDraftRecoveredBanner, setShowDraftRecoveredBanner] = useState(false);
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const galleryInputRef = useRef<HTMLInputElement | null>(null);
   const draftFieldsRef = useRef({
     vehicleSearch: '',
     selectedVehicleId: '',
@@ -181,6 +188,8 @@ export default function ReportMileagePage() {
   const allowPersistDraftRef = useRef(false);
   /** Same user+org as last restore in this mount cycle — skips Strict Mode duplicate effect. */
   const lastRestoredCompositeRef = useRef<string | null>(null);
+  /** Avoid clearing localStorage on Strict Mode’s fake unmount before the first paint. */
+  const draftMountReadyRef = useRef(false);
 
   draftFieldsRef.current = { vehicleSearch, selectedVehicleId, odometer, photoThumbnailDataUrl };
 
@@ -222,6 +231,31 @@ export default function ReportMileagePage() {
       // ignore
     }
   }, [user?.id, activeOrgId, profile?.org_id]);
+
+  const resetFormAndClearDraft = useCallback(() => {
+    clearDraftFromStorage();
+    setVehicleSearch('');
+    setSelectedVehicleId('');
+    setOdometer('');
+    setPhotoFile(null);
+    setPhotoThumbnailDataUrl(null);
+    setShowDraftRecoveredBanner(false);
+  }, [clearDraftFromStorage]);
+
+  /** Leaving the screen (menu, back, etc.): drop draft so the next visit starts clean. */
+  useEffect(() => {
+    let raf = 0;
+    raf = requestAnimationFrame(() => {
+      draftMountReadyRef.current = true;
+    });
+    return () => {
+      cancelAnimationFrame(raf);
+      if (draftMountReadyRef.current) {
+        clearDraftFromStorage();
+      }
+      draftMountReadyRef.current = false;
+    };
+  }, [clearDraftFromStorage]);
 
   useEffect(() => {
     if (loading || !user?.id) return;
@@ -296,9 +330,37 @@ export default function ReportMileagePage() {
   const photoDisplaySrc = blobPreviewUrl ?? photoThumbnailDataUrl ?? undefined;
   const hasPhotoForSubmit = Boolean(photoFile || (photoThumbnailDataUrl && photoThumbnailDataUrl.startsWith('data:')));
 
-  const pickPhoto = () => {
+  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] ?? null;
+    setPhotoFile(f);
+    if (f) {
+      void fileToThumbnailDataUrl(f)
+        .then((dataUrl) => {
+          setPhotoThumbnailDataUrl(dataUrl);
+        })
+        .catch((err) => {
+          console.warn('[ReportMileagePage] thumbnail failed', err);
+          toast({
+            title: 'לא ניתן לעבד את התמונה',
+            description: 'נסו קובץ אחר או צילום חדש.',
+            variant: 'destructive',
+          });
+          setPhotoThumbnailDataUrl(null);
+        });
+    } else {
+      setPhotoThumbnailDataUrl(null);
+    }
+    e.target.value = '';
+  }, []);
+
+  const openCameraPicker = () => {
     flushDraftToStorage();
-    fileInputRef.current?.click();
+    cameraInputRef.current?.click();
+  };
+
+  const openGalleryPicker = () => {
+    flushDraftToStorage();
+    galleryInputRef.current?.click();
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -519,8 +581,8 @@ export default function ReportMileagePage() {
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
           <div className="flex items-center gap-3">
-            <Link to="/">
-              <Button variant="ghost" size="icon">
+            <Link to="/" onClick={() => clearDraftFromStorage()}>
+              <Button variant="ghost" size="icon" type="button">
                 <ArrowRight className="h-5 w-5" />
               </Button>
             </Link>
@@ -550,12 +612,34 @@ export default function ReportMileagePage() {
             ) : (
               <form onSubmit={submit} className="space-y-6">
                 {showDraftRecoveredBanner ? (
-                  <p
-                    className="rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100"
+                  <div
+                    className="relative flex flex-wrap items-start gap-2 rounded-lg border border-amber-400/40 bg-amber-500/10 pe-10 ps-3 py-2.5 text-sm text-amber-100"
                     role="status"
                   >
-                    הוחזרה טיוטה אוטומטית — בדקו את הרכב והקילומטראז׳ לפני השליחה.
-                  </p>
+                    <p className="min-w-0 flex-1 pt-0.5 leading-snug">
+                      הוחזרה טיוטה אוטומטית — בדקו את הרכב והקילומטראז׳ לפני השליחה. ניתן להסתיר הודעה זו או לבטל את
+                      הטיוטה לחלוטין.
+                    </p>
+                    <div className="flex shrink-0 flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        className="h-8 border-amber-400/35 bg-amber-950/40 text-amber-50 hover:bg-amber-950/55"
+                        onClick={resetFormAndClearDraft}
+                      >
+                        ביטול טיוטה
+                      </Button>
+                    </div>
+                    <button
+                      type="button"
+                      className="absolute end-1.5 top-1.5 rounded-md p-1.5 text-amber-200/90 transition-colors hover:bg-amber-500/20 hover:text-amber-50"
+                      aria-label="סגור הודעה"
+                      onClick={() => setShowDraftRecoveredBanner(false)}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
                 ) : null}
                 <div className="space-y-2">
                   <Label htmlFor="vehicle-search">חיפוש רכב</Label>
@@ -611,46 +695,78 @@ export default function ReportMileagePage() {
                 <div className="space-y-2">
                   <Label>תמונה של לוח השעונים</Label>
                   <input
-                    ref={fileInputRef}
-                    id="mileage-report-photo"
+                    ref={cameraInputRef}
+                    id="mileage-report-photo-camera"
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="sr-only"
+                    onChange={handleFileChange}
+                  />
+                  <input
+                    ref={galleryInputRef}
+                    id="mileage-report-photo-gallery"
                     type="file"
                     accept="image/*"
                     className="sr-only"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0] ?? null;
-                      setPhotoFile(f);
-                      if (f) {
-                        void fileToThumbnailDataUrl(f)
-                          .then((dataUrl) => {
-                            setPhotoThumbnailDataUrl(dataUrl);
-                          })
-                          .catch((err) => {
-                            console.warn('[ReportMileagePage] thumbnail failed', err);
-                            toast({
-                              title: 'לא ניתן לעבד את התמונה',
-                              description: 'נסו קובץ אחר או צילום חדש.',
-                              variant: 'destructive',
-                            });
-                            setPhotoThumbnailDataUrl(null);
-                          });
-                      } else {
-                        setPhotoThumbnailDataUrl(null);
-                      }
-                      e.target.value = '';
-                    }}
+                    onChange={handleFileChange}
                   />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full h-12 gap-2"
-                    onClick={pickPhoto}
-                    aria-controls="mileage-report-photo"
-                  >
-                    <Camera className="h-4 w-4" />
-                    {hasPhotoForSubmit ? 'החלף תמונה' : 'בחר תמונה'}
-                  </Button>
+                  {!hasPhotoForSubmit ? (
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-12 gap-2"
+                        onClick={openCameraPicker}
+                        aria-controls="mileage-report-photo-camera"
+                      >
+                        <Camera className="h-4 w-4 shrink-0" />
+                        צלם תמונה
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-12 gap-2"
+                        onClick={openGalleryPicker}
+                        aria-controls="mileage-report-photo-gallery"
+                      >
+                        <ImageIcon className="h-4 w-4 shrink-0" />
+                        בחר מהגלריה
+                      </Button>
+                    </div>
+                  ) : (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button type="button" variant="outline" className="h-12 w-full gap-2">
+                          <Camera className="h-4 w-4 shrink-0" />
+                          החלף תמונה
+                          <ChevronDown className="ms-auto h-4 w-4 shrink-0 opacity-70" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="min-w-[12rem]">
+                        <DropdownMenuItem
+                          className="gap-2"
+                          onSelect={() => {
+                            window.setTimeout(() => openCameraPicker(), 0);
+                          }}
+                        >
+                          <Camera className="h-4 w-4" />
+                          צילום מחדש
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="gap-2"
+                          onSelect={() => {
+                            window.setTimeout(() => openGalleryPicker(), 0);
+                          }}
+                        >
+                          <ImageIcon className="h-4 w-4" />
+                          בחר מהגלריה
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                   <p className="text-xs text-muted-foreground">
-                    ניתן לבחור מהגלריה או לצלם — ייפתח בורר הקבצים של המכשיר.
+                    מצלמה — ישר לצילום; גלריה — בחירת קובץ קיים מהמכשיר.
                   </p>
                   {photoDisplaySrc ? (
                     <div className="overflow-hidden rounded-xl border border-border">
@@ -672,7 +788,10 @@ export default function ReportMileagePage() {
                     type="button"
                     variant="outline"
                     className="h-12"
-                    onClick={() => navigate('/')}
+                    onClick={() => {
+                      clearDraftFromStorage();
+                      navigate('/');
+                    }}
                     disabled={submitting}
                   >
                     ביטול
