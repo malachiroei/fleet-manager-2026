@@ -23,8 +23,8 @@ import {
 const STORAGE_BUCKET = 'mileage-reports';
 
 const DRAFT_JSON_VERSION = 2 as const;
-const THUMB_MAX_EDGE = 720;
-const THUMB_JPEG_QUALITY = 0.52;
+const THUMB_MAX_EDGE = 480;
+const THUMB_JPEG_QUALITY = 0.3;
 
 type MileageReportDraftNormalized = {
   vehicleSearch: string;
@@ -60,10 +60,9 @@ function parseDraft(raw: string | null): MileageReportDraftNormalized | null {
     const o = JSON.parse(raw) as Record<string, unknown>;
     const v = o?.v;
     if (v !== 1 && v !== 2) return null;
+    const thumbRaw = o.photoThumbnailDataUrl;
     const thumb =
-      v === 2 && typeof o.photoThumbnailDataUrl === 'string' && o.photoThumbnailDataUrl.startsWith('data:')
-        ? o.photoThumbnailDataUrl
-        : null;
+      typeof thumbRaw === 'string' && thumbRaw.startsWith('data:') ? thumbRaw : null;
     return {
       vehicleSearch: typeof o.vehicleSearch === 'string' ? o.vehicleSearch : '',
       selectedVehicleId: typeof o.selectedVehicleId === 'string' ? o.selectedVehicleId : '',
@@ -131,6 +130,12 @@ async function dataUrlToFile(dataUrl: string, filename: string): Promise<File> {
   return new File([blob], filename, { type });
 }
 
+function isQuotaExceededError(e: unknown): boolean {
+  if (e instanceof DOMException && e.name === 'QuotaExceededError') return true;
+  if (e instanceof Error && /quota|exceeded|storage/i.test(e.message)) return true;
+  return false;
+}
+
 function sanitizeFileExt(name: string): string {
   const idx = name.lastIndexOf('.');
   if (idx === -1) return 'jpg';
@@ -190,6 +195,7 @@ export default function ReportMileagePage() {
   const lastRestoredCompositeRef = useRef<string | null>(null);
   /** Avoid clearing localStorage on Strict Mode’s fake unmount before the first paint. */
   const draftMountReadyRef = useRef(false);
+  const quotaDraftToastShownRef = useRef(false);
 
   draftFieldsRef.current = { vehicleSearch, selectedVehicleId, odometer, photoThumbnailDataUrl };
 
@@ -200,23 +206,36 @@ export default function ReportMileagePage() {
     if (!uid) return;
     const orgKey = String(activeOrgId ?? profile?.org_id ?? '');
     const d = draftFieldsRef.current;
+    let serialized: string;
     try {
-      const payload = {
+      serialized = JSON.stringify({
         v: DRAFT_JSON_VERSION,
         vehicleSearch: d.vehicleSearch,
         selectedVehicleId: d.selectedVehicleId,
         odometer: d.odometer,
         photoThumbnailDataUrl: d.photoThumbnailDataUrl,
         updatedAt: new Date().toISOString(),
-      };
-      localStorage.setItem(draftStorageKey(uid, orgKey), JSON.stringify(payload));
+      });
+    } catch {
+      return;
+    }
+    try {
+      localStorage.setItem(draftStorageKey(uid, orgKey), serialized);
+      quotaDraftToastShownRef.current = false;
       try {
         localStorage.removeItem(legacyDraftStorageKey(uid, orgKey));
       } catch {
         // ignore
       }
-    } catch {
-      // ignore quota / private mode
+    } catch (e) {
+      if (isQuotaExceededError(e)) {
+        if (!quotaDraftToastShownRef.current) {
+          quotaDraftToastShownRef.current = true;
+          toast({
+            title: 'התמונה גדולה מדי לשמירה אוטומטית, אך ניתן להמשיך בשליחה',
+          });
+        }
+      }
     }
   }, [user?.id, activeOrgId, profile?.org_id]);
 
@@ -231,16 +250,6 @@ export default function ReportMileagePage() {
       // ignore
     }
   }, [user?.id, activeOrgId, profile?.org_id]);
-
-  const resetFormAndClearDraft = useCallback(() => {
-    clearDraftFromStorage();
-    setVehicleSearch('');
-    setSelectedVehicleId('');
-    setOdometer('');
-    setPhotoFile(null);
-    setPhotoThumbnailDataUrl(null);
-    setShowDraftRecoveredBanner(false);
-  }, [clearDraftFromStorage]);
 
   /** Leaving the screen (menu, back, etc.): drop draft so the next visit starts clean. */
   useEffect(() => {
@@ -275,10 +284,12 @@ export default function ReportMileagePage() {
     try {
       const parsed = parseDraft(readDraftRaw(user.id, orgKeyForDraft));
       if (parsed && draftHasValues(parsed)) {
+        const thumb = parsed.photoThumbnailDataUrl;
         setVehicleSearch(parsed.vehicleSearch);
         setSelectedVehicleId(parsed.selectedVehicleId);
         setOdometer(parsed.odometer);
-        setPhotoThumbnailDataUrl(parsed.photoThumbnailDataUrl);
+        setPhotoFile(null);
+        setPhotoThumbnailDataUrl(thumb);
         toast({
           title: 'משחזרים נתונים…',
           description: 'השדות מולאו מהטיוטה שנשמרה (למשל לפני פתיחת המצלמה או ריענון).',
@@ -613,24 +624,12 @@ export default function ReportMileagePage() {
               <form onSubmit={submit} className="space-y-6">
                 {showDraftRecoveredBanner ? (
                   <div
-                    className="relative flex flex-wrap items-start gap-2 rounded-lg border border-amber-400/40 bg-amber-500/10 pe-10 ps-3 py-2.5 text-sm text-amber-100"
+                    className="relative rounded-lg border border-amber-400/40 bg-amber-500/10 pe-10 ps-3 py-2.5 text-sm text-amber-100"
                     role="status"
                   >
-                    <p className="min-w-0 flex-1 pt-0.5 leading-snug">
-                      הוחזרה טיוטה אוטומטית — בדקו את הרכב והקילומטראז׳ לפני השליחה. ניתן להסתיר הודעה זו או לבטל את
-                      הטיוטה לחלוטין.
+                    <p className="min-w-0 pt-0.5 leading-snug">
+                      הוחזרה טיוטה אוטומטית — בדקו את הרכב והקילומטראז׳ והתמונה לפני השליחה.
                     </p>
-                    <div className="flex shrink-0 flex-wrap items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        className="h-8 border-amber-400/35 bg-amber-950/40 text-amber-50 hover:bg-amber-950/55"
-                        onClick={resetFormAndClearDraft}
-                      >
-                        ביטול טיוטה
-                      </Button>
-                    </div>
                     <button
                       type="button"
                       className="absolute end-1.5 top-1.5 rounded-md p-1.5 text-amber-200/90 transition-colors hover:bg-amber-500/20 hover:text-amber-50"
@@ -771,9 +770,12 @@ export default function ReportMileagePage() {
                   {photoDisplaySrc ? (
                     <div className="overflow-hidden rounded-xl border border-border">
                       <img
+                        key={photoDisplaySrc.startsWith('data:') ? `data:${photoDisplaySrc.length}` : photoDisplaySrc}
                         src={photoDisplaySrc}
                         alt="תצוגה מקדימה"
                         className="w-full h-56 object-cover bg-black"
+                        loading="eager"
+                        decoding="async"
                       />
                     </div>
                   ) : null}
