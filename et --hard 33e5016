@@ -1,0 +1,20 @@
+[33m011fc93[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/production[m[33m, [m[1;31morigin/main[m[33m, [m[1;32mproduction[m[33m)[m Fix: Correct imports for getSupabaseAnonKey and fix Vercel build
+[33mb21f0e6[m Fix: Add headers and error handling for service update email notification
+[33m33e5016[m Mobile UX: Dedicated camera/gallery buttons and smart draft cleanup
+[33md457ebe[m Mobile UX: Dedicated camera/gallery buttons and smart draft cleanup
+[33m1d72cf2[m Mobile UX: Dedicated camera/gallery buttons and smart draft cleanup
+[33mb8b2288[m Mobile UX: Dedicated camera/gallery buttons and smart draft cleanup
+[33m0085838[m Mobile UX: Dedicated camera/gallery buttons and smart draft cleanup
+[33ma2a9043[m Mobile UX: Dedicated camera/gallery buttons and smart draft cleanup
+[33m0e32886[m Mobile UX: Dedicated camera/gallery buttons and smart draft cleanup
+[33m8798171[m Mobile UX: Dedicated camera/gallery buttons and smart draft cleanup
+[33m6a9656e[m Fix: Final mobile stability - gallery support and photo draft persistence
+[33mb7c5eb2[m Fix: Add robust state persistence for mileage reporting on mobile
+[33m5e1fff8[m Fix: prevent unmount on token refresh during camera flow
+[33m36388ae[m[33m ([m[1;33mtag: [m[1;33mv2.7.67-stable[m[33m)[m Verification 3: Green asterisk for test environment
+[33m970b0ec[m Verification 2: Orange and larger asterisk
+[33m4aaaed4[m Verification: Enlarged and colored asterisk for version
+[33mcf176b2[m Verification: Added asterisk to version
+[33maa0a347[m fix: sync auth hooks from staging to main
+[33m119df26[m[33m ([m[1;31morigin/master[m[33m, [m[1;32mmaster[m[33m)[m fix: add supabase auth guards and project ref sync
+[33m49ad532[m[33m ([m[1;31mproduction/main[m[33m, [m[1;31morigin/staging[m[33m, [m[1;32mstaging[m[33m)[m Update version to 2.7.67 and sync UI
