@@ -23,6 +23,9 @@ import {
 const STORAGE_BUCKET = 'mileage-reports';
 /** Drop legacy drafts that embedded huge base64 (avoids parse/memory issues on load). */
 const DRAFT_RAW_MAX_CHARS = 65536;
+const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
+/** Brief pause after camera returns before `createObjectURL` (main thread / memory). */
+const PHOTO_PROCESS_DELAY_MS = 48;
 
 const DRAFT_JSON_VERSION = 3 as const;
 
@@ -289,18 +292,51 @@ export default function ReportMileagePage() {
       return;
     }
 
-    const url = URL.createObjectURL(file);
-    blobUrlRef.current = url;
-    setPhotoFile(file);
-    setBlobPreviewUrl(url);
+    if (file.size > MAX_PHOTO_BYTES) {
+      toast({
+        title: 'התמונה גדולה מדי',
+        description: `הקובץ כ-${(file.size / (1024 * 1024)).toFixed(1)} MB; מקסימום מומלץ 10 MB. צלמו ברזולוציה נמוכה יותר או דחסו לפני ההעלאה.`,
+        variant: 'destructive',
+      });
+      window.setTimeout(() => {
+        try {
+          input.value = '';
+        } catch {
+          // ignore
+        }
+      }, 0);
+      return;
+    }
+
+    const processingToast = toast({
+      title: 'מעבד תמונה…',
+      description: 'אנא המתן',
+    });
 
     window.setTimeout(() => {
+      try {
+        const url = URL.createObjectURL(file);
+        blobUrlRef.current = url;
+        setPhotoFile(file);
+        setBlobPreviewUrl(url);
+      } catch (readErr) {
+        console.error('[ReportMileagePage] createObjectURL failed', readErr);
+        toast({
+          title: 'שגיאה בקריאת קובץ מהמצלמה או מהגלריה',
+          description: 'לא ניתן ליצור תצוגה מקדימה. נסו שוב או בחרו קובץ אחר.',
+          variant: 'destructive',
+        });
+        setPhotoFile(null);
+        setBlobPreviewUrl(null);
+      } finally {
+        processingToast.dismiss();
+      }
       try {
         input.value = '';
       } catch {
         // ignore
       }
-    }, 0);
+    }, PHOTO_PROCESS_DELAY_MS);
   }, []);
 
   const openCameraPicker = () => {
@@ -619,12 +655,13 @@ export default function ReportMileagePage() {
 
                 <div className="space-y-2">
                   <Label>תמונה של לוח השעונים</Label>
+                  {/* Boolean `capture` (not `environment`) — some mobile engines handle it better. If still unstable, remove `capture` so only `accept` remains (OS picker). */}
                   <input
                     ref={cameraInputRef}
                     id="mileage-report-photo-camera"
                     type="file"
                     accept="image/*"
-                    capture="environment"
+                    capture
                     className="sr-only"
                     onChange={handleFileChange}
                   />
@@ -691,7 +728,8 @@ export default function ReportMileagePage() {
                     </DropdownMenu>
                   )}
                   <p className="text-xs text-muted-foreground">
-                    מצלמה — ישר לצילום; גלריה — בחירת קובץ קיים מהמכשיר.
+                    צילום — מצלמת המכשיר (ללא כיוון קשיח); גלריה — קבצים קיימים. אם הצילום קורס, נסו &quot;בחר
+                    מהגלריה&quot; ובחרו מצלמה מתפריט המערכת.
                   </p>
                   {photoDisplaySrc ? (
                     <div className="overflow-hidden rounded-xl border border-border">
