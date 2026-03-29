@@ -58,6 +58,7 @@ const FEATURE_PERMISSION_DEFAULTS: Record<string, string | null> = {
   qa_parking_reports: 'reports',
   qa_vehicle_delivery: 'vehicle_delivery',
   qa_report_mileage: 'report_mileage',
+  qa_service_update: 'vehicles',
   qa_forms: 'forms',
   qa_accidents: 'compliance',
   qa_admin_settings: 'admin_access',

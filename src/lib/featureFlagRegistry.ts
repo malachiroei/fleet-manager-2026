@@ -89,6 +89,13 @@ export const FEATURE_FLAG_REGISTRY: FeatureFlagRegistryEntry[] = [
     category: 'quick_actions',
   },
   {
+    key: 'qa_service_update',
+    display_name_he: 'עדכון טיפול',
+    description: 'רישום טיפול, חישוב טיפול הבא ומסך עדכון טיפול ברשימת רכבים',
+    ui_mapping: 'Dashboard quick actions + Vehicle list -> עדכון טיפול; /vehicles/service-update',
+    category: 'quick_actions',
+  },
+  {
     key: 'qa_admin_settings',
     display_name_he: 'הגדרות מערכת',
     description: 'קישור מהיר — הגדרות מנהל',

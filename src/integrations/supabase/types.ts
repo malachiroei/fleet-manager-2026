@@ -712,6 +712,7 @@ export type Database = {
           road_ascent_month: number | null
           road_ascent_year: number | null
           sale_date: string | null
+          service_interval_km: number | null
           status: Database["public"]["Enums"]["compliance_status"]
           tax_value_price: number | null
           tax_year: number | null
@@ -771,6 +772,7 @@ export type Database = {
           road_ascent_month?: number | null
           road_ascent_year?: number | null
           sale_date?: string | null
+          service_interval_km?: number | null
           status?: Database["public"]["Enums"]["compliance_status"]
           tax_value_price?: number | null
           tax_year?: number | null
@@ -830,6 +832,7 @@ export type Database = {
           road_ascent_month?: number | null
           road_ascent_year?: number | null
           sale_date?: string | null
+          service_interval_km?: number | null
           status?: Database["public"]["Enums"]["compliance_status"]
           tax_value_price?: number | null
           tax_year?: number | null

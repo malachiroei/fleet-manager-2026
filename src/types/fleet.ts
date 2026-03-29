@@ -125,6 +125,8 @@ export interface Vehicle {
   // Maintenance folder fields
   last_service_date: string | null;
   last_service_km: number | null;
+  /** מרווח טיפול מומלץ בק״מ (המלצת יצרן, למשל 15000) */
+  service_interval_km: number | null;
   last_tire_change_date: string | null;
   next_tire_change_date: string | null;
   /** תאריך החלפה לפי מיקום צמיג */
