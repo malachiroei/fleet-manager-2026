@@ -16,30 +16,53 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 
 const STORAGE_BUCKET = 'mileage-reports';
 
-const DRAFT_JSON_VERSION = 1;
+const DRAFT_JSON_VERSION = 2 as const;
+const THUMB_MAX_EDGE = 720;
+const THUMB_JPEG_QUALITY = 0.52;
 
-type MileageReportDraftV1 = {
-  v: typeof DRAFT_JSON_VERSION;
+type MileageReportDraftNormalized = {
   vehicleSearch: string;
   selectedVehicleId: string;
   odometer: string;
+  photoThumbnailDataUrl: string | null;
   updatedAt: string;
 };
 
+/** Current key (includes user + org). Legacy: `fleet-report-mileage-draft:…` */
 function draftStorageKey(userId: string, orgKey: string): string {
+  return `mileage_report_draft:${userId}:${orgKey}`;
+}
+
+function legacyDraftStorageKey(userId: string, orgKey: string): string {
   return `fleet-report-mileage-draft:${userId}:${orgKey}`;
 }
 
-function parseDraft(raw: string | null): MileageReportDraftV1 | null {
+function readDraftRaw(userId: string, orgKey: string): string | null {
+  try {
+    return (
+      localStorage.getItem(draftStorageKey(userId, orgKey)) ??
+      localStorage.getItem(legacyDraftStorageKey(userId, orgKey))
+    );
+  } catch {
+    return null;
+  }
+}
+
+function parseDraft(raw: string | null): MileageReportDraftNormalized | null {
   if (!raw) return null;
   try {
-    const o = JSON.parse(raw) as Partial<MileageReportDraftV1>;
-    if (o?.v !== DRAFT_JSON_VERSION) return null;
+    const o = JSON.parse(raw) as Record<string, unknown>;
+    const v = o?.v;
+    if (v !== 1 && v !== 2) return null;
+    const thumb =
+      v === 2 && typeof o.photoThumbnailDataUrl === 'string' && o.photoThumbnailDataUrl.startsWith('data:')
+        ? o.photoThumbnailDataUrl
+        : null;
     return {
-      v: DRAFT_JSON_VERSION,
       vehicleSearch: typeof o.vehicleSearch === 'string' ? o.vehicleSearch : '',
       selectedVehicleId: typeof o.selectedVehicleId === 'string' ? o.selectedVehicleId : '',
       odometer: typeof o.odometer === 'string' ? o.odometer : '',
+      photoThumbnailDataUrl: thumb,
       updatedAt: typeof o.updatedAt === 'string' ? o.updatedAt : '',
     };
   } catch {
@@ -47,8 +70,59 @@ function parseDraft(raw: string | null): MileageReportDraftV1 | null {
   }
 }
 
-function draftHasValues(d: MileageReportDraftV1): boolean {
-  return Boolean(d.vehicleSearch.trim() || d.selectedVehicleId.trim() || d.odometer.trim());
+function draftHasValues(d: MileageReportDraftNormalized): boolean {
+  return Boolean(
+    d.vehicleSearch.trim() ||
+      d.selectedVehicleId.trim() ||
+      d.odometer.trim() ||
+      (d.photoThumbnailDataUrl && d.photoThumbnailDataUrl.length > 32),
+  );
+}
+
+function fileToThumbnailDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new globalThis.Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      try {
+        let w = img.naturalWidth;
+        let h = img.naturalHeight;
+        if (!w || !h) {
+          reject(new Error('Invalid image dimensions'));
+          return;
+        }
+        const scale = Math.min(1, THUMB_MAX_EDGE / w, THUMB_MAX_EDGE / h);
+        w = Math.max(1, Math.round(w * scale));
+        h = Math.max(1, Math.round(h * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('No canvas context'));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', THUMB_JPEG_QUALITY));
+      } catch (e) {
+        reject(e instanceof Error ? e : new Error(String(e)));
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('Failed to load image'));
+    };
+    img.src = objectUrl;
+  });
+}
+
+async function dataUrlToFile(dataUrl: string, filename: string): Promise<File> {
+  const res = await fetch(dataUrl);
+  const blob = await res.blob();
+  const type = blob.type && blob.type.startsWith('image/') ? blob.type : 'image/jpeg';
+  return new File([blob], filename, { type });
 }
 
 function sanitizeFileExt(name: string): string {
@@ -90,17 +164,25 @@ export default function ReportMileagePage() {
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
   const [odometer, setOdometer] = useState('');
   const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
+  /** Object-URL preview while a `File` is in memory (full resolution). */
+  const [blobPreviewUrl, setBlobPreviewUrl] = useState<string | null>(null);
+  /** JPEG data URL for draft persistence / post-reload preview (thumbnail). */
+  const [photoThumbnailDataUrl, setPhotoThumbnailDataUrl] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [showDraftRecoveredBanner, setShowDraftRecoveredBanner] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const draftFieldsRef = useRef({ vehicleSearch: '', selectedVehicleId: '', odometer: '' });
+  const draftFieldsRef = useRef({
+    vehicleSearch: '',
+    selectedVehicleId: '',
+    odometer: '',
+    photoThumbnailDataUrl: null as string | null,
+  });
   const allowPersistDraftRef = useRef(false);
   /** Same user+org as last restore in this mount cycle — skips Strict Mode duplicate effect. */
   const lastRestoredCompositeRef = useRef<string | null>(null);
 
-  draftFieldsRef.current = { vehicleSearch, selectedVehicleId, odometer };
+  draftFieldsRef.current = { vehicleSearch, selectedVehicleId, odometer, photoThumbnailDataUrl };
 
   const orgKeyForDraft = String(activeOrgId ?? profile?.org_id ?? '');
 
@@ -110,14 +192,20 @@ export default function ReportMileagePage() {
     const orgKey = String(activeOrgId ?? profile?.org_id ?? '');
     const d = draftFieldsRef.current;
     try {
-      const payload: MileageReportDraftV1 = {
+      const payload = {
         v: DRAFT_JSON_VERSION,
         vehicleSearch: d.vehicleSearch,
         selectedVehicleId: d.selectedVehicleId,
         odometer: d.odometer,
+        photoThumbnailDataUrl: d.photoThumbnailDataUrl,
         updatedAt: new Date().toISOString(),
       };
       localStorage.setItem(draftStorageKey(uid, orgKey), JSON.stringify(payload));
+      try {
+        localStorage.removeItem(legacyDraftStorageKey(uid, orgKey));
+      } catch {
+        // ignore
+      }
     } catch {
       // ignore quota / private mode
     }
@@ -129,6 +217,7 @@ export default function ReportMileagePage() {
     const orgKey = String(activeOrgId ?? profile?.org_id ?? '');
     try {
       localStorage.removeItem(draftStorageKey(uid, orgKey));
+      localStorage.removeItem(legacyDraftStorageKey(uid, orgKey));
     } catch {
       // ignore
     }
@@ -150,11 +239,12 @@ export default function ReportMileagePage() {
     setShowDraftRecoveredBanner(false);
 
     try {
-      const parsed = parseDraft(localStorage.getItem(draftStorageKey(user.id, orgKeyForDraft)));
+      const parsed = parseDraft(readDraftRaw(user.id, orgKeyForDraft));
       if (parsed && draftHasValues(parsed)) {
         setVehicleSearch(parsed.vehicleSearch);
         setSelectedVehicleId(parsed.selectedVehicleId);
         setOdometer(parsed.odometer);
+        setPhotoThumbnailDataUrl(parsed.photoThumbnailDataUrl);
         toast({
           title: 'משחזרים נתונים…',
           description: 'השדות מולאו מהטיוטה שנשמרה (למשל לפני פתיחת המצלמה או ריענון).',
@@ -173,7 +263,7 @@ export default function ReportMileagePage() {
   useEffect(() => {
     if (!user?.id || loading || !allowPersistDraftRef.current) return;
     flushDraftToStorage();
-  }, [vehicleSearch, selectedVehicleId, odometer, user?.id, loading, flushDraftToStorage]);
+  }, [vehicleSearch, selectedVehicleId, odometer, photoThumbnailDataUrl, user?.id, loading, flushDraftToStorage]);
 
   const filteredVehicles = useMemo(() => {
     const q = vehicleSearch.trim().toLowerCase();
@@ -193,15 +283,18 @@ export default function ReportMileagePage() {
 
   useEffect(() => {
     if (!photoFile) {
-      if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
-      setPhotoPreviewUrl(null);
+      setBlobPreviewUrl(null);
       return;
     }
-    const next = URL.createObjectURL(photoFile);
-    setPhotoPreviewUrl(next);
-    return () => URL.revokeObjectURL(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const url = URL.createObjectURL(photoFile);
+    setBlobPreviewUrl(url);
+    return () => {
+      URL.revokeObjectURL(url);
+    };
   }, [photoFile]);
+
+  const photoDisplaySrc = blobPreviewUrl ?? photoThumbnailDataUrl ?? undefined;
+  const hasPhotoForSubmit = Boolean(photoFile || (photoThumbnailDataUrl && photoThumbnailDataUrl.startsWith('data:')));
 
   const pickPhoto = () => {
     flushDraftToStorage();
@@ -229,26 +322,45 @@ export default function ReportMileagePage() {
       });
       return;
     }
-    if (!photoFile) {
+    if (!hasPhotoForSubmit) {
       toast({ title: 'נא לצרף תמונה של לוח השעונים', variant: 'destructive' });
       return;
     }
 
     setSubmitting(true);
     try {
-      const ext = sanitizeFileExt(photoFile.name);
+      let fileForUpload: File | null = photoFile;
+      if (!fileForUpload && photoThumbnailDataUrl?.startsWith('data:')) {
+        try {
+          fileForUpload = await dataUrlToFile(photoThumbnailDataUrl, 'odometer-mileage-draft.jpg');
+        } catch (convErr) {
+          console.error('[ReportMileagePage] dataUrlToFile failed', convErr);
+          toast({
+            title: 'לא ניתן להשתמש בתמונה השמורה',
+            description: 'נא לבחור תמונה מחדש מהגלריה או מהמצלמה.',
+            variant: 'destructive',
+          });
+          return;
+        }
+      }
+      if (!fileForUpload) {
+        toast({ title: 'נא לצרף תמונה של לוח השעונים', variant: 'destructive' });
+        return;
+      }
+
+      const ext = sanitizeFileExt(fileForUpload.name);
       const id = (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
       const path = `${selectedVehicle.id}/${id}.${ext}`;
 
       console.log('Step 1: Uploading photo...', {
         bucket: STORAGE_BUCKET,
         objectPath: path,
-        fileName: photoFile.name,
+        fileName: fileForUpload.name,
       });
 
       const { error: uploadError } = await supabase.storage
         .from(STORAGE_BUCKET)
-        .upload(path, photoFile, { upsert: false, contentType: photoFile.type || undefined });
+        .upload(path, fileForUpload, { upsert: false, contentType: fileForUpload.type || undefined });
       if (uploadError) {
         console.error('[ReportMileagePage] storage upload failed', uploadError);
         throw uploadError;
@@ -500,29 +612,55 @@ export default function ReportMileagePage() {
                   <Label>תמונה של לוח השעונים</Label>
                   <input
                     ref={fileInputRef}
+                    id="mileage-report-photo"
                     type="file"
                     accept="image/*"
-                    capture="environment"
-                    className="hidden"
+                    className="sr-only"
                     onChange={(e) => {
                       const f = e.target.files?.[0] ?? null;
                       setPhotoFile(f);
+                      if (f) {
+                        void fileToThumbnailDataUrl(f)
+                          .then((dataUrl) => {
+                            setPhotoThumbnailDataUrl(dataUrl);
+                          })
+                          .catch((err) => {
+                            console.warn('[ReportMileagePage] thumbnail failed', err);
+                            toast({
+                              title: 'לא ניתן לעבד את התמונה',
+                              description: 'נסו קובץ אחר או צילום חדש.',
+                              variant: 'destructive',
+                            });
+                            setPhotoThumbnailDataUrl(null);
+                          });
+                      } else {
+                        setPhotoThumbnailDataUrl(null);
+                      }
                       e.target.value = '';
                     }}
                   />
-                  <Button type="button" variant="outline" className="w-full h-12 gap-2" onClick={pickPhoto}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full h-12 gap-2"
+                    onClick={pickPhoto}
+                    aria-controls="mileage-report-photo"
+                  >
                     <Camera className="h-4 w-4" />
-                    {photoFile ? 'החלף תמונה' : 'צלם תמונה'}
+                    {hasPhotoForSubmit ? 'החלף תמונה' : 'בחר תמונה'}
                   </Button>
-                  {photoPreviewUrl && (
+                  <p className="text-xs text-muted-foreground">
+                    ניתן לבחור מהגלריה או לצלם — ייפתח בורר הקבצים של המכשיר.
+                  </p>
+                  {photoDisplaySrc ? (
                     <div className="overflow-hidden rounded-xl border border-border">
                       <img
-                        src={photoPreviewUrl}
+                        src={photoDisplaySrc}
                         alt="תצוגה מקדימה"
                         className="w-full h-56 object-cover bg-black"
                       />
                     </div>
-                  )}
+                  ) : null}
                 </div>
 
                 <div className="flex gap-3">
