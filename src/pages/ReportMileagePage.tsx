@@ -23,8 +23,8 @@ import {
 const STORAGE_BUCKET = 'mileage-reports';
 
 const DRAFT_JSON_VERSION = 2 as const;
-const THUMB_MAX_EDGE = 480;
-const THUMB_JPEG_QUALITY = 0.3;
+const THUMB_MAX_EDGE = 320;
+const THUMB_JPEG_QUALITY = 0.28;
 
 type MileageReportDraftNormalized = {
   vehicleSearch: string;
@@ -134,6 +134,27 @@ function isQuotaExceededError(e: unknown): boolean {
   if (e instanceof DOMException && e.name === 'QuotaExceededError') return true;
   if (e instanceof Error && /quota|exceeded|storage/i.test(e.message)) return true;
   return false;
+}
+
+/** Detach bytes from the `<input>` so clearing `value` on mobile does not drop the capture. */
+function cloneFileForStableState(source: File): File {
+  try {
+    return new File([source], source.name || 'capture.jpg', {
+      type: source.type || 'image/jpeg',
+      lastModified: source.lastModified,
+    });
+  } catch {
+    try {
+      const blob = source.slice(0, source.size, source.type || 'image/jpeg');
+      return new File([blob], source.name || 'capture.jpg', { type: source.type || 'image/jpeg' });
+    } catch {
+      return source;
+    }
+  }
+}
+
+function toastError(title: string, description?: string) {
+  toast({ title, description, variant: 'destructive' });
 }
 
 function sanitizeFileExt(name: string): string {
@@ -342,26 +363,62 @@ export default function ReportMileagePage() {
   const hasPhotoForSubmit = Boolean(photoFile || (photoThumbnailDataUrl && photoThumbnailDataUrl.startsWith('data:')));
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0] ?? null;
-    setPhotoFile(f);
-    if (f) {
-      void fileToThumbnailDataUrl(f)
-        .then((dataUrl) => {
-          setPhotoThumbnailDataUrl(dataUrl);
-        })
-        .catch((err) => {
-          console.warn('[ReportMileagePage] thumbnail failed', err);
-          toast({
-            title: 'לא ניתן לעבד את התמונה',
-            description: 'נסו קובץ אחר או צילום חדש.',
-            variant: 'destructive',
-          });
-          setPhotoThumbnailDataUrl(null);
-        });
-    } else {
+    const input = e.currentTarget;
+    const raw = input.files?.[0] ?? null;
+
+    const resetInputValueLater = () => {
+      window.setTimeout(() => {
+        try {
+          input.value = '';
+        } catch {
+          // ignore
+        }
+      }, 0);
+    };
+
+    if (!raw) {
+      setPhotoFile(null);
       setPhotoThumbnailDataUrl(null);
+      resetInputValueLater();
+      return;
     }
-    e.target.value = '';
+
+    if (raw.size === 0) {
+      toastError('שגיאה בקריאת קובץ מהמצלמה או מהגלריה', 'הקובץ ריק — נסו שוב.');
+      setPhotoFile(null);
+      setPhotoThumbnailDataUrl(null);
+      resetInputValueLater();
+      return;
+    }
+
+    const stableFile = cloneFileForStableState(raw);
+
+    setPhotoFile(stableFile);
+    setPhotoThumbnailDataUrl(null);
+
+    window.setTimeout(() => {
+      try {
+        void fileToThumbnailDataUrl(stableFile)
+          .then((dataUrl) => {
+            setPhotoThumbnailDataUrl(dataUrl);
+          })
+          .catch((err) => {
+            console.warn('[ReportMileagePage] thumbnail failed', err);
+            toastError(
+              'שגיאה ביצירת תמונה מקדימה',
+              'התמונה המלאה עדיין זמינה לשליחה; שמירת טיוטה אוטומטית עשויה להיות חלקית.',
+            );
+          });
+      } catch (thumbStartErr) {
+        console.error('[ReportMileagePage] thumbnail start', thumbStartErr);
+        toastError('שגיאה ביצירת תמונה מקדימה', 'התמונה המלאה עדיין זמינה לשליחה.');
+      }
+      try {
+        input.value = '';
+      } catch {
+        // ignore
+      }
+    }, 0);
   }, []);
 
   const openCameraPicker = () => {
