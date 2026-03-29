@@ -381,6 +381,7 @@ export default function ReportMileagePage() {
                     onChange={(e) => {
                       const f = e.target.files?.[0] ?? null;
                       setPhotoFile(f);
+                      e.target.value = '';
                     }}
                   />
                   <Button type="button" variant="outline" className="w-full h-12 gap-2" onClick={pickPhoto}>
