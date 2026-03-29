@@ -3,7 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Camera, Loader2, Trash2, Wrench } from 'lucide-react';
 
-import { supabase, getSupabaseAnonKey } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/client';
+import { getSupabaseAnonKey } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { isFeatureEnabled, useFeatureFlags } from '@/hooks/useFeatureFlags';
 import { useVehicles, useUpdateVehicle } from '@/hooks/useVehicles';
