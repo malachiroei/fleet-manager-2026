@@ -42,6 +42,12 @@ import VehicleDamageSnapshot from '@/components/VehicleDamageSnapshot';
 import { parseDamageSummaryLine } from '@/lib/vehicleDamage';
 import { MISSING_DATA, fmtDriverDate } from '@/components/DriverCard';
 import {
+  nextMaintenanceCardStyles,
+  nextMaintenanceCountdownLabelHe,
+  nextMaintenanceKmRemaining,
+  nextMaintenanceKmUrgency,
+} from '@/lib/nextMaintenanceDisplay';
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -423,6 +429,10 @@ export default function VehicleDetailPage() {
       ? Number(vehicle.last_service_km)
       : 0;
   const displayOdometer = Math.max(odoFromOdometer, odoFromLastService);
+  const maintenanceRemainKm = nextMaintenanceKmRemaining(vehicle);
+  const maintenanceUrgency = nextMaintenanceKmUrgency(maintenanceRemainKm);
+  const maintenanceCardStyles = nextMaintenanceCardStyles(maintenanceUrgency);
+  const maintenanceCountdownHe = nextMaintenanceCountdownLabelHe(maintenanceRemainKm);
   const taxValuePrice = vehicle.tax_value_price ?? pricingLookup?.usage_value ?? null;
   const taxValueYear = vehicle.tax_year ?? pricingLookup?.usage_year ?? null;
   const adjustedPrice = vehicle.adjusted_price ?? pricingLookup?.adjusted_price ?? null;
@@ -787,15 +797,35 @@ export default function VehicleDetailPage() {
                   </div>
                 </div>
               </div>
-              <div className="flex flex-col justify-between rounded-xl border border-white/10 bg-slate-900/60 px-4 py-4">
+              <div
+                className={`flex flex-col justify-between rounded-xl border bg-slate-900/60 px-4 py-4 ${maintenanceCardStyles.border} ${maintenanceCardStyles.ring}`}
+              >
                 <div className="flex items-center gap-2 text-muted-foreground">
-                  <Wrench className="h-4 w-4 text-purple-400" />
-                  <span className="text-xs font-medium uppercase tracking-wider">טיפול הבא</span>
+                  <Wrench className={`h-4 w-4 ${maintenanceCardStyles.iconClass}`} />
+                  <span
+                    className={`text-xs font-medium uppercase tracking-wider ${
+                      maintenanceUrgency === 'red'
+                        ? 'text-red-400/95'
+                        : maintenanceUrgency === 'orange'
+                          ? 'text-orange-300/95'
+                          : ''
+                    }`}
+                  >
+                    טיפול הבא
+                  </span>
                 </div>
                 <p className="mt-3 text-sm font-medium">{fmtDriverDate(vehicle.next_maintenance_date)}</p>
-                <p className="mt-1 font-mono text-sm tabular-nums text-slate-300" dir="ltr">
+                <p
+                  className={`mt-1 font-mono text-sm tabular-nums ${maintenanceCardStyles.kmTargetClass}`}
+                  dir="ltr"
+                >
                   {vehicle.next_maintenance_km != null ? `${vehicle.next_maintenance_km.toLocaleString()} ק״מ` : MISSING_DATA}
                 </p>
+                {maintenanceCountdownHe ? (
+                  <p className={`mt-2 text-sm tabular-nums ${maintenanceCardStyles.countdownClass}`} dir="ltr">
+                    {maintenanceCountdownHe}
+                  </p>
+                ) : null}
                 {vehicle.service_interval_km != null && (
                   <p className="mt-2 text-xs text-muted-foreground" dir="ltr">
                     מרווח מומלץ: {vehicle.service_interval_km.toLocaleString()} ק״מ

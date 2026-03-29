@@ -3,12 +3,13 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Camera, Loader2, Trash2, Wrench } from 'lucide-react';
 
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, getSupabaseAnonKey } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { isFeatureEnabled, useFeatureFlags } from '@/hooks/useFeatureFlags';
 import { useVehicles, useUpdateVehicle } from '@/hooks/useVehicles';
 import type { Vehicle } from '@/types/fleet';
 import { toast } from '@/hooks/use-toast';
+import { toast as sonnerToast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -262,29 +263,60 @@ export default function ServiceUpdatePage() {
         console.error('[ServiceUpdatePage] vehicle_documents insert', docErr);
       }
 
+      const notifyBody = {
+        subject: 'עדכון טיפול',
+        plateNumber: resolvedVehicle.plate_number,
+        vehicleLabel,
+        serviceDate,
+        nextServiceDate,
+        currentMileage: mileageNum,
+        nextServiceKm,
+        serviceIntervalKm: resolvedVehicle.service_interval_km,
+        invoicePhotoUrl: photoUrl,
+      };
+
+      sonnerToast.info('שולח מייל עדכון...');
+
       try {
-        const sessionRes = await supabase.auth.getSession();
-        const token = sessionRes?.data?.session?.access_token ?? null;
-        const notifyBody = {
-          subject: 'עדכון טיפול',
-          plateNumber: resolvedVehicle.plate_number,
-          vehicleLabel,
-          serviceDate,
-          nextServiceDate,
-          currentMileage: mileageNum,
-          nextServiceKm,
-          serviceIntervalKm: resolvedVehicle.service_interval_km,
-          invoicePhotoUrl: photoUrl,
-        };
-        const invokeResult = await supabase.functions.invoke('send-service-update-notification', {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-          body: notifyBody,
-        });
-        if (invokeResult.error) {
-          console.error('[send-service-update-notification]', invokeResult.error);
+        const anonKey = getSupabaseAnonKey();
+        const { data: sessionData } = await supabase.auth.getSession();
+        const accessToken = sessionData?.session?.access_token ?? '';
+        const bearer = accessToken || anonKey;
+
+        const { data: fnData, error: fnError } = await supabase.functions.invoke(
+          'send-service-update-notification',
+          {
+            body: notifyBody,
+            headers: {
+              apikey: anonKey,
+              Authorization: `Bearer ${bearer}`,
+            },
+          },
+        );
+
+        if (fnError) {
+          console.error('[send-service-update-notification] invoke SDK error', fnError);
+          sonnerToast.error(`שליחת המייל נכשלה: ${fnError.message}`);
+        } else {
+          const payloadErr =
+            fnData &&
+            typeof fnData === 'object' &&
+            fnData !== null &&
+            'error' in fnData &&
+            (fnData as { error?: unknown }).error != null
+              ? String((fnData as { error: unknown }).error)
+              : null;
+          if (payloadErr) {
+            console.error('[send-service-update-notification] function returned error in body', fnData);
+            sonnerToast.error(`שליחת המייל נכשלה: ${payloadErr}`);
+          } else {
+            sonnerToast.success('המייל נשלח בהצלחה');
+          }
         }
       } catch (notifyErr) {
-        console.error('[send-service-update-notification] threw', notifyErr);
+        const msg = notifyErr instanceof Error ? notifyErr.message : String(notifyErr);
+        console.error('[send-service-update-notification] uncaught', notifyErr);
+        sonnerToast.error(`שליחת המייל נכשלה: ${msg}`);
       }
 
       queryClient.invalidateQueries({ queryKey: ['vehicle', resolvedVehicle.id] });

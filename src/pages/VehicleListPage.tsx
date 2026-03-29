@@ -6,11 +6,52 @@ import type { Vehicle } from '@/types/fleet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Plus, Search, Gauge, Wrench } from 'lucide-react';
+import {
+  nextMaintenanceCardStyles,
+  nextMaintenanceCountdownLabelHe,
+  nextMaintenanceKmRemaining,
+  nextMaintenanceKmUrgency,
+} from '@/lib/nextMaintenanceDisplay';
 
 function fmtDate(d: string | null): string {
   if (!d) return '—';
   const dt = new Date(d);
   return `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}/${dt.getFullYear()}`;
+}
+
+function NextServiceListCard({ vehicle }: { vehicle: Vehicle }) {
+  if (vehicle.next_maintenance_km == null) return null;
+  const remain = nextMaintenanceKmRemaining(vehicle);
+  const urgency = nextMaintenanceKmUrgency(remain);
+  const st = nextMaintenanceCardStyles(urgency);
+  const countdown = nextMaintenanceCountdownLabelHe(remain);
+  return (
+    <div
+      className={`mb-3 rounded-xl md:rounded-2xl p-3 md:p-4 flex flex-col items-center border bg-white/5 ${st.border} ${st.ring}`}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <Wrench className={`h-4 w-4 shrink-0 ${st.iconClass}`} />
+        <span
+          className={`text-xs font-bold uppercase tracking-wider ${
+            urgency === 'red' ? 'text-red-400' : urgency === 'orange' ? 'text-orange-300' : 'text-purple-300'
+          }`}
+        >
+          טיפול הבא
+        </span>
+      </div>
+      <span className="white-data text-lg md:text-xl tabular-nums font-black" dir="ltr">
+        {vehicle.next_maintenance_km.toLocaleString()} ק״מ
+      </span>
+      {countdown ? (
+        <p className={`mt-1.5 text-sm md:text-base tabular-nums text-center ${st.countdownClass}`} dir="ltr">
+          {countdown}
+        </p>
+      ) : null}
+      <span className="data-label-glow text-xs mt-1 text-center" dir="ltr">
+        {fmtDate(vehicle.next_maintenance_date)}
+      </span>
+    </div>
+  );
 }
 
 function VehicleCard({ vehicle }: { vehicle: Vehicle }) {
@@ -50,6 +91,7 @@ function VehicleCard({ vehicle }: { vehicle: Vehicle }) {
           <span className="data-label-glow text-xs text-center">ק״מ טיפול אחרון</span>
         </div>
       </div>
+      <NextServiceListCard vehicle={vehicle} />
       <div className="grid grid-cols-3 gap-2 mb-4">
         <div className="bg-white/5 rounded-xl p-2 flex flex-col items-center border border-white/10">
           <span className="white-data text-xs md:text-sm tabular-nums" dir="ltr">{fmtDate(vehicle.created_at)}</span>
