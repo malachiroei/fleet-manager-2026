@@ -21,6 +21,13 @@ type WebcamCaptureProps = {
 };
 
 const WEBCAM_PROFILE_STORAGE_KEY = 'fleet_manager_mileage_webcam_profile_v1';
+const REAR_DEVICE_ID_STORAGE_KEY = 'fleet_manager_mileage_rear_device_id_v1';
+
+/** After stopping the warm-up (user) stream, Samsung often needs this before rear can re-open. */
+const WARMUP_POST_STOP_MS = 800;
+
+/** Re-probe after first warm-up reboot before optional second hard reset (allow attach + decode). */
+const POST_FIRST_WARMUP_RECHECK_MS = 2200;
 
 type CameraProfile = 'environment' | 'user' | 'compatible';
 
@@ -51,6 +58,29 @@ function writeStoredCameraProfile(profile: CameraProfile): void {
   }
 }
 
+function readStoredRearDeviceId(): string | null {
+  try {
+    const id = localStorage.getItem(REAR_DEVICE_ID_STORAGE_KEY)?.trim();
+    return id && id.length > 0 ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredRearDeviceId(deviceId: string): void {
+  try {
+    localStorage.setItem(REAR_DEVICE_ID_STORAGE_KEY, deviceId);
+  } catch {
+    /* ignore */
+  }
+}
+
+function maybePersistRearDeviceId(stream: MediaStream | null): void {
+  const track = stream?.getVideoTracks()[0];
+  const id = track?.getSettings?.().deviceId;
+  if (id) writeStoredRearDeviceId(id);
+}
+
 const PERMISSION_BLOCKED_HE =
   'נראה שהרשאת המצלמה חסומה. אנא אפשר גישה למצלמה בהגדרות הדפדפן.';
 
@@ -73,27 +103,70 @@ function mapGetUserMediaError(err: unknown): string {
   return 'לא ניתן לפתוח את המצלמה.';
 }
 
-const ENVIRONMENT_CONSTRAINT_CHAIN: MediaStreamConstraints[] = [
-  {
-    video: {
-      facingMode: { ideal: 'environment' },
-      width: { ideal: 1920 },
-      height: { ideal: 1080 },
+/** exact environment first, then ideal, then persisted rear deviceId, then generic fallback. */
+function buildEnvironmentConstraintChain(storedRearDeviceId: string | null): MediaStreamConstraints[] {
+  const exactEnv: MediaStreamConstraints[] = [
+    {
+      video: {
+        facingMode: { exact: 'environment' },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+      },
+      audio: false,
     },
-    audio: false,
-  },
-  {
-    video: {
-      facingMode: { ideal: 'environment' },
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
+    {
+      video: {
+        facingMode: { exact: 'environment' },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
+      audio: false,
     },
-    audio: false,
-  },
-  { video: { facingMode: { ideal: 'environment' } }, audio: false },
-  { video: { facingMode: 'environment' }, audio: false },
-  { video: true, audio: false },
-];
+    { video: { facingMode: { exact: 'environment' } }, audio: false },
+  ];
+  const deviceIdChain: MediaStreamConstraints[] = storedRearDeviceId
+    ? [
+        {
+          video: {
+            deviceId: { exact: storedRearDeviceId },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+          audio: false,
+        },
+        {
+          video: {
+            deviceId: { exact: storedRearDeviceId },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        },
+        { video: { deviceId: { exact: storedRearDeviceId } }, audio: false },
+      ]
+    : [];
+  const idealEnv: MediaStreamConstraints[] = [
+    {
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+      },
+      audio: false,
+    },
+    {
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
+      audio: false,
+    },
+    { video: { facingMode: { ideal: 'environment' } }, audio: false },
+    { video: { facingMode: 'environment' }, audio: false },
+  ];
+  return [...exactEnv, ...deviceIdChain, ...idealEnv, { video: true, audio: false }];
+}
 
 const USER_CONSTRAINT_CHAIN: MediaStreamConstraints[] = [
   {
@@ -123,7 +196,7 @@ function constraintChainForProfile(profile: CameraProfile): MediaStreamConstrain
     case 'compatible':
       return HIGH_COMPAT_CONSTRAINT_CHAIN;
     default:
-      return ENVIRONMENT_CONSTRAINT_CHAIN;
+      return buildEnvironmentConstraintChain(readStoredRearDeviceId());
   }
 }
 
@@ -190,13 +263,15 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
 
   const [streamBootId, setStreamBootId] = useState(0);
   const rearWarmupDoneRef = useRef(false);
+  const rearHardResetDoneRef = useRef(false);
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [snapping, setSnapping] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const [canvasProbeOk, setCanvasProbeOk] = useState(false);
-  const [videoTrackLive, setVideoTrackLive] = useState(false);
+  /** Reactive gate: refs don't re-render when video dimensions appear. */
+  const [hasVideoFrame, setHasVideoFrame] = useState(false);
 
   const initTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -214,6 +289,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     if (!v) return;
     setLoading(false);
     if (v.videoWidth > 0 && v.videoHeight > 0) {
+      setHasVideoFrame(true);
       setVideoReady(true);
     }
   }, [clearInitTimeout]);
@@ -221,6 +297,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
   useEffect(() => {
     if (open) {
       rearWarmupDoneRef.current = false;
+      rearHardResetDoneRef.current = false;
       const saved = readStoredCameraProfile();
       if (saved) setCameraProfile(saved);
     }
@@ -229,9 +306,10 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
   useEffect(() => {
     if (!open) return;
     const id = setInterval(() => {
-      const s = streamRef.current;
-      const vt = s?.getVideoTracks()[0];
-      setVideoTrackLive(vt?.readyState === 'live');
+      const v = videoRef.current;
+      if (v && v.videoWidth > 0 && v.videoHeight > 0) {
+        setHasVideoFrame(true);
+      }
     }, 1200);
     return () => clearInterval(id);
   }, [open]);
@@ -240,6 +318,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     setError(null);
     setVideoReady(false);
     setCanvasProbeOk(false);
+    setHasVideoFrame(false);
     setLoading(true);
     clearInitTimeout();
     stopStream(streamRef.current);
@@ -283,9 +362,6 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     stream.getTracks().forEach((track) => {
       track.enabled = true;
     });
-
-    const vt0 = stream.getVideoTracks()[0];
-    setVideoTrackLive(vt0?.readyState === 'live');
 
     streamRef.current = stream;
     video.srcObject = stream;
@@ -336,7 +412,6 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       stopStream(stream);
       streamRef.current = null;
       setLoading(false);
-      setVideoTrackLive(false);
       return;
     }
 
@@ -352,10 +427,16 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       const v = videoRef.current;
       const s = streamRef.current;
       if (!v || !s || !openRef.current) return;
+      if (v.videoWidth > 0 && v.videoHeight > 0) {
+        setHasVideoFrame(true);
+      }
       const probe = probeVideoFrameOnCanvas(v);
       if (probe.ok && v.videoWidth > 0 && v.videoHeight > 0) {
         setCanvasProbeOk(true);
         setVideoReady(true);
+        if (cameraProfileRef.current === 'environment') {
+          maybePersistRearDeviceId(s);
+        }
       }
     };
     setTimeout(runCanvasProbe, 600);
@@ -375,6 +456,9 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
         const probe = probeVideoFrameOnCanvas(v);
         if (probe.ok) {
           rearWarmupDoneRef.current = true;
+          if (cameraProfileRef.current === 'environment') {
+            maybePersistRearDeviceId(streamRef.current);
+          }
           return;
         }
         rearWarmupDoneRef.current = true;
@@ -384,9 +468,30 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
         } catch {
           /* ignore */
         }
-        await new Promise((r) => setTimeout(r, 50));
+        await new Promise((r) => setTimeout(r, WARMUP_POST_STOP_MS));
         if (!openRef.current || cameraProfileRef.current !== 'environment') return;
         setStreamBootId((k) => k + 1);
+
+        setTimeout(() => {
+          if (!openRef.current || cameraProfileRef.current !== 'environment') return;
+          if (!rearWarmupDoneRef.current || rearHardResetDoneRef.current) return;
+          const v2 = videoRef.current;
+          if (!v2) return;
+          const probe2 = probeVideoFrameOnCanvas(v2);
+          if (probe2.ok) return;
+          rearHardResetDoneRef.current = true;
+          void (async () => {
+            try {
+              const wu2 = await getUserMediaWithChain(QUICK_USER_WARMUP);
+              stopStream(wu2);
+            } catch {
+              /* ignore */
+            }
+            await new Promise((r) => setTimeout(r, WARMUP_POST_STOP_MS));
+            if (!openRef.current || cameraProfileRef.current !== 'environment') return;
+            setStreamBootId((k) => k + 1);
+          })();
+        }, POST_FIRST_WARMUP_RECHECK_MS);
       }, 420);
     }
   }, [cameraProfile, streamBootId, clearInitTimeout, markVideoPresenting]);
@@ -399,7 +504,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       setSnapping(false);
       setVideoReady(false);
       setCanvasProbeOk(false);
-      setVideoTrackLive(false);
+      setHasVideoFrame(false);
       const v = videoRef.current;
       if (v) v.srcObject = null;
       stopStream(streamRef.current);
@@ -490,6 +595,9 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
         return;
       }
       writeStoredCameraProfile(cameraProfileRef.current);
+      if (cameraProfileRef.current === 'environment') {
+        maybePersistRearDeviceId(streamRef.current);
+      }
       const name = `mileage-capture-${Date.now()}.jpg`;
       const file = new File([blob], name, { type: 'image/jpeg' });
       stopStream(streamRef.current);
@@ -507,10 +615,11 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     const stream = streamRef.current;
     const track = stream?.getVideoTracks()[0];
     if (!track) return;
-
-    setSnapping(true);
     const w = video?.videoWidth ?? 0;
     const h = video?.videoHeight ?? 0;
+    if (w <= 0 || h <= 0) return;
+
+    setSnapping(true);
 
     try {
       if (w > 0 && h > 0 && video) {
@@ -573,18 +682,18 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     }
   }, [disabled, finishCapture, snapping]);
 
-  const imageCaptureAvailable = typeof ImageCapture !== 'undefined';
   const canCapture =
     !loading &&
     !error &&
-    (videoReady || canvasProbeOk || (imageCaptureAvailable && videoTrackLive));
+    hasVideoFrame &&
+    (videoReady || canvasProbeOk);
 
   const handleVideoError = useCallback(() => {
     clearInitTimeout();
     if (!openRef.current) return;
     setLoading(false);
     setVideoReady(false);
-    setVideoTrackLive(false);
+    setHasVideoFrame(false);
     setError(PERMISSION_BLOCKED_HE);
     stopStream(streamRef.current);
     streamRef.current = null;
