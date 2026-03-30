@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Camera, Gauge, Loader2 } from 'lucide-react';
 
@@ -108,6 +108,8 @@ export default function ReportMileagePage() {
   /** Mirrors uploaded photo URL/path immediately — avoids Android submit reading stale React state. */
   const uploadedPhotoUrlRef = useRef<string | null>(null);
   const uploadedObjectPathRef = useRef<string | null>(null);
+  /** Dedupe when both onInput + onChange fire for the same pick (Android). */
+  const lastNativeFilePickRef = useRef<{ sig: string; t: number }>({ sig: '', t: 0 });
 
   useEffect(() => {
     return () => {
@@ -154,10 +156,35 @@ export default function ReportMileagePage() {
   );
 
   const pickPhoto = () => {
-    console.log('[ReportMileagePage] pickPhoto click -> input.click()', {
+    console.log('[ReportMileagePage] pickPhoto click -> input.click() (deferred 0ms)', {
       hasInput: Boolean(fileInputRef.current),
     });
-    fileInputRef.current?.click();
+    window.setTimeout(() => {
+      fileInputRef.current?.click();
+    }, 0);
+  };
+
+  /** TEMP DEBUG: onInput + onChange — some Android builds only fire one. */
+  const handleNativeFileInput = (
+    e: ChangeEvent<HTMLInputElement> | FormEvent<HTMLInputElement>
+  ) => {
+    const input = e.currentTarget;
+    const len = input.files?.length ?? 0;
+    window.alert('Files length: ' + len);
+
+    const f = input.files?.[0] ?? null;
+    const sig = f
+      ? `${f.name}-${f.size}-${f.lastModified}`
+      : `__empty__-${len}`;
+    const now = Date.now();
+    const { sig: prevSig, t: prevT } = lastNativeFilePickRef.current;
+    if (sig === prevSig && now - prevT < 500) {
+      console.log('[ReportMileagePage] deduped duplicate native file input event', { sig });
+      return;
+    }
+    lastNativeFilePickRef.current = { sig, t: now };
+
+    void onPhotoPicked(f);
   };
 
   const onPhotoPicked = async (f: File | null) => {
@@ -622,12 +649,10 @@ export default function ReportMileagePage() {
             ref={fileInputRef}
             type="file"
             accept="image/*"
-            capture="environment"
+            /* TEMP: capture removed — test gallery; if gallery works & camera not → permission/capture */
             className="mb-4 block w-full max-w-md cursor-pointer rounded border-2 border-white/40 bg-black/40 p-2 text-sm file:mr-2"
-            onChange={(e) => {
-              const f = e.target.files?.[0] ?? null;
-              void onPhotoPicked(f);
-            }}
+            onInput={handleNativeFileInput}
+            onChange={handleNativeFileInput}
           />
           <img
             src={photoPreviewUrl ?? ''}
