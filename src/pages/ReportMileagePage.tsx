@@ -40,14 +40,6 @@ function canonicalPublicUrlForPath(objectPath: string): string {
   return String(data?.publicUrl ?? '').trim();
 }
 
-/** Cache-bust query for Android/WebView when fetching public Storage objects in <img>. */
-function storagePublicUrlWithCacheBust(publicUrl: string, t: number): string {
-  const u = String(publicUrl || '').trim();
-  if (!u) return '';
-  const sep = u.includes('?') ? '&' : '?';
-  return `${u}${sep}t=${t}`;
-}
-
 function logMileageLogsInsertError(insertError: {
   message?: string;
   code?: string;
@@ -95,53 +87,27 @@ export default function ReportMileagePage() {
   const [odometer, setOdometer] = useState('');
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
-  /** True from file-pick until FileReader finishes (Android-safe preview vs blob: URLs). */
-  const [previewDecoding, setPreviewDecoding] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [uploadedPhotoUrl, setUploadedPhotoUrl] = useState<string | null>(null);
   const [uploadedObjectPath, setUploadedObjectPath] = useState<string | null>(null);
-  /** Bumped when public URL is known; used only for <img> src (not stored in DB). */
-  const [previewImgCacheBust, setPreviewImgCacheBust] = useState(0);
   const [submitting, setSubmitting] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const photoFileRef = useRef<File | null>(null);
-  /** Invalidates in-flight FileReader when user picks again or clears. */
-  const previewReadTokenRef = useRef<string>('');
+  const previewObjectUrlRef = useRef<string | null>(null);
   const uploadTokenRef = useRef<string>('');
   /** Mirrors uploaded photo URL/path immediately — avoids Android submit reading stale React state. */
   const uploadedPhotoUrlRef = useRef<string | null>(null);
   const uploadedObjectPathRef = useRef<string | null>(null);
-  /** Dedupe when both onInput + onChange fire for the same pick (Android). */
-  const lastNativeFilePickRef = useRef<{ sig: string; t: number }>({ sig: '', t: 0 });
 
   useEffect(() => {
     return () => {
-      previewReadTokenRef.current = '';
+      if (previewObjectUrlRef.current) {
+        URL.revokeObjectURL(previewObjectUrlRef.current);
+        previewObjectUrlRef.current = null;
+      }
     };
   }, []);
-
-  // Prefer data: URL from FileReader for preview (stable on Android); remote URL fallback if no preview string.
-  const previewImgSrc = useMemo(() => {
-    const blob = (photoPreviewUrl ?? '').trim();
-    if (blob) return blob;
-
-    const remote = (uploadedPhotoUrl ?? '').trim();
-    if (!remote) return '';
-    if (previewImgCacheBust > 0) {
-      return storagePublicUrlWithCacheBust(remote, previewImgCacheBust);
-    }
-    return remote;
-  }, [uploadedPhotoUrl, photoPreviewUrl, previewImgCacheBust]);
-
-  useEffect(() => {
-    if (!previewImgSrc) return;
-    if (previewImgSrc.startsWith('data:')) {
-      console.log('[ReportMileagePage] preview <img> data URL length:', previewImgSrc.length);
-    } else {
-      console.log('[ReportMileagePage] preview <img> src (exact):', previewImgSrc);
-    }
-  }, [previewImgSrc]);
 
   const filteredVehicles = useMemo(() => {
     const q = vehicleSearch.trim().toLowerCase();
@@ -222,37 +188,13 @@ export default function ReportMileagePage() {
 
   const pickPhoto = () => {
     persistMileageCaptureSession();
-    console.log('[ReportMileagePage] pickPhoto click -> input.click() (deferred 0ms)', {
-      hasInput: Boolean(fileInputRef.current),
-    });
     window.setTimeout(() => {
       fileInputRef.current?.click();
     }, 0);
   };
 
-  /** onInput + onChange — some Android builds only fire one. */
-  const handleNativeFileInput = (
-    e: ChangeEvent<HTMLInputElement> | FormEvent<HTMLInputElement>
-  ) => {
-    const input = e.currentTarget;
-    const len = input.files?.length ?? 0;
-    if (import.meta.env.DEV) {
-      // eslint-disable-next-line no-console
-      console.log('[ReportMileagePage] native file input event, files length:', len);
-    }
-
-    const f = input.files?.[0] ?? null;
-    const sig = f
-      ? `${f.name}-${f.size}-${f.lastModified}`
-      : `__empty__-${len}`;
-    const now = Date.now();
-    const { sig: prevSig, t: prevT } = lastNativeFilePickRef.current;
-    if (sig === prevSig && now - prevT < 500) {
-      console.log('[ReportMileagePage] deduped duplicate native file input event', { sig });
-      return;
-    }
-    lastNativeFilePickRef.current = { sig, t: now };
-
+  const handlePhotoFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] ?? null;
     void onPhotoPicked(f);
   };
 
@@ -272,9 +214,10 @@ export default function ReportMileagePage() {
       uploadedObjectPathRef.current = null;
       setUploadedPhotoUrl(null);
       setUploadedObjectPath(null);
-      setPreviewImgCacheBust(0);
-      previewReadTokenRef.current = '';
-      setPreviewDecoding(false);
+      if (previewObjectUrlRef.current) {
+        URL.revokeObjectURL(previewObjectUrlRef.current);
+        previewObjectUrlRef.current = null;
+      }
       setPhotoPreviewUrl(null);
       return;
     }
@@ -286,37 +229,21 @@ export default function ReportMileagePage() {
     uploadedObjectPathRef.current = null;
     setUploadedPhotoUrl(null);
     setUploadedObjectPath(null);
-    setPreviewImgCacheBust(0);
 
-    const readToken =
-      globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    previewReadTokenRef.current = readToken;
-    setPhotoPreviewUrl(null);
-    setPreviewDecoding(true);
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (previewReadTokenRef.current !== readToken) return;
-      const dataUrl = typeof reader.result === 'string' ? reader.result : '';
-      if (!dataUrl) {
-        setPreviewDecoding(false);
-        return;
+    if (previewObjectUrlRef.current) {
+      URL.revokeObjectURL(previewObjectUrlRef.current);
+      previewObjectUrlRef.current = null;
+    }
+    window.setTimeout(() => {
+      try {
+        const url = URL.createObjectURL(f);
+        previewObjectUrlRef.current = url;
+        setPhotoPreviewUrl(url);
+      } catch (err) {
+        console.error('[ReportMileagePage] createObjectURL failed', err);
+        setPhotoPreviewUrl(null);
       }
-      setPhotoPreviewUrl(dataUrl);
-      setPreviewDecoding(false);
-    };
-    reader.onerror = () => {
-      if (previewReadTokenRef.current !== readToken) return;
-      console.error('[ReportMileagePage] FileReader readAsDataURL failed', reader.error);
-      setPhotoPreviewUrl(null);
-      setPreviewDecoding(false);
-      toast({
-        title: 'לא ניתן להציג תצוגה מקדימה',
-        description: 'נסו שוב או בחרו תמונה מהגלריה',
-        variant: 'destructive',
-      });
-    };
-    reader.readAsDataURL(f);
+    }, 0);
 
     // Immediate upload strategy: upload right after selection to avoid state-loss during submit.
     if (!user) return;
@@ -394,7 +321,6 @@ export default function ReportMileagePage() {
         uploadedObjectPathRef.current = null;
         setUploadedPhotoUrl(null);
         setUploadedObjectPath(null);
-        setPreviewImgCacheBust(0);
         return;
       }
 
@@ -410,23 +336,18 @@ export default function ReportMileagePage() {
         uploadedObjectPathRef.current = null;
         setUploadedPhotoUrl(null);
         setUploadedObjectPath(null);
-        setPreviewImgCacheBust(0);
         return;
       }
 
-      const cacheBust = Date.now();
-      const previewPublicUrl = storagePublicUrlWithCacheBust(publicUrl, cacheBust);
       console.log('[ReportMileagePage] immediate upload success', {
         objectPath: tempPath,
         publicUrl,
-        previewPublicUrl,
       });
 
       uploadedPhotoUrlRef.current = publicUrl;
       uploadedObjectPathRef.current = tempPath;
       setUploadedPhotoUrl(publicUrl);
       setUploadedObjectPath(tempPath);
-      setPreviewImgCacheBust(cacheBust);
       toast({
         title: 'התמונה נקלטה והועלתה',
         description: `${Math.round(blobToUpload.size / 1024).toLocaleString()} KB`,
@@ -443,7 +364,6 @@ export default function ReportMileagePage() {
       uploadedObjectPathRef.current = null;
       setUploadedPhotoUrl(null);
       setUploadedObjectPath(null);
-      setPreviewImgCacheBust(0);
     } finally {
       if (uploadTokenRef.current === token) {
         setPhotoUploading(false);
@@ -482,57 +402,20 @@ export default function ReportMileagePage() {
       return;
     }
 
-    const pathForUrl =
-      uploadedObjectPathRef.current?.trim() || uploadedObjectPath?.trim() || null;
-    let photoUrl =
+    const photoUrl =
       uploadedPhotoUrlRef.current?.trim() || uploadedPhotoUrl?.trim() || null;
 
-    if (!photoUrl && pathForUrl) {
-      photoUrl = canonicalPublicUrlForPath(pathForUrl);
-      if (photoUrl) {
-        uploadedPhotoUrlRef.current = photoUrl;
-        setUploadedPhotoUrl(photoUrl);
-        setPreviewImgCacheBust(Date.now());
-        console.log('[ReportMileagePage] submit recovered photo_url from storage path', {
-          pathForUrl,
-          photoUrl,
-        });
-      }
-    }
-
     if (!photoUrl) {
-      if (photoPreviewUrl) {
-        toast({
-          title: 'התמונה עדיין לא הוכנה לשליחה',
-          description: 'חכו לסיום ההעלאה או צלמו שוב',
-          variant: 'destructive',
-        });
-        console.error('[ReportMileagePage] File/URL missing during submit', {
-          hasPreviewUrl: Boolean(photoPreviewUrl),
-          photoUploading,
-          refUrl: uploadedPhotoUrlRef.current,
-          refPath: uploadedObjectPathRef.current,
-          stateUrl: uploadedPhotoUrl,
-          statePath: uploadedObjectPath,
-        });
-        return;
-      }
-      toast({ title: 'נא לצרף תמונה של לוח השעונים', variant: 'destructive' });
+      toast({
+        title: 'נא להעלות תמונה לפני השליחה',
+        description: 'חכו לסיום ההעלאה או צלמו שוב',
+        variant: 'destructive',
+      });
       return;
     }
 
-    const resolvedPath = pathForUrl ?? uploadedObjectPathRef.current ?? uploadedObjectPath;
-    const recheckUrl = resolvedPath ? canonicalPublicUrlForPath(resolvedPath) : '';
-    if (recheckUrl && recheckUrl !== photoUrl) {
-      console.warn('[ReportMileagePage] photo_url normalized to match Storage public URL', {
-        had: photoUrl,
-        canonical: recheckUrl,
-      });
-      photoUrl = recheckUrl;
-      uploadedPhotoUrlRef.current = photoUrl;
-      setUploadedPhotoUrl(photoUrl);
-      setPreviewImgCacheBust(Date.now());
-    }
+    const resolvedPath =
+      uploadedObjectPathRef.current?.trim() || uploadedObjectPath?.trim() || null;
 
     setSubmitting(true);
     try {
@@ -711,50 +594,6 @@ export default function ReportMileagePage() {
       </header>
 
       <main className="container py-6 pb-28">
-        {/* TEMP DEBUG (Android preview) — remove after investigation */}
-        <div
-          className="mb-6 rounded-lg border-4 border-yellow-500 bg-yellow-950/50 p-4 text-yellow-100"
-          style={{ position: 'relative', zIndex: 9999 }}
-        >
-          <p className="mb-3 text-sm font-bold">TEMP DEBUG — מקור תצוגה ישיר / Base64 state</p>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="mb-4 block w-full max-w-md cursor-pointer rounded border-2 border-white/40 bg-black/40 p-2 text-sm file:mr-2"
-            onPointerDown={() => {
-              persistMileageCaptureSession();
-            }}
-            onInput={handleNativeFileInput}
-            onChange={handleNativeFileInput}
-          />
-          <img
-            src={photoPreviewUrl ?? ''}
-            alt="DEBUG mileage preview"
-            style={{
-              width: '200px',
-              height: '200px',
-              border: '5px solid red',
-              zIndex: 9999,
-              position: 'relative',
-              objectFit: 'contain',
-              background: '#111',
-            }}
-            onError={() => {
-              console.error('[ReportMileagePage] DEBUG top <img> onError', {
-                hasPhotoPreviewUrl: Boolean(photoPreviewUrl),
-                len: photoPreviewUrl?.length ?? 0,
-              });
-            }}
-          />
-          <pre className="mt-3 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded bg-black/70 p-2 text-left text-[10px] text-green-300">
-            {photoPreviewUrl
-              ? photoPreviewUrl.substring(0, 100)
-              : '(photoPreviewUrl is null or empty)'}
-          </pre>
-        </div>
-
         <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
@@ -827,57 +666,42 @@ export default function ReportMileagePage() {
 
                 <div className="space-y-2">
                   <Label>תמונה של לוח השעונים</Label>
-                  <p className="text-xs text-muted-foreground">
-                    TEMP: קלט הקובץ הועבר לראש הדף (בלוק DEBUG צהוב). כפתור למטה עדיין פותח אותו קלט.
-                  </p>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={handlePhotoFileChange}
+                  />
                   <Button
                     type="button"
                     variant="outline"
                     className="w-full h-12 gap-2"
                     onClick={() => {
-                      console.log('[ReportMileagePage] camera button clicked');
                       pickPhoto();
                     }}
                     disabled={submitting || photoUploading}
                   >
-                    {photoUploading || previewDecoding ? (
+                    {photoUploading ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <Camera className="h-4 w-4" />
                     )}
-                    {photoUploading
-                      ? 'מעלה תמונה…'
-                      : previewDecoding
-                        ? 'מכין תצוגה…'
-                        : photoFile
-                          ? 'החלף תמונה'
-                          : 'צלם תמונה'}
+                    {photoUploading ? 'מעלה תמונה…' : photoFile ? 'החלף תמונה' : 'צלם תמונה'}
                   </Button>
-                  {/* Preview: data URL from FileReader (Android-stable). Native <img>, no crossOrigin. */}
-                  {previewDecoding || previewImgSrc ? (
-                    <div className="relative overflow-hidden rounded-xl border border-border bg-black/40">
-                      {previewImgSrc ? (
-                        <img
-                          src={previewImgSrc}
-                          alt="תצוגה מקדימה"
-                          className="w-full h-56 object-cover bg-black"
-                          loading="eager"
-                          decoding="async"
-                          onError={(ev) => {
-                            console.error('[ReportMileagePage] preview <img> failed to load', {
-                              srcPrefix:
-                                (ev.target as HTMLImageElement)?.currentSrc?.slice(0, 48) ?? '',
-                            });
-                          }}
-                        />
-                      ) : (
-                        <div className="h-56 w-full bg-black/60" aria-hidden />
-                      )}
-                      {previewDecoding || photoUploading ? (
+                  {photoPreviewUrl ? (
+                    <div className="relative overflow-hidden rounded-xl border border-border">
+                      <img
+                        src={photoPreviewUrl}
+                        alt="תצוגה מקדימה"
+                        className="w-full h-56 object-cover bg-black"
+                      />
+                      {photoUploading ? (
                         <div className="absolute inset-0 flex items-center justify-center bg-black/50">
                           <div className="flex items-center gap-2 rounded-lg bg-black/70 px-3 py-2 text-sm text-white">
                             <Loader2 className="h-4 w-4 animate-spin" />
-                            {previewDecoding ? 'טוען תצוגה…' : 'מעלה תמונה…'}
+                            מעלה תמונה…
                           </div>
                         </div>
                       ) : null}
@@ -892,7 +716,11 @@ export default function ReportMileagePage() {
                   <Button
                     type="submit"
                     className="flex-1 h-12 text-base"
-                    disabled={submitting || photoUploading || previewDecoding}
+                    disabled={
+                      submitting ||
+                      photoUploading ||
+                      !(uploadedPhotoUrlRef.current?.trim() || uploadedPhotoUrl?.trim())
+                    }
                   >
                     {submitting && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
                     שלח דיווח
