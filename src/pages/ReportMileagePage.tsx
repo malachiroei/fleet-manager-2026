@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Camera, Gauge, Loader2 } from 'lucide-react';
 
@@ -7,7 +7,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useVehicles } from '@/hooks/useVehicles';
 import { toast } from '@/hooks/use-toast';
-import imageCompression from 'browser-image-compression';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -82,8 +81,8 @@ export default function ReportMileagePage() {
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
   const [odometer, setOdometer] = useState('');
   const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [compressingPhoto, setCompressingPhoto] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   const photoPreviewUrl = useMemo(() => {
     if (!photoFile) return null;
@@ -112,7 +111,7 @@ export default function ReportMileagePage() {
     [vehicles, selectedVehicleId]
   );
 
-  const handlePhotoChange = async (e: ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.files?.[0] ?? null;
     e.target.value = '';
     if (!raw) {
@@ -123,24 +122,7 @@ export default function ReportMileagePage() {
       toast({ title: 'נא לבחור קובץ תמונה', variant: 'destructive' });
       return;
     }
-    setCompressingPhoto(true);
-    try {
-      const compressed = await imageCompression(raw, {
-        maxSizeMB: 1,
-        maxWidthOrHeight: 1280,
-        useWebWorker: true,
-      });
-      setPhotoFile(compressed);
-    } catch (err) {
-      console.error('[ReportMileagePage] photo compression failed', err);
-      toast({
-        title: 'לא ניתן לעבד את התמונה',
-        description: 'נסו תמונה אחרת או צילום חדש.',
-        variant: 'destructive',
-      });
-    } finally {
-      setCompressingPhoto(false);
-    }
+    setPhotoFile(raw);
   };
 
   const submit = async (e: FormEvent) => {
@@ -400,35 +382,49 @@ export default function ReportMileagePage() {
 
                 <div className="space-y-2">
                   <Label>תמונה של לוח השעונים</Label>
-                  <input
-                    id={PHOTO_INPUT_ID}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
-                    onChange={handlePhotoChange}
-                  />
-                  <label
-                    htmlFor={PHOTO_INPUT_ID}
-                    className={cn(
-                      'flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium ring-offset-background',
-                      'hover:bg-accent hover:text-accent-foreground',
-                      (submitting || compressingPhoto) && 'pointer-events-none opacity-50'
-                    )}
-                  >
-                    {compressingPhoto ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Camera className="h-4 w-4" />
-                    )}
-                    {compressingPhoto ? 'מעבד תמונה…' : photoFile ? 'החלף תמונה' : 'צלם או בחר תמונה'}
-                  </label>
+                  <div className="flex flex-col gap-3">
+                    <input
+                      ref={photoInputRef}
+                      id={PHOTO_INPUT_ID}
+                      type="file"
+                      accept="image/*"
+                      className={cn(
+                        'block w-full cursor-pointer rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm',
+                        'file:mr-4 file:rounded-full file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-blue-700',
+                        'hover:file:bg-blue-100',
+                        submitting && 'pointer-events-none opacity-50'
+                      )}
+                      onChange={handlePhotoChange}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-12 w-full"
+                      disabled={submitting}
+                      onPointerDown={() => {
+                        try {
+                          photoInputRef.current?.click();
+                        } catch (err) {
+                          window.alert(`input.click() failed: ${String(err)}`);
+                        }
+                      }}
+                    >
+                      <Camera className="h-4 w-4 ml-2" />
+                      פתח מצלמה / קבצים
+                    </Button>
+                  </div>
                   {photoPreviewUrl ? (
                     <div className="overflow-hidden rounded-xl border border-border">
                       <img
                         src={photoPreviewUrl}
                         alt="תצוגה מקדימה"
                         className="h-56 w-full object-cover bg-black"
+                        onLoad={() => {
+                          window.alert('Preview image loaded successfully.');
+                        }}
+                        onError={() => {
+                          window.alert('Preview image failed to render.');
+                        }}
                       />
                     </div>
                   ) : null}
@@ -438,7 +434,7 @@ export default function ReportMileagePage() {
                   <Button
                     type="submit"
                     className="flex-1 h-12 text-base"
-                    disabled={submitting || compressingPhoto || !photoFile}
+                    disabled={submitting || !photoFile}
                   >
                     {submitting && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
                     שלח דיווח
