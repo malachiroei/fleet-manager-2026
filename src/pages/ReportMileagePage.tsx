@@ -16,6 +16,25 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 
 const STORAGE_BUCKET = 'mileage-reports';
 
+/** Survives in-tab reloads (e.g. Android camera recycling the tab) */
+const MILEAGE_REPORT_SESSION = {
+  vehicleId: 'mileage_report_vehicle_id',
+  odometer: 'mileage_report_odometer',
+  vehicleSearch: 'mileage_report_vehicle_search',
+  cameraPending: 'mileage_report_camera_pending',
+} as const;
+
+function clearMileageReportSessionDraft() {
+  try {
+    sessionStorage.removeItem(MILEAGE_REPORT_SESSION.vehicleId);
+    sessionStorage.removeItem(MILEAGE_REPORT_SESSION.odometer);
+    sessionStorage.removeItem(MILEAGE_REPORT_SESSION.vehicleSearch);
+    sessionStorage.removeItem(MILEAGE_REPORT_SESSION.cameraPending);
+  } catch {
+    // private mode / quota
+  }
+}
+
 function sanitizeFileExt(name: string): string {
   const idx = name.lastIndexOf('.');
   if (idx === -1) return 'jpg';
@@ -82,6 +101,55 @@ export default function ReportMileagePage() {
   /** Original file for submit-only upload to storage */
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [sessionHydrated, setSessionHydrated] = useState(false);
+
+  /** Restore draft + detect tab recycle after camera (session flag survives reload). */
+  useEffect(() => {
+    if (loading) return;
+
+    try {
+      const vid = sessionStorage.getItem(MILEAGE_REPORT_SESSION.vehicleId);
+      const odo = sessionStorage.getItem(MILEAGE_REPORT_SESSION.odometer);
+      const vsearch = sessionStorage.getItem(MILEAGE_REPORT_SESSION.vehicleSearch);
+
+      if (vid) setSelectedVehicleId(vid);
+      if (odo !== null) setOdometer(odo);
+      if (vsearch !== null) setVehicleSearch(vsearch);
+
+      if (sessionStorage.getItem(MILEAGE_REPORT_SESSION.cameraPending) === '1') {
+        sessionStorage.removeItem(MILEAGE_REPORT_SESSION.cameraPending);
+        toast({
+          title: 'טעינה מחדש אחרי צילום',
+          description:
+            'נראה שהדפדפן התרענן בזמן הצילום. אם התמונה לא מופיעה, נסה לבחור אותה מהגלריה',
+        });
+      }
+    } catch {
+      // ignore
+    } finally {
+      setSessionHydrated(true);
+    }
+  }, [loading]);
+
+  /** Persist vehicle + mileage as the user types (before camera / reload). */
+  useEffect(() => {
+    if (loading || !sessionHydrated) return;
+    try {
+      if (selectedVehicleId) {
+        sessionStorage.setItem(MILEAGE_REPORT_SESSION.vehicleId, selectedVehicleId);
+      } else {
+        sessionStorage.removeItem(MILEAGE_REPORT_SESSION.vehicleId);
+      }
+      sessionStorage.setItem(MILEAGE_REPORT_SESSION.odometer, odometer);
+      if (vehicleSearch.trim()) {
+        sessionStorage.setItem(MILEAGE_REPORT_SESSION.vehicleSearch, vehicleSearch);
+      } else {
+        sessionStorage.removeItem(MILEAGE_REPORT_SESSION.vehicleSearch);
+      }
+    } catch {
+      // ignore
+    }
+  }, [loading, sessionHydrated, selectedVehicleId, odometer, vehicleSearch]);
 
   const filteredVehicles = useMemo(() => {
     const q = vehicleSearch.trim().toLowerCase();
@@ -106,6 +174,11 @@ export default function ReportMileagePage() {
     setPhotoFile(file);
     if (!file) {
       return;
+    }
+    try {
+      sessionStorage.removeItem(MILEAGE_REPORT_SESSION.cameraPending);
+    } catch {
+      // ignore
     }
     const reader = new FileReader();
     reader.onload = () => {
@@ -380,6 +453,13 @@ export default function ReportMileagePage() {
                   <label
                     htmlFor="photo_input"
                     className="flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium text-foreground shadow-sm ring-offset-background hover:bg-accent hover:text-accent-foreground has-[:disabled]:pointer-events-none has-[:disabled]:opacity-50"
+                    onPointerDownCapture={() => {
+                      try {
+                        sessionStorage.setItem(MILEAGE_REPORT_SESSION.cameraPending, '1');
+                      } catch {
+                        // ignore
+                      }
+                    }}
                   >
                     <input
                       id="photo_input"
@@ -399,6 +479,10 @@ export default function ReportMileagePage() {
                     MIME: {photoFile?.type ? photoFile.type : '(empty)'}
                     <br />
                     Preview URL status: {photoPreviewUrl ? 'Ready' : 'Empty'}
+                  </p>
+                  <p className="text-xs text-muted-foreground leading-snug">
+                    אם המכשיר מרענן את הדף אחרי המצלמה, השדות למעלה אמורים להימלא מחדש — אם אין תמונה, נסו שוב
+                    ולבחור מהגלריה במקום מצלמה ישירה.
                   </p>
                   {photoPreviewUrl ? (
                     <div className="aspect-video w-full overflow-hidden rounded-xl border border-border">
