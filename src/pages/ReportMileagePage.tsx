@@ -176,32 +176,64 @@ export default function ReportMileagePage() {
       const safeId = sanitizeStorageSegment(rawId);
       const tempPath = `tmp/${safeUserId}/${safeId}.${safeExt}`;
 
-      console.log('File details:', { name: f.name, size: f.size, type: f.type });
+      console.log('File details (raw input):', { name: f.name, size: f.size, type: f.type });
 
-      // Android camera sometimes returns a File with missing `type` or odd internal backing.
-      // Normalize to a new File constructed from the blob bytes.
-      const normalizedType = (f.type && String(f.type).trim()) ? f.type : 'image/jpeg';
-      const normalizedName = (f.name && String(f.name).trim()) ? f.name : 'photo.jpg';
-      const fileToUpload = new File([f], normalizedName, { type: normalizedType || 'image/jpeg' });
+      // Android Chrome often hands back a File/Blob backed by content:// that fails if streamed
+      // lazily. Materialize bytes first, then upload a fresh Blob (same pattern as iOS/desktop).
+      const normalizedType = f.type && String(f.type).trim() ? f.type : 'image/jpeg';
+      const normalizedName = f.name && String(f.name).trim() ? f.name : 'photo.jpg';
+
+      let bytes: ArrayBuffer;
+      try {
+        bytes = await f.arrayBuffer();
+      } catch (readErr) {
+        console.error('[ReportMileagePage] arrayBuffer() failed (Android camera?)', readErr);
+        toast({
+          title: 'לא ניתן לקרוא את התמונה',
+          description: 'נסו שוב או בחרו תמונה מהגלריה',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      if (!bytes || bytes.byteLength === 0) {
+        console.error('[ReportMileagePage] empty image buffer after read', {
+          reportedSize: f.size,
+          byteLength: bytes?.byteLength,
+        });
+        toast({
+          title: 'התמונה ריקה',
+          description: 'צלמו שוב או בחרו קובץ מהגלריה',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const blobToUpload = new Blob([bytes], { type: normalizedType || 'image/jpeg' });
 
       console.log('[ReportMileagePage] immediate upload start', {
         bucket: STORAGE_BUCKET,
         objectPath: tempPath,
-        fileName: fileToUpload.name,
-        fileType: fileToUpload.type,
-        fileSize: fileToUpload.size,
+        fileName: normalizedName,
+        fileType: blobToUpload.type,
+        fileSize: blobToUpload.size,
       });
 
-      const { error: uploadError } = await supabase.storage
-        .from(STORAGE_BUCKET)
-        .upload(tempPath, fileToUpload, { upsert: true, contentType: fileToUpload.type || 'image/jpeg' });
+      const { error: uploadError } = await supabase.storage.from(STORAGE_BUCKET).upload(tempPath, blobToUpload, {
+        upsert: true,
+        contentType: blobToUpload.type || 'image/jpeg',
+      });
 
       // If the user picked a new image mid-flight, ignore this result
       if (uploadTokenRef.current !== token) return;
 
       if (uploadError) {
         console.error('[ReportMileagePage] immediate upload failed', uploadError);
-        toast({ title: 'Failed to upload photo, please try again', variant: 'destructive' });
+        toast({
+          title: 'העלאת התמונה נכשלה',
+          description: uploadError.message || 'נסו שוב או בדקו חיבור',
+          variant: 'destructive',
+        });
         setUploadedPhotoUrl(null);
         setUploadedObjectPath(null);
         return;
@@ -211,17 +243,29 @@ export default function ReportMileagePage() {
       const publicUrl = urlData?.publicUrl ?? null;
       if (!publicUrl) {
         console.error('[ReportMileagePage] immediate upload missing publicUrl', { tempPath, urlData });
-        toast({ title: 'Failed to upload photo, please try again', variant: 'destructive' });
+        toast({
+          title: 'העלאת התמונה נכשלה',
+          description: 'נסו שוב',
+          variant: 'destructive',
+        });
         return;
       }
 
       console.log('[ReportMileagePage] immediate upload success', { publicUrl });
       setUploadedPhotoUrl(publicUrl);
       setUploadedObjectPath(tempPath);
+      toast({
+        title: 'התמונה נקלטה והועלתה',
+        description: `${Math.round(blobToUpload.size / 1024).toLocaleString()} KB`,
+      });
     } catch (err) {
       if (uploadTokenRef.current !== token) return;
       console.error('[ReportMileagePage] immediate upload threw', err);
-      toast({ title: 'Failed to upload photo, please try again', variant: 'destructive' });
+      toast({
+        title: 'העלאת התמונה נכשלה',
+        description: err instanceof Error ? err.message : 'נסו שוב',
+        variant: 'destructive',
+      });
       setUploadedPhotoUrl(null);
       setUploadedObjectPath(null);
     } finally {
@@ -229,10 +273,6 @@ export default function ReportMileagePage() {
         setPhotoUploading(false);
       }
     }
-    toast({
-      title: 'התמונה נקלטה',
-      description: `${Math.round(f.size / 1024).toLocaleString()} KB${f.type ? ` · ${f.type}` : ''}`,
-    });
   };
 
   const submit = async (e: FormEvent) => {
