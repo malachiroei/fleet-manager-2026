@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, Gauge, Loader2 } from 'lucide-react';
+import { ArrowRight, Camera, Gauge, Loader2 } from 'lucide-react';
 
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
@@ -15,7 +15,6 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const STORAGE_BUCKET = 'mileage-reports';
-const PHOTO_INPUT_ID = 'report-mileage-photo';
 
 function sanitizeFileExt(name: string): string {
   const idx = name.lastIndexOf('.');
@@ -373,16 +372,23 @@ export default function ReportMileagePage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor={PHOTO_INPUT_ID}>תמונה של לוח השעונים</Label>
-                  <input
-                    id={PHOTO_INPUT_ID}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    disabled={submitting}
-                    onChange={handleFile}
-                    className="block w-full text-sm text-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-2 file:text-sm file:font-medium file:text-primary-foreground"
-                  />
+                  <span className="text-sm font-medium leading-none">תמונה של לוח השעונים</span>
+                  <label
+                    htmlFor="photo_input"
+                    className="flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium text-foreground shadow-sm ring-offset-background hover:bg-accent hover:text-accent-foreground has-[:disabled]:pointer-events-none has-[:disabled]:opacity-50"
+                  >
+                    <input
+                      id="photo_input"
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      disabled={submitting}
+                      onChange={handleFile}
+                    />
+                    <Camera className="h-4 w-4 shrink-0" />
+                    {photoFile ? 'החלף תמונה' : 'צלם או בחר תמונה'}
+                  </label>
                   <div className="overflow-hidden rounded-xl border border-border bg-black">
                     <img
                       src={photoPreview ?? undefined}
