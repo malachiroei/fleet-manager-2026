@@ -51,6 +51,29 @@ function isAndroidUserAgent(): boolean {
   return /Android/i.test(navigator.userAgent);
 }
 
+/**
+ * Android often supplies a `File` backed by a `content://` URI. That handle must not be used
+ * as a long-lived preview target — read bytes once into a normal in-memory `File` for `<img>` and upload.
+ */
+async function materializeImageFileFromInput(source: File): Promise<File> {
+  const mime =
+    source.type && source.type !== 'application/octet-stream' && source.type !== ''
+      ? source.type
+      : 'image/jpeg';
+  const buf = await source.arrayBuffer();
+  const name = source.name?.trim() || 'mileage-photo.jpg';
+  return new File([buf], name, { type: mime });
+}
+
+function readFileAsDataUrl(file: File): Promise<string | null> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null);
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+}
+
 function sanitizeFileExt(name: string): string {
   const idx = name.lastIndexOf('.');
   if (idx === -1) return 'jpg';
@@ -206,7 +229,7 @@ export default function ReportMileagePage() {
       blobPreviewRevokeRef.current = null;
     }
     setPhotoPreviewUrl(null);
-    setPhotoFile(file);
+    setPhotoFile(null);
 
     if (!file) {
       inputEl.value = '';
@@ -220,34 +243,33 @@ export default function ReportMileagePage() {
     }
 
     void (async () => {
-      let displayUrl: string | null = null;
-
-      const readDataUrl = () =>
-        new Promise<string | null>((resolve) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null);
-          reader.onerror = () => resolve(null);
-          reader.readAsDataURL(file);
-        });
-
-      // Android: avoid capture="environment" (see input below) and prefer Data URL for <img> —
-      // many Chrome/WebView builds paint blob: URLs unreliably or choke on arrayBuffer() on camera-backed Files.
-      if (!isAndroidUserAgent()) {
-        try {
-          const buf = await file.arrayBuffer();
-          const mime =
-            file.type && file.type !== 'application/octet-stream' && file.type !== ''
-              ? file.type
-              : 'image/jpeg';
-          const blob = new Blob([buf], { type: mime });
-          displayUrl = URL.createObjectURL(blob);
-        } catch (err) {
-          console.warn('[ReportMileagePage] arrayBuffer/blob preview failed', err);
-        }
+      let workFile: File = file;
+      try {
+        workFile = await materializeImageFileFromInput(file);
+      } catch (err) {
+        console.warn(
+          '[ReportMileagePage] materialize failed (URI/read); using original File for upload/preview',
+          err
+        );
       }
 
-      if (!displayUrl) {
-        displayUrl = await readDataUrl();
+      if (gen !== previewGenerationRef.current) return;
+
+      setPhotoFile(workFile);
+
+      let displayUrl: string | null = null;
+      if (isAndroidUserAgent()) {
+        // Avoid blob: for preview on Android WebViews; Data URL is read from the materialized File (not content://).
+        displayUrl = await readFileAsDataUrl(workFile);
+      } else {
+        try {
+          displayUrl = URL.createObjectURL(workFile);
+        } catch (err) {
+          console.warn('[ReportMileagePage] createObjectURL failed', err);
+        }
+        if (!displayUrl) {
+          displayUrl = await readFileAsDataUrl(workFile);
+        }
       }
 
       if (gen !== previewGenerationRef.current) {
@@ -257,6 +279,8 @@ export default function ReportMileagePage() {
 
       if (displayUrl?.startsWith('blob:')) {
         blobPreviewRevokeRef.current = displayUrl;
+      } else {
+        blobPreviewRevokeRef.current = null;
       }
 
       flushSync(() => {
