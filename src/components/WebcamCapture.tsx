@@ -253,9 +253,15 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
   const openRef = useRef(open);
   openRef.current = open;
 
-  const [cameraProfile, setCameraProfile] = useState<CameraProfile>(
-    () => readStoredCameraProfile() ?? 'environment'
-  );
+  const [cameraProfile, setCameraProfile] = useState<CameraProfile>(() => {
+    /** Android: start on front — rear often shows black until the front camera was opened in this session. */
+    if (isAndroidUa()) {
+      return 'user';
+    }
+    const saved = readStoredCameraProfile();
+    if (saved === 'compatible') return 'environment';
+    return saved ?? 'environment';
+  });
   const cameraProfileRef = useRef(cameraProfile);
   cameraProfileRef.current = cameraProfile;
 
@@ -293,14 +299,16 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
   }, [clearInitTimeout]);
 
   useEffect(() => {
-    if (open) {
-      const saved = readStoredCameraProfile();
-      /** `compatible` often maps to the same default as front on Android — open on rear/front toggle only. */
-      if (saved === 'compatible') {
-        setCameraProfile('environment');
-      } else if (saved) {
-        setCameraProfile(saved);
-      }
+    if (!open) return;
+    if (isAndroidUa()) {
+      setCameraProfile('user');
+      return;
+    }
+    const saved = readStoredCameraProfile();
+    if (saved === 'compatible') {
+      setCameraProfile('environment');
+    } else if (saved) {
+      setCameraProfile(saved);
     }
   }, [open]);
 
@@ -606,7 +614,8 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
 
   const cycleCameraProfile = useCallback(() => {
     setCameraProfile((prev) => {
-      const order: CameraProfile[] = ['environment', 'user'];
+      /** One tap from front → rear (Android default is `user` first). */
+      const order: CameraProfile[] = ['user', 'environment'];
       const normalized = prev === 'compatible' ? 'environment' : prev;
       const i = order.indexOf(normalized);
       const base = i >= 0 ? i : 0;
@@ -805,7 +814,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
                 disabled={loading || snapping}
                 onClick={cycleCameraProfile}
                 aria-label="החלף מצלמה"
-                title="החלף מצלמה (אחורית / קדמית)"
+                title="החלף מצלמה (קדמית / אחורית)"
               >
                 <RefreshCw className="h-5 w-5" />
               </Button>
