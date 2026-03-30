@@ -486,6 +486,7 @@ export default function ReportMileagePage() {
                       name="mileage_photo"
                       type="file"
                       accept="image/*"
+                      capture="environment"
                       className="hidden"
                       disabled={submitting}
                       onChange={handleFile}
