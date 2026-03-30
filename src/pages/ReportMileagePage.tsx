@@ -179,7 +179,6 @@ export default function ReportMileagePage() {
 
   const handleFile = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
-    window.alert(file ? `File received: ${file.name}` : 'File received: (no file)');
 
     if (blobPreviewRevokeRef.current) {
       URL.revokeObjectURL(blobPreviewRevokeRef.current);
@@ -198,19 +197,36 @@ export default function ReportMileagePage() {
       // ignore
     }
 
+    // Some Android Chrome builds paint <img src="blob:..."> unreliably; Data URL from FileReader is more consistent.
     try {
-      const url = URL.createObjectURL(file);
-      blobPreviewRevokeRef.current = url;
-      setPhotoPreviewUrl(url);
+      const blobUrl = URL.createObjectURL(file);
+      blobPreviewRevokeRef.current = blobUrl;
+      setPhotoPreviewUrl(blobUrl);
     } catch (err) {
-      console.error('[ReportMileagePage] createObjectURL failed', err);
-      setPhotoPreviewUrl(null);
-      toast({
-        title: 'לא ניתן להציג תצוגה מקדימה',
-        description: 'נסו לבחור את הקובץ שוב או תמונה אחרת.',
-        variant: 'destructive',
-      });
+      console.warn('[ReportMileagePage] createObjectURL failed, will use FileReader only', err);
     }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === 'string' ? reader.result : null;
+      if (blobPreviewRevokeRef.current) {
+        URL.revokeObjectURL(blobPreviewRevokeRef.current);
+        blobPreviewRevokeRef.current = null;
+      }
+      setPhotoPreviewUrl(dataUrl);
+    };
+    reader.onerror = () => {
+      console.warn('[ReportMileagePage] FileReader preview failed');
+      if (!blobPreviewRevokeRef.current) {
+        setPhotoPreviewUrl(null);
+        toast({
+          title: 'לא ניתן להציג תצוגה מקדימה',
+          description: 'הקובץ עדיין אמור להישלח — נסו שוב או תמונה מהגלריה.',
+          variant: 'destructive',
+        });
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const submit = async (e: FormEvent) => {
@@ -508,8 +524,10 @@ export default function ReportMileagePage() {
                   {photoPreviewUrl ? (
                     <div className="aspect-video w-full overflow-hidden rounded-xl border border-border">
                       <img
+                        key={photoPreviewUrl}
                         src={photoPreviewUrl}
                         alt=""
+                        decoding="async"
                         className="h-full w-full object-cover"
                       />
                     </div>
