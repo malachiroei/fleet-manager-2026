@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Camera, Gauge, Loader2 } from 'lucide-react';
 
@@ -33,6 +33,17 @@ function canonicalPublicUrlForPath(objectPath: string): string {
   if (!path) return '';
   const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
   return String(data?.publicUrl ?? '').trim();
+}
+
+function isLikelyHeicOrHeif(file: File): boolean {
+  const mime = (file.type || '').toLowerCase();
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  return (
+    mime.includes('heic') ||
+    mime.includes('heif') ||
+    ext === 'heic' ||
+    ext === 'heif'
+  );
 }
 
 function logMileageLogsInsertError(insertError: {
@@ -83,18 +94,95 @@ export default function ReportMileagePage() {
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const photoFileRef = useRef<File | null>(null);
+  const previewBlobUrlRef = useRef<string | null>(null);
+  const previewTranscodeAttemptedRef = useRef(false);
+  const previewTranscodeRunningRef = useRef(false);
+
+  photoFileRef.current = photoFile;
+
+  /**
+   * Android cameras often return HEIC/HEIF (or odd MIME). Many mobile browsers won't draw those in <img>.
+   * Transcode to JPEG for preview only; submit still uses the original `photoFile`.
+   */
+  const tryPreviewTranscode = useCallback(async (file: File) => {
+    if (previewTranscodeAttemptedRef.current || previewTranscodeRunningRef.current) return;
+    previewTranscodeAttemptedRef.current = true;
+    previewTranscodeRunningRef.current = true;
+    try {
+      const { default: imageCompression } = await import('browser-image-compression');
+      let out: File;
+      try {
+        out = await imageCompression(file, {
+          maxSizeMB: 4,
+          maxWidthOrHeight: 2048,
+          useWebWorker: true,
+          fileType: 'image/jpeg',
+          initialQuality: 0.88,
+        });
+      } catch {
+        out = await imageCompression(file, {
+          maxSizeMB: 4,
+          maxWidthOrHeight: 2048,
+          useWebWorker: false,
+          fileType: 'image/jpeg',
+          initialQuality: 0.88,
+        });
+      }
+      if (photoFileRef.current !== file) return;
+      const jpegUrl = URL.createObjectURL(out);
+      if (previewBlobUrlRef.current) URL.revokeObjectURL(previewBlobUrlRef.current);
+      previewBlobUrlRef.current = jpegUrl;
+      setPhotoPreviewUrl(jpegUrl);
+    } catch (err) {
+      console.warn('[ReportMileagePage] preview transcode failed (HEIC / unsupported decode)', err);
+    } finally {
+      previewTranscodeRunningRef.current = false;
+    }
+  }, []);
 
   useEffect(() => {
     if (!photoFile) {
+      if (previewBlobUrlRef.current) {
+        URL.revokeObjectURL(previewBlobUrlRef.current);
+        previewBlobUrlRef.current = null;
+      }
       setPhotoPreviewUrl(null);
+      previewTranscodeAttemptedRef.current = false;
       return;
     }
-    const url = URL.createObjectURL(photoFile);
-    setPhotoPreviewUrl(url);
+
+    previewTranscodeAttemptedRef.current = false;
+
+    if (isLikelyHeicOrHeif(photoFile)) {
+      if (previewBlobUrlRef.current) {
+        URL.revokeObjectURL(previewBlobUrlRef.current);
+        previewBlobUrlRef.current = null;
+      }
+      setPhotoPreviewUrl(null);
+      void tryPreviewTranscode(photoFile);
+      return () => {
+        if (previewBlobUrlRef.current) {
+          URL.revokeObjectURL(previewBlobUrlRef.current);
+          previewBlobUrlRef.current = null;
+        }
+        setPhotoPreviewUrl(null);
+      };
+    }
+
+    const directUrl = URL.createObjectURL(photoFile);
+    if (previewBlobUrlRef.current) URL.revokeObjectURL(previewBlobUrlRef.current);
+    previewBlobUrlRef.current = directUrl;
+    setPhotoPreviewUrl(directUrl);
+
     return () => {
-      URL.revokeObjectURL(url);
+      if (previewBlobUrlRef.current) {
+        URL.revokeObjectURL(previewBlobUrlRef.current);
+        previewBlobUrlRef.current = null;
+      }
+      setPhotoPreviewUrl(null);
     };
-  }, [photoFile]);
+  }, [photoFile, tryPreviewTranscode]);
 
   const filteredVehicles = useMemo(() => {
     const q = vehicleSearch.trim().toLowerCase();
@@ -395,18 +483,30 @@ export default function ReportMileagePage() {
                   <div className="relative z-0 min-h-[14rem] overflow-hidden rounded-xl border border-border bg-black">
                     {photoPreviewUrl ? (
                       <img
+                        key={photoPreviewUrl}
                         src={photoPreviewUrl}
                         alt="תצוגה מקדימה"
                         width={1280}
                         height={896}
+                        decoding="async"
                         className="block h-56 w-full max-w-full object-cover"
+                        onError={() => {
+                          if (!photoFile) return;
+                          if (previewTranscodeRunningRef.current) return;
+                          if (previewTranscodeAttemptedRef.current) {
+                            if (previewBlobUrlRef.current) {
+                              URL.revokeObjectURL(previewBlobUrlRef.current);
+                              previewBlobUrlRef.current = null;
+                            }
+                            setPhotoPreviewUrl(null);
+                            return;
+                          }
+                          void tryPreviewTranscode(photoFile);
+                        }}
                       />
                     ) : (
-                      <div
-                        className="flex h-56 w-full items-center justify-center text-sm text-white/50"
-                        aria-hidden
-                      >
-                        אין תצוגה מקדימה
+                      <div className="flex h-56 w-full items-center justify-center px-4 text-center text-sm text-white/50">
+                        {photoFile ? 'טוען תצוגה מקדימה…' : 'אין תצוגה מקדימה'}
                       </div>
                     )}
                   </div>
