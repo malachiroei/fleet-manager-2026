@@ -176,17 +176,25 @@ export default function ReportMileagePage() {
       const safeId = sanitizeStorageSegment(rawId);
       const tempPath = `tmp/${safeUserId}/${safeId}.${safeExt}`;
 
+      console.log('File details:', { name: f.name, size: f.size, type: f.type });
+
+      // Android camera sometimes returns a File with missing `type` or odd internal backing.
+      // Normalize to a new File constructed from the blob bytes.
+      const normalizedType = (f.type && String(f.type).trim()) ? f.type : 'image/jpeg';
+      const normalizedName = (f.name && String(f.name).trim()) ? f.name : 'photo.jpg';
+      const fileToUpload = new File([f], normalizedName, { type: normalizedType || 'image/jpeg' });
+
       console.log('[ReportMileagePage] immediate upload start', {
         bucket: STORAGE_BUCKET,
         objectPath: tempPath,
-        fileName: f.name,
-        fileType: f.type,
-        fileSize: f.size,
+        fileName: fileToUpload.name,
+        fileType: fileToUpload.type,
+        fileSize: fileToUpload.size,
       });
 
       const { error: uploadError } = await supabase.storage
         .from(STORAGE_BUCKET)
-        .upload(tempPath, f, { upsert: true, contentType: f.type || 'image/jpeg' });
+        .upload(tempPath, fileToUpload, { upsert: true, contentType: fileToUpload.type || 'image/jpeg' });
 
       // If the user picked a new image mid-flight, ignore this result
       if (uploadTokenRef.current !== token) return;
