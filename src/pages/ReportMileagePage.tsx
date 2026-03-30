@@ -15,6 +15,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { WebcamCapture } from '@/components/WebcamCapture';
+import {
+  isAndroidUserAgent,
+  readFileAsDataUrl,
+  shouldAttachDirectCameraCapture,
+  tryMaterializeImageFileFromInput,
+} from '@/lib/mobilePhotoIngest';
 
 const STORAGE_BUCKET = 'mileage-reports';
 
@@ -35,66 +41,6 @@ function clearMileageReportSessionDraft() {
   } catch {
     // private mode / quota
   }
-}
-
-/**
- * Plain `accept="image/*"` on desktop lets the OS picker offer files, webcam, or “Take photo” where supported.
- * `capture="environment"` is limited to iOS-style mobile UAs only — never Android (separate activity / dropped result).
- */
-function shouldAttachDirectCameraCapture(): boolean {
-  if (typeof navigator === 'undefined') return false;
-  const ua = navigator.userAgent;
-  if (/Android/i.test(ua)) return false;
-  if (/iPhone|iPod/i.test(ua)) return true;
-  if (/iPad/i.test(ua)) return true;
-  // iPadOS 13+ sometimes reports as Mac with touch
-  if (/Macintosh/i.test(ua) && typeof navigator.maxTouchPoints === 'number' && navigator.maxTouchPoints > 1) {
-    return true;
-  }
-  return false;
-}
-
-function isAndroidUserAgent(): boolean {
-  if (typeof navigator === 'undefined') return false;
-  return /Android/i.test(navigator.userAgent);
-}
-
-/**
- * Android often supplies a `File` backed by a `content://` URI. That handle must not be used
- * as a long-lived preview target — read bytes once into a normal in-memory `File` for `<img>` and upload.
- */
-async function materializeImageFileFromInput(source: File): Promise<File> {
-  const mime =
-    source.type && source.type !== 'application/octet-stream' && source.type !== ''
-      ? source.type
-      : 'image/jpeg';
-  const buf = await source.arrayBuffer();
-  const name = source.name?.trim() || 'mileage-photo.jpg';
-  return new File([buf], name, { type: mime });
-}
-
-/** Materialize for Android `content://` safety; on desktop, empty reads fall back to the original `File`. */
-async function tryMaterializeImageFileFromInput(source: File): Promise<{ file: File; ok: boolean }> {
-  try {
-    const out = await materializeImageFileFromInput(source);
-    if (out.size === 0 && source.size > 0) {
-      console.warn('[ReportMileagePage] materialize produced empty buffer; using original File (desktop-safe fallback)');
-      return { file: source, ok: false };
-    }
-    return { file: out, ok: true };
-  } catch (err) {
-    console.warn('[ReportMileagePage] materialize failed; using original File', err);
-    return { file: source, ok: false };
-  }
-}
-
-function readFileAsDataUrl(file: File): Promise<string | null> {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null);
-    reader.onerror = () => resolve(null);
-    reader.readAsDataURL(file);
-  });
 }
 
 function sanitizeFileExt(name: string): string {
