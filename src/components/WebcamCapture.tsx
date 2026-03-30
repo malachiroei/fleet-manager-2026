@@ -1,13 +1,15 @@
+import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogOverlay,
+  DialogPortal,
   DialogTitle,
 } from '@/components/ui/dialog';
 
@@ -161,7 +163,20 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     streamRef.current = stream;
     video.srcObject = stream;
     video.setAttribute('playsinline', 'true');
+    video.setAttribute('webkit-playsinline', 'true');
     video.muted = true;
+
+    const [vTrack] = stream.getVideoTracks();
+    if (vTrack) {
+      const onUnmute = () => markVideoPresenting();
+      vTrack.addEventListener('unmute', onUnmute);
+      vTrack.addEventListener('ended', () => {
+        if (openRef.current) setError('המצלמה נותקה. נסו שוב.');
+      });
+      if (!vTrack.muted) {
+        requestAnimationFrame(() => markVideoPresenting());
+      }
+    }
 
     initTimeoutRef.current = setTimeout(() => {
       initTimeoutRef.current = null;
@@ -178,6 +193,12 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
 
     try {
       await video.play();
+      requestAnimationFrame(() => markVideoPresenting());
+      const rVfc = (video as HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => void })
+        .requestVideoFrameCallback;
+      if (typeof rVfc === 'function') {
+        rVfc.call(video, () => markVideoPresenting());
+      }
     } catch {
       clearInitTimeout();
       if (!openRef.current) {
@@ -284,62 +305,82 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] w-[calc(100%-1.5rem)] max-w-lg gap-3 overflow-y-auto border-border bg-card p-4 sm:p-6">
-        <DialogHeader className="text-right sm:text-right">
-          <DialogTitle className="text-base">צילום מהמצלמה</DialogTitle>
-          <DialogDescription className="text-xs text-muted-foreground">
-            המצלמה נשארת בתוך הדף — ללא מעבר לאפליקציית המערכת.
-          </DialogDescription>
-        </DialogHeader>
+      {/*
+        Do not use default DialogContent: its translate + zoom (transform) breaks hardware video
+        compositing on Chrome/Android — live <video> stays black. Center with flex, no transform.
+      */}
+      <DialogPortal>
+        <DialogOverlay />
+        <DialogPrimitive.Content
+          className="fixed inset-0 z-[51] flex items-center justify-center border-0 bg-transparent p-3 shadow-none outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 sm:p-4"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          <div className="relative grid max-h-[90vh] w-full max-w-lg gap-3 overflow-y-auto rounded-lg border border-border bg-card p-4 shadow-lg sm:gap-4 sm:p-6">
+            <DialogPrimitive.Close
+              type="button"
+              className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              aria-label="סגור"
+            >
+              <X className="h-4 w-4" />
+            </DialogPrimitive.Close>
 
-        <div className="relative aspect-[3/4] w-full overflow-hidden rounded-lg bg-black">
-          <video
-            ref={videoRef}
-            className="h-full w-full object-cover"
-            playsInline
-            muted
-            autoPlay
-            onLoadedMetadata={markVideoPresenting}
-            onLoadedData={markVideoPresenting}
-            onPlaying={markVideoPresenting}
-            onCanPlay={markVideoPresenting}
-            onError={handleVideoError}
-          />
-          {loading && (
-            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/85 px-4 text-center">
-              <Loader2 className="h-10 w-10 shrink-0 animate-spin text-white" aria-hidden />
-              <p className="text-xs text-white/90">טוען מצלמה…</p>
+            <DialogHeader className="space-y-1 pr-8 text-right sm:text-right">
+              <DialogTitle className="text-base">צילום מהמצלמה</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                המצלמה נשארת בתוך הדף — ללא מעבר לאפליקציית המערכת.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="relative aspect-[3/4] w-full min-h-[200px] overflow-hidden rounded-lg bg-black">
+              <video
+                ref={videoRef}
+                className="h-full w-full object-contain"
+                playsInline
+                muted
+                autoPlay
+                onLoadedMetadata={markVideoPresenting}
+                onLoadedData={markVideoPresenting}
+                onPlaying={markVideoPresenting}
+                onCanPlay={markVideoPresenting}
+                onError={handleVideoError}
+              />
+              {loading && (
+                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/85 px-4 text-center">
+                  <Loader2 className="h-10 w-10 shrink-0 animate-spin text-white" aria-hidden />
+                  <p className="text-xs text-white/90">טוען מצלמה…</p>
+                </div>
+              )}
             </div>
-          )}
-        </div>
 
-        {error ? (
-          <p className="text-sm text-destructive" role="alert">
-            {error}
-          </p>
-        ) : null}
+            {error ? (
+              <p className="text-sm text-destructive" role="alert">
+                {error}
+              </p>
+            ) : null}
 
-        <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-stretch">
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full sm:flex-1"
-            onClick={() => onOpenChange(false)}
-            disabled={snapping}
-          >
-            ביטול
-          </Button>
-          <Button
-            type="button"
-            className="w-full sm:flex-1"
-            onClick={handleSnap}
-            disabled={disabled || loading || !!error || !videoReady || snapping}
-          >
-            {snapping && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
-            צלם
-          </Button>
-        </DialogFooter>
-      </DialogContent>
+            <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-stretch">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:flex-1"
+                onClick={() => onOpenChange(false)}
+                disabled={snapping}
+              >
+                ביטול
+              </Button>
+              <Button
+                type="button"
+                className="w-full sm:flex-1"
+                onClick={handleSnap}
+                disabled={disabled || loading || !!error || !videoReady || snapping}
+              >
+                {snapping && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
+                צלם
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogPrimitive.Content>
+      </DialogPortal>
     </Dialog>
   );
 }
