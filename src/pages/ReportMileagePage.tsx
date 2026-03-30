@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Camera, Gauge, Loader2 } from 'lucide-react';
 
@@ -76,19 +76,6 @@ export default function ReportMileagePage() {
     [vehicles, selectedVehicleId]
   );
 
-  useEffect(() => {
-    if (!photoFile) {
-      if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
-      setPhotoPreviewUrl(null);
-      return;
-    }
-
-    const next = URL.createObjectURL(photoFile);
-    setPhotoPreviewUrl(next);
-    return () => URL.revokeObjectURL(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [photoFile]);
-
   const pickPhoto = () => {
     fileInputRef.current?.click();
   };
@@ -97,15 +84,20 @@ export default function ReportMileagePage() {
     setPhotoFile(f);
     if (!f) {
       toast({ title: 'לא התקבלה תמונה', variant: 'destructive' });
+      if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
+      setPhotoPreviewUrl(null);
       return;
     }
+    if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
+    const url = URL.createObjectURL(f);
+    setPhotoPreviewUrl(url);
     toast({
       title: 'התמונה נקלטה',
       description: `${Math.round(f.size / 1024).toLocaleString()} KB${f.type ? ` · ${f.type}` : ''}`,
     });
   };
 
-  const submit = async (e: React.FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!user) return;
     if (!selectedVehicle) {
@@ -151,11 +143,7 @@ export default function ReportMileagePage() {
         throw uploadError;
       }
 
-      const { data: urlData, error: urlError } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
-      if (urlError) {
-        console.error('[ReportMileagePage] getPublicUrl failed', urlError);
-        throw urlError;
-      }
+      const { data: urlData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
       const photoUrl = urlData?.publicUrl;
       if (!photoUrl) {
         console.error('[ReportMileagePage] missing photoUrl from getPublicUrl', {
@@ -177,7 +165,7 @@ export default function ReportMileagePage() {
 
       console.log('Step 3: Inserting to mileage_logs...', payload);
 
-      const { error: insertError } = await supabase.from('mileage_logs').insert(payload as any);
+      const { error: insertError } = await supabase.from('mileage_logs' as any).insert(payload as any);
       if (insertError) {
         console.error('[ReportMileagePage] mileage_logs insert failed', insertError);
         console.error('[ReportMileagePage] mileage_logs insert payload', payload);
@@ -189,7 +177,7 @@ export default function ReportMileagePage() {
       try {
         const title = `עדכון ק"מ - ${odometerValue.toLocaleString('he-IL')} ק"מ`;
 
-        const { error: vehicleDocError } = await supabase.from('vehicle_documents').insert({
+        const { error: vehicleDocError } = await supabase.from('vehicle_documents' as any).insert({
           vehicle_id: selectedVehicle.id,
           title,
           file_url: photoUrl,
@@ -389,12 +377,10 @@ export default function ReportMileagePage() {
                     ref={fileInputRef}
                     type="file"
                     accept="image/*"
-                    capture="environment"
                     className="hidden"
                     onChange={(e) => {
                       const f = e.target.files?.[0] ?? null;
                       onPhotoPicked(f);
-                      e.currentTarget.value = '';
                     }}
                   />
                   <Button type="button" variant="outline" className="w-full h-12 gap-2" onClick={pickPhoto}>
