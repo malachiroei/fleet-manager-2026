@@ -23,6 +23,11 @@ function sanitizeFileExt(name: string): string {
   return ext || 'jpg';
 }
 
+function sanitizeStorageSegment(seg: string): string {
+  // allow uuid-ish + basic safe characters for storage object names
+  return String(seg || '').replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
 export default function ReportMileagePage() {
   const navigate = useNavigate();
   const { user, profile, loading, activeOrgId } = useAuth();
@@ -126,8 +131,11 @@ export default function ReportMileagePage() {
     setSubmitting(true);
     try {
       const ext = sanitizeFileExt(photoFile.name);
-      const id = (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
-      const path = `${selectedVehicle.id}/${id}.${ext}`;
+      const rawId = (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+      const safeVehicleId = sanitizeStorageSegment(selectedVehicle.id);
+      const safeId = sanitizeStorageSegment(rawId);
+      const safeExt = sanitizeStorageSegment(ext);
+      const path = `${safeVehicleId}/${safeId}.${safeExt}`;
 
       console.log('Step 1: Uploading photo...', {
         bucket: STORAGE_BUCKET,
@@ -137,9 +145,20 @@ export default function ReportMileagePage() {
 
       const { error: uploadError } = await supabase.storage
         .from(STORAGE_BUCKET)
-        .upload(path, photoFile, { upsert: false, contentType: photoFile.type || undefined });
+        .upload(path, photoFile, { upsert: false, contentType: photoFile.type || 'image/jpeg' });
       if (uploadError) {
-        console.error('[ReportMileagePage] storage upload failed', uploadError);
+        console.error('[ReportMileagePage] storage upload failed', {
+          uploadError,
+          bucket: STORAGE_BUCKET,
+          objectPath: path,
+          vehicleId: selectedVehicle.id,
+          userId: user.id,
+          file: {
+            name: photoFile.name,
+            type: photoFile.type,
+            size: photoFile.size,
+          },
+        });
         throw uploadError;
       }
 
@@ -377,6 +396,7 @@ export default function ReportMileagePage() {
                     ref={fileInputRef}
                     type="file"
                     accept="image/*"
+                    capture="environment"
                     className="hidden"
                     onChange={(e) => {
                       const f = e.target.files?.[0] ?? null;
