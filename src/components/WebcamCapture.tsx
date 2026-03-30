@@ -27,6 +27,9 @@ const REAR_DEVICE_ID_STORAGE_KEY = 'fleet_manager_mileage_rear_device_id_v1';
 /** Re-probe after first warm-up reboot before optional second hard reset (allow attach + decode). */
 const POST_FIRST_WARMUP_RECHECK_MS = 2200;
 
+/** After the first front stream is live on Android, auto-switch to rear (no manual tap). */
+const ANDROID_AUTO_FLIP_TO_REAR_MS = 500;
+
 type CameraProfile = 'environment' | 'user' | 'compatible';
 
 function stopStream(stream: MediaStream | null) {
@@ -276,8 +279,19 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
   const [canvasProbeOk, setCanvasProbeOk] = useState(false);
   /** Reactive gate: refs don't re-render when video dimensions appear. */
   const [hasVideoFrame, setHasVideoFrame] = useState(false);
+  /** Android: keep loader until rear is usable (covers silent front + flip + rear attach). */
+  const [androidRearBootstrapping, setAndroidRearBootstrapping] = useState(false);
+  const androidRearBootstrappingRef = useRef(false);
 
   const initTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const androidAutoFlipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearAndroidAutoFlipTimer = useCallback(() => {
+    if (androidAutoFlipTimerRef.current) {
+      clearTimeout(androidAutoFlipTimerRef.current);
+      androidAutoFlipTimerRef.current = null;
+    }
+  }, []);
 
   const clearInitTimeout = useCallback(() => {
     if (initTimeoutRef.current) {
@@ -291,6 +305,14 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     if (!openRef.current) return;
     const v = videoRef.current;
     if (!v) return;
+    /** During Android auto front→rear, hide preview under the loader until we switch to rear. */
+    if (androidRearBootstrappingRef.current && cameraProfileRef.current === 'user') {
+      if (v.videoWidth > 0 && v.videoHeight > 0) {
+        setHasVideoFrame(true);
+        setVideoReady(true);
+      }
+      return;
+    }
     setLoading(false);
     if (v.videoWidth > 0 && v.videoHeight > 0) {
       setHasVideoFrame(true);
@@ -335,18 +357,27 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
 
     const video = videoRef.current;
     if (!video) {
+      androidRearBootstrappingRef.current = false;
+      setAndroidRearBootstrapping(false);
+      clearAndroidAutoFlipTimer();
       setLoading(false);
       return;
     }
     video.srcObject = null;
 
     if (typeof window !== 'undefined' && !window.isSecureContext) {
+      androidRearBootstrappingRef.current = false;
+      setAndroidRearBootstrapping(false);
+      clearAndroidAutoFlipTimer();
       setError('האתר חייב לרוץ תחת HTTPS כדי שהמצלמה תעבוד.');
       setLoading(false);
       return;
     }
 
     if (!navigator.mediaDevices?.getUserMedia) {
+      androidRearBootstrappingRef.current = false;
+      setAndroidRearBootstrapping(false);
+      clearAndroidAutoFlipTimer();
       setError('הדפדפן לא תומך במצלמה (נדרש HTTPS ודפדפן מעודכן).');
       setLoading(false);
       return;
@@ -372,6 +403,9 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       stream = await getUserMediaWithChain(constraintChainForProfile(cameraProfileRef.current));
     } catch (err) {
       if (!openRef.current) return;
+      clearAndroidAutoFlipTimer();
+      androidRearBootstrappingRef.current = false;
+      setAndroidRearBootstrapping(false);
       setError(mapGetUserMediaError(err));
       setLoading(false);
       return;
@@ -412,6 +446,9 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
         markVideoPresenting();
         return;
       }
+      clearAndroidAutoFlipTimer();
+      androidRearBootstrappingRef.current = false;
+      setAndroidRearBootstrapping(false);
       setLoading(false);
       setError(
         'המצלמה איטית או לא מציגה תמונה. בדקו הרשאות, או סגרו ונסו שוב. אם הרשאה חסומה — אפשרו מצלמה בהגדרות הדפדפן.'
@@ -428,6 +465,9 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       }
     } catch {
       clearInitTimeout();
+      clearAndroidAutoFlipTimer();
+      androidRearBootstrappingRef.current = false;
+      setAndroidRearBootstrapping(false);
       if (!openRef.current) {
         stopStream(stream);
         streamRef.current = null;
@@ -446,6 +486,18 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       streamRef.current = null;
       if (video) video.srcObject = null;
       return;
+    }
+
+    if (openRef.current && isAndroidUa() && openedProfile === 'user' && streamBootId === 0) {
+      clearAndroidAutoFlipTimer();
+      androidRearBootstrappingRef.current = true;
+      setAndroidRearBootstrapping(true);
+      androidAutoFlipTimerRef.current = setTimeout(() => {
+        androidAutoFlipTimerRef.current = null;
+        if (!openRef.current) return;
+        if (cameraProfileRef.current !== 'user') return;
+        setCameraProfile('environment');
+      }, ANDROID_AUTO_FLIP_TO_REAR_MS);
     }
 
     const runCanvasProbe = () => {
@@ -519,11 +571,14 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
         }, POST_FIRST_WARMUP_RECHECK_MS);
       }, 420);
     }
-  }, [cameraProfile, streamBootId, clearInitTimeout, markVideoPresenting]);
+  }, [cameraProfile, streamBootId, clearAndroidAutoFlipTimer, clearInitTimeout, markVideoPresenting]);
 
   useEffect(() => {
     if (!open) {
       clearInitTimeout();
+      clearAndroidAutoFlipTimer();
+      androidRearBootstrappingRef.current = false;
+      setAndroidRearBootstrapping(false);
       setStreamBootId(0);
       setError(null);
       setLoading(false);
@@ -536,7 +591,25 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       stopStream(streamRef.current);
       streamRef.current = null;
     }
-  }, [open, clearInitTimeout]);
+  }, [open, clearInitTimeout, clearAndroidAutoFlipTimer]);
+
+  /** End Android bootstrap once rear stream is presenting (probe or ready). */
+  useEffect(() => {
+    if (!androidRearBootstrapping) return;
+    if (!open || !isAndroidUa() || cameraProfile !== 'environment') return;
+    if (hasVideoFrame && (videoReady || canvasProbeOk)) {
+      androidRearBootstrappingRef.current = false;
+      setAndroidRearBootstrapping(false);
+      setLoading(false);
+    }
+  }, [
+    open,
+    cameraProfile,
+    hasVideoFrame,
+    videoReady,
+    canvasProbeOk,
+    androidRearBootstrapping,
+  ]);
 
   /** Reset probe warm-up only when the dialog opens — not on `streamBootId` / profile-driven re-attach. */
   useLayoutEffect(() => {
@@ -551,12 +624,13 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     void attachStream();
     return () => {
       clearInitTimeout();
+      clearAndroidAutoFlipTimer();
       const v = videoRef.current;
       if (v) v.srcObject = null;
       stopStream(streamRef.current);
       streamRef.current = null;
     };
-  }, [open, attachStream, clearInitTimeout]);
+  }, [open, attachStream, clearInitTimeout, clearAndroidAutoFlipTimer]);
 
   useEffect(() => {
     if (!open) return;
@@ -727,14 +801,19 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     }
   }, [disabled, finalizeDeliverCapture, snapping]);
 
+  const showCameraLoader = loading || androidRearBootstrapping;
+
   const canCapture =
-    !loading &&
+    !showCameraLoader &&
     !error &&
     hasVideoFrame &&
     (videoReady || canvasProbeOk);
 
   const handleVideoError = useCallback(() => {
     clearInitTimeout();
+    clearAndroidAutoFlipTimer();
+    androidRearBootstrappingRef.current = false;
+    setAndroidRearBootstrapping(false);
     if (!openRef.current) return;
     setLoading(false);
     setVideoReady(false);
@@ -744,7 +823,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     streamRef.current = null;
     const v = videoRef.current;
     if (v) v.srcObject = null;
-  }, [clearInitTimeout]);
+  }, [clearAndroidAutoFlipTimer, clearInitTimeout]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -791,7 +870,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
                 onCanPlay={markVideoPresenting}
                 onError={handleVideoError}
               />
-              {loading && (
+              {showCameraLoader && (
                 <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/80 px-4 text-center">
                   <Loader2 className="h-10 w-10 shrink-0 animate-spin text-white" aria-hidden />
                   <p className="text-xs text-white/90">טוען מצלמה…</p>
@@ -811,7 +890,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
                 variant="ghost"
                 size="icon"
                 className="h-12 w-12 shrink-0"
-                disabled={loading || snapping}
+                disabled={showCameraLoader || snapping}
                 onClick={cycleCameraProfile}
                 aria-label="החלף מצלמה"
                 title="החלף מצלמה (קדמית / אחורית)"
@@ -822,7 +901,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
                 type="button"
                 className="h-12 min-w-0 flex-1 text-base"
                 onClick={() => void handleSnap()}
-                disabled={disabled || loading || !!error || !canCapture || snapping}
+                disabled={disabled || showCameraLoader || !!error || !canCapture || snapping}
               >
                 {snapping && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
                 צלם
