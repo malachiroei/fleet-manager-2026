@@ -1,16 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { flushSync } from 'react-dom';
+import { useMemo, useRef, useState } from 'react';
 import { Camera, Check, ImageIcon, X } from 'lucide-react';
 
 import { WebcamCapture } from '@/components/WebcamCapture';
 import { Button } from '@/components/ui/button';
-import { toast } from '@/hooks/use-toast';
-import {
-  isAndroidUserAgent,
-  readFileAsDataUrl,
-  shouldAttachDirectCameraCapture,
-  tryMaterializeImageFileFromInput,
-} from '@/lib/mobilePhotoIngest';
+import { useMobilePhotoIngest } from '@/hooks/useMobilePhotoIngest';
+import { isAndroidUserAgent, shouldAttachDirectCameraCapture } from '@/lib/mobilePhotoIngest';
 import { cn } from '@/lib/utils';
 
 interface PhotoUploadProps {
@@ -29,113 +23,29 @@ export default function PhotoUpload({
   icon,
   disabled = false,
 }: PhotoUploadProps) {
-  const [preview, setPreview] = useState<string | null>(null);
-  const [previewMountKey, setPreviewMountKey] = useState(0);
   const [webcamOpen, setWebcamOpen] = useState(false);
-
-  const blobPreviewRevokeRef = useRef<string | null>(null);
-  const ingestGenRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const fallbackInputRef = useRef<HTMLInputElement>(null);
 
+  const onCommittedChange = useMemo(() => onPhotoCapture, [onPhotoCapture]);
+
+  const {
+    photoPreviewUrl: preview,
+    previewMountKey,
+    isMaterializing,
+    startPhotoIngest,
+    resetPhoto,
+  } = useMobilePhotoIngest({
+    logLabel: '[PhotoUpload]',
+    onCommittedChange,
+  });
+
   const android = isAndroidUserAgent();
-
-  useEffect(() => {
-    return () => {
-      if (blobPreviewRevokeRef.current) {
-        URL.revokeObjectURL(blobPreviewRevokeRef.current);
-        blobPreviewRevokeRef.current = null;
-      }
-    };
-  }, []);
-
-  const startIngest = useCallback(
-    (file: File | null, clearInput: HTMLInputElement | null) => {
-      const gen = ++ingestGenRef.current;
-
-      if (blobPreviewRevokeRef.current) {
-        URL.revokeObjectURL(blobPreviewRevokeRef.current);
-        blobPreviewRevokeRef.current = null;
-      }
-      setPreview(null);
-      onPhotoCapture(null);
-
-      if (!file) {
-        if (clearInput) clearInput.value = '';
-        return;
-      }
-
-      void (async () => {
-        const { file: workFile } = await tryMaterializeImageFileFromInput(file);
-
-        if (gen !== ingestGenRef.current) return;
-
-        onPhotoCapture(workFile);
-
-        let displayUrl: string | null = null;
-        if (isAndroidUserAgent()) {
-          displayUrl = await readFileAsDataUrl(workFile);
-        } else {
-          try {
-            displayUrl = URL.createObjectURL(workFile);
-          } catch (err) {
-            console.warn('[PhotoUpload] createObjectURL failed', err);
-          }
-          if (!displayUrl) {
-            displayUrl = await readFileAsDataUrl(workFile);
-          }
-        }
-
-        if (gen !== ingestGenRef.current) {
-          if (displayUrl?.startsWith('blob:')) URL.revokeObjectURL(displayUrl);
-          return;
-        }
-
-        if (displayUrl?.startsWith('blob:')) {
-          blobPreviewRevokeRef.current = displayUrl;
-        } else {
-          blobPreviewRevokeRef.current = null;
-        }
-
-        flushSync(() => {
-          setPreview(displayUrl ?? null);
-          setPreviewMountKey((k) => k + 1);
-        });
-
-        if (!displayUrl) {
-          toast({
-            title: 'לא ניתן להציג תצוגה מקדימה',
-            description: 'הקובץ עדיין אמור להישלח — נסו שוב או תמונה מהגלריה.',
-            variant: 'destructive',
-          });
-        }
-      })()
-        .catch((err) => {
-          if (gen === ingestGenRef.current) {
-            console.error('[PhotoUpload] ingest failed', err);
-            toast({
-              title: 'לא ניתן לטעון את התמונה',
-              description: 'נסו שוב או בחרו מהגלריה.',
-              variant: 'destructive',
-            });
-          }
-        })
-        .finally(() => {
-          if (clearInput) clearInput.value = '';
-        });
-    },
-    [onPhotoCapture]
-  );
+  const controlsDisabled = disabled || isMaterializing;
 
   const clearPhoto = () => {
-    ingestGenRef.current += 1;
-    if (blobPreviewRevokeRef.current) {
-      URL.revokeObjectURL(blobPreviewRevokeRef.current);
-      blobPreviewRevokeRef.current = null;
-    }
-    setPreview(null);
-    onPhotoCapture(null);
+    resetPhoto();
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (galleryInputRef.current) galleryInputRef.current.value = '';
     if (fallbackInputRef.current) fallbackInputRef.current.value = '';
@@ -147,7 +57,6 @@ export default function PhotoUpload({
 
   return (
     <div className="space-y-2">
-      {/* Android: in-tab webcam + gallery (same strategy as דיווח ק״מ). */}
       {android ? (
         <>
           <input
@@ -155,16 +64,16 @@ export default function PhotoUpload({
             type="file"
             accept="image/*"
             className="hidden"
-            disabled={disabled}
-            onChange={(e) => startIngest(e.target.files?.[0] ?? null, e.target)}
+            disabled={controlsDisabled}
+            onChange={(e) => startPhotoIngest(e.target.files?.[0] ?? null, e.target)}
           />
           <input
             ref={fallbackInputRef}
             type="file"
             accept="image/*"
             className="hidden"
-            disabled={disabled}
-            onChange={(e) => startIngest(e.target.files?.[0] ?? null, e.target)}
+            disabled={controlsDisabled}
+            onChange={(e) => startPhotoIngest(e.target.files?.[0] ?? null, e.target)}
           />
         </>
       ) : (
@@ -174,8 +83,8 @@ export default function PhotoUpload({
           accept="image/*"
           {...(shouldAttachDirectCameraCapture() ? ({ capture: 'environment' } as const) : {})}
           className="hidden"
-          disabled={disabled}
-          onChange={(e) => startIngest(e.target.files?.[0] ?? null, e.target)}
+          disabled={controlsDisabled}
+          onChange={(e) => startPhotoIngest(e.target.files?.[0] ?? null, e.target)}
         />
       )}
 
@@ -183,12 +92,12 @@ export default function PhotoUpload({
         className={cn(
           'relative aspect-video overflow-hidden rounded-lg border-2 border-dashed transition-all',
           preview ? 'border-success' : 'border-border',
-          !preview && !disabled && !android && 'cursor-pointer hover:border-primary/50',
-          !preview && !disabled && android && 'border-border'
+          !preview && !controlsDisabled && !android && 'cursor-pointer hover:border-primary/50',
+          !preview && !controlsDisabled && android && 'border-border'
         )}
-        onClick={!preview && !disabled && !android ? openNativePicker : undefined}
+        onClick={!preview && !controlsDisabled && !android ? openNativePicker : undefined}
         onKeyDown={
-          !preview && !disabled && !android
+          !preview && !controlsDisabled && !android
             ? (e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
@@ -197,8 +106,8 @@ export default function PhotoUpload({
               }
             : undefined
         }
-        role={!preview && !disabled && !android ? 'button' : undefined}
-        tabIndex={!preview && !disabled && !android ? 0 : undefined}
+        role={!preview && !controlsDisabled && !android ? 'button' : undefined}
+        tabIndex={!preview && !controlsDisabled && !android ? 0 : undefined}
       >
         {preview ? (
           <>
@@ -217,7 +126,7 @@ export default function PhotoUpload({
               variant="destructive"
               size="icon"
               className="absolute right-2 top-2 h-8 w-8"
-              disabled={disabled}
+              disabled={controlsDisabled}
               onClick={(e) => {
                 e.stopPropagation();
                 clearPhoto();
@@ -236,7 +145,7 @@ export default function PhotoUpload({
                 type="button"
                 size="sm"
                 className="h-10 flex-1 gap-2"
-                disabled={disabled}
+                disabled={controlsDisabled}
                 onClick={() => setWebcamOpen(true)}
               >
                 <Camera className="h-4 w-4 shrink-0" />
@@ -247,7 +156,7 @@ export default function PhotoUpload({
                 size="sm"
                 variant="outline"
                 className="h-10 flex-1 gap-2"
-                disabled={disabled}
+                disabled={controlsDisabled}
                 onClick={() => galleryInputRef.current?.click()}
               >
                 <ImageIcon className="h-4 w-4 shrink-0" />
@@ -257,7 +166,7 @@ export default function PhotoUpload({
             <button
               type="button"
               className="text-xs underline decoration-muted-foreground/60 underline-offset-2 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
-              disabled={disabled}
+              disabled={controlsDisabled}
               onClick={() => fallbackInputRef.current?.click()}
             >
               או בחר קובץ
@@ -268,7 +177,7 @@ export default function PhotoUpload({
             {icon || <Camera className="h-8 w-8" />}
             <span className="text-sm font-medium">{label}</span>
             {required && <span className="text-xs text-destructive">*חובה</span>}
-            <span className="text-xs text-center px-2">לחיצה לצילום או בחירת תמונה</span>
+            <span className="px-2 text-center text-xs">לחיצה לצילום או בחירת תמונה</span>
           </div>
         )}
       </div>
@@ -279,9 +188,9 @@ export default function PhotoUpload({
           onOpenChange={setWebcamOpen}
           onCapture={(f) => {
             setWebcamOpen(false);
-            startIngest(f, null);
+            startPhotoIngest(f, null);
           }}
-          disabled={disabled}
+          disabled={controlsDisabled}
         />
       ) : null}
     </div>

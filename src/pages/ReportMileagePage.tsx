@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { flushSync } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Camera, Gauge, ImageIcon, Loader2 } from 'lucide-react';
 
@@ -15,12 +14,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { WebcamCapture } from '@/components/WebcamCapture';
-import {
-  isAndroidUserAgent,
-  readFileAsDataUrl,
-  shouldAttachDirectCameraCapture,
-  tryMaterializeImageFileFromInput,
-} from '@/lib/mobilePhotoIngest';
+import { useMobilePhotoIngest } from '@/hooks/useMobilePhotoIngest';
+import { isAndroidUserAgent, shouldAttachDirectCameraCapture } from '@/lib/mobilePhotoIngest';
 
 const STORAGE_BUCKET = 'mileage-reports';
 
@@ -105,18 +100,28 @@ export default function ReportMileagePage() {
   const [vehicleSearch, setVehicleSearch] = useState('');
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
   const [odometer, setOdometer] = useState('');
-  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
-  /** Forces <img> remount after async preview (Android WebView paint quirks). */
-  const [previewMountKey, setPreviewMountKey] = useState(0);
-  /** Original file for submit-only upload to storage */
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [sessionHydrated, setSessionHydrated] = useState(false);
-  const blobPreviewRevokeRef = useRef<string | null>(null);
-  const previewGenerationRef = useRef(0);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const fallbackFileInputRef = useRef<HTMLInputElement>(null);
   const [webcamOpen, setWebcamOpen] = useState(false);
+
+  const {
+    photoFile,
+    photoPreviewUrl,
+    previewMountKey,
+    isMaterializing,
+    startPhotoIngest,
+  } = useMobilePhotoIngest({
+    logLabel: '[ReportMileagePage]',
+    onIngestBeginWithFile: () => {
+      try {
+        sessionStorage.removeItem(MILEAGE_REPORT_SESSION.cameraPending);
+      } catch {
+        // ignore
+      }
+    },
+  });
 
   /** Restore draft + detect tab recycle after camera (session flag survives reload). */
   useEffect(() => {
@@ -166,15 +171,6 @@ export default function ReportMileagePage() {
     }
   }, [loading, sessionHydrated, selectedVehicleId, odometer, vehicleSearch]);
 
-  useEffect(() => {
-    return () => {
-      if (blobPreviewRevokeRef.current) {
-        URL.revokeObjectURL(blobPreviewRevokeRef.current);
-        blobPreviewRevokeRef.current = null;
-      }
-    };
-  }, []);
-
   const filteredVehicles = useMemo(() => {
     const q = vehicleSearch.trim().toLowerCase();
     if (!q) return vehicles;
@@ -190,88 +186,6 @@ export default function ReportMileagePage() {
     () => vehicles.find((v) => v.id === selectedVehicleId) ?? null,
     [vehicles, selectedVehicleId]
   );
-
-  /** Shared by `<input type="file">`, gallery fallback, and in-tab `getUserMedia` capture. */
-  const startPhotoIngest = (file: File | null, clearInput: HTMLInputElement | null) => {
-    const gen = ++previewGenerationRef.current;
-
-    if (blobPreviewRevokeRef.current) {
-      URL.revokeObjectURL(blobPreviewRevokeRef.current);
-      blobPreviewRevokeRef.current = null;
-    }
-    setPhotoPreviewUrl(null);
-    setPhotoFile(null);
-
-    if (!file) {
-      if (clearInput) clearInput.value = '';
-      return;
-    }
-
-    try {
-      sessionStorage.removeItem(MILEAGE_REPORT_SESSION.cameraPending);
-    } catch {
-      // ignore
-    }
-
-    void (async () => {
-      const { file: workFile, ok: materializedOk } = await tryMaterializeImageFileFromInput(file);
-
-      if (gen !== previewGenerationRef.current) return;
-
-      setPhotoFile(workFile);
-
-      let displayUrl: string | null = null;
-      if (isAndroidUserAgent()) {
-        displayUrl = await readFileAsDataUrl(workFile);
-      } else {
-        try {
-          displayUrl = URL.createObjectURL(workFile);
-        } catch (err) {
-          console.warn('[ReportMileagePage] createObjectURL failed', err);
-        }
-        if (!displayUrl) {
-          displayUrl = await readFileAsDataUrl(workFile);
-        }
-      }
-
-      if (gen !== previewGenerationRef.current) {
-        if (displayUrl?.startsWith('blob:')) URL.revokeObjectURL(displayUrl);
-        return;
-      }
-
-      if (displayUrl?.startsWith('blob:')) {
-        blobPreviewRevokeRef.current = displayUrl;
-      } else {
-        blobPreviewRevokeRef.current = null;
-      }
-
-      flushSync(() => {
-        setPhotoPreviewUrl(displayUrl ?? null);
-        setPreviewMountKey((k) => k + 1);
-      });
-
-      if (!displayUrl) {
-        toast({
-          title: 'לא ניתן להציג תצוגה מקדימה',
-          description: 'הקובץ עדיין אמור להישלח — נסו שוב או תמונה מהגלריה.',
-          variant: 'destructive',
-        });
-      }
-    })()
-      .catch((err) => {
-        if (gen === previewGenerationRef.current) {
-          console.error('[ReportMileagePage] preview pipeline failed', err);
-          toast({
-            title: 'לא ניתן להציג תצוגה מקדימה',
-            description: 'נסו שוב או תמונה מהגלריה.',
-            variant: 'destructive',
-          });
-        }
-      })
-      .finally(() => {
-        if (clearInput) clearInput.value = '';
-      });
-  };
 
   const handleFile = (e: ChangeEvent<HTMLInputElement>) => {
     startPhotoIngest(e.target.files?.[0] ?? null, e.target);
@@ -305,6 +219,10 @@ export default function ReportMileagePage() {
 
     if (!photoFile) {
       toast({ title: 'נא לצרף תמונה של לוח השעונים', variant: 'destructive' });
+      return;
+    }
+    if (isMaterializing) {
+      toast({ title: 'מעבדים את התמונה…', description: 'המתן רגע לפני השליחה.', variant: 'destructive' });
       return;
     }
 
@@ -544,7 +462,7 @@ export default function ReportMileagePage() {
                         <Button
                           type="button"
                           className="h-12 flex-1 gap-2 text-base"
-                          disabled={submitting}
+                          disabled={submitting || isMaterializing}
                           onClick={() => setWebcamOpen(true)}
                         >
                           <Camera className="h-4 w-4 shrink-0" />
@@ -554,7 +472,7 @@ export default function ReportMileagePage() {
                           type="button"
                           variant="outline"
                           className="h-12 flex-1 gap-2 text-base"
-                          disabled={submitting}
+                          disabled={submitting || isMaterializing}
                           onClick={() => galleryInputRef.current?.click()}
                         >
                           <ImageIcon className="h-4 w-4 shrink-0" />
@@ -566,14 +484,14 @@ export default function ReportMileagePage() {
                         type="file"
                         accept="image/*"
                         className="hidden"
-                        disabled={submitting}
+                        disabled={submitting || isMaterializing}
                         onChange={handleFile}
                         aria-hidden
                       />
                       <button
                         type="button"
                         className="text-xs text-muted-foreground underline decoration-muted-foreground/60 underline-offset-2 hover:text-foreground"
-                        disabled={submitting}
+                        disabled={submitting || isMaterializing}
                         onClick={() => fallbackFileInputRef.current?.click()}
                       >
                         או בחר קובץ (חלון המערכת)
@@ -583,7 +501,7 @@ export default function ReportMileagePage() {
                         type="file"
                         accept="image/*"
                         className="hidden"
-                        disabled={submitting}
+                        disabled={submitting || isMaterializing}
                         onChange={handleFile}
                         aria-hidden
                       />
@@ -614,7 +532,7 @@ export default function ReportMileagePage() {
                             ? ({ capture: 'environment' } as const)
                             : {})}
                           className="hidden"
-                          disabled={submitting}
+                          disabled={submitting || isMaterializing}
                           onChange={handleFile}
                         />
                         <Camera className="h-4 w-4 shrink-0" />
@@ -643,9 +561,11 @@ export default function ReportMileagePage() {
                   <Button
                     type="submit"
                     className="flex-1 h-12 text-base"
-                    disabled={submitting || !photoFile}
+                    disabled={submitting || isMaterializing || !photoFile}
                   >
-                    {submitting && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
+                    {(submitting || isMaterializing) && (
+                      <Loader2 className="ml-2 h-4 w-4 animate-spin" />
+                    )}
                     שלח דיווח
                   </Button>
                   <Button
@@ -668,7 +588,7 @@ export default function ReportMileagePage() {
         open={webcamOpen}
         onOpenChange={setWebcamOpen}
         onCapture={handleWebcamCapturedFile}
-        disabled={submitting}
+        disabled={submitting || isMaterializing}
       />
     </div>
   );

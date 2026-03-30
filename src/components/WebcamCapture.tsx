@@ -12,6 +12,7 @@ import {
   DialogPortal,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { ANDROID_WEBCAM_WARMUP_POST_STOP_MS, tryMaterializeImageFileFromInput } from '@/lib/mobilePhotoIngest';
 
 type WebcamCaptureProps = {
   open: boolean;
@@ -22,9 +23,6 @@ type WebcamCaptureProps = {
 
 const WEBCAM_PROFILE_STORAGE_KEY = 'fleet_manager_mileage_webcam_profile_v1';
 const REAR_DEVICE_ID_STORAGE_KEY = 'fleet_manager_mileage_rear_device_id_v1';
-
-/** After stopping the warm-up (user) stream, Samsung often needs this before rear can re-open. */
-const WARMUP_POST_STOP_MS = 800;
 
 /** Re-probe after first warm-up reboot before optional second hard reset (allow attach + decode). */
 const POST_FIRST_WARMUP_RECHECK_MS = 2200;
@@ -296,11 +294,17 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     }
   }, [clearInitTimeout]);
 
-  useEffect(() => {
+  /** Run before stream attach so Android rear unlock / warm-up refs are fresh every time the modal opens. */
+  useLayoutEffect(() => {
     if (open) {
       rearWarmupDoneRef.current = false;
       rearHardResetDoneRef.current = false;
       androidRearUnlockDoneRef.current = false;
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (open) {
       const saved = readStoredCameraProfile();
       /** `compatible` often maps to the same default as front on Android — open on rear/front toggle only. */
       if (saved === 'compatible') {
@@ -365,7 +369,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
         } catch {
           /* rear may still work; retry pulse on next attach if ref stays false */
         }
-        await new Promise((r) => setTimeout(r, WARMUP_POST_STOP_MS));
+        await new Promise((r) => setTimeout(r, ANDROID_WEBCAM_WARMUP_POST_STOP_MS));
         if (!openRef.current) return;
       }
       stream = await getUserMediaWithChain(constraintChainForProfile(cameraProfileRef.current));
@@ -495,7 +499,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
         } catch {
           /* ignore */
         }
-        await new Promise((r) => setTimeout(r, WARMUP_POST_STOP_MS));
+        await new Promise((r) => setTimeout(r, ANDROID_WEBCAM_WARMUP_POST_STOP_MS));
         if (!openRef.current || cameraProfileRef.current !== 'environment') return;
         setStreamBootId((k) => k + 1);
 
@@ -514,7 +518,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
             } catch {
               /* ignore */
             }
-            await new Promise((r) => setTimeout(r, WARMUP_POST_STOP_MS));
+            await new Promise((r) => setTimeout(r, ANDROID_WEBCAM_WARMUP_POST_STOP_MS));
             if (!openRef.current || cameraProfileRef.current !== 'environment') return;
             setStreamBootId((k) => k + 1);
           })();
@@ -616,24 +620,33 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     });
   }, []);
 
-  const finishCapture = useCallback(
-    (blob: Blob | null) => {
-      setSnapping(false);
+  const finalizeDeliverCapture = useCallback(
+    async (blob: Blob | null) => {
       if (!blob || blob.size < 200) {
         setError('יצירת התמונה נכשלה או שהקובץ ריק');
         return;
       }
-      writeStoredCameraProfile(cameraProfileRef.current);
-      if (cameraProfileRef.current === 'environment') {
-        maybePersistRearDeviceId(streamRef.current);
+      try {
+        const name = `capture-${Date.now()}.jpg`;
+        const rawFile = new File([blob], name, { type: 'image/jpeg' });
+        const { file: workFile } = await tryMaterializeImageFileFromInput(rawFile);
+        if (!workFile.size || workFile.size < 200) {
+          setError('יצירת התמונה נכשלה או שהקובץ ריק');
+          return;
+        }
+        writeStoredCameraProfile(cameraProfileRef.current);
+        if (cameraProfileRef.current === 'environment') {
+          maybePersistRearDeviceId(streamRef.current);
+        }
+        stopStream(streamRef.current);
+        streamRef.current = null;
+        if (videoRef.current) videoRef.current.srcObject = null;
+        onOpenChange(false);
+        onCapture(workFile);
+      } catch (e) {
+        console.error('[WebcamCapture] finalizeDeliverCapture failed', e);
+        setError('שגיאה בעיבוד התמונה');
       }
-      const name = `mileage-capture-${Date.now()}.jpg`;
-      const file = new File([blob], name, { type: 'image/jpeg' });
-      stopStream(streamRef.current);
-      streamRef.current = null;
-      if (videoRef.current) videoRef.current.srcObject = null;
-      onOpenChange(false);
-      onCapture(file);
     },
     [onCapture, onOpenChange]
   );
@@ -649,7 +662,6 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     if (w <= 0 || h <= 0) return;
 
     setSnapping(true);
-
     try {
       if (w > 0 && h > 0 && video) {
         const canvas = document.createElement('canvas');
@@ -664,7 +676,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
           if (blob && blob.size >= 400) {
             const probe = probeVideoFrameOnCanvas(video);
             if (probe.ok || blob.size >= 2500) {
-              finishCapture(blob);
+              await finalizeDeliverCapture(blob);
               return;
             }
           }
@@ -677,7 +689,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
           mirror.toBlob((b) => resolve(b), 'image/jpeg', 0.92)
         );
         if (blob && blob.size >= 500) {
-          finishCapture(blob);
+          await finalizeDeliverCapture(blob);
           return;
         }
       }
@@ -691,7 +703,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
         const ctx = canvas.getContext('2d');
         if (!ctx) {
           bitmap.close();
-          finishCapture(null);
+          setError('יצירת התמונה נכשלה או שהקובץ ריק');
           return;
         }
         ctx.drawImage(bitmap, 0, 0);
@@ -699,17 +711,18 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
         const blob = await new Promise<Blob | null>((resolve) =>
           canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.92)
         );
-        finishCapture(blob);
+        await finalizeDeliverCapture(blob);
         return;
       }
 
-      finishCapture(null);
+      setError('יצירת התמונה נכשלה או שהקובץ ריק');
     } catch (e) {
       console.error('[WebcamCapture] snap failed', e);
-      setSnapping(false);
       setError('שגיאה בצילום');
+    } finally {
+      setSnapping(false);
     }
-  }, [disabled, finishCapture, snapping]);
+  }, [disabled, finalizeDeliverCapture, snapping]);
 
   const canCapture =
     !loading &&

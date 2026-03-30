@@ -3,6 +3,9 @@
  * Used by ReportMileagePage and PhotoUpload (handover flows).
  */
 
+/** Delay after stopping the temporary front-camera stream before opening rear (Android / Samsung). */
+export const ANDROID_WEBCAM_WARMUP_POST_STOP_MS = 1000;
+
 /**
  * Plain `accept="image/*"` on desktop lets the OS picker offer files, webcam, or “Take photo” where supported.
  * `capture="environment"` is limited to iOS-style mobile UAs only — never Android (separate activity / dropped result).
