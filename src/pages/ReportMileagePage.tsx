@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Camera, Gauge, Loader2 } from 'lucide-react';
 
@@ -102,6 +102,7 @@ export default function ReportMileagePage() {
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [sessionHydrated, setSessionHydrated] = useState(false);
+  const blobPreviewRevokeRef = useRef<string | null>(null);
 
   /** Restore draft + detect tab recycle after camera (session flag survives reload). */
   useEffect(() => {
@@ -151,6 +152,15 @@ export default function ReportMileagePage() {
     }
   }, [loading, sessionHydrated, selectedVehicleId, odometer, vehicleSearch]);
 
+  useEffect(() => {
+    return () => {
+      if (blobPreviewRevokeRef.current) {
+        URL.revokeObjectURL(blobPreviewRevokeRef.current);
+        blobPreviewRevokeRef.current = null;
+      }
+    };
+  }, []);
+
   const filteredVehicles = useMemo(() => {
     const q = vehicleSearch.trim().toLowerCase();
     if (!q) return vehicles;
@@ -169,28 +179,38 @@ export default function ReportMileagePage() {
 
   const handleFile = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
-    console.log('File picked:', file);
+    window.alert(file ? `File received: ${file.name}` : 'File received: (no file)');
+
+    if (blobPreviewRevokeRef.current) {
+      URL.revokeObjectURL(blobPreviewRevokeRef.current);
+      blobPreviewRevokeRef.current = null;
+    }
     setPhotoPreviewUrl(null);
     setPhotoFile(file);
+
     if (!file) {
       return;
     }
+
     try {
       sessionStorage.removeItem(MILEAGE_REPORT_SESSION.cameraPending);
     } catch {
       // ignore
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = typeof reader.result === 'string' ? reader.result : null;
-      console.log('[ReportMileagePage] FileReader done, dataUrl length:', dataUrl?.length ?? 0);
-      setPhotoPreviewUrl(dataUrl);
-    };
-    reader.onerror = () => {
-      console.warn('[ReportMileagePage] FileReader error');
+
+    try {
+      const url = URL.createObjectURL(file);
+      blobPreviewRevokeRef.current = url;
+      setPhotoPreviewUrl(url);
+    } catch (err) {
+      console.error('[ReportMileagePage] createObjectURL failed', err);
       setPhotoPreviewUrl(null);
-    };
-    reader.readAsDataURL(file);
+      toast({
+        title: 'לא ניתן להציג תצוגה מקדימה',
+        description: 'נסו לבחור את הקובץ שוב או תמונה אחרת.',
+        variant: 'destructive',
+      });
+    }
   };
 
   const submit = async (e: FormEvent) => {
@@ -451,7 +471,7 @@ export default function ReportMileagePage() {
                 <div className="space-y-2">
                   <span className="text-sm font-medium leading-none">תמונה של לוח השעונים</span>
                   <label
-                    htmlFor="photo_input"
+                    htmlFor="mileage_photo"
                     className="flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium text-foreground shadow-sm ring-offset-background hover:bg-accent hover:text-accent-foreground has-[:disabled]:pointer-events-none has-[:disabled]:opacity-50"
                     onPointerDownCapture={() => {
                       try {
@@ -462,10 +482,10 @@ export default function ReportMileagePage() {
                     }}
                   >
                     <input
-                      id="photo_input"
+                      id="mileage_photo"
+                      name="mileage_photo"
                       type="file"
                       accept="image/*"
-                      capture="environment"
                       className="hidden"
                       disabled={submitting}
                       onChange={handleFile}
