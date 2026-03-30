@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { flushSync } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, Camera, Gauge, Loader2 } from 'lucide-react';
+import { ArrowRight, Camera, Gauge, ImageIcon, Loader2 } from 'lucide-react';
 
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { WebcamCapture } from '@/components/WebcamCapture';
 
 const STORAGE_BUCKET = 'mileage-reports';
 
@@ -167,6 +168,9 @@ export default function ReportMileagePage() {
   const [sessionHydrated, setSessionHydrated] = useState(false);
   const blobPreviewRevokeRef = useRef<string | null>(null);
   const previewGenerationRef = useRef(0);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const fallbackFileInputRef = useRef<HTMLInputElement>(null);
+  const [webcamOpen, setWebcamOpen] = useState(false);
 
   /** TEMP: mileage photo pipeline debug (remove after S24 / PC testing). */
   const [captureDebug, setCaptureDebug] = useState<{
@@ -248,9 +252,8 @@ export default function ReportMileagePage() {
     [vehicles, selectedVehicleId]
   );
 
-  const handleFile = (e: ChangeEvent<HTMLInputElement>) => {
-    const inputEl = e.target;
-    const file = inputEl.files?.[0] ?? null;
+  /** Shared by `<input type="file">`, gallery fallback, and in-tab `getUserMedia` capture. */
+  const startPhotoIngest = (file: File | null, clearInput: HTMLInputElement | null) => {
     const gen = ++previewGenerationRef.current;
 
     if (blobPreviewRevokeRef.current) {
@@ -262,7 +265,7 @@ export default function ReportMileagePage() {
 
     if (!file) {
       setCaptureDebug({ fileDetected: false, fileName: '', materialization: 'idle' });
-      inputEl.value = '';
+      if (clearInput) clearInput.value = '';
       return;
     }
 
@@ -292,7 +295,6 @@ export default function ReportMileagePage() {
 
       let displayUrl: string | null = null;
       if (isAndroidUserAgent()) {
-        // Avoid blob: for preview on Android WebViews; Data URL is read from the materialized File (not content://).
         displayUrl = await readFileAsDataUrl(workFile);
       } else {
         try {
@@ -341,8 +343,16 @@ export default function ReportMileagePage() {
         }
       })
       .finally(() => {
-        inputEl.value = '';
+        if (clearInput) clearInput.value = '';
       });
+  };
+
+  const handleFile = (e: ChangeEvent<HTMLInputElement>) => {
+    startPhotoIngest(e.target.files?.[0] ?? null, e.target);
+  };
+
+  const handleWebcamCapturedFile = (captured: File) => {
+    startPhotoIngest(captured, null);
   };
 
   const submit = async (e: FormEvent) => {
@@ -602,36 +612,94 @@ export default function ReportMileagePage() {
 
                 <div className="space-y-2">
                   <span className="text-sm font-medium leading-none">תמונה של לוח השעונים</span>
-                  <label
-                    htmlFor="mileage_photo"
-                    className="flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium text-foreground shadow-sm ring-offset-background hover:bg-accent hover:text-accent-foreground has-[:disabled]:pointer-events-none has-[:disabled]:opacity-50"
-                    onPointerDownCapture={() => {
-                      try {
-                        sessionStorage.setItem(MILEAGE_REPORT_SESSION.cameraPending, '1');
-                      } catch {
-                        // ignore
-                      }
-                    }}
-                  >
-                    <input
-                      id="mileage_photo"
-                      name="mileage_photo"
-                      type="file"
-                      accept="image/*"
-                      {...(shouldAttachDirectCameraCapture()
-                        ? ({ capture: 'environment' } as const)
-                        : {})}
-                      className="hidden"
-                      disabled={submitting}
-                      onChange={handleFile}
-                    />
-                    <Camera className="h-4 w-4 shrink-0" />
-                    {photoFile ? 'החלף תמונה' : 'צלם או בחר תמונה'}
-                  </label>
-                  <p className="text-xs text-muted-foreground leading-snug">
-                    במחשב: בוחרים תמונה או מקור מצלמה דרך חלון הקבצים של המערכת (אם מופיע). באנדרואיד: תפריט
-                    מצלמה / גלריה בלי קפיצה כפויה למצלמה. אחרי בחירה אמורה להופיע תצוגה מקדימה.
-                  </p>
+                  {isAndroidUserAgent() ? (
+                    <>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
+                        <Button
+                          type="button"
+                          className="h-12 flex-1 gap-2 text-base"
+                          disabled={submitting}
+                          onClick={() => setWebcamOpen(true)}
+                        >
+                          <Camera className="h-4 w-4 shrink-0" />
+                          צלם מהמצלמה
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-12 flex-1 gap-2 text-base"
+                          disabled={submitting}
+                          onClick={() => galleryInputRef.current?.click()}
+                        >
+                          <ImageIcon className="h-4 w-4 shrink-0" />
+                          בחר מהגלריה
+                        </Button>
+                      </div>
+                      <input
+                        ref={galleryInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={submitting}
+                        onChange={handleFile}
+                        aria-hidden
+                      />
+                      <button
+                        type="button"
+                        className="text-xs text-muted-foreground underline decoration-muted-foreground/60 underline-offset-2 hover:text-foreground"
+                        disabled={submitting}
+                        onClick={() => fallbackFileInputRef.current?.click()}
+                      >
+                        או בחר קובץ (חלון המערכת)
+                      </button>
+                      <input
+                        ref={fallbackFileInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={submitting}
+                        onChange={handleFile}
+                        aria-hidden
+                      />
+                      <p className="text-xs text-muted-foreground leading-snug">
+                        צילום מהמצלמה נשאר בתוך הדפדפן (מומלץ אם צילום דרך האפליקציה נכשל). מהגלריה או מהמערכת — אם
+                        מופיעה מצלמת מערכת, זה עדיין אפשרי כאן כגיבוי.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <label
+                        htmlFor="mileage_photo"
+                        className="flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium text-foreground shadow-sm ring-offset-background hover:bg-accent hover:text-accent-foreground has-[:disabled]:pointer-events-none has-[:disabled]:opacity-50"
+                        onPointerDownCapture={() => {
+                          try {
+                            sessionStorage.setItem(MILEAGE_REPORT_SESSION.cameraPending, '1');
+                          } catch {
+                            // ignore
+                          }
+                        }}
+                      >
+                        <input
+                          id="mileage_photo"
+                          name="mileage_photo"
+                          type="file"
+                          accept="image/*"
+                          {...(shouldAttachDirectCameraCapture()
+                            ? ({ capture: 'environment' } as const)
+                            : {})}
+                          className="hidden"
+                          disabled={submitting}
+                          onChange={handleFile}
+                        />
+                        <Camera className="h-4 w-4 shrink-0" />
+                        {photoFile ? 'החלף תמונה' : 'צלם או בחר תמונה'}
+                      </label>
+                      <p className="text-xs text-muted-foreground leading-snug">
+                        במחשב: בוחרים תמונה או מקור מצלמה דרך חלון הקבצים של המערכת (אם מופיע). אחרי בחירה אמורה
+                        להופיע תצוגה מקדימה.
+                      </p>
+                    </>
+                  )}
                   {photoPreviewUrl ? (
                     <div className="aspect-video w-full overflow-hidden rounded-xl border border-border">
                       <img
@@ -670,9 +738,16 @@ export default function ReportMileagePage() {
         </Card>
       </main>
 
-      {/* TEMP debug overlay — PC vs Android mileage capture */}
+      <WebcamCapture
+        open={webcamOpen}
+        onOpenChange={setWebcamOpen}
+        onCapture={handleWebcamCapturedFile}
+        disabled={submitting}
+      />
+
+      {/* TEMP debug overlay — PC vs Android mileage capture (below modal z-50) */}
       <div
-        className="fixed bottom-0 left-0 right-0 z-[100] max-h-28 overflow-y-auto border-t border-amber-500/40 bg-black/90 px-3 py-2 text-[11px] leading-snug text-amber-100 font-mono shadow-[0_-4px_24px_rgba(0,0,0,0.5)]"
+        className="fixed bottom-0 left-0 right-0 z-20 max-h-28 overflow-y-auto border-t border-amber-500/40 bg-black/90 px-3 py-2 text-[11px] leading-snug text-amber-100 font-mono shadow-[0_-4px_24px_rgba(0,0,0,0.5)]"
         aria-hidden
       >
         <div className="text-amber-400/90 font-sans text-[10px] uppercase tracking-wide mb-1">

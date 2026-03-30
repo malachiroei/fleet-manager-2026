@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { cn } from '@/lib/utils';
 
 type WebcamCaptureProps = {
   open: boolean;
@@ -27,6 +26,8 @@ function stopStream(stream: MediaStream | null) {
 export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: WebcamCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const openRef = useRef(open);
+  openRef.current = open;
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [snapping, setSnapping] = useState(false);
@@ -70,9 +71,15 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
         });
       }
     } catch (err) {
+      if (!openRef.current) return;
       const msg = err instanceof Error ? err.message : 'לא ניתן לפתוח את המצלמה';
       setError(msg);
       setLoading(false);
+      return;
+    }
+
+    if (!openRef.current) {
+      stopStream(stream);
       return;
     }
 
@@ -83,10 +90,21 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     try {
       await video.play();
     } catch {
+      if (!openRef.current) {
+        stopStream(stream);
+        streamRef.current = null;
+        return;
+      }
       setError('לא ניתן להפעיל את תצוגת המצלמה');
       stopStream(stream);
       streamRef.current = null;
       setLoading(false);
+      return;
+    }
+    if (!openRef.current) {
+      stopStream(stream);
+      streamRef.current = null;
+      if (video) video.srcObject = null;
       return;
     }
     setLoading(false);
@@ -102,8 +120,11 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       if (v) v.srcObject = null;
       stopStream(streamRef.current);
       streamRef.current = null;
-      return;
     }
+  }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
 
     void attachStream();
     return () => {
@@ -158,11 +179,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className={cn(
-          'z-[110] max-h-[90vh] w-[calc(100%-1.5rem)] max-w-lg gap-3 overflow-y-auto border-border bg-card p-4 sm:p-6'
-        )}
-      >
+      <DialogContent className="max-h-[90vh] w-[calc(100%-1.5rem)] max-w-lg gap-3 overflow-y-auto border-border bg-card p-4 sm:p-6">
         <DialogHeader className="text-right sm:text-right">
           <DialogTitle className="text-base">צילום מהמצלמה</DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
