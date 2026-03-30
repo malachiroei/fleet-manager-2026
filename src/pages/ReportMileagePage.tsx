@@ -121,12 +121,18 @@ export default function ReportMileagePage() {
     };
   }, []);
 
+  // Prefer local blob for preview: Android often fails on cross-origin <img> to Storage (CORS vs WebView).
+  // Remote URL + cache bust is fallback when blob was revoked or unavailable.
   const previewImgSrc = useMemo(() => {
+    const blob = (photoPreviewUrl ?? '').trim();
+    if (blob) return blob;
+
     const remote = (uploadedPhotoUrl ?? '').trim();
-    if (remote && previewImgCacheBust > 0) {
+    if (!remote) return '';
+    if (previewImgCacheBust > 0) {
       return storagePublicUrlWithCacheBust(remote, previewImgCacheBust);
     }
-    return (photoPreviewUrl ?? '').trim();
+    return remote;
   }, [uploadedPhotoUrl, photoPreviewUrl, previewImgCacheBust]);
 
   useEffect(() => {
@@ -706,14 +712,21 @@ export default function ReportMileagePage() {
                     {photoUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
                     {photoUploading ? 'מעלה תמונה…' : (photoFile ? 'החלף תמונה' : 'צלם תמונה')}
                   </Button>
-                  {/* Native <img>: public Storage URLs need crossOrigin for Android cross-domain display. */}
+                  {/* Native <img> only — no crossOrigin: anonymous forces CORS and can hide images on Android. */}
                   {previewImgSrc ? (
                     <div className="relative overflow-hidden rounded-xl border border-border">
                       <img
                         src={previewImgSrc}
                         alt="תצוגה מקדימה"
-                        crossOrigin={/^https?:\/\//i.test(previewImgSrc) ? 'anonymous' : undefined}
                         className="w-full h-56 object-cover bg-black"
+                        loading="eager"
+                        decoding="async"
+                        referrerPolicy="no-referrer"
+                        onError={(ev) => {
+                          console.error('[ReportMileagePage] preview <img> failed to load', {
+                            src: (ev.target as HTMLImageElement)?.currentSrc,
+                          });
+                        }}
                       />
                       {photoUploading ? (
                         <div className="absolute inset-0 flex items-center justify-center bg-black/50">
