@@ -164,6 +164,8 @@ function probeVideoFrameOnCanvas(video: HTMLVideoElement): { ok: boolean; note: 
 
 export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: WebcamCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  /** Samsung Internet / some WebViews paint <video> black; 2D canvas mirror often still shows frames. */
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const openRef = useRef(open);
   openRef.current = open;
@@ -387,6 +389,61 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     };
   }, [open, attachStream, clearDebugInterval, clearInitTimeout]);
 
+  /** Continuously copy video frames to a visible canvas (workaround for black <video> compositing). */
+  useEffect(() => {
+    if (!open) return;
+
+    let rafId = 0;
+    let stopped = false;
+
+    const tick = () => {
+      if (stopped) return;
+      rafId = requestAnimationFrame(tick);
+
+      const v = videoRef.current;
+      const c = previewCanvasRef.current;
+      if (!openRef.current || !v || !c) return;
+
+      if (v.videoWidth <= 0 || v.videoHeight <= 0) return;
+
+      const rect = c.getBoundingClientRect();
+      if (rect.width < 2 || rect.height < 2) return;
+
+      const dpr = Math.min(2, typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
+      const cw = Math.max(2, Math.floor(rect.width * dpr));
+      const ch = Math.max(2, Math.floor(rect.height * dpr));
+
+      if (c.width !== cw || c.height !== ch) {
+        c.width = cw;
+        c.height = ch;
+      }
+
+      const ctx = c.getContext('2d', { alpha: false });
+      if (!ctx) return;
+
+      const vw = v.videoWidth;
+      const vh = v.videoHeight;
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, cw, ch);
+      const scale = Math.min(cw / vw, ch / vh);
+      const dw = vw * scale;
+      const dh = vh * scale;
+      const dx = (cw - dw) / 2;
+      const dy = (ch - dh) / 2;
+      try {
+        ctx.drawImage(v, 0, 0, vw, vh, dx, dy, dw, dh);
+      } catch {
+        /* ignore single-frame errors */
+      }
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => {
+      stopped = true;
+      cancelAnimationFrame(rafId);
+    };
+  }, [open]);
+
   const finishCapture = useCallback(
     (blob: Blob | null) => {
       setSnapping(false);
@@ -433,11 +490,22 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
               finishCapture(blob);
               return;
             }
-            console.warn('[WebcamCapture] canvas frame dark/small; trying ImageCapture', {
+            console.warn('[WebcamCapture] canvas frame dark/small; trying mirror / ImageCapture', {
               blobSize: blob.size,
               probe,
             });
           }
+        }
+      }
+
+      const mirror = previewCanvasRef.current;
+      if (mirror && mirror.width >= 2 && mirror.height >= 2) {
+        const blob = await new Promise<Blob | null>((resolve) =>
+          mirror.toBlob((b) => resolve(b), 'image/jpeg', 0.92)
+        );
+        if (blob && blob.size >= 500) {
+          finishCapture(blob);
+          return;
         }
       }
 
@@ -521,15 +589,22 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
             <div className="relative aspect-[3/4] w-full min-h-[200px] overflow-hidden rounded-lg bg-black">
               <video
                 ref={videoRef}
-                className="h-full w-full object-contain"
+                className="absolute inset-0 z-0 h-full w-full object-contain"
                 playsInline
                 muted
                 autoPlay
+                disablePictureInPicture
+                disableRemotePlayback
                 onLoadedMetadata={markVideoPresenting}
                 onLoadedData={markVideoPresenting}
                 onPlaying={markVideoPresenting}
                 onCanPlay={markVideoPresenting}
                 onError={handleVideoError}
+              />
+              <canvas
+                ref={previewCanvasRef}
+                className="absolute inset-0 z-[5] h-full w-full"
+                aria-hidden
               />
               {loading && (
                 <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/85 px-4 text-center">
@@ -539,18 +614,26 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
               )}
             </div>
 
+            <p className="text-[11px] text-muted-foreground leading-snug text-center">
+              בדפדפן Samsung Internet לעיתים רואים מסך שחור בווידאו — התצוגה למעלה אמורה להישלף לקנבס; אם רואים תמונה,
+              &quot;צלם&quot; ישתמש בה.
+            </p>
+
             {error ? (
               <p className="text-sm text-destructive" role="alert">
                 {error}
               </p>
             ) : null}
 
-            <div className="rounded-md border border-border/80 bg-muted/40 px-2 py-2 text-[10px] leading-relaxed text-muted-foreground font-mono whitespace-pre-wrap break-all max-h-28 overflow-y-auto">
-              <span className="font-sans text-foreground/80">דיבוג stream (גם בקונסול)</span>
+            <div
+              dir="ltr"
+              className="rounded-md border border-border/80 bg-muted/40 px-2 py-2 text-left text-[10px] leading-relaxed text-muted-foreground font-mono whitespace-pre-wrap break-all max-h-32 overflow-y-auto"
+            >
+              <span className="font-sans text-foreground/80">Stream debug (console too)</span>
               {'\n'}
-              {streamDebugText || '—'}
+              {streamDebugText || '(no stream text yet)'}
               {canvasProbeNote ? `\n${canvasProbeNote}` : ''}
-              {`\nImageCapture: ${imageCaptureAvailable ? 'זמין' : 'לא זמין'}`}
+              {`\nmirror canvas: active rAF | ImageCapture: ${imageCaptureAvailable ? 'yes' : 'no'}`}
             </div>
 
             <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-stretch">
