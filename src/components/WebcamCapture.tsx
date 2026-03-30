@@ -264,6 +264,8 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
   const [streamBootId, setStreamBootId] = useState(0);
   const rearWarmupDoneRef = useRef(false);
   const rearHardResetDoneRef = useRef(false);
+  /** One silent front-camera pulse before first rear open per dialog (Samsung / Android). */
+  const androidRearUnlockDoneRef = useRef(false);
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -298,6 +300,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     if (open) {
       rearWarmupDoneRef.current = false;
       rearHardResetDoneRef.current = false;
+      androidRearUnlockDoneRef.current = false;
       const saved = readStoredCameraProfile();
       /** `compatible` often maps to the same default as front on Android — open on rear/front toggle only. */
       if (saved === 'compatible') {
@@ -348,12 +351,29 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       return;
     }
 
-    const profile = cameraProfileRef.current;
     let stream: MediaStream | null = null;
     try {
-      stream = await getUserMediaWithChain(constraintChainForProfile(profile));
+      if (
+        isAndroidUa() &&
+        cameraProfileRef.current === 'environment' &&
+        !androidRearUnlockDoneRef.current
+      ) {
+        try {
+          const unlock = await getUserMediaWithChain(QUICK_USER_WARMUP);
+          stopStream(unlock);
+          androidRearUnlockDoneRef.current = true;
+        } catch {
+          /* rear may still work; retry pulse on next attach if ref stays false */
+        }
+        await new Promise((r) => setTimeout(r, WARMUP_POST_STOP_MS));
+        if (!openRef.current) return;
+      }
+      stream = await getUserMediaWithChain(constraintChainForProfile(cameraProfileRef.current));
     } catch (err) {
       if (!openRef.current) return;
+      if (isAndroidUa() && cameraProfileRef.current === 'environment') {
+        androidRearUnlockDoneRef.current = false;
+      }
       setError(mapGetUserMediaError(err));
       setLoading(false);
       return;
@@ -363,6 +383,8 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       stopStream(stream);
       return;
     }
+
+    const openedProfile = cameraProfileRef.current;
 
     stream.getTracks().forEach((track) => {
       track.enabled = true;
@@ -449,7 +471,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
 
     if (
       isAndroidUa() &&
-      profile === 'environment' &&
+      openedProfile === 'environment' &&
       !rearWarmupDoneRef.current &&
       navigator.mediaDevices?.getUserMedia
     ) {
