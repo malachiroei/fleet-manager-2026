@@ -82,6 +82,9 @@ export default function ReportMileagePage() {
   );
 
   const pickPhoto = () => {
+    console.log('[ReportMileagePage] pickPhoto click -> input.click()', {
+      hasInput: Boolean(fileInputRef.current),
+    });
     fileInputRef.current?.click();
   };
 
@@ -397,13 +400,22 @@ export default function ReportMileagePage() {
                     type="file"
                     accept="image/*"
                     capture="environment"
-                    className="hidden"
+                    // Android stability: avoid display:none; keep input present but invisible.
+                    className="absolute opacity-0 h-px w-px -z-10 overflow-hidden"
                     onChange={(e) => {
                       const f = e.target.files?.[0] ?? null;
                       onPhotoPicked(f);
                     }}
                   />
-                  <Button type="button" variant="outline" className="w-full h-12 gap-2" onClick={pickPhoto}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full h-12 gap-2"
+                    onClick={() => {
+                      console.log('[ReportMileagePage] camera button clicked');
+                      pickPhoto();
+                    }}
+                  >
                     <Camera className="h-4 w-4" />
                     {photoFile ? 'החלף תמונה' : 'צלם תמונה'}
                   </Button>
