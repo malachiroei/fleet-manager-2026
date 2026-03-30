@@ -36,6 +36,14 @@ function canonicalPublicUrlForPath(objectPath: string): string {
   return String(data?.publicUrl ?? '').trim();
 }
 
+/** Cache-bust query for Android/WebView when fetching public Storage objects in <img>. */
+function storagePublicUrlWithCacheBust(publicUrl: string, t: number): string {
+  const u = String(publicUrl || '').trim();
+  if (!u) return '';
+  const sep = u.includes('?') ? '&' : '?';
+  return `${u}${sep}t=${t}`;
+}
+
 function logMileageLogsInsertError(insertError: {
   message?: string;
   code?: string;
@@ -86,6 +94,8 @@ export default function ReportMileagePage() {
   const [photoUploading, setPhotoUploading] = useState(false);
   const [uploadedPhotoUrl, setUploadedPhotoUrl] = useState<string | null>(null);
   const [uploadedObjectPath, setUploadedObjectPath] = useState<string | null>(null);
+  /** Bumped when public URL is known; used only for <img> src (not stored in DB). */
+  const [previewImgCacheBust, setPreviewImgCacheBust] = useState(0);
   const [submitting, setSubmitting] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -110,6 +120,19 @@ export default function ReportMileagePage() {
       }
     };
   }, []);
+
+  const previewImgSrc = useMemo(() => {
+    const remote = (uploadedPhotoUrl ?? '').trim();
+    if (remote && previewImgCacheBust > 0) {
+      return storagePublicUrlWithCacheBust(remote, previewImgCacheBust);
+    }
+    return (photoPreviewUrl ?? '').trim();
+  }, [uploadedPhotoUrl, photoPreviewUrl, previewImgCacheBust]);
+
+  useEffect(() => {
+    if (!previewImgSrc) return;
+    console.log('[ReportMileagePage] preview <img> src (exact):', previewImgSrc);
+  }, [previewImgSrc]);
 
   const filteredVehicles = useMemo(() => {
     const q = vehicleSearch.trim().toLowerCase();
@@ -149,6 +172,7 @@ export default function ReportMileagePage() {
       uploadedObjectPathRef.current = null;
       setUploadedPhotoUrl(null);
       setUploadedObjectPath(null);
+      setPreviewImgCacheBust(0);
       if (previewTimerRef.current != null) {
         window.clearTimeout(previewTimerRef.current);
         previewTimerRef.current = null;
@@ -166,6 +190,7 @@ export default function ReportMileagePage() {
     uploadedObjectPathRef.current = null;
     setUploadedPhotoUrl(null);
     setUploadedObjectPath(null);
+    setPreviewImgCacheBust(0);
 
     // Revoke the previous preview URL to avoid leaks
     if (previewUrlRef.current) {
@@ -267,6 +292,7 @@ export default function ReportMileagePage() {
         uploadedObjectPathRef.current = null;
         setUploadedPhotoUrl(null);
         setUploadedObjectPath(null);
+        setPreviewImgCacheBust(0);
         return;
       }
 
@@ -282,17 +308,23 @@ export default function ReportMileagePage() {
         uploadedObjectPathRef.current = null;
         setUploadedPhotoUrl(null);
         setUploadedObjectPath(null);
+        setPreviewImgCacheBust(0);
         return;
       }
 
+      const cacheBust = Date.now();
+      const previewPublicUrl = storagePublicUrlWithCacheBust(publicUrl, cacheBust);
       console.log('[ReportMileagePage] immediate upload success', {
         objectPath: tempPath,
         publicUrl,
+        previewPublicUrl,
       });
+
       uploadedPhotoUrlRef.current = publicUrl;
       uploadedObjectPathRef.current = tempPath;
       setUploadedPhotoUrl(publicUrl);
       setUploadedObjectPath(tempPath);
+      setPreviewImgCacheBust(cacheBust);
       toast({
         title: 'התמונה נקלטה והועלתה',
         description: `${Math.round(blobToUpload.size / 1024).toLocaleString()} KB`,
@@ -309,6 +341,7 @@ export default function ReportMileagePage() {
       uploadedObjectPathRef.current = null;
       setUploadedPhotoUrl(null);
       setUploadedObjectPath(null);
+      setPreviewImgCacheBust(0);
     } finally {
       if (uploadTokenRef.current === token) {
         setPhotoUploading(false);
@@ -357,6 +390,7 @@ export default function ReportMileagePage() {
       if (photoUrl) {
         uploadedPhotoUrlRef.current = photoUrl;
         setUploadedPhotoUrl(photoUrl);
+        setPreviewImgCacheBust(Date.now());
         console.log('[ReportMileagePage] submit recovered photo_url from storage path', {
           pathForUrl,
           photoUrl,
@@ -395,6 +429,7 @@ export default function ReportMileagePage() {
       photoUrl = recheckUrl;
       uploadedPhotoUrlRef.current = photoUrl;
       setUploadedPhotoUrl(photoUrl);
+      setPreviewImgCacheBust(Date.now());
     }
 
     setSubmitting(true);
@@ -671,11 +706,13 @@ export default function ReportMileagePage() {
                     {photoUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
                     {photoUploading ? 'מעלה תמונה…' : (photoFile ? 'החלף תמונה' : 'צלם תמונה')}
                   </Button>
-                  {photoPreviewUrl && (
+                  {/* Native <img>: public Storage URLs need crossOrigin for Android cross-domain display. */}
+                  {previewImgSrc ? (
                     <div className="relative overflow-hidden rounded-xl border border-border">
                       <img
-                        src={photoPreviewUrl}
+                        src={previewImgSrc}
                         alt="תצוגה מקדימה"
+                        crossOrigin={/^https?:\/\//i.test(previewImgSrc) ? 'anonymous' : undefined}
                         className="w-full h-56 object-cover bg-black"
                       />
                       {photoUploading ? (
@@ -687,7 +724,7 @@ export default function ReportMileagePage() {
                         </div>
                       ) : null}
                     </div>
-                  )}
+                  ) : null}
                   {!photoUploading && uploadedPhotoUrl ? (
                     <p className="text-xs text-emerald-300/90">התמונה הועלתה בהצלחה</p>
                   ) : null}
