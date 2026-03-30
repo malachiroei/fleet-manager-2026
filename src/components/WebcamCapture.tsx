@@ -1,6 +1,6 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Loader2, X } from 'lucide-react';
+import { Loader2, RefreshCw, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -16,13 +16,39 @@ import {
 type WebcamCaptureProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** In-memory JPEG `File` from the current video frame */
   onCapture: (file: File) => void;
   disabled?: boolean;
 };
 
+const WEBCAM_PROFILE_STORAGE_KEY = 'fleet_manager_mileage_webcam_profile_v1';
+
+type CameraProfile = 'environment' | 'user' | 'compatible';
+
 function stopStream(stream: MediaStream | null) {
   stream?.getTracks().forEach((t) => t.stop());
+}
+
+function isAndroidUa(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /Android/i.test(navigator.userAgent);
+}
+
+function readStoredCameraProfile(): CameraProfile | null {
+  try {
+    const v = localStorage.getItem(WEBCAM_PROFILE_STORAGE_KEY);
+    if (v === 'environment' || v === 'user' || v === 'compatible') return v;
+  } catch {
+    /* private mode */
+  }
+  return null;
+}
+
+function writeStoredCameraProfile(profile: CameraProfile): void {
+  try {
+    localStorage.setItem(WEBCAM_PROFILE_STORAGE_KEY, profile);
+  } catch {
+    /* ignore */
+  }
 }
 
 const PERMISSION_BLOCKED_HE =
@@ -47,9 +73,6 @@ function mapGetUserMediaError(err: unknown): string {
   return 'לא ניתן לפתוח את המצלמה.';
 }
 
-type CameraProfile = 'environment' | 'user' | 'compatible';
-
-/** Rear / world-facing only — isolate S24 multi-lens rear issues vs front. */
 const ENVIRONMENT_CONSTRAINT_CHAIN: MediaStreamConstraints[] = [
   {
     video: {
@@ -72,7 +95,6 @@ const ENVIRONMENT_CONSTRAINT_CHAIN: MediaStreamConstraints[] = [
   { video: true, audio: false },
 ];
 
-/** Front / selfie only. */
 const USER_CONSTRAINT_CHAIN: MediaStreamConstraints[] = [
   {
     video: {
@@ -87,8 +109,12 @@ const USER_CONSTRAINT_CHAIN: MediaStreamConstraints[] = [
   { video: true, audio: false },
 ];
 
-/** No facingMode / resolution hints — maximum browser/OS default compatibility. */
 const HIGH_COMPAT_CONSTRAINT_CHAIN: MediaStreamConstraints[] = [{ video: true, audio: false }];
+
+const QUICK_USER_WARMUP: MediaStreamConstraints[] = [
+  { video: { facingMode: { ideal: 'user' } }, audio: false },
+  { video: { facingMode: 'user' }, audio: false },
+];
 
 function constraintChainForProfile(profile: CameraProfile): MediaStreamConstraints[] {
   switch (profile) {
@@ -113,57 +139,32 @@ async function getUserMediaWithChain(chain: MediaStreamConstraints[]): Promise<M
   throw lastErr;
 }
 
-function collectStreamDebug(stream: MediaStream | null): string {
-  if (!stream) return '(אין stream)';
-  const lines = [`stream.id: ${stream.id}`, `active: ${String(stream.active)}`];
-  stream.getVideoTracks().forEach((t, i) => {
-    lines.push(
-      `video[${i}] id=${t.id.slice(0, 8)}… readyState=${t.readyState} muted=${t.muted} enabled=${t.enabled} label=${t.label || '—'}`
-    );
-  });
-  return lines.join('\n');
-}
-
-function logStreamDebug(stream: MediaStream, label: string) {
-  console.log(`[WebcamCapture] ${label}`, {
-    streamId: stream.id,
-    active: stream.active,
-    videoTracks: stream.getVideoTracks().map((t) => ({
-      id: t.id,
-      readyState: t.readyState,
-      muted: t.muted,
-      enabled: t.enabled,
-      label: t.label,
-    })),
-  });
-}
-
-/** Draw one frame to an off-DOM canvas and sample pixels (video may look black in UI but still decode). */
-function probeVideoFrameOnCanvas(video: HTMLVideoElement): { ok: boolean; note: string; avgLuma: number } {
+/** Sample decoded frame — rear camera can look black in the compositor but still decode here. */
+function probeVideoFrameOnCanvas(video: HTMLVideoElement): { ok: boolean; avgLuma: number } {
   const w = video.videoWidth;
   const h = video.videoHeight;
   if (w <= 0 || h <= 0) {
-    return { ok: false, note: 'אין מימדי וידאו לקנבס', avgLuma: 0 };
+    return { ok: false, avgLuma: 0 };
   }
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) {
-    return { ok: false, note: 'לא ניתן ליצור הקשר 2D לקנבס', avgLuma: 0 };
+    return { ok: false, avgLuma: 0 };
   }
   try {
     ctx.drawImage(video, 0, 0, w, h);
-  } catch (e) {
-    return { ok: false, note: `drawImage נכשל: ${e instanceof Error ? e.message : String(e)}`, avgLuma: 0 };
+  } catch {
+    return { ok: false, avgLuma: 0 };
   }
   const sw = Math.min(64, w);
   const sh = Math.min(64, h);
   let data: ImageData;
   try {
     data = ctx.getImageData(0, 0, sw, sh);
-  } catch (e) {
-    return { ok: false, note: `getImageData נחסם או נכשל: ${e instanceof Error ? e.message : String(e)}`, avgLuma: 0 };
+  } catch {
+    return { ok: false, avgLuma: 0 };
   }
   let sum = 0;
   const n = data.data.length / 4;
@@ -171,44 +172,33 @@ function probeVideoFrameOnCanvas(video: HTMLVideoElement): { ok: boolean; note: 
     sum += data.data[i]! + data.data[i + 1]! + data.data[i + 2]!;
   }
   const avgLuma = n > 0 ? sum / n / 3 : 0;
-  const ok = avgLuma > 6;
-  return {
-    ok,
-    avgLuma,
-    note: ok
-      ? `קנבס: נקלטו פיקסלים (בהירות ממוצעת ~${avgLuma.toFixed(1)})`
-      : `קנבס: כמעט שחור (בהירות ~${avgLuma.toFixed(1)})`,
-  };
+  return { ok: avgLuma > 6, avgLuma };
 }
 
 export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: WebcamCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  /** Samsung Internet / some WebViews paint <video> black; 2D canvas mirror often still shows frames. */
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const openRef = useRef(open);
   openRef.current = open;
+
+  const [cameraProfile, setCameraProfile] = useState<CameraProfile>(
+    () => readStoredCameraProfile() ?? 'environment'
+  );
+  const cameraProfileRef = useRef(cameraProfile);
+  cameraProfileRef.current = cameraProfile;
+
+  const [streamBootId, setStreamBootId] = useState(0);
+  const rearWarmupDoneRef = useRef(false);
+
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [snapping, setSnapping] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
-  /** True when hidden-canvas probe sees non-black pixels (UI may still look black). */
   const [canvasProbeOk, setCanvasProbeOk] = useState(false);
-  const [streamDebugText, setStreamDebugText] = useState('');
-  const [canvasProbeNote, setCanvasProbeNote] = useState('');
-  /** For enabling צלם when video tag is black but track is live (ImageCapture path). */
   const [videoTrackLive, setVideoTrackLive] = useState(false);
-  /** Manual camera / constraint profile (rear vs front vs raw { video: true }). */
-  const [cameraProfile, setCameraProfile] = useState<CameraProfile>('environment');
-  const initTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const debugIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const clearDebugInterval = useCallback(() => {
-    if (debugIntervalRef.current) {
-      clearInterval(debugIntervalRef.current);
-      debugIntervalRef.current = null;
-    }
-  }, []);
+  const initTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearInitTimeout = useCallback(() => {
     if (initTimeoutRef.current) {
@@ -217,7 +207,6 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     }
   }, []);
 
-  /** Hide spinner once the element is fed; enable capture only when dimensions exist. */
   const markVideoPresenting = useCallback(() => {
     clearInitTimeout();
     if (!openRef.current) return;
@@ -229,15 +218,30 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     }
   }, [clearInitTimeout]);
 
+  useEffect(() => {
+    if (open) {
+      rearWarmupDoneRef.current = false;
+      const saved = readStoredCameraProfile();
+      if (saved) setCameraProfile(saved);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const id = setInterval(() => {
+      const s = streamRef.current;
+      const vt = s?.getVideoTracks()[0];
+      setVideoTrackLive(vt?.readyState === 'live');
+    }, 1200);
+    return () => clearInterval(id);
+  }, [open]);
+
   const attachStream = useCallback(async () => {
     setError(null);
     setVideoReady(false);
     setCanvasProbeOk(false);
-    setStreamDebugText('');
-    setCanvasProbeNote('');
     setLoading(true);
     clearInitTimeout();
-    clearDebugInterval();
     stopStream(streamRef.current);
     streamRef.current = null;
 
@@ -260,12 +264,10 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       return;
     }
 
-    const chain = constraintChainForProfile(cameraProfile);
-    console.log('[WebcamCapture] getUserMedia chain', cameraProfile, chain.length, 'steps');
-
+    const profile = cameraProfileRef.current;
     let stream: MediaStream | null = null;
     try {
-      stream = await getUserMediaWithChain(chain);
+      stream = await getUserMediaWithChain(constraintChainForProfile(profile));
     } catch (err) {
       if (!openRef.current) return;
       setError(mapGetUserMediaError(err));
@@ -282,22 +284,8 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       track.enabled = true;
     });
 
-    logStreamDebug(stream, 'stream acquired');
-    setStreamDebugText(collectStreamDebug(stream));
-
-    const syncTrackUi = (s: MediaStream) => {
-      const vt = s.getVideoTracks()[0];
-      setVideoTrackLive(vt?.readyState === 'live');
-    };
-    syncTrackUi(stream);
-
-    debugIntervalRef.current = setInterval(() => {
-      const s = streamRef.current;
-      if (!s || !openRef.current) return;
-      setStreamDebugText(collectStreamDebug(s));
-      syncTrackUi(s);
-      logStreamDebug(s, 'tick');
-    }, 2000);
+    const vt0 = stream.getVideoTracks()[0];
+    setVideoTrackLive(vt0?.readyState === 'live');
 
     streamRef.current = stream;
     video.srcObject = stream;
@@ -307,8 +295,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
 
     const [vTrack] = stream.getVideoTracks();
     if (vTrack) {
-      const onUnmute = () => markVideoPresenting();
-      vTrack.addEventListener('unmute', onUnmute);
+      vTrack.addEventListener('unmute', () => markVideoPresenting());
       vTrack.addEventListener('ended', () => {
         if (openRef.current) setError('המצלמה נותקה. נסו שוב.');
       });
@@ -340,7 +327,6 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       }
     } catch {
       clearInitTimeout();
-      clearDebugInterval();
       if (!openRef.current) {
         stopStream(stream);
         streamRef.current = null;
@@ -353,9 +339,9 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       setVideoTrackLive(false);
       return;
     }
+
     if (!openRef.current) {
       clearInitTimeout();
-      clearDebugInterval();
       stopStream(stream);
       streamRef.current = null;
       if (video) video.srcObject = null;
@@ -367,8 +353,6 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       const s = streamRef.current;
       if (!v || !s || !openRef.current) return;
       const probe = probeVideoFrameOnCanvas(v);
-      setCanvasProbeNote(probe.note);
-      console.log('[WebcamCapture] hidden canvas probe', probe);
       if (probe.ok && v.videoWidth > 0 && v.videoHeight > 0) {
         setCanvasProbeOk(true);
         setVideoReady(true);
@@ -377,28 +361,51 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     setTimeout(runCanvasProbe, 600);
     setTimeout(runCanvasProbe, 2000);
 
-    // Keep loading overlay until first frames (onPlaying / onLoadedData) or timeout above.
-  }, [cameraProfile, clearDebugInterval, clearInitTimeout, markVideoPresenting]);
+    if (
+      isAndroidUa() &&
+      profile === 'environment' &&
+      !rearWarmupDoneRef.current &&
+      navigator.mediaDevices?.getUserMedia
+    ) {
+      setTimeout(async () => {
+        if (!openRef.current || cameraProfileRef.current !== 'environment') return;
+        if (rearWarmupDoneRef.current) return;
+        const v = videoRef.current;
+        if (!v) return;
+        const probe = probeVideoFrameOnCanvas(v);
+        if (probe.ok) {
+          rearWarmupDoneRef.current = true;
+          return;
+        }
+        rearWarmupDoneRef.current = true;
+        try {
+          const wu = await getUserMediaWithChain(QUICK_USER_WARMUP);
+          stopStream(wu);
+        } catch {
+          /* ignore */
+        }
+        await new Promise((r) => setTimeout(r, 50));
+        if (!openRef.current || cameraProfileRef.current !== 'environment') return;
+        setStreamBootId((k) => k + 1);
+      }, 420);
+    }
+  }, [cameraProfile, streamBootId, clearInitTimeout, markVideoPresenting]);
 
   useEffect(() => {
     if (!open) {
       clearInitTimeout();
-      clearDebugInterval();
       setError(null);
       setLoading(false);
       setSnapping(false);
       setVideoReady(false);
       setCanvasProbeOk(false);
-      setStreamDebugText('');
-      setCanvasProbeNote('');
       setVideoTrackLive(false);
-      setCameraProfile('environment');
       const v = videoRef.current;
       if (v) v.srcObject = null;
       stopStream(streamRef.current);
       streamRef.current = null;
     }
-  }, [open, clearInitTimeout, clearDebugInterval]);
+  }, [open, clearInitTimeout]);
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -406,15 +413,13 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     void attachStream();
     return () => {
       clearInitTimeout();
-      clearDebugInterval();
       const v = videoRef.current;
       if (v) v.srcObject = null;
       stopStream(streamRef.current);
       streamRef.current = null;
     };
-  }, [open, attachStream, clearDebugInterval, clearInitTimeout]);
+  }, [open, attachStream, clearInitTimeout]);
 
-  /** Continuously copy video frames to a visible canvas (workaround for black <video> compositing). */
   useEffect(() => {
     if (!open) return;
 
@@ -458,7 +463,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       try {
         ctx.drawImage(v, 0, 0, vw, vh, dx, dy, dw, dh);
       } catch {
-        /* ignore single-frame errors */
+        /* ignore */
       }
     };
 
@@ -467,7 +472,15 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       stopped = true;
       cancelAnimationFrame(rafId);
     };
-  }, [open, cameraProfile]);
+  }, [open, cameraProfile, streamBootId]);
+
+  const cycleCameraProfile = useCallback(() => {
+    setCameraProfile((prev) => {
+      const order: CameraProfile[] = ['environment', 'user', 'compatible'];
+      const i = order.indexOf(prev);
+      return order[(i + 1) % order.length]!;
+    });
+  }, []);
 
   const finishCapture = useCallback(
     (blob: Blob | null) => {
@@ -476,6 +489,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
         setError('יצירת התמונה נכשלה או שהקובץ ריק');
         return;
       }
+      writeStoredCameraProfile(cameraProfileRef.current);
       const name = `mileage-capture-${Date.now()}.jpg`;
       const file = new File([blob], name, { type: 'image/jpeg' });
       stopStream(streamRef.current);
@@ -515,10 +529,6 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
               finishCapture(blob);
               return;
             }
-            console.warn('[WebcamCapture] canvas frame dark/small; trying mirror / ImageCapture', {
-              blobSize: blob.size,
-              probe,
-            });
           }
         }
       }
@@ -571,7 +581,6 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
 
   const handleVideoError = useCallback(() => {
     clearInitTimeout();
-    clearDebugInterval();
     if (!openRef.current) return;
     setLoading(false);
     setVideoReady(false);
@@ -581,14 +590,10 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     streamRef.current = null;
     const v = videoRef.current;
     if (v) v.srcObject = null;
-  }, [clearDebugInterval, clearInitTimeout]);
+  }, [clearInitTimeout]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {/*
-        Do not use default DialogContent: its translate + zoom (transform) breaks hardware video
-        compositing on Chrome/Android — live <video> stays black. Center with flex, no transform.
-      */}
       <DialogPortal>
         <DialogOverlay />
         <DialogPrimitive.Content
@@ -611,44 +616,6 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
               </DialogDescription>
             </DialogHeader>
 
-            <div className="flex flex-col gap-2">
-              <p className="text-[11px] text-muted-foreground text-right leading-snug">
-                אם האחורית שחורה (למשל S24) — נסו קדמית. &quot;תאימות גבוהה&quot; = בקשה גולמית ללא facingMode/רזולוציה.
-              </p>
-              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-stretch">
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-10 flex-1 text-xs sm:text-sm"
-                  variant={cameraProfile === 'environment' ? 'default' : 'outline'}
-                  disabled={loading || snapping}
-                  onClick={() => setCameraProfile('environment')}
-                >
-                  מצלמה אחורית
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-10 flex-1 text-xs sm:text-sm"
-                  variant={cameraProfile === 'user' ? 'default' : 'outline'}
-                  disabled={loading || snapping}
-                  onClick={() => setCameraProfile('user')}
-                >
-                  מצלמה קדמית
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-10 flex-1 text-xs sm:text-sm"
-                  variant={cameraProfile === 'compatible' ? 'default' : 'outline'}
-                  disabled={loading || snapping}
-                  onClick={() => setCameraProfile('compatible')}
-                >
-                  תאימות גבוהה
-                </Button>
-              </div>
-            </div>
-
             <div className="relative aspect-[3/4] w-full min-h-[200px] overflow-hidden rounded-lg bg-black">
               <video
                 ref={videoRef}
@@ -670,17 +637,12 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
                 aria-hidden
               />
               {loading && (
-                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/85 px-4 text-center">
+                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/80 px-4 text-center">
                   <Loader2 className="h-10 w-10 shrink-0 animate-spin text-white" aria-hidden />
                   <p className="text-xs text-white/90">טוען מצלמה…</p>
                 </div>
               )}
             </div>
-
-            <p className="text-[11px] text-muted-foreground leading-snug text-center">
-              בדפדפן Samsung Internet לעיתים רואים מסך שחור בווידאו — התצוגה למעלה אמורה להישלף לקנבס; אם רואים תמונה,
-              &quot;צלם&quot; ישתמש בה.
-            </p>
 
             {error ? (
               <p className="text-sm text-destructive" role="alert">
@@ -688,37 +650,24 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
               </p>
             ) : null}
 
-            <div
-              dir="ltr"
-              className="rounded-md border border-border/80 bg-muted/40 px-2 py-2 text-left text-[10px] leading-relaxed text-muted-foreground font-mono whitespace-pre-wrap break-all max-h-32 overflow-y-auto"
-            >
-              <span className="font-sans text-foreground/80">Stream debug (console too)</span>
-              {'\n'}
-              {streamDebugText || '(no stream text yet)'}
-              {canvasProbeNote ? `\n${canvasProbeNote}` : ''}
-              {`\nprofile: ${cameraProfile} | mirror rAF | ImageCapture: ${imageCaptureAvailable ? 'yes' : 'no'}`}
-            </div>
-
-            <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-stretch">
+            <DialogFooter className="flex flex-row items-center gap-2 sm:justify-end flex-row-reverse">
               <Button
                 type="button"
-                variant="outline"
-                className="w-full sm:flex-1"
-                onClick={() => onOpenChange(false)}
-                disabled={snapping}
+                variant="ghost"
+                size="icon"
+                className="h-12 w-12 shrink-0"
+                disabled={loading || snapping}
+                onClick={cycleCameraProfile}
+                aria-label="החלף מצלמה"
+                title="החלף מצלמה (אחורית / קדמית / תאימות)"
               >
-                ביטול
+                <RefreshCw className="h-5 w-5" />
               </Button>
               <Button
                 type="button"
-                className="w-full sm:flex-1"
+                className="h-12 min-w-0 flex-1 text-base"
                 onClick={() => void handleSnap()}
                 disabled={disabled || loading || !!error || !canCapture || snapping}
-                title={
-                  canCapture
-                    ? undefined
-                    : 'ממתינים לווידאו, לבדיקת קנבס, או למסלול Live עם ImageCapture'
-                }
               >
                 {snapping && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
                 צלם

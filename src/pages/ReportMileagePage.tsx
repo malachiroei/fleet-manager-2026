@@ -172,13 +172,6 @@ export default function ReportMileagePage() {
   const fallbackFileInputRef = useRef<HTMLInputElement>(null);
   const [webcamOpen, setWebcamOpen] = useState(false);
 
-  /** TEMP: mileage photo pipeline debug (remove after S24 / PC testing). */
-  const [captureDebug, setCaptureDebug] = useState<{
-    fileDetected: boolean;
-    fileName: string;
-    materialization: 'idle' | 'pending' | 'success' | 'error';
-  }>({ fileDetected: false, fileName: '', materialization: 'idle' });
-
   /** Restore draft + detect tab recycle after camera (session flag survives reload). */
   useEffect(() => {
     if (loading) return;
@@ -264,16 +257,9 @@ export default function ReportMileagePage() {
     setPhotoFile(null);
 
     if (!file) {
-      setCaptureDebug({ fileDetected: false, fileName: '', materialization: 'idle' });
       if (clearInput) clearInput.value = '';
       return;
     }
-
-    setCaptureDebug({
-      fileDetected: true,
-      fileName: file.name?.trim() || '(unnamed)',
-      materialization: 'pending',
-    });
 
     try {
       sessionStorage.removeItem(MILEAGE_REPORT_SESSION.cameraPending);
@@ -285,11 +271,6 @@ export default function ReportMileagePage() {
       const { file: workFile, ok: materializedOk } = await tryMaterializeImageFileFromInput(file);
 
       if (gen !== previewGenerationRef.current) return;
-
-      setCaptureDebug((d) => ({
-        ...d,
-        materialization: materializedOk ? 'success' : 'error',
-      }));
 
       setPhotoFile(workFile);
 
@@ -334,7 +315,6 @@ export default function ReportMileagePage() {
       .catch((err) => {
         if (gen === previewGenerationRef.current) {
           console.error('[ReportMileagePage] preview pipeline failed', err);
-          setCaptureDebug((d) => ({ ...d, materialization: 'error' }));
           toast({
             title: 'לא ניתן להציג תצוגה מקדימה',
             description: 'נסו שוב או תמונה מהגלריה.',
@@ -539,7 +519,7 @@ export default function ReportMileagePage() {
         </div>
       </header>
 
-      <main className="container py-6 pb-36">
+      <main className="container py-6 pb-28">
         <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
@@ -744,30 +724,6 @@ export default function ReportMileagePage() {
         onCapture={handleWebcamCapturedFile}
         disabled={submitting}
       />
-
-      {/* TEMP debug overlay — PC vs Android mileage capture (below modal z-50) */}
-      <div
-        className="fixed bottom-0 left-0 right-0 z-20 max-h-28 overflow-y-auto border-t border-amber-500/40 bg-black/90 px-3 py-2 text-[11px] leading-snug text-amber-100 font-mono shadow-[0_-4px_24px_rgba(0,0,0,0.5)]"
-        aria-hidden
-      >
-        <div className="text-amber-400/90 font-sans text-[10px] uppercase tracking-wide mb-1">
-          Mileage photo debug (remove later)
-        </div>
-        <div>File Detected: {captureDebug.fileDetected ? 'Yes' : 'No'}</div>
-        <div className="break-all">
-          File Name: {captureDebug.fileName || '—'}
-        </div>
-        <div>
-          Materialization Status:{' '}
-          {captureDebug.materialization === 'idle'
-            ? 'Idle'
-            : captureDebug.materialization === 'pending'
-              ? 'Pending'
-              : captureDebug.materialization === 'success'
-                ? 'Success'
-                : 'Error'}
-        </div>
-      </div>
     </div>
   );
 }
