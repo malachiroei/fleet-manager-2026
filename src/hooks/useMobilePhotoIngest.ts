@@ -18,7 +18,8 @@ export type UseMobilePhotoIngestOptions = {
 
 /**
  * Single pipeline for file inputs + WebcamCapture: materialize to an in-memory `File`, preview URL, stale-gen guard.
- * Used by ReportMileagePage and PhotoUpload so delivery and mileage behave identically.
+ * `WebcamCapture.onCapture` passes a File that was already materialized once; we materialize again here so `photoFile`
+ * always holds a normal in-memory buffer for Supabase upload + Android preview (`setPhotoFile` / `onCommittedChange`).
  */
 export function useMobilePhotoIngest(options?: UseMobilePhotoIngestOptions) {
   const logLabel = options?.logLabel ?? '[useMobilePhotoIngest]';

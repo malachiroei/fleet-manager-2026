@@ -105,6 +105,8 @@ export default function ReportMileagePage() {
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const fallbackFileInputRef = useRef<HTMLInputElement>(null);
   const [webcamOpen, setWebcamOpen] = useState(false);
+  /** Remount WebcamCapture on each open — matches a fresh instance per delivery photo slot (clean streamBootId + Android prime). */
+  const [webcamMountKey, setWebcamMountKey] = useState(0);
 
   const {
     photoFile,
@@ -191,6 +193,7 @@ export default function ReportMileagePage() {
     startPhotoIngest(e.target.files?.[0] ?? null, e.target);
   };
 
+  /** WebcamCapture already materializes to an in-memory File; ingest runs materialize again for a stable ArrayBuffer + updates `photoFile`. */
   const handleWebcamCapturedFile = (captured: File) => {
     startPhotoIngest(captured, null);
   };
@@ -463,7 +466,10 @@ export default function ReportMileagePage() {
                           type="button"
                           className="h-12 flex-1 gap-2 text-base"
                           disabled={submitting || isMaterializing}
-                          onClick={() => setWebcamOpen(true)}
+                          onClick={() => {
+                            setWebcamMountKey((k) => k + 1);
+                            setWebcamOpen(true);
+                          }}
                         >
                           <Camera className="h-4 w-4 shrink-0" />
                           צלם מהמצלמה
@@ -585,6 +591,7 @@ export default function ReportMileagePage() {
       </main>
 
       <WebcamCapture
+        key={webcamMountKey}
         open={webcamOpen}
         onOpenChange={setWebcamOpen}
         onCapture={handleWebcamCapturedFile}

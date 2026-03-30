@@ -24,6 +24,7 @@ export default function PhotoUpload({
   disabled = false,
 }: PhotoUploadProps) {
   const [webcamOpen, setWebcamOpen] = useState(false);
+  const [webcamMountKey, setWebcamMountKey] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const fallbackInputRef = useRef<HTMLInputElement>(null);
@@ -146,7 +147,10 @@ export default function PhotoUpload({
                 size="sm"
                 className="h-10 flex-1 gap-2"
                 disabled={controlsDisabled}
-                onClick={() => setWebcamOpen(true)}
+                onClick={() => {
+                  setWebcamMountKey((k) => k + 1);
+                  setWebcamOpen(true);
+                }}
               >
                 <Camera className="h-4 w-4 shrink-0" />
                 צלם מהמצלמה
@@ -184,6 +188,7 @@ export default function PhotoUpload({
 
       {android ? (
         <WebcamCapture
+          key={webcamMountKey}
           open={webcamOpen}
           onOpenChange={setWebcamOpen}
           onCapture={(f) => {

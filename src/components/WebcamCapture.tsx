@@ -262,8 +262,6 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
   const [streamBootId, setStreamBootId] = useState(0);
   const rearWarmupDoneRef = useRef(false);
   const rearHardResetDoneRef = useRef(false);
-  /** One silent front-camera pulse before first rear open per dialog (Samsung / Android). */
-  const androidRearUnlockDoneRef = useRef(false);
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -293,15 +291,6 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       setVideoReady(true);
     }
   }, [clearInitTimeout]);
-
-  /** Run before stream attach so Android rear unlock / warm-up refs are fresh every time the modal opens. */
-  useLayoutEffect(() => {
-    if (open) {
-      rearWarmupDoneRef.current = false;
-      rearHardResetDoneRef.current = false;
-      androidRearUnlockDoneRef.current = false;
-    }
-  }, [open]);
 
   useEffect(() => {
     if (open) {
@@ -357,17 +346,17 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
 
     let stream: MediaStream | null = null;
     try {
-      if (
-        isAndroidUa() &&
-        cameraProfileRef.current === 'environment' &&
-        !androidRearUnlockDoneRef.current
-      ) {
+      /**
+       * Android + rear: never open the back camera first on a fresh modal attach (`streamBootId === 0`).
+       * Always run a silent front pulse + delay first (same idea as a dedicated WebcamCapture instance per slot on delivery).
+       * Internal warm-up reboots increment `streamBootId` and skip this so we do not stack delays.
+       */
+      if (isAndroidUa() && cameraProfileRef.current === 'environment' && streamBootId === 0) {
         try {
           const unlock = await getUserMediaWithChain(QUICK_USER_WARMUP);
           stopStream(unlock);
-          androidRearUnlockDoneRef.current = true;
         } catch {
-          /* rear may still work; retry pulse on next attach if ref stays false */
+          /* still attempt rear */
         }
         await new Promise((r) => setTimeout(r, ANDROID_WEBCAM_WARMUP_POST_STOP_MS));
         if (!openRef.current) return;
@@ -375,9 +364,6 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       stream = await getUserMediaWithChain(constraintChainForProfile(cameraProfileRef.current));
     } catch (err) {
       if (!openRef.current) return;
-      if (isAndroidUa() && cameraProfileRef.current === 'environment') {
-        androidRearUnlockDoneRef.current = false;
-      }
       setError(mapGetUserMediaError(err));
       setLoading(false);
       return;
@@ -530,6 +516,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
   useEffect(() => {
     if (!open) {
       clearInitTimeout();
+      setStreamBootId(0);
       setError(null);
       setLoading(false);
       setSnapping(false);
@@ -543,9 +530,16 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     }
   }, [open, clearInitTimeout]);
 
+  /** Reset probe warm-up only when the dialog opens — not on `streamBootId` / profile-driven re-attach. */
+  useLayoutEffect(() => {
+    if (open) {
+      rearWarmupDoneRef.current = false;
+      rearHardResetDoneRef.current = false;
+    }
+  }, [open]);
+
   useLayoutEffect(() => {
     if (!open) return;
-
     void attachStream();
     return () => {
       clearInitTimeout();
