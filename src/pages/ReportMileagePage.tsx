@@ -13,7 +13,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { cn } from '@/lib/utils';
 
 const STORAGE_BUCKET = 'mileage-reports';
 const PHOTO_INPUT_ID = 'report-mileage-photo';
@@ -81,19 +80,21 @@ export default function ReportMileagePage() {
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
   const [odometer, setOdometer] = useState('');
   const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
 
-  const photoPreviewUrl = useMemo(() => {
-    if (!photoFile) return null;
-    return URL.createObjectURL(photoFile);
-  }, [photoFile]);
-
   useEffect(() => {
+    if (!photoFile) {
+      setPhotoPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(photoFile);
+    setPhotoPreviewUrl(url);
     return () => {
-      if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
+      URL.revokeObjectURL(url);
     };
-  }, [photoPreviewUrl]);
+  }, [photoFile]);
 
   const filteredVehicles = useMemo(() => {
     const q = vehicleSearch.trim().toLowerCase();
@@ -112,17 +113,7 @@ export default function ReportMileagePage() {
   );
 
   const handlePhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.files?.[0] ?? null;
-    e.target.value = '';
-    if (!raw) {
-      setPhotoFile(null);
-      return;
-    }
-    if (!raw.type.startsWith('image/')) {
-      toast({ title: 'נא לבחור קובץ תמונה', variant: 'destructive' });
-      return;
-    }
-    setPhotoFile(raw);
+    setPhotoFile(e.target.files?.[0] ?? null);
   };
 
   const submit = async (e: FormEvent) => {
@@ -381,53 +372,44 @@ export default function ReportMileagePage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>תמונה של לוח השעונים</Label>
-                  <div className="flex flex-col gap-3">
-                    <input
-                      ref={photoInputRef}
-                      id={PHOTO_INPUT_ID}
-                      type="file"
-                      accept="image/*"
-                      className={cn(
-                        'block w-full cursor-pointer rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm',
-                        'file:mr-4 file:rounded-full file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-blue-700',
-                        'hover:file:bg-blue-100',
-                        submitting && 'pointer-events-none opacity-50'
-                      )}
-                      onChange={handlePhotoChange}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-12 w-full"
-                      disabled={submitting}
-                      onPointerDown={() => {
-                        try {
-                          photoInputRef.current?.click();
-                        } catch (err) {
-                          window.alert(`input.click() failed: ${String(err)}`);
-                        }
-                      }}
-                    >
-                      <Camera className="h-4 w-4 ml-2" />
-                      פתח מצלמה / קבצים
-                    </Button>
-                  </div>
-                  {photoPreviewUrl ? (
-                    <div className="overflow-hidden rounded-xl border border-border">
+                  <Label htmlFor={PHOTO_INPUT_ID}>תמונה של לוח השעונים</Label>
+                  <input
+                    ref={photoInputRef}
+                    id={PHOTO_INPUT_ID}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={handlePhotoChange}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex h-12 w-full items-center justify-center gap-2"
+                    disabled={submitting}
+                    onClick={() => photoInputRef.current?.click()}
+                  >
+                    <Camera className="h-4 w-4" />
+                    {photoFile ? 'החלף תמונה' : 'צלם או בחר תמונה'}
+                  </Button>
+                  <div className="relative z-0 min-h-[14rem] overflow-hidden rounded-xl border border-border bg-black">
+                    {photoPreviewUrl ? (
                       <img
                         src={photoPreviewUrl}
                         alt="תצוגה מקדימה"
-                        className="h-56 w-full object-cover bg-black"
-                        onLoad={() => {
-                          window.alert('Preview image loaded successfully.');
-                        }}
-                        onError={() => {
-                          window.alert('Preview image failed to render.');
-                        }}
+                        width={1280}
+                        height={896}
+                        className="block h-56 w-full max-w-full object-cover"
                       />
-                    </div>
-                  ) : null}
+                    ) : (
+                      <div
+                        className="flex h-56 w-full items-center justify-center text-sm text-white/50"
+                        aria-hidden
+                      >
+                        אין תצוגה מקדימה
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex gap-3">
