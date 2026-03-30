@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { flushSync } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Camera, Gauge, Loader2 } from 'lucide-react';
 
@@ -33,6 +34,16 @@ function clearMileageReportSessionDraft() {
   } catch {
     // private mode / quota
   }
+}
+
+/**
+ * `capture="environment"` opens the system camera in a separate activity on many Android
+ * WebViews; returning often reloads the tab or drops the file input result. Plain
+ * `accept="image/*"` still shows Camera + Gallery in the picker — more reliable.
+ */
+function shouldAttachDirectCameraCapture(): boolean {
+  if (typeof navigator === 'undefined') return true;
+  return !/Android/i.test(navigator.userAgent);
 }
 
 function sanitizeFileExt(name: string): string {
@@ -98,11 +109,14 @@ export default function ReportMileagePage() {
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
   const [odometer, setOdometer] = useState('');
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
+  /** Forces <img> remount after async preview (Android WebView paint quirks). */
+  const [previewMountKey, setPreviewMountKey] = useState(0);
   /** Original file for submit-only upload to storage */
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [sessionHydrated, setSessionHydrated] = useState(false);
   const blobPreviewRevokeRef = useRef<string | null>(null);
+  const previewGenerationRef = useRef(0);
 
   /** Restore draft + detect tab recycle after camera (session flag survives reload). */
   useEffect(() => {
@@ -178,7 +192,9 @@ export default function ReportMileagePage() {
   );
 
   const handleFile = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] ?? null;
+    const inputEl = e.target;
+    const file = inputEl.files?.[0] ?? null;
+    const gen = ++previewGenerationRef.current;
 
     if (blobPreviewRevokeRef.current) {
       URL.revokeObjectURL(blobPreviewRevokeRef.current);
@@ -188,6 +204,7 @@ export default function ReportMileagePage() {
     setPhotoFile(file);
 
     if (!file) {
+      inputEl.value = '';
       return;
     }
 
@@ -197,36 +214,64 @@ export default function ReportMileagePage() {
       // ignore
     }
 
-    // Some Android Chrome builds paint <img src="blob:..."> unreliably; Data URL from FileReader is more consistent.
-    try {
-      const blobUrl = URL.createObjectURL(file);
-      blobPreviewRevokeRef.current = blobUrl;
-      setPhotoPreviewUrl(blobUrl);
-    } catch (err) {
-      console.warn('[ReportMileagePage] createObjectURL failed, will use FileReader only', err);
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = typeof reader.result === 'string' ? reader.result : null;
-      if (blobPreviewRevokeRef.current) {
-        URL.revokeObjectURL(blobPreviewRevokeRef.current);
-        blobPreviewRevokeRef.current = null;
+    void (async () => {
+      let displayUrl: string | null = null;
+      try {
+        const buf = await file.arrayBuffer();
+        const mime =
+          file.type && file.type !== 'application/octet-stream' && file.type !== ''
+            ? file.type
+            : 'image/jpeg';
+        const blob = new Blob([buf], { type: mime });
+        displayUrl = URL.createObjectURL(blob);
+      } catch (err) {
+        console.warn('[ReportMileagePage] arrayBuffer/blob preview failed', err);
       }
-      setPhotoPreviewUrl(dataUrl);
-    };
-    reader.onerror = () => {
-      console.warn('[ReportMileagePage] FileReader preview failed');
-      if (!blobPreviewRevokeRef.current) {
-        setPhotoPreviewUrl(null);
+
+      if (!displayUrl) {
+        displayUrl = await new Promise<string | null>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null);
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(file);
+        });
+      }
+
+      if (gen !== previewGenerationRef.current) {
+        if (displayUrl?.startsWith('blob:')) URL.revokeObjectURL(displayUrl);
+        return;
+      }
+
+      if (displayUrl?.startsWith('blob:')) {
+        blobPreviewRevokeRef.current = displayUrl;
+      }
+
+      flushSync(() => {
+        setPhotoPreviewUrl(displayUrl ?? null);
+        setPreviewMountKey((k) => k + 1);
+      });
+
+      if (!displayUrl) {
         toast({
           title: 'לא ניתן להציג תצוגה מקדימה',
           description: 'הקובץ עדיין אמור להישלח — נסו שוב או תמונה מהגלריה.',
           variant: 'destructive',
         });
       }
-    };
-    reader.readAsDataURL(file);
+    })()
+      .catch((err) => {
+        if (gen === previewGenerationRef.current) {
+          console.error('[ReportMileagePage] preview pipeline failed', err);
+          toast({
+            title: 'לא ניתן להציג תצוגה מקדימה',
+            description: 'נסו שוב או תמונה מהגלריה.',
+            variant: 'destructive',
+          });
+        }
+      })
+      .finally(() => {
+        inputEl.value = '';
+      });
   };
 
   const submit = async (e: FormEvent) => {
@@ -510,21 +555,14 @@ export default function ReportMileagePage() {
                     <Camera className="h-4 w-4 shrink-0" />
                     {photoFile ? 'החלף תמונה' : 'צלם או בחר תמונה'}
                   </label>
-                  <p className="text-[11px] leading-relaxed text-muted-foreground font-mono break-all">
-                    File status: {photoFile ? photoFile.name : 'No file'}
-                    <br />
-                    MIME: {photoFile?.type ? photoFile.type : '(empty)'}
-                    <br />
-                    Preview URL status: {photoPreviewUrl ? 'Ready' : 'Empty'}
-                  </p>
                   <p className="text-xs text-muted-foreground leading-snug">
-                    אם המכשיר מרענן את הדף אחרי המצלמה, השדות למעלה אמורים להימלא מחדש — אם אין תמונה, נסו שוב
-                    ולבחור מהגלריה במקום מצלמה ישירה.
+                    באנדרואיד נפתח תפריט קבצים (מצלמה / גלריה) בלי קפיצה ישירה למצלמה — כך הדף לא אמור
+                    להיסגר. אחרי צילום אמורה להופיע תצוגה מקדימה; אם לא, בחרו שוב או תמונה מהגלריה.
                   </p>
                   {photoPreviewUrl ? (
                     <div className="aspect-video w-full overflow-hidden rounded-xl border border-border">
                       <img
-                        key={photoPreviewUrl}
+                        key={previewMountKey}
                         src={photoPreviewUrl}
                         alt=""
                         decoding="async"
