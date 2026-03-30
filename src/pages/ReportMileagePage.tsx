@@ -78,7 +78,7 @@ export default function ReportMileagePage() {
   const [vehicleSearch, setVehicleSearch] = useState('');
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
   const [odometer, setOdometer] = useState('');
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
   /** Original file for submit-only upload to storage */
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -103,15 +103,15 @@ export default function ReportMileagePage() {
     const file = e.target.files?.[0] ?? null;
     setPhotoFile(file);
     if (!file) {
-      setPhotoPreview(null);
+      setPhotoPreviewUrl(null);
       return;
     }
     const reader = new FileReader();
     reader.onload = () => {
-      setPhotoPreview(typeof reader.result === 'string' ? reader.result : null);
+      setPhotoPreviewUrl(typeof reader.result === 'string' ? reader.result : null);
     };
     reader.onerror = () => {
-      setPhotoPreview(null);
+      setPhotoPreviewUrl(null);
     };
     reader.readAsDataURL(file);
   };
@@ -389,13 +389,15 @@ export default function ReportMileagePage() {
                     <Camera className="h-4 w-4 shrink-0" />
                     {photoFile ? 'החלף תמונה' : 'צלם או בחר תמונה'}
                   </label>
-                  <div className="overflow-hidden rounded-xl border border-border bg-black">
-                    <img
-                      src={photoPreview ?? undefined}
-                      alt="תצוגה מקדימה"
-                      className="block h-64 w-full object-cover bg-neutral-900"
-                    />
-                  </div>
+                  {photoPreviewUrl ? (
+                    <div className="aspect-video w-full overflow-hidden rounded-xl border border-border">
+                      <img
+                        src={photoPreviewUrl}
+                        alt=""
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="flex gap-3">
