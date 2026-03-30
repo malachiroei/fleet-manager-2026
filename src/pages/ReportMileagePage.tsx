@@ -101,16 +101,20 @@ export default function ReportMileagePage() {
 
   const handleFile = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
+    console.log('File picked:', file);
+    setPhotoPreviewUrl(null);
     setPhotoFile(file);
     if (!file) {
-      setPhotoPreviewUrl(null);
       return;
     }
     const reader = new FileReader();
     reader.onload = () => {
-      setPhotoPreviewUrl(typeof reader.result === 'string' ? reader.result : null);
+      const dataUrl = typeof reader.result === 'string' ? reader.result : null;
+      console.log('[ReportMileagePage] FileReader done, dataUrl length:', dataUrl?.length ?? 0);
+      setPhotoPreviewUrl(dataUrl);
     };
     reader.onerror = () => {
+      console.warn('[ReportMileagePage] FileReader error');
       setPhotoPreviewUrl(null);
     };
     reader.readAsDataURL(file);
@@ -389,6 +393,13 @@ export default function ReportMileagePage() {
                     <Camera className="h-4 w-4 shrink-0" />
                     {photoFile ? 'החלף תמונה' : 'צלם או בחר תמונה'}
                   </label>
+                  <p className="text-[11px] leading-relaxed text-muted-foreground font-mono break-all">
+                    File status: {photoFile ? photoFile.name : 'No file'}
+                    <br />
+                    MIME: {photoFile?.type ? photoFile.type : '(empty)'}
+                    <br />
+                    Preview URL status: {photoPreviewUrl ? 'Ready' : 'Empty'}
+                  </p>
                   {photoPreviewUrl ? (
                     <div className="aspect-video w-full overflow-hidden rounded-xl border border-border">
                       <img
