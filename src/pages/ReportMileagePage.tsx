@@ -46,6 +46,11 @@ function shouldAttachDirectCameraCapture(): boolean {
   return !/Android/i.test(navigator.userAgent);
 }
 
+function isAndroidUserAgent(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /Android/i.test(navigator.userAgent);
+}
+
 function sanitizeFileExt(name: string): string {
   const idx = name.lastIndexOf('.');
   if (idx === -1) return 'jpg';
@@ -216,25 +221,33 @@ export default function ReportMileagePage() {
 
     void (async () => {
       let displayUrl: string | null = null;
-      try {
-        const buf = await file.arrayBuffer();
-        const mime =
-          file.type && file.type !== 'application/octet-stream' && file.type !== ''
-            ? file.type
-            : 'image/jpeg';
-        const blob = new Blob([buf], { type: mime });
-        displayUrl = URL.createObjectURL(blob);
-      } catch (err) {
-        console.warn('[ReportMileagePage] arrayBuffer/blob preview failed', err);
-      }
 
-      if (!displayUrl) {
-        displayUrl = await new Promise<string | null>((resolve) => {
+      const readDataUrl = () =>
+        new Promise<string | null>((resolve) => {
           const reader = new FileReader();
           reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null);
           reader.onerror = () => resolve(null);
           reader.readAsDataURL(file);
         });
+
+      // Android: avoid capture="environment" (see input below) and prefer Data URL for <img> —
+      // many Chrome/WebView builds paint blob: URLs unreliably or choke on arrayBuffer() on camera-backed Files.
+      if (!isAndroidUserAgent()) {
+        try {
+          const buf = await file.arrayBuffer();
+          const mime =
+            file.type && file.type !== 'application/octet-stream' && file.type !== ''
+              ? file.type
+              : 'image/jpeg';
+          const blob = new Blob([buf], { type: mime });
+          displayUrl = URL.createObjectURL(blob);
+        } catch (err) {
+          console.warn('[ReportMileagePage] arrayBuffer/blob preview failed', err);
+        }
+      }
+
+      if (!displayUrl) {
+        displayUrl = await readDataUrl();
       }
 
       if (gen !== previewGenerationRef.current) {
@@ -547,7 +560,9 @@ export default function ReportMileagePage() {
                       name="mileage_photo"
                       type="file"
                       accept="image/*"
-                      capture="environment"
+                      {...(shouldAttachDirectCameraCapture()
+                        ? ({ capture: 'environment' } as const)
+                        : {})}
                       className="hidden"
                       disabled={submitting}
                       onChange={handleFile}
