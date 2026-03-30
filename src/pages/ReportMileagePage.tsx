@@ -64,6 +64,23 @@ export default function ReportMileagePage() {
   const [submitting, setSubmitting] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const photoFileRef = useRef<File | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
+  const previewTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    // Cleanup on unmount
+    return () => {
+      if (previewTimerRef.current != null) {
+        window.clearTimeout(previewTimerRef.current);
+        previewTimerRef.current = null;
+      }
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = null;
+      }
+    };
+  }, []);
 
   const filteredVehicles = useMemo(() => {
     const q = vehicleSearch.trim().toLowerCase();
@@ -89,16 +106,50 @@ export default function ReportMileagePage() {
   };
 
   const onPhotoPicked = (f: File | null) => {
+    console.log('[ReportMileagePage] onPhotoPicked', {
+      hasFile: Boolean(f),
+      name: f?.name,
+      type: f?.type,
+      size: typeof f?.size === 'number' ? f.size : null,
+    });
     setPhotoFile(f);
+    photoFileRef.current = f;
     if (!f) {
       toast({ title: 'לא התקבלה תמונה', variant: 'destructive' });
-      if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
+      if (previewTimerRef.current != null) {
+        window.clearTimeout(previewTimerRef.current);
+        previewTimerRef.current = null;
+      }
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = null;
+      }
       setPhotoPreviewUrl(null);
       return;
     }
-    if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
-    const url = URL.createObjectURL(f);
-    setPhotoPreviewUrl(url);
+    // Revoke the previous preview URL to avoid leaks
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
+    // Some Android devices choke if we createObjectURL immediately after camera transition.
+    // Defer one tick to let the UI settle.
+    if (previewTimerRef.current != null) {
+      window.clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = null;
+    }
+    previewTimerRef.current = window.setTimeout(() => {
+      try {
+        const url = URL.createObjectURL(f);
+        previewUrlRef.current = url;
+        setPhotoPreviewUrl(url);
+      } catch (err) {
+        console.error('[ReportMileagePage] createObjectURL failed', err);
+        setPhotoPreviewUrl(null);
+      } finally {
+        previewTimerRef.current = null;
+      }
+    }, 0);
     toast({
       title: 'התמונה נקלטה',
       description: `${Math.round(f.size / 1024).toLocaleString()} KB${f.type ? ` · ${f.type}` : ''}`,
@@ -126,14 +177,25 @@ export default function ReportMileagePage() {
       });
       return;
     }
-    if (!photoFile) {
+    const stableFile = photoFileRef.current ?? photoFile;
+    if (!stableFile) {
+      if (photoPreviewUrl) {
+        toast({ title: 'File lost during camera transition', variant: 'destructive' });
+        console.error('[ReportMileagePage] File lost during camera transition', {
+          hasPreviewUrl: Boolean(photoPreviewUrl),
+          previewUrl: photoPreviewUrl,
+          stateHasPhotoFile: Boolean(photoFile),
+          refHasPhotoFile: Boolean(photoFileRef.current),
+        });
+        return;
+      }
       toast({ title: 'נא לצרף תמונה של לוח השעונים', variant: 'destructive' });
       return;
     }
 
     setSubmitting(true);
     try {
-      const ext = sanitizeFileExt(photoFile.name);
+      const ext = sanitizeFileExt(stableFile.name);
       const rawId = (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
       const safeVehicleId = sanitizeStorageSegment(selectedVehicle.id);
       const safeId = sanitizeStorageSegment(rawId);
@@ -143,12 +205,12 @@ export default function ReportMileagePage() {
       console.log('Step 1: Uploading photo...', {
         bucket: STORAGE_BUCKET,
         objectPath: path,
-        fileName: photoFile.name,
+        fileName: stableFile.name,
       });
 
       const { error: uploadError } = await supabase.storage
         .from(STORAGE_BUCKET)
-        .upload(path, photoFile, { upsert: false, contentType: photoFile.type || 'image/jpeg' });
+        .upload(path, stableFile, { upsert: false, contentType: stableFile.type || 'image/jpeg' });
       if (uploadError) {
         console.error('[ReportMileagePage] storage upload failed', {
           uploadError,
@@ -157,9 +219,9 @@ export default function ReportMileagePage() {
           vehicleId: selectedVehicle.id,
           userId: user.id,
           file: {
-            name: photoFile.name,
-            type: photoFile.type,
-            size: photoFile.size,
+            name: stableFile.name,
+            type: stableFile.type,
+            size: stableFile.size,
           },
         });
         throw uploadError;
