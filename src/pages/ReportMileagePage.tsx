@@ -16,6 +16,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 
 const STORAGE_BUCKET = 'mileage-reports';
 
+/** Android: activity recreation after camera can reload the page — persist form + detect loss. */
+const MILEAGE_REPORT_CAPTURE_SESSION_KEY = 'fleet-mileage-report-capture-v1';
+const CAPTURE_SESSION_MAX_AGE_MS = 10 * 60 * 1000;
+
 function sanitizeFileExt(name: string): string {
   const idx = name.lastIndexOf('.');
   if (idx === -1) return 'jpg';
@@ -155,7 +159,69 @@ export default function ReportMileagePage() {
     [vehicles, selectedVehicleId]
   );
 
+  const clearMileageCaptureSession = () => {
+    try {
+      sessionStorage.removeItem(MILEAGE_REPORT_CAPTURE_SESSION_KEY);
+    } catch {
+      // ignore
+    }
+  };
+
+  const persistMileageCaptureSession = () => {
+    try {
+      sessionStorage.setItem(
+        MILEAGE_REPORT_CAPTURE_SESSION_KEY,
+        JSON.stringify({
+          isCapturingPhoto: true,
+          vehicleId: selectedVehicleId,
+          odometer,
+          vehicleSearch,
+          ts: Date.now(),
+        }),
+      );
+    } catch {
+      // ignore quota / private mode
+    }
+  };
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(MILEAGE_REPORT_CAPTURE_SESSION_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw) as {
+        isCapturingPhoto?: boolean;
+        vehicleId?: string;
+        odometer?: string;
+        vehicleSearch?: string;
+        ts?: number;
+      };
+      if (!data.isCapturingPhoto) {
+        clearMileageCaptureSession();
+        return;
+      }
+      const ts = typeof data.ts === 'number' ? data.ts : 0;
+      if (Date.now() - ts > CAPTURE_SESSION_MAX_AGE_MS) {
+        clearMileageCaptureSession();
+        return;
+      }
+      if (typeof data.vehicleId === 'string') setSelectedVehicleId(data.vehicleId);
+      if (typeof data.odometer === 'string') setOdometer(data.odometer);
+      if (typeof data.vehicleSearch === 'string') setVehicleSearch(data.vehicleSearch);
+      clearMileageCaptureSession();
+      toast({
+        title: 'נתוני המצלמה לא נשמרו',
+        description:
+          'Camera data lost due to low memory. Please try selecting from Gallery.',
+        variant: 'destructive',
+      });
+    } catch (err) {
+      console.error('[ReportMileagePage] capture session restore failed', err);
+      clearMileageCaptureSession();
+    }
+  }, []);
+
   const pickPhoto = () => {
+    persistMileageCaptureSession();
     console.log('[ReportMileagePage] pickPhoto click -> input.click() (deferred 0ms)', {
       hasInput: Boolean(fileInputRef.current),
     });
@@ -164,13 +230,16 @@ export default function ReportMileagePage() {
     }, 0);
   };
 
-  /** TEMP DEBUG: onInput + onChange — some Android builds only fire one. */
+  /** onInput + onChange — some Android builds only fire one. */
   const handleNativeFileInput = (
     e: ChangeEvent<HTMLInputElement> | FormEvent<HTMLInputElement>
   ) => {
     const input = e.currentTarget;
     const len = input.files?.length ?? 0;
-    window.alert('Files length: ' + len);
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.log('[ReportMileagePage] native file input event, files length:', len);
+    }
 
     const f = input.files?.[0] ?? null;
     const sig = f
@@ -197,6 +266,7 @@ export default function ReportMileagePage() {
     setPhotoFile(f);
     photoFileRef.current = f;
     if (!f) {
+      clearMileageCaptureSession();
       toast({ title: 'לא התקבלה תמונה', variant: 'destructive' });
       uploadedPhotoUrlRef.current = null;
       uploadedObjectPathRef.current = null;
@@ -208,6 +278,8 @@ export default function ReportMileagePage() {
       setPhotoPreviewUrl(null);
       return;
     }
+
+    clearMileageCaptureSession();
 
     // Reset previous uploaded URL when picking a new photo
     uploadedPhotoUrlRef.current = null;
@@ -649,8 +721,11 @@ export default function ReportMileagePage() {
             ref={fileInputRef}
             type="file"
             accept="image/*"
-            /* TEMP: capture removed — test gallery; if gallery works & camera not → permission/capture */
+            capture="environment"
             className="mb-4 block w-full max-w-md cursor-pointer rounded border-2 border-white/40 bg-black/40 p-2 text-sm file:mr-2"
+            onPointerDown={() => {
+              persistMileageCaptureSession();
+            }}
             onInput={handleNativeFileInput}
             onChange={handleNativeFileInput}
           />
