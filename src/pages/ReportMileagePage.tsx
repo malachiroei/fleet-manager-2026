@@ -7,6 +7,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useVehicles } from '@/hooks/useVehicles';
 import { toast } from '@/hooks/use-toast';
+import imageCompression from 'browser-image-compression';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -81,6 +82,7 @@ export default function ReportMileagePage() {
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
   const [odometer, setOdometer] = useState('');
   const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [compressingPhoto, setCompressingPhoto] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const photoPreviewUrl = useMemo(() => {
@@ -110,8 +112,35 @@ export default function ReportMileagePage() {
     [vehicles, selectedVehicleId]
   );
 
-  const handlePhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
-    setPhotoFile(e.target.files?.[0] ?? null);
+  const handlePhotoChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.files?.[0] ?? null;
+    e.target.value = '';
+    if (!raw) {
+      setPhotoFile(null);
+      return;
+    }
+    if (!raw.type.startsWith('image/')) {
+      toast({ title: 'נא לבחור קובץ תמונה', variant: 'destructive' });
+      return;
+    }
+    setCompressingPhoto(true);
+    try {
+      const compressed = await imageCompression(raw, {
+        maxSizeMB: 1,
+        maxWidthOrHeight: 1280,
+        useWebWorker: true,
+      });
+      setPhotoFile(compressed);
+    } catch (err) {
+      console.error('[ReportMileagePage] photo compression failed', err);
+      toast({
+        title: 'לא ניתן לעבד את התמונה',
+        description: 'נסו תמונה אחרת או צילום חדש.',
+        variant: 'destructive',
+      });
+    } finally {
+      setCompressingPhoto(false);
+    }
   };
 
   const submit = async (e: FormEvent) => {
@@ -384,11 +413,15 @@ export default function ReportMileagePage() {
                     className={cn(
                       'flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium ring-offset-background',
                       'hover:bg-accent hover:text-accent-foreground',
-                      submitting && 'pointer-events-none opacity-50'
+                      (submitting || compressingPhoto) && 'pointer-events-none opacity-50'
                     )}
                   >
-                    <Camera className="h-4 w-4" />
-                    {photoFile ? 'החלף תמונה' : 'צלם או בחר תמונה'}
+                    {compressingPhoto ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Camera className="h-4 w-4" />
+                    )}
+                    {compressingPhoto ? 'מעבד תמונה…' : photoFile ? 'החלף תמונה' : 'צלם או בחר תמונה'}
                   </label>
                   {photoPreviewUrl ? (
                     <div className="overflow-hidden rounded-xl border border-border">
@@ -405,7 +438,7 @@ export default function ReportMileagePage() {
                   <Button
                     type="submit"
                     className="flex-1 h-12 text-base"
-                    disabled={submitting || !photoFile}
+                    disabled={submitting || compressingPhoto || !photoFile}
                   >
                     {submitting && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
                     שלח דיווח

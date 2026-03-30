@@ -33,6 +33,7 @@ import {
   compareSemverExtended,
   isFleetManagerProHostname,
   normalizeVersion,
+  showFleetStagingEnvironmentBanner,
   toCanonicalThreePartVersion,
 } from '@/lib/versionManifest';
 
@@ -75,6 +76,9 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   /** קיר קשיח ייצור: fleet-manager-pro.com + www (גרסה בכותרת וכו') */
   const isProduction = isFleetManagerProHostname();
+  /** באנר "גרסת בדיקה": מוסתר ב־fleet-manager-pro.com + www (ייצור) */
+  const showStagingWarningBar = showFleetStagingEnvironmentBanner();
+
   /** ריענון כותרת אחרי כתיבת fleet-pro-acknowledged-version (לפני reload) */
   const [proAckBump, setProAckBump] = useState(0);
   useEffect(() => {
@@ -175,8 +179,13 @@ export function AppLayout({ children }: AppLayoutProps) {
   const isDriverRoei = email === 'roeima21@gmail.com';
   const isRavid = email === 'ravidmalachi@gmail.com';
 
-  const headerStickyTopClass = 'top-0';
-  const viewAsStickyTopClass = 'top-0';
+  const viewAsBannerVisible = (isMainAdmin || isRavid) && Boolean(viewAsEmail);
+  const headerStickyTopClass = showStagingWarningBar
+    ? viewAsBannerVisible
+      ? 'top-24'
+      : 'top-12'
+    : 'top-0';
+  const viewAsStickyTopClass = showStagingWarningBar ? 'top-12' : 'top-0';
 
   const mainFleetOrgId = useMemo(() => {
     // Prefer explicit Main Fleet org id when present.
@@ -803,7 +812,24 @@ export function AppLayout({ children }: AppLayoutProps) {
   );
 
   return (
-    <div className="flex min-h-[100dvh] flex-col overflow-x-hidden bg-[#020617]" dir={isRtl ? 'rtl' : 'ltr'}>
+    <div
+      className={cn(
+        'flex min-h-[100dvh] flex-col overflow-x-hidden bg-[#020617]',
+        showStagingWarningBar && 'pt-12'
+      )}
+      dir={isRtl ? 'rtl' : 'ltr'}
+    >
+      {showStagingWarningBar ? (
+        <div
+          className="fixed left-0 right-0 top-0 z-[999] flex h-12 items-center justify-center border-b border-red-400/60 bg-red-600 px-4 text-center shadow-md"
+          role="banner"
+          aria-label="גרסת בדיקה"
+        >
+          <span className="text-sm font-bold tracking-wide text-white sm:text-base">
+            גרסת בדיקה / Test Version
+          </span>
+        </div>
+      ) : null}
       {(isMainAdmin || isRavid) && viewAsEmail && (
         <div
           className={cn('sticky z-50 w-full bg-amber-500 text-black shadow-md', viewAsStickyTopClass)}
