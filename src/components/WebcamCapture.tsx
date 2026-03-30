@@ -94,6 +94,74 @@ async function getUserMediaWithFallbacks(): Promise<MediaStream> {
   throw lastErr;
 }
 
+function collectStreamDebug(stream: MediaStream | null): string {
+  if (!stream) return '(אין stream)';
+  const lines = [`stream.id: ${stream.id}`, `active: ${String(stream.active)}`];
+  stream.getVideoTracks().forEach((t, i) => {
+    lines.push(
+      `video[${i}] id=${t.id.slice(0, 8)}… readyState=${t.readyState} muted=${t.muted} enabled=${t.enabled} label=${t.label || '—'}`
+    );
+  });
+  return lines.join('\n');
+}
+
+function logStreamDebug(stream: MediaStream, label: string) {
+  console.log(`[WebcamCapture] ${label}`, {
+    streamId: stream.id,
+    active: stream.active,
+    videoTracks: stream.getVideoTracks().map((t) => ({
+      id: t.id,
+      readyState: t.readyState,
+      muted: t.muted,
+      enabled: t.enabled,
+      label: t.label,
+    })),
+  });
+}
+
+/** Draw one frame to an off-DOM canvas and sample pixels (video may look black in UI but still decode). */
+function probeVideoFrameOnCanvas(video: HTMLVideoElement): { ok: boolean; note: string; avgLuma: number } {
+  const w = video.videoWidth;
+  const h = video.videoHeight;
+  if (w <= 0 || h <= 0) {
+    return { ok: false, note: 'אין מימדי וידאו לקנבס', avgLuma: 0 };
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) {
+    return { ok: false, note: 'לא ניתן ליצור הקשר 2D לקנבס', avgLuma: 0 };
+  }
+  try {
+    ctx.drawImage(video, 0, 0, w, h);
+  } catch (e) {
+    return { ok: false, note: `drawImage נכשל: ${e instanceof Error ? e.message : String(e)}`, avgLuma: 0 };
+  }
+  const sw = Math.min(64, w);
+  const sh = Math.min(64, h);
+  let data: ImageData;
+  try {
+    data = ctx.getImageData(0, 0, sw, sh);
+  } catch (e) {
+    return { ok: false, note: `getImageData נחסם או נכשל: ${e instanceof Error ? e.message : String(e)}`, avgLuma: 0 };
+  }
+  let sum = 0;
+  const n = data.data.length / 4;
+  for (let i = 0; i < data.data.length; i += 4) {
+    sum += data.data[i]! + data.data[i + 1]! + data.data[i + 2]!;
+  }
+  const avgLuma = n > 0 ? sum / n / 3 : 0;
+  const ok = avgLuma > 6;
+  return {
+    ok,
+    avgLuma,
+    note: ok
+      ? `קנבס: נקלטו פיקסלים (בהירות ממוצעת ~${avgLuma.toFixed(1)})`
+      : `קנבס: כמעט שחור (בהירות ~${avgLuma.toFixed(1)})`,
+  };
+}
+
 export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: WebcamCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -103,7 +171,21 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
   const [loading, setLoading] = useState(false);
   const [snapping, setSnapping] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
+  /** True when hidden-canvas probe sees non-black pixels (UI may still look black). */
+  const [canvasProbeOk, setCanvasProbeOk] = useState(false);
+  const [streamDebugText, setStreamDebugText] = useState('');
+  const [canvasProbeNote, setCanvasProbeNote] = useState('');
+  /** For enabling צלם when video tag is black but track is live (ImageCapture path). */
+  const [videoTrackLive, setVideoTrackLive] = useState(false);
   const initTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debugIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const clearDebugInterval = useCallback(() => {
+    if (debugIntervalRef.current) {
+      clearInterval(debugIntervalRef.current);
+      debugIntervalRef.current = null;
+    }
+  }, []);
 
   const clearInitTimeout = useCallback(() => {
     if (initTimeoutRef.current) {
@@ -127,8 +209,12 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
   const attachStream = useCallback(async () => {
     setError(null);
     setVideoReady(false);
+    setCanvasProbeOk(false);
+    setStreamDebugText('');
+    setCanvasProbeNote('');
     setLoading(true);
     clearInitTimeout();
+    clearDebugInterval();
     stopStream(streamRef.current);
     streamRef.current = null;
 
@@ -138,6 +224,12 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       return;
     }
     video.srcObject = null;
+
+    if (typeof window !== 'undefined' && !window.isSecureContext) {
+      setError('האתר חייב לרוץ תחת HTTPS כדי שהמצלמה תעבוד.');
+      setLoading(false);
+      return;
+    }
 
     if (!navigator.mediaDevices?.getUserMedia) {
       setError('הדפדפן לא תומך במצלמה (נדרש HTTPS ודפדפן מעודכן).');
@@ -159,6 +251,27 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       stopStream(stream);
       return;
     }
+
+    stream.getTracks().forEach((track) => {
+      track.enabled = true;
+    });
+
+    logStreamDebug(stream, 'stream acquired');
+    setStreamDebugText(collectStreamDebug(stream));
+
+    const syncTrackUi = (s: MediaStream) => {
+      const vt = s.getVideoTracks()[0];
+      setVideoTrackLive(vt?.readyState === 'live');
+    };
+    syncTrackUi(stream);
+
+    debugIntervalRef.current = setInterval(() => {
+      const s = streamRef.current;
+      if (!s || !openRef.current) return;
+      setStreamDebugText(collectStreamDebug(s));
+      syncTrackUi(s);
+      logStreamDebug(s, 'tick');
+    }, 2000);
 
     streamRef.current = stream;
     video.srcObject = stream;
@@ -201,6 +314,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       }
     } catch {
       clearInitTimeout();
+      clearDebugInterval();
       if (!openRef.current) {
         stopStream(stream);
         streamRef.current = null;
@@ -210,31 +324,54 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       stopStream(stream);
       streamRef.current = null;
       setLoading(false);
+      setVideoTrackLive(false);
       return;
     }
     if (!openRef.current) {
       clearInitTimeout();
+      clearDebugInterval();
       stopStream(stream);
       streamRef.current = null;
       if (video) video.srcObject = null;
       return;
     }
+
+    const runCanvasProbe = () => {
+      const v = videoRef.current;
+      const s = streamRef.current;
+      if (!v || !s || !openRef.current) return;
+      const probe = probeVideoFrameOnCanvas(v);
+      setCanvasProbeNote(probe.note);
+      console.log('[WebcamCapture] hidden canvas probe', probe);
+      if (probe.ok && v.videoWidth > 0 && v.videoHeight > 0) {
+        setCanvasProbeOk(true);
+        setVideoReady(true);
+      }
+    };
+    setTimeout(runCanvasProbe, 600);
+    setTimeout(runCanvasProbe, 2000);
+
     // Keep loading overlay until first frames (onPlaying / onLoadedData) or timeout above.
-  }, [clearInitTimeout, markVideoPresenting]);
+  }, [clearDebugInterval, clearInitTimeout, markVideoPresenting]);
 
   useEffect(() => {
     if (!open) {
       clearInitTimeout();
+      clearDebugInterval();
       setError(null);
       setLoading(false);
       setSnapping(false);
       setVideoReady(false);
+      setCanvasProbeOk(false);
+      setStreamDebugText('');
+      setCanvasProbeNote('');
+      setVideoTrackLive(false);
       const v = videoRef.current;
       if (v) v.srcObject = null;
       stopStream(streamRef.current);
       streamRef.current = null;
     }
-  }, [open, clearInitTimeout]);
+  }, [open, clearInitTimeout, clearDebugInterval]);
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -242,66 +379,116 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     void attachStream();
     return () => {
       clearInitTimeout();
+      clearDebugInterval();
       const v = videoRef.current;
       if (v) v.srcObject = null;
       stopStream(streamRef.current);
       streamRef.current = null;
     };
-  }, [open, attachStream, clearInitTimeout]);
+  }, [open, attachStream, clearDebugInterval, clearInitTimeout]);
 
-  const handleSnap = useCallback(() => {
-    const video = videoRef.current;
-    if (!video || video.videoWidth <= 0 || video.videoHeight <= 0 || disabled || snapping) return;
-
-    setSnapping(true);
-    try {
-      const w = video.videoWidth;
-      const h = video.videoHeight;
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        setError('לא ניתן לצלם — נסו שוב');
-        setSnapping(false);
+  const finishCapture = useCallback(
+    (blob: Blob | null) => {
+      setSnapping(false);
+      if (!blob || blob.size < 200) {
+        setError('יצירת התמונה נכשלה או שהקובץ ריק');
         return;
       }
-      ctx.drawImage(video, 0, 0, w, h);
-      canvas.toBlob(
-        (blob) => {
-          setSnapping(false);
-          if (!blob) {
-            setError('יצירת התמונה נכשלה');
-            return;
+      const name = `mileage-capture-${Date.now()}.jpg`;
+      const file = new File([blob], name, { type: 'image/jpeg' });
+      stopStream(streamRef.current);
+      streamRef.current = null;
+      if (videoRef.current) videoRef.current.srcObject = null;
+      onOpenChange(false);
+      onCapture(file);
+    },
+    [onCapture, onOpenChange]
+  );
+
+  const handleSnap = useCallback(async () => {
+    if (disabled || snapping) return;
+    const video = videoRef.current;
+    const stream = streamRef.current;
+    const track = stream?.getVideoTracks()[0];
+    if (!track) return;
+
+    setSnapping(true);
+    const w = video?.videoWidth ?? 0;
+    const h = video?.videoHeight ?? 0;
+
+    try {
+      if (w > 0 && h > 0 && video) {
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, w, h);
+          const blob = await new Promise<Blob | null>((resolve) =>
+            canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.92)
+          );
+          if (blob && blob.size >= 400) {
+            const probe = probeVideoFrameOnCanvas(video);
+            if (probe.ok || blob.size >= 2500) {
+              finishCapture(blob);
+              return;
+            }
+            console.warn('[WebcamCapture] canvas frame dark/small; trying ImageCapture', {
+              blobSize: blob.size,
+              probe,
+            });
           }
-          const name = `mileage-capture-${Date.now()}.jpg`;
-          const file = new File([blob], name, { type: 'image/jpeg' });
-          stopStream(streamRef.current);
-          streamRef.current = null;
-          if (videoRef.current) videoRef.current.srcObject = null;
-          onOpenChange(false);
-          onCapture(file);
-        },
-        'image/jpeg',
-        0.92
-      );
-    } catch {
+        }
+      }
+
+      if (typeof ImageCapture !== 'undefined') {
+        const ic = new ImageCapture(track);
+        const bitmap = await ic.grabFrame();
+        const canvas = document.createElement('canvas');
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          bitmap.close();
+          finishCapture(null);
+          return;
+        }
+        ctx.drawImage(bitmap, 0, 0);
+        bitmap.close();
+        const blob = await new Promise<Blob | null>((resolve) =>
+          canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.92)
+        );
+        finishCapture(blob);
+        return;
+      }
+
+      finishCapture(null);
+    } catch (e) {
+      console.error('[WebcamCapture] snap failed', e);
       setSnapping(false);
       setError('שגיאה בצילום');
     }
-  }, [disabled, onCapture, onOpenChange, snapping]);
+  }, [disabled, finishCapture, snapping]);
+
+  const imageCaptureAvailable = typeof ImageCapture !== 'undefined';
+  const canCapture =
+    !loading &&
+    !error &&
+    (videoReady || canvasProbeOk || (imageCaptureAvailable && videoTrackLive));
 
   const handleVideoError = useCallback(() => {
     clearInitTimeout();
+    clearDebugInterval();
     if (!openRef.current) return;
     setLoading(false);
     setVideoReady(false);
+    setVideoTrackLive(false);
     setError(PERMISSION_BLOCKED_HE);
     stopStream(streamRef.current);
     streamRef.current = null;
     const v = videoRef.current;
     if (v) v.srcObject = null;
-  }, [clearInitTimeout]);
+  }, [clearDebugInterval, clearInitTimeout]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -358,6 +545,14 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
               </p>
             ) : null}
 
+            <div className="rounded-md border border-border/80 bg-muted/40 px-2 py-2 text-[10px] leading-relaxed text-muted-foreground font-mono whitespace-pre-wrap break-all max-h-28 overflow-y-auto">
+              <span className="font-sans text-foreground/80">דיבוג stream (גם בקונסול)</span>
+              {'\n'}
+              {streamDebugText || '—'}
+              {canvasProbeNote ? `\n${canvasProbeNote}` : ''}
+              {`\nImageCapture: ${imageCaptureAvailable ? 'זמין' : 'לא זמין'}`}
+            </div>
+
             <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-stretch">
               <Button
                 type="button"
@@ -371,8 +566,13 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
               <Button
                 type="button"
                 className="w-full sm:flex-1"
-                onClick={handleSnap}
-                disabled={disabled || loading || !!error || !videoReady || snapping}
+                onClick={() => void handleSnap()}
+                disabled={disabled || loading || !!error || !canCapture || snapping}
+                title={
+                  canCapture
+                    ? undefined
+                    : 'ממתינים לווידאו, לבדיקת קנבס, או למסלול Live עם ImageCapture'
+                }
               >
                 {snapping && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
                 צלם
