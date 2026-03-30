@@ -82,6 +82,7 @@ export default function ReportMileagePage() {
       setPhotoPreviewUrl(null);
       return;
     }
+
     const next = URL.createObjectURL(photoFile);
     setPhotoPreviewUrl(next);
     return () => URL.revokeObjectURL(next);
@@ -90,6 +91,18 @@ export default function ReportMileagePage() {
 
   const pickPhoto = () => {
     fileInputRef.current?.click();
+  };
+
+  const onPhotoPicked = (f: File | null) => {
+    setPhotoFile(f);
+    if (!f) {
+      toast({ title: 'לא התקבלה תמונה', variant: 'destructive' });
+      return;
+    }
+    toast({
+      title: 'התמונה נקלטה',
+      description: `${Math.round(f.size / 1024).toLocaleString()} KB${f.type ? ` · ${f.type}` : ''}`,
+    });
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -380,7 +393,8 @@ export default function ReportMileagePage() {
                     className="hidden"
                     onChange={(e) => {
                       const f = e.target.files?.[0] ?? null;
-                      setPhotoFile(f);
+                      onPhotoPicked(f);
+                      e.currentTarget.value = '';
                     }}
                   />
                   <Button type="button" variant="outline" className="w-full h-12 gap-2" onClick={pickPhoto}>
