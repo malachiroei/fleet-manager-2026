@@ -28,6 +28,28 @@ function sanitizeStorageSegment(seg: string): string {
   return String(seg || '').replace(/[^a-zA-Z0-9._-]/g, '_');
 }
 
+/** Same string Supabase client uses for public buckets — use for DB `photo_url` and recovery if state lags. */
+function canonicalPublicUrlForPath(objectPath: string): string {
+  const path = String(objectPath || '').trim();
+  if (!path) return '';
+  const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+  return String(data?.publicUrl ?? '').trim();
+}
+
+function logMileageLogsInsertError(insertError: {
+  message?: string;
+  code?: string;
+  details?: string;
+  hint?: string;
+}) {
+  console.error('[ReportMileagePage] mileage_logs insert failed (RLS/schema/network)', {
+    message: insertError?.message,
+    code: insertError?.code,
+    details: insertError?.details,
+    hint: insertError?.hint,
+  });
+}
+
 export default function ReportMileagePage() {
   const navigate = useNavigate();
   const { user, profile, loading, activeOrgId } = useAuth();
@@ -71,6 +93,9 @@ export default function ReportMileagePage() {
   const previewUrlRef = useRef<string | null>(null);
   const previewTimerRef = useRef<number | null>(null);
   const uploadTokenRef = useRef<string>('');
+  /** Mirrors uploaded photo URL/path immediately — avoids Android submit reading stale React state. */
+  const uploadedPhotoUrlRef = useRef<string | null>(null);
+  const uploadedObjectPathRef = useRef<string | null>(null);
 
   useEffect(() => {
     // Cleanup on unmount
@@ -120,6 +145,8 @@ export default function ReportMileagePage() {
     photoFileRef.current = f;
     if (!f) {
       toast({ title: 'לא התקבלה תמונה', variant: 'destructive' });
+      uploadedPhotoUrlRef.current = null;
+      uploadedObjectPathRef.current = null;
       setUploadedPhotoUrl(null);
       setUploadedObjectPath(null);
       if (previewTimerRef.current != null) {
@@ -135,6 +162,8 @@ export default function ReportMileagePage() {
     }
 
     // Reset previous uploaded URL when picking a new photo
+    uploadedPhotoUrlRef.current = null;
+    uploadedObjectPathRef.current = null;
     setUploadedPhotoUrl(null);
     setUploadedObjectPath(null);
 
@@ -234,24 +263,34 @@ export default function ReportMileagePage() {
           description: uploadError.message || 'נסו שוב או בדקו חיבור',
           variant: 'destructive',
         });
+        uploadedPhotoUrlRef.current = null;
+        uploadedObjectPathRef.current = null;
         setUploadedPhotoUrl(null);
         setUploadedObjectPath(null);
         return;
       }
 
-      const { data: urlData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(tempPath);
-      const publicUrl = urlData?.publicUrl ?? null;
+      const publicUrl = canonicalPublicUrlForPath(tempPath);
       if (!publicUrl) {
-        console.error('[ReportMileagePage] immediate upload missing publicUrl', { tempPath, urlData });
+        console.error('[ReportMileagePage] immediate upload missing publicUrl', { tempPath });
         toast({
           title: 'העלאת התמונה נכשלה',
           description: 'נסו שוב',
           variant: 'destructive',
         });
+        uploadedPhotoUrlRef.current = null;
+        uploadedObjectPathRef.current = null;
+        setUploadedPhotoUrl(null);
+        setUploadedObjectPath(null);
         return;
       }
 
-      console.log('[ReportMileagePage] immediate upload success', { publicUrl });
+      console.log('[ReportMileagePage] immediate upload success', {
+        objectPath: tempPath,
+        publicUrl,
+      });
+      uploadedPhotoUrlRef.current = publicUrl;
+      uploadedObjectPathRef.current = tempPath;
       setUploadedPhotoUrl(publicUrl);
       setUploadedObjectPath(tempPath);
       toast({
@@ -266,6 +305,8 @@ export default function ReportMileagePage() {
         description: err instanceof Error ? err.message : 'נסו שוב',
         variant: 'destructive',
       });
+      uploadedPhotoUrlRef.current = null;
+      uploadedObjectPathRef.current = null;
       setUploadedPhotoUrl(null);
       setUploadedObjectPath(null);
     } finally {
@@ -296,15 +337,47 @@ export default function ReportMileagePage() {
       });
       return;
     }
-    if (!uploadedPhotoUrl) {
+
+    if (photoUploading) {
+      toast({
+        title: 'ממתינים לסיום העלאת התמונה',
+        description: 'המתינו עד שיופיע ״התמונה הועלתה בהצלחה״ ואז שלחו שוב',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const pathForUrl =
+      uploadedObjectPathRef.current?.trim() || uploadedObjectPath?.trim() || null;
+    let photoUrl =
+      uploadedPhotoUrlRef.current?.trim() || uploadedPhotoUrl?.trim() || null;
+
+    if (!photoUrl && pathForUrl) {
+      photoUrl = canonicalPublicUrlForPath(pathForUrl);
+      if (photoUrl) {
+        uploadedPhotoUrlRef.current = photoUrl;
+        setUploadedPhotoUrl(photoUrl);
+        console.log('[ReportMileagePage] submit recovered photo_url from storage path', {
+          pathForUrl,
+          photoUrl,
+        });
+      }
+    }
+
+    if (!photoUrl) {
       if (photoPreviewUrl) {
-        toast({ title: 'File lost during camera transition', variant: 'destructive' });
+        toast({
+          title: 'התמונה עדיין לא הוכנה לשליחה',
+          description: 'חכו לסיום ההעלאה או צלמו שוב',
+          variant: 'destructive',
+        });
         console.error('[ReportMileagePage] File/URL missing during submit', {
           hasPreviewUrl: Boolean(photoPreviewUrl),
-          previewUrl: photoPreviewUrl,
           photoUploading,
-          uploadedPhotoUrl,
-          uploadedObjectPath,
+          refUrl: uploadedPhotoUrlRef.current,
+          refPath: uploadedObjectPathRef.current,
+          stateUrl: uploadedPhotoUrl,
+          statePath: uploadedObjectPath,
         });
         return;
       }
@@ -312,12 +385,23 @@ export default function ReportMileagePage() {
       return;
     }
 
+    const resolvedPath = pathForUrl ?? uploadedObjectPathRef.current ?? uploadedObjectPath;
+    const recheckUrl = resolvedPath ? canonicalPublicUrlForPath(resolvedPath) : '';
+    if (recheckUrl && recheckUrl !== photoUrl) {
+      console.warn('[ReportMileagePage] photo_url normalized to match Storage public URL', {
+        had: photoUrl,
+        canonical: recheckUrl,
+      });
+      photoUrl = recheckUrl;
+      uploadedPhotoUrlRef.current = photoUrl;
+      setUploadedPhotoUrl(photoUrl);
+    }
+
     setSubmitting(true);
     try {
-      // Photo was already uploaded during selection (immediate upload strategy).
-      const photoUrl = uploadedPhotoUrl;
-      console.log('Step 1: Using pre-uploaded photo URL:', photoUrl, {
-        objectPath: uploadedObjectPath,
+      console.log('[ReportMileagePage] submit photo_url (for mileage_logs)', {
+        photoUrl,
+        objectPath: resolvedPath,
       });
 
       const payload: Record<string, unknown> = {
@@ -327,13 +411,34 @@ export default function ReportMileagePage() {
         user_id: user.id,
       };
 
-      console.log('Step 2: Inserting to mileage_logs...', payload);
+      console.log('[ReportMileagePage] mileage_logs insert payload', payload);
 
-      const { error: insertError } = await supabase.from('mileage_logs' as any).insert(payload as any);
+      const { data: insertedRows, error: insertError } = await supabase
+        .from('mileage_logs' as any)
+        .insert(payload as any)
+        .select('id');
+
       if (insertError) {
-        console.error('[ReportMileagePage] mileage_logs insert failed', insertError);
-        console.error('[ReportMileagePage] mileage_logs insert payload', payload);
-        throw insertError;
+        logMileageLogsInsertError(insertError);
+        const detailParts = [insertError.message, insertError.hint, insertError.details].filter(
+          (p): p is string => Boolean(p && String(p).trim())
+        );
+        toast({
+          title: 'שגיאה בשמירת הדיווח (מסד נתונים)',
+          description:
+            detailParts.join(' — ') ||
+            'ייתכן חסימת RLS או שדה חסר. פרטים בקונסול.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      if (!insertedRows?.length) {
+        console.warn(
+          '[ReportMileagePage] mileage_logs insert returned no row in .select — row may still exist; verify RLS FOR SELECT on mileage_logs'
+        );
+      } else {
+        console.log('[ReportMileagePage] mileage_logs insert ok', { insertedRows });
       }
 
       // Create a "Documents" history record (matches the Vehicle Detail "מסמכים" tab).
@@ -395,7 +500,7 @@ export default function ReportMileagePage() {
 
         console.log('[send-mileage-notification] storage target', {
           bucket: STORAGE_BUCKET,
-          objectPath: uploadedObjectPath,
+          objectPath: resolvedPath,
           photoUrl,
         });
 
@@ -435,13 +540,17 @@ export default function ReportMileagePage() {
       queryClient.invalidateQueries({ queryKey: ['vehicles', orgId] });
       queryClient.invalidateQueries({ queryKey: ['vehicle-documents', selectedVehicle.id] });
 
-      toast({ title: 'דיווח קילומטראז׳ נשלח בהצלחה' });
-      navigate('/');
-    } catch (err: any) {
-      console.error('[ReportMileagePage] submit failed', err);
+      toast({
+        title: 'הדיווח נשמר בהצלחה',
+        description: `קילומטראז׳ ${odometerValue.toLocaleString('he-IL')} ק״מ נרשם במערכת. מעבירים לדף הבית…`,
+      });
+      navigate('/', { replace: true });
+    } catch (err: unknown) {
+      console.error('[ReportMileagePage] submit failed (unexpected)', err);
+      const msg = err instanceof Error ? err.message : 'נסו שוב';
       toast({
         title: 'שגיאה בשליחת הדיווח',
-        description: err?.message ?? 'נסו שוב',
+        description: msg,
         variant: 'destructive',
       });
     } finally {
@@ -585,7 +694,7 @@ export default function ReportMileagePage() {
                 </div>
 
                 <div className="flex gap-3">
-                  <Button type="submit" className="flex-1 h-12 text-base" disabled={submitting}>
+                  <Button type="submit" className="flex-1 h-12 text-base" disabled={submitting || photoUploading}>
                     {submitting && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
                     שלח דיווח
                   </Button>
