@@ -33,7 +33,6 @@ import {
   compareSemverExtended,
   isFleetManagerProHostname,
   normalizeVersion,
-  showFleetStagingEnvironmentBanner,
   toCanonicalThreePartVersion,
 } from '@/lib/versionManifest';
 
@@ -76,8 +75,8 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   /** קיר קשיח ייצור: fleet-manager-pro.com + www (גרסה בכותרת וכו') */
   const isProduction = isFleetManagerProHostname();
-  /** באנר "גרסת בדיקה": מוסתר ב־fleet-manager-pro.com + www (ייצור) */
-  const showStagingWarningBar = showFleetStagingEnvironmentBanner();
+  /** באנר אדום "גרסת בדיקה" — הוסר מהמוצר (נשאר hook לשימוש עתידי אם יידרש). */
+  const showStagingWarningBar = false;
 
   /** ריענון כותרת אחרי כתיבת fleet-pro-acknowledged-version (לפני reload) */
   const [proAckBump, setProAckBump] = useState(0);

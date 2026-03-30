@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Camera, Gauge, Loader2 } from 'lucide-react';
 
@@ -13,12 +13,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { cn } from '@/lib/utils';
 
 const STORAGE_BUCKET = 'mileage-reports';
-
-/** Android: activity recreation after camera can reload the page — persist form + detect loss. */
-const MILEAGE_REPORT_CAPTURE_SESSION_KEY = 'fleet-mileage-report-capture-v1';
-const CAPTURE_SESSION_MAX_AGE_MS = 10 * 60 * 1000;
+const PHOTO_INPUT_ID = 'report-mileage-photo';
 
 function sanitizeFileExt(name: string): string {
   const idx = name.lastIndexOf('.');
@@ -28,11 +26,9 @@ function sanitizeFileExt(name: string): string {
 }
 
 function sanitizeStorageSegment(seg: string): string {
-  // allow uuid-ish + basic safe characters for storage object names
   return String(seg || '').replace(/[^a-zA-Z0-9._-]/g, '_');
 }
 
-/** Same string Supabase client uses for public buckets — use for DB `photo_url` and recovery if state lags. */
 function canonicalPublicUrlForPath(objectPath: string): string {
   const path = String(objectPath || '').trim();
   if (!path) return '';
@@ -65,7 +61,6 @@ export default function ReportMileagePage() {
     const email =
       (profile?.email ?? user?.email ?? '').trim().toLowerCase();
 
-    // Master override for staging unblock.
     const isMaster = email === 'malachiroei@gmail.com';
 
     const allowed = isMaster || (
@@ -86,28 +81,18 @@ export default function ReportMileagePage() {
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
   const [odometer, setOdometer] = useState('');
   const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
-  const [photoUploading, setPhotoUploading] = useState(false);
-  const [uploadedPhotoUrl, setUploadedPhotoUrl] = useState<string | null>(null);
-  const [uploadedObjectPath, setUploadedObjectPath] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const photoFileRef = useRef<File | null>(null);
-  const previewObjectUrlRef = useRef<string | null>(null);
-  const uploadTokenRef = useRef<string>('');
-  /** Mirrors uploaded photo URL/path immediately — avoids Android submit reading stale React state. */
-  const uploadedPhotoUrlRef = useRef<string | null>(null);
-  const uploadedObjectPathRef = useRef<string | null>(null);
+  const photoPreviewUrl = useMemo(() => {
+    if (!photoFile) return null;
+    return URL.createObjectURL(photoFile);
+  }, [photoFile]);
 
   useEffect(() => {
     return () => {
-      if (previewObjectUrlRef.current) {
-        URL.revokeObjectURL(previewObjectUrlRef.current);
-        previewObjectUrlRef.current = null;
-      }
+      if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
     };
-  }, []);
+  }, [photoPreviewUrl]);
 
   const filteredVehicles = useMemo(() => {
     const q = vehicleSearch.trim().toLowerCase();
@@ -125,250 +110,8 @@ export default function ReportMileagePage() {
     [vehicles, selectedVehicleId]
   );
 
-  const clearMileageCaptureSession = () => {
-    try {
-      sessionStorage.removeItem(MILEAGE_REPORT_CAPTURE_SESSION_KEY);
-    } catch {
-      // ignore
-    }
-  };
-
-  const persistMileageCaptureSession = () => {
-    try {
-      sessionStorage.setItem(
-        MILEAGE_REPORT_CAPTURE_SESSION_KEY,
-        JSON.stringify({
-          isCapturingPhoto: true,
-          vehicleId: selectedVehicleId,
-          odometer,
-          vehicleSearch,
-          ts: Date.now(),
-        }),
-      );
-    } catch {
-      // ignore quota / private mode
-    }
-  };
-
-  useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem(MILEAGE_REPORT_CAPTURE_SESSION_KEY);
-      if (!raw) return;
-      const data = JSON.parse(raw) as {
-        isCapturingPhoto?: boolean;
-        vehicleId?: string;
-        odometer?: string;
-        vehicleSearch?: string;
-        ts?: number;
-      };
-      if (!data.isCapturingPhoto) {
-        clearMileageCaptureSession();
-        return;
-      }
-      const ts = typeof data.ts === 'number' ? data.ts : 0;
-      if (Date.now() - ts > CAPTURE_SESSION_MAX_AGE_MS) {
-        clearMileageCaptureSession();
-        return;
-      }
-      if (typeof data.vehicleId === 'string') setSelectedVehicleId(data.vehicleId);
-      if (typeof data.odometer === 'string') setOdometer(data.odometer);
-      if (typeof data.vehicleSearch === 'string') setVehicleSearch(data.vehicleSearch);
-      clearMileageCaptureSession();
-      toast({
-        title: 'נתוני המצלמה לא נשמרו',
-        description:
-          'Camera data lost due to low memory. Please try selecting from Gallery.',
-        variant: 'destructive',
-      });
-    } catch (err) {
-      console.error('[ReportMileagePage] capture session restore failed', err);
-      clearMileageCaptureSession();
-    }
-  }, []);
-
-  const pickPhoto = () => {
-    persistMileageCaptureSession();
-    window.setTimeout(() => {
-      fileInputRef.current?.click();
-    }, 0);
-  };
-
-  const handlePhotoFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0] ?? null;
-    void onPhotoPicked(f);
-  };
-
-  const onPhotoPicked = async (f: File | null) => {
-    console.log('[ReportMileagePage] onPhotoPicked', {
-      hasFile: Boolean(f),
-      name: f?.name,
-      type: f?.type,
-      size: typeof f?.size === 'number' ? f.size : null,
-    });
-    setPhotoFile(f);
-    photoFileRef.current = f;
-    if (!f) {
-      clearMileageCaptureSession();
-      toast({ title: 'לא התקבלה תמונה', variant: 'destructive' });
-      uploadedPhotoUrlRef.current = null;
-      uploadedObjectPathRef.current = null;
-      setUploadedPhotoUrl(null);
-      setUploadedObjectPath(null);
-      if (previewObjectUrlRef.current) {
-        URL.revokeObjectURL(previewObjectUrlRef.current);
-        previewObjectUrlRef.current = null;
-      }
-      setPhotoPreviewUrl(null);
-      return;
-    }
-
-    clearMileageCaptureSession();
-
-    // Reset previous uploaded URL when picking a new photo
-    uploadedPhotoUrlRef.current = null;
-    uploadedObjectPathRef.current = null;
-    setUploadedPhotoUrl(null);
-    setUploadedObjectPath(null);
-
-    if (previewObjectUrlRef.current) {
-      URL.revokeObjectURL(previewObjectUrlRef.current);
-      previewObjectUrlRef.current = null;
-    }
-    window.setTimeout(() => {
-      try {
-        const url = URL.createObjectURL(f);
-        previewObjectUrlRef.current = url;
-        setPhotoPreviewUrl(url);
-      } catch (err) {
-        console.error('[ReportMileagePage] createObjectURL failed', err);
-        setPhotoPreviewUrl(null);
-      }
-    }, 0);
-
-    // Immediate upload strategy: upload right after selection to avoid state-loss during submit.
-    if (!user) return;
-    setPhotoUploading(true);
-    const token = (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
-    uploadTokenRef.current = token;
-
-    try {
-      const ext = sanitizeFileExt(f.name);
-      const safeExt = sanitizeStorageSegment(ext);
-      const safeUserId = sanitizeStorageSegment(user.id);
-      const rawId = (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
-      const safeId = sanitizeStorageSegment(rawId);
-      const tempPath = `tmp/${safeUserId}/${safeId}.${safeExt}`;
-
-      console.log('File details (raw input):', { name: f.name, size: f.size, type: f.type });
-
-      // Android Chrome often hands back a File/Blob backed by content:// that fails if streamed
-      // lazily. Materialize bytes first, then upload a fresh Blob (same pattern as iOS/desktop).
-      const normalizedType = f.type && String(f.type).trim() ? f.type : 'image/jpeg';
-      const normalizedName = f.name && String(f.name).trim() ? f.name : 'photo.jpg';
-
-      let bytes: ArrayBuffer;
-      try {
-        bytes = await f.arrayBuffer();
-      } catch (readErr) {
-        console.error('[ReportMileagePage] arrayBuffer() failed (Android camera?)', readErr);
-        toast({
-          title: 'לא ניתן לקרוא את התמונה',
-          description: 'נסו שוב או בחרו תמונה מהגלריה',
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      if (!bytes || bytes.byteLength === 0) {
-        console.error('[ReportMileagePage] empty image buffer after read', {
-          reportedSize: f.size,
-          byteLength: bytes?.byteLength,
-        });
-        toast({
-          title: 'התמונה ריקה',
-          description: 'צלמו שוב או בחרו קובץ מהגלריה',
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      const blobToUpload = new Blob([bytes], { type: normalizedType || 'image/jpeg' });
-
-      console.log('[ReportMileagePage] immediate upload start', {
-        bucket: STORAGE_BUCKET,
-        objectPath: tempPath,
-        fileName: normalizedName,
-        fileType: blobToUpload.type,
-        fileSize: blobToUpload.size,
-      });
-
-      const { error: uploadError } = await supabase.storage.from(STORAGE_BUCKET).upload(tempPath, blobToUpload, {
-        upsert: true,
-        contentType: blobToUpload.type || 'image/jpeg',
-      });
-
-      // If the user picked a new image mid-flight, ignore this result
-      if (uploadTokenRef.current !== token) return;
-
-      if (uploadError) {
-        console.error('[ReportMileagePage] immediate upload failed', uploadError);
-        toast({
-          title: 'העלאת התמונה נכשלה',
-          description: uploadError.message || 'נסו שוב או בדקו חיבור',
-          variant: 'destructive',
-        });
-        uploadedPhotoUrlRef.current = null;
-        uploadedObjectPathRef.current = null;
-        setUploadedPhotoUrl(null);
-        setUploadedObjectPath(null);
-        return;
-      }
-
-      const publicUrl = canonicalPublicUrlForPath(tempPath);
-      if (!publicUrl) {
-        console.error('[ReportMileagePage] immediate upload missing publicUrl', { tempPath });
-        toast({
-          title: 'העלאת התמונה נכשלה',
-          description: 'נסו שוב',
-          variant: 'destructive',
-        });
-        uploadedPhotoUrlRef.current = null;
-        uploadedObjectPathRef.current = null;
-        setUploadedPhotoUrl(null);
-        setUploadedObjectPath(null);
-        return;
-      }
-
-      console.log('[ReportMileagePage] immediate upload success', {
-        objectPath: tempPath,
-        publicUrl,
-      });
-
-      uploadedPhotoUrlRef.current = publicUrl;
-      uploadedObjectPathRef.current = tempPath;
-      setUploadedPhotoUrl(publicUrl);
-      setUploadedObjectPath(tempPath);
-      toast({
-        title: 'התמונה נקלטה והועלתה',
-        description: `${Math.round(blobToUpload.size / 1024).toLocaleString()} KB`,
-      });
-    } catch (err) {
-      if (uploadTokenRef.current !== token) return;
-      console.error('[ReportMileagePage] immediate upload threw', err);
-      toast({
-        title: 'העלאת התמונה נכשלה',
-        description: err instanceof Error ? err.message : 'נסו שוב',
-        variant: 'destructive',
-      });
-      uploadedPhotoUrlRef.current = null;
-      uploadedObjectPathRef.current = null;
-      setUploadedPhotoUrl(null);
-      setUploadedObjectPath(null);
-    } finally {
-      if (uploadTokenRef.current === token) {
-        setPhotoUploading(false);
-      }
-    }
+  const handlePhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setPhotoFile(e.target.files?.[0] ?? null);
   };
 
   const submit = async (e: FormEvent) => {
@@ -393,36 +136,39 @@ export default function ReportMileagePage() {
       return;
     }
 
-    if (photoUploading) {
-      toast({
-        title: 'ממתינים לסיום העלאת התמונה',
-        description: 'המתינו עד שיופיע ״התמונה הועלתה בהצלחה״ ואז שלחו שוב',
-        variant: 'destructive',
-      });
+    if (!photoFile) {
+      toast({ title: 'נא לצרף תמונה של לוח השעונים', variant: 'destructive' });
       return;
     }
-
-    const photoUrl =
-      uploadedPhotoUrlRef.current?.trim() || uploadedPhotoUrl?.trim() || null;
-
-    if (!photoUrl) {
-      toast({
-        title: 'נא להעלות תמונה לפני השליחה',
-        description: 'חכו לסיום ההעלאה או צלמו שוב',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    const resolvedPath =
-      uploadedObjectPathRef.current?.trim() || uploadedObjectPath?.trim() || null;
 
     setSubmitting(true);
     try {
-      console.log('[ReportMileagePage] submit photo_url (for mileage_logs)', {
-        photoUrl,
-        objectPath: resolvedPath,
-      });
+      const ext = sanitizeFileExt(photoFile.name);
+      const safeUserId = sanitizeStorageSegment(user.id);
+      const rawId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const safeId = sanitizeStorageSegment(rawId);
+      const objectPath = `tmp/${safeUserId}/${safeId}.${sanitizeStorageSegment(ext)}`;
+
+      const contentType = photoFile.type || 'image/jpeg';
+      const { error: uploadError } = await supabase.storage
+        .from(STORAGE_BUCKET)
+        .upload(objectPath, photoFile, { upsert: true, contentType });
+
+      if (uploadError) {
+        console.error('[ReportMileagePage] storage upload failed', uploadError);
+        toast({
+          title: 'העלאת התמונה נכשלה',
+          description: uploadError.message || 'נסו שוב',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const photoUrl = canonicalPublicUrlForPath(objectPath);
+      if (!photoUrl) {
+        toast({ title: 'העלאת התמונה נכשלה', description: 'נסו שוב', variant: 'destructive' });
+        return;
+      }
 
       const payload: Record<string, unknown> = {
         vehicle_id: selectedVehicle.id,
@@ -430,8 +176,6 @@ export default function ReportMileagePage() {
         photo_url: photoUrl,
         user_id: user.id,
       };
-
-      console.log('[ReportMileagePage] mileage_logs insert payload', payload);
 
       const { data: insertedRows, error: insertError } = await supabase
         .from('mileage_logs' as any)
@@ -455,14 +199,10 @@ export default function ReportMileagePage() {
 
       if (!insertedRows?.length) {
         console.warn(
-          '[ReportMileagePage] mileage_logs insert returned no row in .select — row may still exist; verify RLS FOR SELECT on mileage_logs'
+          '[ReportMileagePage] mileage_logs insert returned no row in .select — verify RLS FOR SELECT on mileage_logs'
         );
-      } else {
-        console.log('[ReportMileagePage] mileage_logs insert ok', { insertedRows });
       }
 
-      // Create a "Documents" history record (matches the Vehicle Detail "מסמכים" tab).
-      // Note: vehicle_documents is used by VehicleDetailPage to render doc.title + doc.created_at.
       try {
         const title = `עדכון ק"מ - ${odometerValue.toLocaleString('he-IL')} ק"מ`;
 
@@ -482,19 +222,13 @@ export default function ReportMileagePage() {
           console.error('[ReportMileagePage] vehicle_documents insert failed', vehicleDocError);
         }
       } catch (vehicleDocErr) {
-        // Non-fatal: mileage is already saved; we don't want to block the user flow.
         console.error('[ReportMileagePage] vehicle_documents insert threw', vehicleDocErr);
       }
 
-      // Keep UI in sync: update the vehicle odometer immediately.
-      // NOTE: Multi-tenancy: we include `org_id` in the where-clause.
       const orgId = selectedVehicle.org_id ?? profile?.org_id ?? activeOrgId ?? null;
       if (!orgId) {
         console.error('[ReportMileagePage] missing orgId for vehicles odometer update', {
           vehicleId: selectedVehicle.id,
-          selectedVehicleOrgId: selectedVehicle.org_id,
-          profileOrgId: profile?.org_id,
-          activeOrgId,
         });
       }
 
@@ -508,54 +242,25 @@ export default function ReportMileagePage() {
         console.error('Failed to update vehicle odometer:', updateError);
       }
 
-      // Send notification email (direct invoke; DB trigger not required)
       try {
-        console.log('Step 4: Invoking Edge Function...');
-        const payload = {
-          to: 'malachiroei@gmail.com',
-          subject: `עדכון קילומטראז' - ${selectedVehicle.plate_number}`,
-          odometerReading: odometerValue,
-          reportUrl: photoUrl,
-        };
-
-        console.log('[send-mileage-notification] storage target', {
-          bucket: STORAGE_BUCKET,
-          objectPath: resolvedPath,
-          photoUrl,
-        });
-
-        console.log('[send-mileage-notification] invoking', {
-          function: 'send-mileage-notification',
-          payload,
-        });
-
         const sessionRes = await supabase.auth.getSession();
         const token = sessionRes?.data?.session?.access_token ?? null;
 
-        console.log('[send-mileage-notification] auth token present?', Boolean(token));
-
-        const invokeResult = await supabase.functions.invoke('send-mileage-notification', {
+        await supabase.functions.invoke('send-mileage-notification', {
           headers: {
             Authorization: `Bearer ${token ?? ''}`,
           },
-          body: payload,
+          body: {
+            to: 'malachiroei@gmail.com',
+            subject: `עדכון קילומטראז' - ${selectedVehicle.plate_number}`,
+            odometerReading: odometerValue,
+            reportUrl: photoUrl,
+          },
         });
-
-        // In Supabase JS, invoke often returns `{ data, error }` without throwing.
-        const maybeError = (invokeResult as any)?.error ?? null;
-        if (maybeError) {
-          console.error('[send-mileage-notification] invoke returned error', maybeError);
-          console.error('[send-mileage-notification] invokeResult raw', invokeResult);
-        } else {
-          console.log('[send-mileage-notification] invoke success', (invokeResult as any)?.data ?? invokeResult);
-        }
       } catch (notifyErr) {
-        // Non-fatal: mileage is already saved
         console.error('[send-mileage-notification] threw:', notifyErr);
       }
 
-      // Invalidate vehicle queries so Vehicle Detail "מד אוץ" card refreshes.
-      // useVehicle/useVehicles query keys include `orgId`, so invalidate with the exact prefix.
       queryClient.invalidateQueries({ queryKey: ['vehicle', selectedVehicle.id, orgId] });
       queryClient.invalidateQueries({ queryKey: ['vehicles', orgId] });
       queryClient.invalidateQueries({ queryKey: ['vehicle-documents', selectedVehicle.id] });
@@ -566,7 +271,7 @@ export default function ReportMileagePage() {
       });
       navigate('/', { replace: true });
     } catch (err: unknown) {
-      console.error('[ReportMileagePage] submit failed (unexpected)', err);
+      console.error('[ReportMileagePage] submit failed', err);
       const msg = err instanceof Error ? err.message : 'נסו שוב';
       toast({
         title: 'שגיאה בשליחת הדיווח',
@@ -667,48 +372,32 @@ export default function ReportMileagePage() {
                 <div className="space-y-2">
                   <Label>תמונה של לוח השעונים</Label>
                   <input
-                    ref={fileInputRef}
+                    id={PHOTO_INPUT_ID}
                     type="file"
                     accept="image/*"
                     capture="environment"
                     className="hidden"
-                    onChange={handlePhotoFileChange}
+                    onChange={handlePhotoChange}
                   />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full h-12 gap-2"
-                    onClick={() => {
-                      pickPhoto();
-                    }}
-                    disabled={submitting || photoUploading}
-                  >
-                    {photoUploading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Camera className="h-4 w-4" />
+                  <label
+                    htmlFor={PHOTO_INPUT_ID}
+                    className={cn(
+                      'flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium ring-offset-background',
+                      'hover:bg-accent hover:text-accent-foreground',
+                      submitting && 'pointer-events-none opacity-50'
                     )}
-                    {photoUploading ? 'מעלה תמונה…' : photoFile ? 'החלף תמונה' : 'צלם תמונה'}
-                  </Button>
+                  >
+                    <Camera className="h-4 w-4" />
+                    {photoFile ? 'החלף תמונה' : 'צלם או בחר תמונה'}
+                  </label>
                   {photoPreviewUrl ? (
-                    <div className="relative overflow-hidden rounded-xl border border-border">
+                    <div className="overflow-hidden rounded-xl border border-border">
                       <img
                         src={photoPreviewUrl}
                         alt="תצוגה מקדימה"
-                        className="w-full h-56 object-cover bg-black"
+                        className="h-56 w-full object-cover bg-black"
                       />
-                      {photoUploading ? (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-                          <div className="flex items-center gap-2 rounded-lg bg-black/70 px-3 py-2 text-sm text-white">
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            מעלה תמונה…
-                          </div>
-                        </div>
-                      ) : null}
                     </div>
-                  ) : null}
-                  {!photoUploading && uploadedPhotoUrl ? (
-                    <p className="text-xs text-emerald-300/90">התמונה הועלתה בהצלחה</p>
                   ) : null}
                 </div>
 
@@ -716,11 +405,7 @@ export default function ReportMileagePage() {
                   <Button
                     type="submit"
                     className="flex-1 h-12 text-base"
-                    disabled={
-                      submitting ||
-                      photoUploading ||
-                      !(uploadedPhotoUrlRef.current?.trim() || uploadedPhotoUrl?.trim())
-                    }
+                    disabled={submitting || !photoFile}
                   >
                     {submitting && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
                     שלח דיווח
@@ -743,4 +428,3 @@ export default function ReportMileagePage() {
     </div>
   );
 }
-
