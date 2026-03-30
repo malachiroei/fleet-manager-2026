@@ -139,6 +139,7 @@ export default function ServiceUpdatePage() {
     if (!file) {
       setPhotoFile(null);
       setBlobPreviewUrl(null);
+      toast({ title: 'לא התקבלה תמונה', variant: 'destructive' });
       input.value = '';
       return;
     }
@@ -147,6 +148,10 @@ export default function ServiceUpdatePage() {
     blobUrlRef.current = url;
     setPhotoFile(file);
     setBlobPreviewUrl(url);
+    toast({
+      title: 'התמונה נקלטה',
+      description: `${Math.round(file.size / 1024).toLocaleString()} KB${file.type ? ` · ${file.type}` : ''}`,
+    });
     input.value = '';
   }, []);
 
