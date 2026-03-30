@@ -612,6 +612,49 @@ export default function ReportMileagePage() {
       </header>
 
       <main className="container py-6 pb-28">
+        {/* TEMP DEBUG (Android preview) — remove after investigation */}
+        <div
+          className="mb-6 rounded-lg border-4 border-yellow-500 bg-yellow-950/50 p-4 text-yellow-100"
+          style={{ position: 'relative', zIndex: 9999 }}
+        >
+          <p className="mb-3 text-sm font-bold">TEMP DEBUG — מקור תצוגה ישיר / Base64 state</p>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="mb-4 block w-full max-w-md cursor-pointer rounded border-2 border-white/40 bg-black/40 p-2 text-sm file:mr-2"
+            onChange={(e) => {
+              const f = e.target.files?.[0] ?? null;
+              void onPhotoPicked(f);
+            }}
+          />
+          <img
+            src={photoPreviewUrl ?? ''}
+            alt="DEBUG mileage preview"
+            style={{
+              width: '200px',
+              height: '200px',
+              border: '5px solid red',
+              zIndex: 9999,
+              position: 'relative',
+              objectFit: 'contain',
+              background: '#111',
+            }}
+            onError={() => {
+              console.error('[ReportMileagePage] DEBUG top <img> onError', {
+                hasPhotoPreviewUrl: Boolean(photoPreviewUrl),
+                len: photoPreviewUrl?.length ?? 0,
+              });
+            }}
+          />
+          <pre className="mt-3 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded bg-black/70 p-2 text-left text-[10px] text-green-300">
+            {photoPreviewUrl
+              ? photoPreviewUrl.substring(0, 100)
+              : '(photoPreviewUrl is null or empty)'}
+          </pre>
+        </div>
+
         <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
@@ -684,18 +727,9 @@ export default function ReportMileagePage() {
 
                 <div className="space-y-2">
                   <Label>תמונה של לוח השעונים</Label>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    // Android stability: avoid display:none; keep input present but invisible.
-                    className="absolute opacity-0 h-px w-px -z-10 overflow-hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0] ?? null;
-                      void onPhotoPicked(f);
-                    }}
-                  />
+                  <p className="text-xs text-muted-foreground">
+                    TEMP: קלט הקובץ הועבר לראש הדף (בלוק DEBUG צהוב). כפתור למטה עדיין פותח אותו קלט.
+                  </p>
                   <Button
                     type="button"
                     variant="outline"
