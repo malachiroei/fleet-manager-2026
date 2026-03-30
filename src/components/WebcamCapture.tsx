@@ -299,7 +299,12 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       rearWarmupDoneRef.current = false;
       rearHardResetDoneRef.current = false;
       const saved = readStoredCameraProfile();
-      if (saved) setCameraProfile(saved);
+      /** `compatible` often maps to the same default as front on Android — open on rear/front toggle only. */
+      if (saved === 'compatible') {
+        setCameraProfile('environment');
+      } else if (saved) {
+        setCameraProfile(saved);
+      }
     }
   }, [open]);
 
@@ -581,9 +586,11 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
 
   const cycleCameraProfile = useCallback(() => {
     setCameraProfile((prev) => {
-      const order: CameraProfile[] = ['environment', 'user', 'compatible'];
-      const i = order.indexOf(prev);
-      return order[(i + 1) % order.length]!;
+      const order: CameraProfile[] = ['environment', 'user'];
+      const normalized = prev === 'compatible' ? 'environment' : prev;
+      const i = order.indexOf(normalized);
+      const base = i >= 0 ? i : 0;
+      return order[(base + 1) % order.length]!;
     });
   }, []);
 
@@ -726,9 +733,15 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
             </DialogHeader>
 
             <div className="relative aspect-[3/4] w-full min-h-[200px] overflow-hidden rounded-lg bg-black">
+              {/* Mirror canvas under the video: rear stream can fail canvas drawImage while the video tag still paints. */}
+              <canvas
+                ref={previewCanvasRef}
+                className="pointer-events-none absolute inset-0 z-0 h-full w-full"
+                aria-hidden
+              />
               <video
                 ref={videoRef}
-                className="absolute inset-0 z-0 h-full w-full object-contain"
+                className="absolute inset-0 z-[1] h-full w-full object-contain"
                 playsInline
                 muted
                 autoPlay
@@ -739,11 +752,6 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
                 onPlaying={markVideoPresenting}
                 onCanPlay={markVideoPresenting}
                 onError={handleVideoError}
-              />
-              <canvas
-                ref={previewCanvasRef}
-                className="absolute inset-0 z-[5] h-full w-full"
-                aria-hidden
               />
               {loading && (
                 <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/80 px-4 text-center">
@@ -768,7 +776,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
                 disabled={loading || snapping}
                 onClick={cycleCameraProfile}
                 aria-label="החלף מצלמה"
-                title="החלף מצלמה (אחורית / קדמית / תאימות)"
+                title="החלף מצלמה (אחורית / קדמית)"
               >
                 <RefreshCw className="h-5 w-5" />
               </Button>
