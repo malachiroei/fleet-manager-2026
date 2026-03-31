@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { QA_FORMS_NESTED_KEYS, QA_FORMS_PARENT_KEY, registryEntryForKey } from '@/lib/featureFlagRegistry';
+import { useAuth } from '@/hooks/useAuth';
 
 const NESTED_UNDER_QA_SET = new Set<string>(QA_FORMS_NESTED_KEYS);
 
@@ -69,17 +70,34 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
   const [search, setSearch] = useState('');
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [optimisticOverrides, setOptimisticOverrides] = useState<Record<string, boolean>>({});
+  const { user, profile } = useAuth();
+  const viewerEmail = (profile?.email ?? user?.email ?? '').trim().toLowerCase();
+  const isRoeiAdmin = viewerEmail === 'malachiroei@gmail.com';
+  const viewerCanSeeSubject =
+    isRoeiAdmin ||
+    (userId && viewerEmail && viewerEmail === (userLabel ?? '').trim().toLowerCase()) ||
+    (viewerEmail === 'ravidmalachi@gmail.com' && (userLabel ?? '').trim().toLowerCase() === 'roeima21@gmail.com');
 
   const { data: featureFlags = [] as FeatureFlagRow[], isLoading: isFlagsLoading, isError: isFlagsError } = useQuery({
     queryKey: ['feature-flags-user-overrides-list'],
-    enabled: open,
+    enabled: open && Boolean(viewerCanSeeSubject),
     queryFn: async () => {
       const { data, error } = await supabase
         .from('feature_flags')
         .select('id, feature_key, display_name_he, description, is_enabled_globally')
         .order('feature_key', { ascending: true });
       if (error) throw error;
-      return (data ?? []) as FeatureFlagRow[];
+      // Defensive: DB should have unique feature_key, but UI must not show duplicates.
+      const seen = new Set<string>();
+      const out: FeatureFlagRow[] = [];
+      for (const row of (data ?? []) as FeatureFlagRow[]) {
+        const key = String(row.feature_key ?? '').trim();
+        if (!key) continue;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(row);
+      }
+      return out;
     },
     staleTime: 60_000,
   });
@@ -124,6 +142,22 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
     return m;
   }, [overrideRows]);
 
+  /** Sub-users can only view flags explicitly assigned (via overrides). */
+  const visibleFeatureKeys = useMemo(() => {
+    if (isRoeiAdmin) return null;
+    const keys = new Set<string>();
+    for (const row of overrideRows ?? []) {
+      const k = String(row.feature_key ?? '').trim();
+      if (k) keys.add(k);
+    }
+    return keys;
+  }, [isRoeiAdmin, overrideRows]);
+
+  const featureFlagsVisibleToViewer = useMemo(() => {
+    if (!visibleFeatureKeys) return featureFlags;
+    return featureFlags.filter((f) => visibleFeatureKeys.has(f.feature_key));
+  }, [featureFlags, visibleFeatureKeys]);
+
   const effectiveOverrideMap = useMemo(() => {
     const m = new Map(overrideMap);
     for (const [key, val] of Object.entries(optimisticOverrides)) {
@@ -141,8 +175,8 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
   };
 
   const flagsWithoutNestedDuplicates = useMemo(
-    () => featureFlags.filter((f) => !NESTED_UNDER_QA_SET.has(f.feature_key)),
-    [featureFlags],
+    () => featureFlagsVisibleToViewer.filter((f) => !NESTED_UNDER_QA_SET.has(f.feature_key)),
+    [featureFlagsVisibleToViewer],
   );
 
   const filteredRootFlags = useMemo(() => {
@@ -159,7 +193,7 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
   }, [flagsWithoutNestedDuplicates, featureFlags, search]);
 
   const tableRows = useMemo(() => {
-    const byKey = new Map(featureFlags.map((f) => [f.feature_key, f]));
+    const byKey = new Map(featureFlagsVisibleToViewer.map((f) => [f.feature_key, f]));
     const sorted = [...filteredRootFlags].sort((a, b) => a.feature_key.localeCompare(b.feature_key));
     const out: { flag: FeatureFlagRow; nestedUnderQa: boolean }[] = [];
     for (const flag of sorted) {
@@ -172,10 +206,10 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
       }
     }
     return out;
-  }, [filteredRootFlags, featureFlags]);
+  }, [filteredRootFlags, featureFlagsVisibleToViewer]);
 
   const mergedEffective = (featureKey: string) => {
-    const flag = featureFlags.find((f) => f.feature_key === featureKey);
+    const flag = featureFlagsVisibleToViewer.find((f) => f.feature_key === featureKey);
     if (!flag) return false;
     if (effectiveOverrideMap.has(featureKey)) return effectiveOverrideMap.get(featureKey) as boolean;
     const permissionDefault = permissionDefaultForFlag(featureKey);
@@ -274,6 +308,11 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
         </DialogHeader>
 
         <div className="space-y-3">
+          {!viewerCanSeeSubject ? (
+            <div className="rounded-md border border-border p-3 text-sm text-muted-foreground">
+              אין לך הרשאה לראות פיצ׳רים עבור משתמש זה.
+            </div>
+          ) : null}
           <div className="space-y-2">
             <Label htmlFor="feature-override-search">חיפוש</Label>
             <Input

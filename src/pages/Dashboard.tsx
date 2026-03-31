@@ -333,6 +333,7 @@ export default function Dashboard() {
   // - Permissions may be stored as an array or an object map.
   const forceMileageForMalachiroei =
     (profile?.email ?? user?.email ?? '').trim().toLowerCase() === 'malachiroei@gmail.com';
+  const isRoeiAdmin = forceMileageForMalachiroei;
 
   const canReportMileageFromPermissions = Array.isArray(profile?.permissions)
     ? profile.permissions
@@ -356,6 +357,7 @@ export default function Dashboard() {
 
   const quickLinks = visibleQuickLinksByFlags.filter((a) => {
     if (a.href === '/report-mileage') return canReportMileage;
+    if (a.href === '/team') return isRoeiAdmin;
     if (a.adminOnly && !isMainAdmin) return false;
     return true;
   });

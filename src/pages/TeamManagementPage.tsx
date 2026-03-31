@@ -63,6 +63,9 @@ export default function TeamManagementPage() {
     useOrgInvitations(orgId);
   const memberRows = members ?? [];
   const invitationRows = invitations ?? [];
+  const viewerEmail = (profile?.email ?? '').trim().toLowerCase();
+  const isRoeiAdmin = viewerEmail === 'malachiroei@gmail.com';
+  const isRavid = viewerEmail === 'ravidmalachi@gmail.com';
 
   /** מיילים שכבר יש להם שורה ב-profiles — לא מציגים אותם כהזמנה פתוחה */
   const registeredEmails = useMemo(() => {
@@ -221,7 +224,7 @@ export default function TeamManagementPage() {
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
               </div>
             ) : (
-              <Table>
+              <Table className="table-fixed">
                 <TableHeader>
                   <TableRow>
                     {showSensitiveColumns ? (
@@ -230,10 +233,10 @@ export default function TeamManagementPage() {
                         <span className="block font-mono text-[10px] font-normal text-muted-foreground">Org ID</span>
                       </TableHead>
                     ) : null}
-                    <TableHead>שם</TableHead>
-                    <TableHead>אימייל</TableHead>
-                    <TableHead className="min-w-[200px]">פיצ׳רים</TableHead>
-                    <TableHead className="text-center">סטטוס</TableHead>
+                    <TableHead className="align-middle">שם</TableHead>
+                    <TableHead className="align-middle">אימייל</TableHead>
+                    <TableHead className="min-w-[240px] align-middle">פיצ׳רים</TableHead>
+                    <TableHead className="text-center align-middle">סטטוס</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -246,25 +249,34 @@ export default function TeamManagementPage() {
                   ) : (
                     <>
                       {memberRows.map((m, mi) => {
+                        const memberEmail = (m.email ?? '').trim().toLowerCase();
+                        const canOpenFeatureOverrides =
+                          isRoeiAdmin ||
+                          (memberEmail && memberEmail === viewerEmail) ||
+                          (isRavid && memberEmail === 'roeima21@gmail.com');
                         return (
                           <TableRow key={m.id ?? `m-${mi}`}>
                             {showSensitiveColumns ? (
-                              <TableCell className="font-mono text-[10px] text-muted-foreground max-w-[140px] truncate">
+                              <TableCell className="font-mono text-[10px] text-muted-foreground max-w-[140px] truncate align-middle">
                                 {m.org_id ?? '—'}
                               </TableCell>
                             ) : null}
-                            <TableCell className="font-medium">{m.full_name || '—'}</TableCell>
-                            <TableCell className="text-muted-foreground">{m.email || '—'}</TableCell>
-                            <TableCell className="text-xs align-top">
-                              <p className="text-muted-foreground leading-snug mb-2">
+                            <TableCell className="font-medium align-middle">{m.full_name || '—'}</TableCell>
+                            <TableCell className="text-muted-foreground align-middle" dir="ltr">
+                              <span className="truncate block">{m.email || '—'}</span>
+                            </TableCell>
+                            <TableCell className="text-xs align-middle">
+                              <p className="text-muted-foreground leading-snug mb-2 max-w-[360px]">
                                 Overrides לפיצ׳רים גלובליים (למשתמש זה בלבד).
                               </p>
                               <Button
                                 type="button"
                                 size="sm"
                                 variant="outline"
-                                className="h-7 text-[11px]"
+                                className="h-8 text-[12px]"
+                                disabled={!canOpenFeatureOverrides}
                                 onClick={() => {
+                                  if (!canOpenFeatureOverrides) return;
                                   setFeatureOverridesMember(m);
                                   setFeatureOverridesDialogOpen(true);
                                 }}
@@ -272,7 +284,7 @@ export default function TeamManagementPage() {
                                 ניהול פיצ׳רים (משתמש)
                               </Button>
                             </TableCell>
-                            <TableCell className="text-center text-xs">
+                            <TableCell className="text-center text-xs align-middle">
                               {m?.status === 'pending_approval' ? (
                                 <div className="flex flex-col items-center justify-center gap-2">
                                   <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
@@ -306,45 +318,6 @@ export default function TeamManagementPage() {
                           </TableRow>
                         );
                       })}
-                      <TableRow className="border-t-2 border-border bg-muted/40 hover:bg-muted/40 pointer-events-none">
-                        <TableCell colSpan={tableColCount} className="py-3 text-sm font-semibold text-foreground">
-                          הזמנות פתוחות ({invitationRowsVisible.length})
-                          {invitationRows.length !== invitationRowsVisible.length ? (
-                            <span className="block text-xs font-normal text-muted-foreground">
-                              הוסרו {invitationRows.length - invitationRowsVisible.length} הזמנות שכבר רשומות
-                              ב-profiles
-                            </span>
-                          ) : null}
-                        </TableCell>
-                      </TableRow>
-                      {invitationRowsVisible.map((inv, idx) => (
-                        <TableRow key={inv.id ?? `inv-${idx}`} className="bg-muted/30">
-                          {showSensitiveColumns ? (
-                            <TableCell className="font-mono text-[10px] text-muted-foreground max-w-[140px] truncate">
-                              {inv.org_id ?? '—'}
-                            </TableCell>
-                          ) : null}
-                          <TableCell className="font-medium">המתנה להצטרפות</TableCell>
-                          <TableCell className="text-muted-foreground flex items-center gap-1" dir="ltr">
-                            <Mail className="h-3.5 w-3.5 shrink-0" />
-                            <span className="truncate">{inv.email ?? '—'}</span>
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">— (אחרי הצטרפות)</TableCell>
-                          <TableCell className="text-center text-xs">
-                            <div className="flex flex-col items-center gap-1">
-                              <span className="inline-flex items-center justify-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
-                                הזמנה פתוחה
-                              </span>
-                              {showSensitiveColumns && inv?.role != null && String(inv.role).trim() !== '' ? (
-                                <span className="text-[10px] text-muted-foreground">role: {String(inv.role)}</span>
-                              ) : null}
-                              {showSensitiveColumns && inv?.status != null && String(inv.status).trim() !== '' ? (
-                                <span className="text-[10px] text-muted-foreground">status: {String(inv.status)}</span>
-                              ) : null}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
                     </>
                   )}
                 </TableBody>

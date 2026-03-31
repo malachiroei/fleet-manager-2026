@@ -165,7 +165,17 @@ export default function AdminSettingsPage() {
           .select('id, feature_key, display_name_he, description, category, is_enabled_globally')
           .order('feature_key', { ascending: true });
         if (error) throw error;
-        return (data ?? []) as FeatureFlagRow[];
+        // Defensive: never show duplicate feature_key rows in UI.
+        const seen = new Set<string>();
+        const out: FeatureFlagRow[] = [];
+        for (const row of (data ?? []) as FeatureFlagRow[]) {
+          const key = String(row.feature_key ?? '').trim();
+          if (!key) continue;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          out.push(row);
+        }
+        return out;
       },
     });
 
