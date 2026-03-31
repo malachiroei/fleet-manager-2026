@@ -76,12 +76,11 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   /** קיר קשיח ייצור: fleet-manager-pro.com + www (גרסה בכותרת וכו') */
   const isProduction = isFleetManagerProHostname();
-  /** באנר "גרסת בדיקה": מוצג רק אם NODE_ENV אינו production */
-  const nodeEnv =
-    typeof process !== 'undefined' && typeof process.env?.NODE_ENV === 'string'
-      ? process.env.NODE_ENV
-      : (import.meta as any).env?.MODE;
-  const showStagingWarningBar = nodeEnv !== 'production';
+  /** באנר "גרסת בדיקה": מוצג רק בסביבת staging */
+  const isStaging =
+    (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) ||
+    (import.meta as any).env?.MODE === 'staging';
+  const showStagingWarningBar = isStaging;
 
   /** ריענון כותרת אחרי כתיבת fleet-pro-acknowledged-version (לפני reload) */
   const [proAckBump, setProAckBump] = useState(0);

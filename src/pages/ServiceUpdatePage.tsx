@@ -260,7 +260,9 @@ export default function ServiceUpdatePage() {
           invoicePhotoUrl: photoUrl,
         };
         const invokeResult = await supabase.functions.invoke('send-service-update-notification', {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          headers: {
+            Authorization: `Bearer ${token ?? ''}`,
+          },
           body: notifyBody,
         });
         if (invokeResult.error) {

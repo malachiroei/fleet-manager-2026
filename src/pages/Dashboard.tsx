@@ -168,13 +168,14 @@ export default function Dashboard() {
   const isMobile = useIsMobile();
   const { user, profile, hasPermission, isAdmin, isManager, isDriver, roles: userRoles, loading, activeOrgId } = useAuth();
   const { viewAsEmail } = useViewAs();
-  useFeatureFlags();
+  const { isPending: flagsPending } = useFeatureFlags();
   const { canAccessUi } = usePermissions();
   const showDashboardTreatmentCard = false;
   const showDashboardTestCard = false;
   const showMaintenanceFormCard = false;
   const totalAlerts = (alerts?.filter(a => a.status === 'expired' || a.status === 'warning').length) ?? 0;
   const isStatsLoading = isLoading || !stats;
+  const isInitialUiLoading = loading || flagsPending;
 
   console.log('Current Active Org ID:', activeOrgId);
 
@@ -443,6 +444,13 @@ export default function Dashboard() {
           <section className="space-y-3 pb-4">
             <h2 className="text-base font-semibold text-foreground">{t('dashboard.quickActions')}</h2>
             <div className="grid grid-cols-1 gap-3">
+              {isInitialUiLoading ? (
+                <>
+                  {[1, 2, 3, 4].map((i) => (
+                    <Skeleton key={i} className="h-14 w-full rounded-xl" />
+                  ))}
+                </>
+              ) : null}
               {showDashboardTreatmentCard ? (
                 <Card
                   role="button"
@@ -515,7 +523,7 @@ export default function Dashboard() {
                   </Card>
                 </Link>
               ) : null}
-              {quickLinks.map((action, idx) =>
+              {!isInitialUiLoading ? quickLinks.map((action, idx) =>
                 action.disabled ? (
                   <Card key={`${action.title}-${idx}`} className="h-full cursor-not-allowed opacity-55 touch-manipulation min-h-[48px]">
                     <CardContent className="p-4 flex items-center gap-3">
@@ -548,7 +556,7 @@ export default function Dashboard() {
                     </Card>
                   </Link>
                 )
-              )}
+              ) : null}
 
               {hasPermission('mileage_update') && (
                 <Card className="h-full border-dashed touch-manipulation min-h-[48px] cursor-pointer" style={{ touchAction: 'manipulation' }}>
@@ -578,6 +586,13 @@ export default function Dashboard() {
           <section className="space-y-3">
             <h2 className="text-lg font-semibold text-foreground">{t('dashboard.quickActions')}</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+              {isInitialUiLoading ? (
+                <>
+                  {[1, 2, 3, 4].map((i) => (
+                    <Skeleton key={i} className="h-[48px] w-full rounded-xl" />
+                  ))}
+                </>
+              ) : null}
               {showDashboardTreatmentCard ? (
                 <Card
                   role="button"
@@ -656,7 +671,7 @@ export default function Dashboard() {
                   </Card>
                 </Link>
               ) : null}
-              {quickLinks.map((action, idx) =>
+              {!isInitialUiLoading ? quickLinks.map((action, idx) =>
                 action.disabled ? (
                   <Card key={`${action.title}-${idx}`} className="h-full cursor-not-allowed opacity-55 touch-manipulation">
                     <CardContent className="p-4 flex items-center gap-3">
@@ -694,7 +709,7 @@ export default function Dashboard() {
                     </Card>
                   </Link>
                 )
-              )}
+              ) : null}
 
               {hasPermission('mileage_update') && (
                 <Card className="h-full border-dashed touch-manipulation min-h-[48px] cursor-pointer" style={{ touchAction: 'manipulation' }}>
