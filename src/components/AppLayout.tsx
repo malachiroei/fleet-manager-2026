@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type ElementType, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useVehicleSpecDirty } from '@/contexts/VehicleSpecDirtyContext';
 import { useViewAs } from '@/contexts/ViewAsContext';
@@ -56,6 +56,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     isAdmin,
     isManager,
     isDriver,
+    hasPermission,
   } = useAuth();
   const isDriverOnlyHeader = Boolean(isDriver && !isManager && !isAdmin);
   /** מנהל ארגון / מנהל צי — כפתורי ניהול בכותרת (ארגון, צוות) */
@@ -178,7 +179,11 @@ export function AppLayout({ children }: AppLayoutProps) {
   console.log('CURRENT PROFILE STATUS:', profile?.status);
 
   const isMainAdmin = email === 'malachiroei@gmail.com';
-  const canAccessGoldenManagementLinks = isOrgAdminOrManager && isMainAdmin;
+  const canManageTeamUi = isMainAdmin || hasPermission('manage_team') || isOrgAdminOrManager;
+  const canManageOrgUi = isMainAdmin || hasPermission('admin_access') || isOrgAdminOrManager;
+
+  /** Gold header buttons (Roei Admin + Ravid Manager). */
+  const canAccessGoldenManagementLinks = !isDriverOnlyHeader && (canManageOrgUi || canManageTeamUi);
   const isDriverRoei = email === 'roeima21@gmail.com';
   const isRavid = email === 'ravidmalachi@gmail.com';
 
@@ -239,20 +244,22 @@ export function AppLayout({ children }: AppLayoutProps) {
   };
 
   type HeaderAction =
-    | { key: 'manage_org'; label: string; to: string; icon: React.ElementType; showOn: 'mobileMenu' | 'desktop' | 'both' }
-    | { key: 'manage_team'; label: string; to: string; icon: React.ElementType; showOn: 'mobileMenu' | 'desktop' | 'both' }
-    | { key: 'logout'; label: string; onSelect: () => void; icon: React.ElementType; showOn: 'mobileMenu' | 'desktop' | 'both' };
+    | { key: 'manage_org'; label: string; to: string; icon: ElementType; showOn: 'mobileMenu' | 'desktop' | 'both' }
+    | { key: 'manage_team'; label: string; to: string; icon: ElementType; showOn: 'mobileMenu' | 'desktop' | 'both' }
+    | { key: 'logout'; label: string; onSelect: () => void; icon: ElementType; showOn: 'mobileMenu' | 'desktop' | 'both' };
 
   const availableActions = useMemo<HeaderAction[]>(() => {
     const out: HeaderAction[] = [];
     // Secondary actions: collapse into hamburger on small screens.
-    if (canAccessGoldenManagementLinks) {
-      out.push({ key: 'manage_org', label: 'ארגון', to: '/admin/org-settings', icon: Building2, showOn: 'both' });
+    if (canManageOrgUi) {
+      out.push({ key: 'manage_org', label: 'ניהול', to: '/admin/org-settings', icon: Building2, showOn: 'both' });
+    }
+    if (canManageTeamUi) {
       out.push({ key: 'manage_team', label: 'ניהול צוות', to: '/team', icon: UserCog, showOn: 'both' });
     }
     out.push({ key: 'logout', label: 'התנתקות', onSelect: handleLogout, icon: LogOut, showOn: 'both' });
     return out;
-  }, [canAccessGoldenManagementLinks]);
+  }, [canManageOrgUi, canManageTeamUi]);
 
   const ThemeToggle = () => (
     <button
@@ -638,7 +645,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       </div>
 
       {/* Desktop: stable row; management actions from centralized list */}
-      <div className="relative z-[9999] hidden sm:flex items-center justify-end gap-3 min-w-[420px]">
+      <div className="relative z-[9999] hidden sm:flex flex-wrap items-center justify-end gap-3">
         <PwaInstallButton />
         <ThemeToggle />
         <LanguageSwitcher />

@@ -12,8 +12,10 @@ import type { PermissionKey } from '@/lib/permissions';
  * to avoid showing disabled UI briefly in view-as mode.
  */
 export function usePermissions() {
-  const { hasPermission } = useAuth();
+  const { user, profile, hasPermission } = useAuth();
   const { data: featureFlags } = useFeatureFlags();
+  const email = (profile?.email ?? user?.email ?? '').trim().toLowerCase();
+  const isSuperAdmin = email === 'malachiroei@gmail.com';
 
   const canAccessPermission = useCallback(
     (permission?: PermissionKey) => {
@@ -26,10 +28,13 @@ export function usePermissions() {
   const canAccessFeature = useCallback(
     (featureKey?: string) => {
       if (!featureKey) return true;
+      if (featureKey === 'qa_team') {
+        return isSuperAdmin || hasPermission('manage_team');
+      }
       if (!featureFlags) return false;
       return isFeatureEnabled(featureFlags, featureKey);
     },
-    [featureFlags],
+    [featureFlags, hasPermission, isSuperAdmin],
   );
 
   const canAccessUi = useCallback(
