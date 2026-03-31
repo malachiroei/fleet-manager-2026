@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, createContext, useContext, useCallback, ReactNode } from 'react';
-import { User, Session } from '@supabase/supabase-js';
+import { User, Session, type AuthChangeEvent } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import type { AppRole, Profile } from '@/types/fleet';
 import { hasPermission as checkPermission, type PermissionKey } from '@/lib/permissions';
@@ -265,30 +265,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setLoading(true);
+      (event: AuthChangeEvent, session) => {
         setSession(session);
         setUser(session?.user ?? null);
 
-        if (session?.user) {
-          setTimeout(() => {
-            void (async () => {
-              await Promise.allSettled([
-                fetchUserRoles(session.user.id),
-                fetchProfileRef.current(session.user.id),
-                fetchMemberOrganizations(session.user.id),
-              ]);
-              setLoading(false);
-            })();
-          }, 0);
-        } else {
+        if (!session?.user) {
           setRoles([]);
           setProfile(null);
           setMemberOrganizations([]);
           setActiveOrgIdState(null);
           activeOrgInitializedRef.current = false;
           setLoading(false);
+          return;
         }
+
+        // Token refresh often fires when the app returns from the camera / file picker.
+        // Toggling global `loading` here unmounts `ProtectedRoute` content and wipes in-memory form state.
+        if (event === 'TOKEN_REFRESHED') {
+          return;
+        }
+
+        // User metadata updates: refresh in the background without the full-screen auth gate.
+        if (event === 'USER_UPDATED') {
+          void (async () => {
+            await Promise.allSettled([
+              fetchUserRoles(session.user.id),
+              fetchProfileRef.current(session.user.id),
+              fetchMemberOrganizations(session.user.id),
+            ]);
+          })();
+          return;
+        }
+
+        setLoading(true);
+        setTimeout(() => {
+          void (async () => {
+            await Promise.allSettled([
+              fetchUserRoles(session.user.id),
+              fetchProfileRef.current(session.user.id),
+              fetchMemberOrganizations(session.user.id),
+            ]);
+            setLoading(false);
+          })();
+        }, 0);
       }
     );
 

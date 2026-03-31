@@ -245,6 +245,13 @@ export default function Dashboard() {
       featureFlagKey: 'qa_report_mileage',
     },
     {
+      title: 'עדכון טיפול',
+      href: '/vehicles/service-update',
+      icon: Wrench,
+      permission: 'vehicles',
+      featureFlagKey: 'qa_service_update',
+    },
+    {
       title: t('navigation.procedure6Complaints'),
       href: '/procedure6-complaints',
       icon: AlertTriangle,

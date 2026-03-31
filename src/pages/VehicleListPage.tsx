@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useVehicles } from '@/hooks/useVehicles';
+import { usePermissions } from '@/hooks/usePermissions';
+import type { Vehicle } from '@/types/fleet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Search, Gauge } from 'lucide-react';
+import { Plus, Search, Gauge, Wrench } from 'lucide-react';
 
 function fmtDate(d: string | null): string {
   if (!d) return '—';
@@ -11,7 +13,7 @@ function fmtDate(d: string | null): string {
   return `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}/${dt.getFullYear()}`;
 }
 
-function VehicleCard({ vehicle }: { vehicle: any; key?: string }) {
+function VehicleCard({ vehicle }: { vehicle: Vehicle }) {
   return (
     <div className="audi-premium-card p-4 md:p-8">
       <div className="mb-2 text-lg md:text-2xl font-black neon-title uppercase">
@@ -32,6 +34,20 @@ function VehicleCard({ vehicle }: { vehicle: any; key?: string }) {
         <div className="bg-white/5 rounded-xl md:rounded-2xl p-2 md:p-4 flex flex-col items-center border border-white/10">
           <span className="white-data text-sm md:text-lg text-center leading-tight">{vehicle.ownership_type ?? '—'}</span>
           <span className="data-label-glow text-xs">בעלות</span>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2 md:gap-4 mb-3">
+        <div className="bg-white/5 rounded-xl md:rounded-2xl p-2 md:p-4 flex flex-col items-center border border-white/10">
+          <span className="white-data text-base md:text-xl tabular-nums" dir="ltr">
+            {fmtDate(vehicle.last_service_date)}
+          </span>
+          <span className="data-label-glow text-xs text-center">תאריך טיפול אחרון</span>
+        </div>
+        <div className="bg-white/5 rounded-xl md:rounded-2xl p-2 md:p-4 flex flex-col items-center border border-white/10">
+          <span className="white-data text-base md:text-xl tabular-nums" dir="ltr">
+            {vehicle.last_service_km != null ? vehicle.last_service_km.toLocaleString() : '—'}
+          </span>
+          <span className="data-label-glow text-xs text-center">ק״מ טיפול אחרון</span>
         </div>
       </div>
       <div className="grid grid-cols-3 gap-2 mb-4">
@@ -68,6 +84,8 @@ function VehicleCard({ vehicle }: { vehicle: any; key?: string }) {
 
 export default function VehicleListPage() {
   const { data: vehicles, isLoading } = useVehicles();
+  const { canAccessUi } = usePermissions();
+  const showServiceUpdate = canAccessUi({ permission: 'vehicles', featureKey: 'qa_service_update' });
   const [search, setSearch] = useState('');
   const filtered = vehicles?.filter(v => v.plate_number.includes(search) || v.manufacturer.toLowerCase().includes(search.toLowerCase()));
 
@@ -90,6 +108,17 @@ export default function VehicleListPage() {
                 עדכון קילומטראז׳
               </Button>
             </Link>
+            {showServiceUpdate ? (
+              <Link to="/vehicles/service-update" className="w-full sm:w-auto">
+                <Button
+                  variant="outline"
+                  className="w-full sm:w-auto border-purple-500/40 bg-white/5 hover:bg-purple-500/10 text-purple-100 font-semibold gap-2"
+                >
+                  <Wrench className="h-4 w-4" />
+                  עדכון טיפול
+                </Button>
+              </Link>
+            ) : null}
           </div>
         </div>
         <div className="relative max-w-xl">
