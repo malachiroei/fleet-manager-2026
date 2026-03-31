@@ -227,6 +227,24 @@ export default function ServiceUpdatePage() {
 
       await updateVehicle.mutateAsync(payload);
 
+      // Persist a service log entry (email trigger depends on this succeeding).
+      const orgId = resolvedVehicle.org_id ?? null;
+      const { error: serviceLogError } = await supabase.from('vehicle_service_logs' as any).insert({
+        org_id: orgId,
+        vehicle_id: resolvedVehicle.id,
+        service_type: 'service_update',
+        service_date: serviceDate,
+        odometer_km: mileageNum,
+        invoice_photo_url: photoUrl,
+        created_by: user.id,
+        metadata: {
+          next_service_date: nextServiceDate,
+          next_service_km: nextServiceKm,
+          service_interval_km: resolvedVehicle.service_interval_km,
+        },
+      } as any);
+      if (serviceLogError) throw serviceLogError;
+
       try {
         await supabase.from('vehicle_documents').insert({
           vehicle_id: resolvedVehicle.id,
@@ -248,34 +266,33 @@ export default function ServiceUpdatePage() {
       try {
         const sessionRes = await supabase.auth.getSession();
         const token = sessionRes?.data?.session?.access_token ?? null;
-        const notifyBody = {
-          subject: 'עדכון טיפול',
-          plateNumber: resolvedVehicle.plate_number,
-          vehicleLabel,
-          serviceDate,
-          nextServiceDate,
-          currentMileage: mileageNum,
-          nextServiceKm,
-          serviceIntervalKm: resolvedVehicle.service_interval_km,
-          invoicePhotoUrl: photoUrl,
-        };
-        const invokeResult = await supabase.functions.invoke('send-service-update-notification', {
+        const invokeResult = await supabase.functions.invoke('send-mileage-notification', {
           headers: {
             Authorization: `Bearer ${token ?? ''}`,
           },
-          body: notifyBody,
+          body: {
+            to: 'malachiroei@gmail.com',
+            subject: `עדכון טיפול - ${resolvedVehicle.plate_number}`,
+            serviceType: 'service_update',
+            plateNumber: resolvedVehicle.plate_number,
+            odometerReading: mileageNum,
+            serviceDate,
+            reportUrl: photoUrl,
+            photoUrl,
+          },
         });
         if (invokeResult.error) {
-          console.error('[send-service-update-notification]', invokeResult.error);
+          console.error('[send-mileage-notification] (service update) invoke returned error', invokeResult.error);
         }
       } catch (notifyErr) {
-        console.error('[send-service-update-notification] threw', notifyErr);
+        console.error('[send-mileage-notification] (service update) threw', notifyErr);
       }
 
       queryClient.invalidateQueries({ queryKey: ['vehicle', resolvedVehicle.id] });
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['vehicle-documents', resolvedVehicle.id] });
 
+      toast({ title: 'הנתונים נשמרו והעדכון נשלח במייל בהצלחה' });
       navigate(`/vehicles/${resolvedVehicle.id}`);
     } catch (err: unknown) {
       console.error('[ServiceUpdatePage] submit failed', err);
