@@ -76,8 +76,11 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   /** קיר קשיח ייצור: fleet-manager-pro.com + www (גרסה בכותרת וכו') */
   const isProduction = isFleetManagerProHostname();
-  /** באנר "גרסת בדיקה": מוסתר ב־fleet-manager-pro.com + www (ייצור) */
-  const showStagingWarningBar = showFleetStagingEnvironmentBanner();
+  /** באנר "גרסת בדיקה": מוצג רק כשלא בפרודקשן (env-based) */
+  const isProdEnv =
+    (typeof process !== 'undefined' && process.env?.NODE_ENV === 'production') ||
+    (typeof import.meta !== 'undefined' && Boolean((import.meta as any).env?.PROD));
+  const showStagingWarningBar = !isProdEnv;
 
   /** ריענון כותרת אחרי כתיבת fleet-pro-acknowledged-version (לפני reload) */
   const [proAckBump, setProAckBump] = useState(0);

@@ -98,6 +98,7 @@ export async function createFastPreviewUrl(source: Blob): Promise<string | null>
   } catch {
     return null;
   }
+}
 
 /**
  * Plain `accept="image/*"` on desktop lets the OS picker offer files, webcam, or “Take photo” where supported.
