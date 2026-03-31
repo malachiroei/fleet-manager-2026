@@ -57,50 +57,23 @@ import {
   parseSemverSegments,
   toCanonicalThreePartVersion,
   versionNotOlderThanBundle,
-  isFleetManagerProHostname,
 } from '@/lib/versionManifest';
 import { isFleetProductionHost } from '@/lib/pwaPromptRegister';
 import { FLEET_KV_TABLE } from '@/lib/fleetKvTable';
-import { createUiSyncBundle } from '@/lib/featureFlagRegistry';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-const UI_SYNC_ALLOWED_EMAIL = 'malachiroei@gmail.com';
-/** סנכרון release_snapshot — רק לרועי (מופיע ב-localhost וב-staging כמו בכל סביבה שבה הוא מחובר) */
+const PROD_RELEASE_SYNC_LABEL = 'סנכרון הגדרות לפרודקשן (עדכון טפסים ולוגואים)';
+/** סנכרון release_snapshot — רק ל-malachiroei@gmail.com */
 const PROD_RELEASE_SYNC_EMAIL = 'malachiroei@gmail.com';
-const UI_SYNC_PROD_REPO = 'malachiroei/fleet-manager-2026';
-const UI_SYNC_BUNDLE_PATH = 'ui-sync-bundle.json';
 
 export default function AdminSettingsPage() {
     const { theme, setTheme } = useTheme();
     const queryClient = useQueryClient();
     const { isAdmin, profile, refreshProfile, user, activeOrgId } = useAuth();
-    const isFleetProDomain = isFleetManagerProHostname();
     const [lastPricingUpload, setLastPricingUpload] = useState<string | null>(localStorage.getItem('last_pricing_upload'));
     const lastVehicleUpload = localStorage.getItem('last_vehicle_upload');
     const lastDriverUpload = localStorage.getItem('last_driver_upload');
-    const showDevTools = (() => {
-      if (typeof window === 'undefined') return false;
-      const host = (window.location.hostname || '').toLowerCase();
-      const isAllowedHost =
-        host.includes('localhost') ||
-        host.includes('127.0.0.1') ||
-        (host.includes('vercel.app') && (host.includes('dev') || host.includes('staging')));
 
-      // Safety: never show dev/admin tools in production hostnames.
-      // (Prevents enabling via localStorage flag in prod.)
-      if (!isAllowedHost) return false;
-
-      try {
-        const flag = localStorage.getItem('fleet-manager-dev-tools');
-        if (flag === '1' || flag === 'true') return true;
-      } catch {
-        // ignore
-      }
-
-      return true;
-    })();
-
-    const [isPublishingUiSyncBundle, setIsPublishingUiSyncBundle] = useState(false);
     const [pushProdSyncBusy, setPushProdSyncBusy] = useState(false);
 
     const settingsOrgIdForSnapshot = activeOrgId ?? profile?.org_id ?? null;
@@ -109,80 +82,10 @@ export default function AdminSettingsPage() {
     });
     const manifestUiGates = EMPTY_FLEET_MANIFEST_UI_GATES;
 
-    const canPublishUiToProduction = (user?.email ?? '').trim().toLowerCase() === UI_SYNC_ALLOWED_EMAIL;
-
     const canShowProdReleaseSyncButton = useMemo(() => {
       const e = (user?.email ?? profile?.email ?? '').trim().toLowerCase();
       return e === PROD_RELEASE_SYNC_EMAIL;
     }, [user?.email, profile?.email]);
-
-    const handlePublishUiUpdatesToProduction = useCallback(async () => {
-      const githubToken = String(import.meta.env.VITE_GITHUB_UI_SYNC_TOKEN ?? '').trim();
-      if (!githubToken) {
-        toast.error('חסר VITE_GITHUB_UI_SYNC_TOKEN בקובץ הסביבה של הטסט');
-        return;
-      }
-      if (!canPublishUiToProduction) {
-        toast.error('אין הרשאה להפצת עדכוני UI לפרודקשן');
-        return;
-      }
-
-      setIsPublishingUiSyncBundle(true);
-      try {
-        const bundle = createUiSyncBundle(codeVersion);
-        const owner = 'malachiroei';
-        const repo = 'fleet-manager-2026';
-        const branch = 'main';
-        const path = UI_SYNC_BUNDLE_PATH;
-        const apiBase = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
-        const headers: Record<string, string> = {
-          Authorization: `Bearer ${githubToken}`,
-          Accept: 'application/vnd.github+json',
-          'Content-Type': 'application/json',
-        };
-
-        let currentSha: string | undefined;
-        const getRes = await fetch(`${apiBase}?ref=${encodeURIComponent(branch)}`, { method: 'GET', headers });
-        if (getRes.ok) {
-          const getJson = (await getRes.json()) as { sha?: unknown };
-          if (typeof getJson.sha === 'string' && getJson.sha.trim()) currentSha = getJson.sha.trim();
-        } else if (getRes.status !== 404) {
-          const t = await getRes.text();
-          throw new Error(`GitHub read failed (${getRes.status}): ${t || 'unknown error'}`);
-        }
-
-        const bundleJson = JSON.stringify(bundle, null, 2);
-        const base64Content = btoa(unescape(encodeURIComponent(bundleJson)));
-        const putBody: {
-          message: string;
-          content: string;
-          branch: string;
-          sha?: string;
-        } = {
-          message: `chore(ui-sync): publish UI bundle ${bundle.ui_version}`,
-          content: base64Content,
-          branch,
-        };
-        if (currentSha) putBody.sha = currentSha;
-
-        const putRes = await fetch(apiBase, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify(putBody),
-        });
-        if (!putRes.ok) {
-          const t = await putRes.text();
-          throw new Error(`GitHub upload failed (${putRes.status}): ${t || 'unknown error'}`);
-        }
-
-        toast.success(`עודכן ${UI_SYNC_BUNDLE_PATH} ב-${UI_SYNC_PROD_REPO}`);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : 'הפצת UI נכשלה';
-        toast.error(msg);
-      } finally {
-        setIsPublishingUiSyncBundle(false);
-      }
-    }, [canPublishUiToProduction]);
 
     const handlePushReleaseSnapshotToProd = useCallback(async () => {
       const snapshotOrgId = activeOrgId ?? profile?.org_id ?? null;
@@ -549,47 +452,6 @@ export default function AdminSettingsPage() {
       }
     };
 
-    const runPrintTest = () => {
-      const printWindow = window.open('', '_blank', 'width=900,height=700');
-
-      if (!printWindow) {
-        toast.error('חלון ההדפסה נחסם על ידי הדפדפן. יש לאפשר חלונות קופצים ולנסות שוב');
-        return;
-      }
-
-      const generatedAt = new Date().toLocaleString('he-IL');
-
-      printWindow.document.write(`
-        <!doctype html>
-        <html lang="he" dir="rtl">
-          <head>
-            <meta charset="utf-8" />
-            <title>בדיקת הדפסה - Fleet Manager 2026</title>
-            <style>
-              body { font-family: Arial, sans-serif; margin: 32px; color: #111827; }
-              h1 { margin: 0 0 12px; font-size: 24px; }
-              p { margin: 4px 0; font-size: 16px; }
-              .box { margin-top: 16px; border: 1px solid #d1d5db; border-radius: 10px; padding: 16px; }
-            </style>
-          </head>
-          <body>
-            <h1>בדיקת הדפסה</h1>
-            <p>המערכת פתחה בהצלחה חלון הדפסה.</p>
-            <p>תאריך יצירה: ${generatedAt}</p>
-            <div class="box">
-              <p>אם המסמך הודפס או הופיע בתצוגה מקדימה, בדיקת ההדפסה עברה בהצלחה.</p>
-            </div>
-          </body>
-        </html>
-      `);
-
-      printWindow.document.close();
-      printWindow.focus();
-      setTimeout(() => {
-        printWindow.print();
-      }, 150);
-    };
- 
     const fetchBackupPayload = async () => {
       const appIdentifier = 'fleet-manager-pro';
       const version = '2.0';
@@ -903,8 +765,8 @@ export default function AdminSettingsPage() {
             <Card className="border-primary/30 bg-primary/5">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Upload className="h-5 w-5" />
-                  סנכרון הגדרות לפרודקשן
+                  <Upload className="h-5 w-5 shrink-0" />
+                  {PROD_RELEASE_SYNC_LABEL}
                 </CardTitle>
                 <CardDescription>
                   יוצר <code className="text-xs">release_snapshot.json</code> מהגדרות הארגון הפעיל, מוריד עותק
@@ -916,25 +778,22 @@ export default function AdminSettingsPage() {
                   <TooltipTrigger asChild>
                     <Button
                       type="button"
-                      className="gap-2"
+                      className="gap-2 max-w-full whitespace-normal text-right"
                       disabled={pushProdSyncBusy || !settingsOrgIdForSnapshot}
                       onClick={() => void handlePushReleaseSnapshotToProd()}
                     >
                       {pushProdSyncBusy ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
                       ) : (
-                        <Upload className="h-4 w-4" />
+                        <Upload className="h-4 w-4 shrink-0" />
                       )}
-                      סנכרון הגדרות לפרודקשן
+                      {PROD_RELEASE_SYNC_LABEL}
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="max-w-sm text-center">
-                    (עדכון טפסים, פוליסות ולוגואים בפרו)
+                    דורש ארגון פעיל · מוריד JSON ומפעיל דחיפה ל-Git (אם ה-Edge Function מוגדר)
                   </TooltipContent>
                 </Tooltip>
-                <p className="text-xs text-muted-foreground">
-                  (עדכון טפסים, פוליסות ולוגואים בפרו)
-                </p>
               </CardContent>
             </Card>
           ) : null}
@@ -1047,12 +906,10 @@ export default function AdminSettingsPage() {
                 <div>
                   <CardTitle>מידע מערכת</CardTitle>
                   <CardDescription>
-                    Fleet Manager Pro — גרסת בנדל (מהקוד המפורסם){' '}
-                    <span className={codeVersion === latestManifestVersion ? 'text-[#10b981]' : undefined}>
-                      {codeVersion}
-                    </span>
+                    גרסת האפליקציה (מ־<code className="text-[10px]">package.json</code>, כמו בכותרת):{' '}
+                    <span className="font-mono text-foreground">{codeVersion}</span>
                     <span className="text-muted-foreground text-xs block mt-1">
-                      מניפסט אחרון (ענן / v-dev-only): {latestManifestVersion}
+                      מניפסט עדכונים (ענן / dev): {latestManifestVersion}
                     </span>
                   </CardDescription>
                 </div>
@@ -1088,19 +945,20 @@ export default function AdminSettingsPage() {
                 </div>
               </div>
               <div className="pt-3 border-t border-border mt-3 space-y-3">
-                <Button variant="outline" size="sm" onClick={runPrintTest}>
-                  בדיקת הדפסה
-                </Button>
-
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                   <Button
                     variant="destructive"
                     size="sm"
                     onClick={() => void forceManualVersionUpdate()}
                     disabled={isCheckingUpdates || isBackingUpSettings || isRestoringSettings}
                   >
-                    עדכון גרסה ידני
+                    ניקוי זיכרון ורענון אפליקציה
                   </Button>
+                  <span className="text-xs text-muted-foreground">
+                    (מנקה מטמון דפדפן במקרה של תקלה)
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
                   <Button variant="outline" size="sm" onClick={backupSettings} disabled={isBackingUpSettings}>
                     {isBackingUpSettings ? (
                       <Loader2 className="h-4 w-4 animate-spin ml-2" />

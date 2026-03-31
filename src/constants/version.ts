@@ -8,9 +8,6 @@ export const APP_VERSION = '1.0.1';
 export const version = String((pkg as { version?: string }).version ?? '').trim() || '0.0.0';
 export default version;
 
-/** גרסת כותרת ברירת מחדל בייצור לפני אישור "עדכן עכשיו" (מניעת הצגת גרסת בנדל לפני הסכמה) */
-export const FLEET_PRO_DEFAULT_HEADER_VERSION = '2.5.12';
-
 /** localStorage: גרסה שאושרה בייצור אחרי "עדכן עכשיו" — משמש השוואה מול app_version (וגרסת מניפסט אם קיימת) */
 export const FLEET_PRO_ACK_VERSION_STORAGE_KEY = 'fleet-pro-acknowledged-version';
 

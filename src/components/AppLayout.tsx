@@ -28,15 +28,19 @@ import {
   version as bundleVersion,
   FLEET_PRO_ACK_VERSION_STORAGE_KEY,
   FLEET_PRO_ACK_VERSION_UPDATED_EVENT,
-  FLEET_PRO_DEFAULT_HEADER_VERSION,
 } from '@/constants/version';
-import {
-  compareSemverExtended,
-  isFleetManagerProHostname,
-  normalizeVersion,
-  showFleetStagingEnvironmentBanner,
-  toCanonicalThreePartVersion,
-} from '@/lib/versionManifest';
+import { isFleetManagerProHostname, normalizeVersion } from '@/lib/versionManifest';
+
+function isLocalDevHostname(hostname: string): boolean {
+  const h = hostname.trim().toLowerCase();
+  if (!h) return false;
+  if (h === 'localhost' || h === '127.0.0.1' || h === '[::1]') return true;
+  if (h.endsWith('.local')) return true;
+  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
+  if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
+  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
+  return false;
+}
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -78,22 +82,12 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   /** קיר קשיח ייצור: fleet-manager-pro.com + www (גרסה בכותרת וכו') */
   const isProduction = isFleetManagerProHostname();
-  /** באנר "גרסת בדיקה": מוצג רק בסביבת staging */
+  /** באנר "גרסת בדיקה": staging ב-Vercel + כל מארח פיתוח מקומי נפוץ */
   const isStaging =
     (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) ||
-    (typeof window !== 'undefined' &&
-      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) ||
-    (import.meta as any).env?.MODE === 'staging';
+    (typeof window !== 'undefined' && isLocalDevHostname(window.location.hostname)) ||
+    import.meta.env.MODE === 'staging';
   const showStagingWarningBar = isStaging;
-
-  /** ריענון כותרת אחרי כתיבת fleet-pro-acknowledged-version (לפני reload) */
-  const [proAckBump, setProAckBump] = useState(0);
-  useEffect(() => {
-    if (!isProduction) return;
-    const bump = () => setProAckBump((n) => n + 1);
-    window.addEventListener(FLEET_PRO_ACK_VERSION_UPDATED_EVENT, bump);
-    return () => window.removeEventListener(FLEET_PRO_ACK_VERSION_UPDATED_EVENT, bump);
-  }, [isProduction]);
 
   /**
    * ייצור: אחרי `FLEET_PRO_ACK_VERSION_UPDATED_EVENT` — אם `fleet-pro-acknowledged-version` בפועל השתנה,
@@ -124,22 +118,8 @@ export function AppLayout({ children }: AppLayoutProps) {
     return () => window.removeEventListener(FLEET_PRO_ACK_VERSION_UPDATED_EVENT, onAckEvent);
   }, [isProduction]);
 
-  /** מוצג בכותרת — בטסט = גרסת בנדל; בייצור = מאושרת או ברירת מחדל עד "עדכן עכשיו" */
-  const headerDisplayVersion = useMemo(() => {
-    if (!isProduction) return normalizeVersion(bundleVersion);
-    let ack = FLEET_PRO_DEFAULT_HEADER_VERSION;
-    try {
-      const stored = localStorage.getItem(FLEET_PRO_ACK_VERSION_STORAGE_KEY);
-      if (stored?.trim()) ack = stored.trim();
-    } catch {
-      // ignore
-    }
-    const ackN = toCanonicalThreePartVersion(normalizeVersion(ack)) || normalizeVersion(ack);
-    const bundleN = toCanonicalThreePartVersion(normalizeVersion(bundleVersion)) || normalizeVersion(bundleVersion);
-    /** בנדל חדש יותר מהמאושר — מציגים את המאושר עד "עדכן עכשיו" (semver מורחב) */
-    if (compareSemverExtended(bundleN, ackN) > 0) return ackN;
-    return bundleN;
-  }, [isProduction, bundleVersion, proAckBump]);
+  /** מוצג בכותרת — תמיד גרסת הבנדל מ־package.json (זהה לשורת «מידע מערכת») */
+  const headerDisplayVersion = useMemo(() => normalizeVersion(bundleVersion), [bundleVersion]);
 
   useEffect(() => {
     console.log('TeamMembers for Org:', activeOrgId, {
@@ -750,8 +730,8 @@ export function AppLayout({ children }: AppLayoutProps) {
                     isMgmt ? managementNavClass : 'border-white/10 bg-white/5 text-white/80 hover:bg-white/10'
                   )}
                 >
-                  <Icon className={cn('h-3.5 w-3.5', isMgmt ? 'text-amber-200' : 'text-white/70')} />
-                  <span className="hidden sm:inline">{a.label}</span>
+                  <Icon className={cn('h-3.5 w-3.5 shrink-0', isMgmt ? 'text-amber-200' : 'text-white/70')} />
+                  <span className="whitespace-nowrap">{a.label}</span>
                 </Link>
               );
             }
@@ -982,18 +962,12 @@ export function AppLayout({ children }: AppLayoutProps) {
           headerStickyTopClass
         )}
       >
-        <div className="mx-auto flex max-w-[1920px] w-full h-full items-center px-4 md:px-6">
-          {/* Thin sticky top bar: logo left, drawer+avatar right */}
-          <div className="flex w-full items-center justify-between gap-3">
-            <BrandAndHome />
+        <div className="mx-auto flex h-full w-full max-w-[1920px] items-center gap-2 px-4 md:gap-3 md:px-6">
+          <BrandAndHome />
+          <div className="flex min-w-0 flex-1 items-center justify-end">
             <TopToolsBlock />
           </div>
-          <div
-            className={cn(
-              'hidden md:flex w-full justify-start',
-              isRtl ? 'justify-end' : 'justify-start'
-            )}
-          >
+          <div className={cn('hidden shrink-0 md:block', isRtl ? 'text-right' : 'text-left')}>
             <UserInline />
           </div>
         </div>
