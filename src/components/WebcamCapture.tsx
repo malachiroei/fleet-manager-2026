@@ -37,6 +37,29 @@ function stopStream(stream: MediaStream | null) {
   stream?.getTracks().forEach((t) => t.stop());
 }
 
+async function getUserMediaWithTimeout(
+  constraints: MediaStreamConstraints,
+  timeoutMs: number
+): Promise<{ ok: true; stream: MediaStream } | { ok: false; reason: 'timeout' | 'error' }> {
+  let timedOut = false;
+  const t = setTimeout(() => {
+    timedOut = true;
+  }, Math.max(0, timeoutMs));
+
+  try {
+    const stream = await navigator.mediaDevices!.getUserMedia(constraints);
+    if (timedOut) {
+      stopStream(stream);
+      return { ok: false, reason: 'timeout' };
+    }
+    return { ok: true, stream };
+  } catch {
+    return { ok: false, reason: 'error' };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 function isAndroidUa(): boolean {
   if (typeof navigator === 'undefined') return false;
   return /Android/i.test(navigator.userAgent);
@@ -111,14 +134,6 @@ function buildEnvironmentConstraintChain(storedRearDeviceId: string | null): Med
     {
       video: {
         facingMode: { exact: 'environment' },
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
-      },
-      audio: false,
-    },
-    {
-      video: {
-        facingMode: { exact: 'environment' },
         width: { ideal: 1280 },
         height: { ideal: 720 },
       },
@@ -131,14 +146,6 @@ function buildEnvironmentConstraintChain(storedRearDeviceId: string | null): Med
         {
           video: {
             deviceId: { exact: storedRearDeviceId },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-          },
-          audio: false,
-        },
-        {
-          video: {
-            deviceId: { exact: storedRearDeviceId },
             width: { ideal: 1280 },
             height: { ideal: 720 },
           },
@@ -148,14 +155,6 @@ function buildEnvironmentConstraintChain(storedRearDeviceId: string | null): Med
       ]
     : [];
   const idealEnv: MediaStreamConstraints[] = [
-    {
-      video: {
-        facingMode: { ideal: 'environment' },
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
-      },
-      audio: false,
-    },
     {
       video: {
         facingMode: { ideal: 'environment' },
@@ -262,10 +261,8 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
   const [presentingProfile, setPresentingProfile] = useState<CameraProfile | null>(null);
 
   const [cameraProfile, setCameraProfile] = useState<CameraProfile>(() => {
-    /** Android: start on front — rear often shows black until the front camera was opened in this session. */
-    if (isAndroidUa()) {
-      return 'user';
-    }
+    /** Android: attempt rear-first; fallback to front→rear flip if rear fails quickly. */
+    if (isAndroidUa()) return 'environment';
     const saved = readStoredCameraProfile();
     if (saved === 'compatible') return 'environment';
     return saved ?? 'environment';
@@ -336,7 +333,8 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
   useEffect(() => {
     if (!open) return;
     if (isAndroidUa()) {
-      setCameraProfile('user');
+      // Rear-first attempt; attachStream will fallback to flip logic if needed.
+      setCameraProfile('environment');
       return;
     }
     const saved = readStoredCameraProfile();
@@ -404,17 +402,38 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
        * Always run a silent front pulse + delay first (same idea as a dedicated WebcamCapture instance per slot on delivery).
        * Internal warm-up reboots increment `streamBootId` and skip this so we do not stack delays.
        */
-      if (isAndroidUa() && cameraProfileRef.current === 'environment' && streamBootId === 0) {
-        try {
-          const unlock = await getUserMediaWithChain(QUICK_USER_WARMUP);
-          stopStream(unlock);
-        } catch {
-          /* still attempt rear */
+      if (isAndroidUa() && streamBootId === 0) {
+        // Direct rear-first attempt with strict environment; if it doesn't succeed quickly, fallback to flip.
+        if (cameraProfileRef.current === 'environment') {
+          const direct = await getUserMediaWithTimeout(
+            {
+              video: {
+                facingMode: { exact: 'environment' },
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+              },
+              audio: false,
+            },
+            200
+          );
+
+          if (direct.ok) {
+            stream = direct.stream;
+          } else {
+            // Fallback to flip logic: start with front, then auto-flip to rear.
+            setCameraProfile('user');
+            clearAndroidAutoFlipTimer();
+            androidRearBootstrappingRef.current = true;
+            setAndroidRearBootstrapping(true);
+            stream = await getUserMediaWithChain(QUICK_USER_WARMUP);
+          }
         }
-        await new Promise((r) => setTimeout(r, ANDROID_WEBCAM_WARMUP_POST_STOP_MS));
-        if (!openRef.current) return;
       }
-      stream = await getUserMediaWithChain(constraintChainForProfile(cameraProfileRef.current));
+
+      if (!stream) {
+        // Regular path (includes minimal constraints for environment profile).
+        stream = await getUserMediaWithChain(constraintChainForProfile(cameraProfileRef.current));
+      }
     } catch (err) {
       if (!openRef.current) return;
       clearAndroidAutoFlipTimer();

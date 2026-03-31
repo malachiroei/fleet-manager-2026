@@ -3,7 +3,6 @@ import { flushSync } from 'react-dom';
 
 import { toast } from '@/hooks/use-toast';
 import {
-  createFastPreviewUrl,
   isAndroidUserAgent,
   readFileAsDataUrl,
   tryMaterializeImageFileFromInput,
@@ -67,26 +66,18 @@ export function useMobilePhotoIngest(options?: UseMobilePhotoIngestOptions) {
       setIsMaterializing(true);
       onIngestBeginWithFile?.();
 
-      // Kick off a fast preview immediately (non-blocking).
-      void (async () => {
-        try {
-          const previewUrl = await createFastPreviewUrl(file);
-          if (gen !== ingestGenRef.current) {
-            if (previewUrl?.startsWith('blob:')) URL.revokeObjectURL(previewUrl);
-            return;
-          }
-          if (previewUrl) {
-            blobPreviewRevokeRef.current = previewUrl;
-            fastPreviewSetRef.current = true;
-            flushSync(() => {
-              setPhotoPreviewUrl(previewUrl);
-              setPreviewMountKey((k) => k + 1);
-            });
-          }
-        } catch {
-          // ignore; we'll still try the regular path below
-        }
-      })();
+      // Instant UI preview: no canvas work, no materialization dependency.
+      try {
+        const previewUrl = URL.createObjectURL(file);
+        blobPreviewRevokeRef.current = previewUrl;
+        fastPreviewSetRef.current = true;
+        flushSync(() => {
+          setPhotoPreviewUrl(previewUrl);
+          setPreviewMountKey((k) => k + 1);
+        });
+      } catch {
+        // fallback below (still no canvas)
+      }
 
       void (async () => {
         try {
@@ -106,7 +97,7 @@ export function useMobilePhotoIngest(options?: UseMobilePhotoIngestOptions) {
           setPhotoFile(workFile);
           onCommittedChange?.(workFile);
 
-          // If fast preview already landed, don't redo expensive preview work.
+          // If the instant preview already landed, don't block UI with anything else.
           if (fastPreviewSetRef.current) {
             return;
           }
