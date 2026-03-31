@@ -46,6 +46,8 @@ type OverrideRow = {
 
 type SubjectProfileLite = {
   id: string;
+  org_id: string | null;
+  email: string | null;
   permissions: Record<string, boolean> | null;
 };
 
@@ -70,17 +72,15 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
   const [search, setSearch] = useState('');
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [optimisticOverrides, setOptimisticOverrides] = useState<Record<string, boolean>>({});
-  const { user, profile } = useAuth();
+  const { user, profile, activeOrgId, hasPermission, isAdmin, isManager } = useAuth();
   const viewerEmail = (profile?.email ?? user?.email ?? '').trim().toLowerCase();
   const isRoeiAdmin = viewerEmail === 'malachiroei@gmail.com';
-  const viewerCanSeeSubject =
-    isRoeiAdmin ||
-    (userId && viewerEmail && viewerEmail === (userLabel ?? '').trim().toLowerCase()) ||
-    (viewerEmail === 'ravidmalachi@gmail.com' && (userLabel ?? '').trim().toLowerCase() === 'roeima21@gmail.com');
+  const viewerOrgId = (activeOrgId ?? profile?.org_id ?? null) as string | null;
+  const viewerIsTeamManager = isRoeiAdmin || isAdmin || isManager || hasPermission('manage_team');
 
   const { data: featureFlags = [] as FeatureFlagRow[], isLoading: isFlagsLoading, isError: isFlagsError } = useQuery({
     queryKey: ['feature-flags-user-overrides-list'],
-    enabled: open && Boolean(viewerCanSeeSubject),
+    enabled: open,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('feature_flags')
@@ -104,32 +104,38 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
     staleTime: 60_000,
   });
 
-  const { data: overrideRows = [] as OverrideRow[], isLoading: isOverridesLoading, isError: isOverridesError } = useQuery({
-    queryKey: ['user-feature-overrides', userId],
-    enabled: open && typeof userId === 'string' && userId.length > 0,
-    queryFn: async () => {
-      console.log('[FeatureOverrides] loading overrides for user_id', userId);
-      const { data, error } = await (supabase as any)
-        .from('user_feature_overrides')
-        .select('feature_key, is_enabled')
-        .eq('user_id', userId);
-      if (error) throw error;
-      return (data ?? []) as OverrideRow[];
-    },
-    staleTime: 60_000,
-  });
-
   const { data: subjectProfile } = useQuery({
     queryKey: ['feature-overrides-subject-profile', userId],
     enabled: open && typeof userId === 'string' && userId.length > 0,
     queryFn: async (): Promise<SubjectProfileLite | null> => {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, permissions')
+        .select('id, org_id, email, permissions')
         .eq('id', userId as string)
         .maybeSingle();
       if (error) throw error;
       return (data ?? null) as SubjectProfileLite | null;
+    },
+    staleTime: 60_000,
+  });
+
+  const subjectEmail = (subjectProfile?.email ?? userLabel ?? '').trim().toLowerCase();
+  const isSubjectRoei = subjectEmail === 'malachiroei@gmail.com';
+  const sameOrg = Boolean(viewerOrgId && subjectProfile?.org_id && viewerOrgId === subjectProfile.org_id);
+  const canEditSubjectOverrides = Boolean(
+    typeof userId === 'string' && userId.length > 0 && (isRoeiAdmin || (viewerIsTeamManager && sameOrg && !isSubjectRoei)),
+  );
+
+  const { data: overrideRows = [] as OverrideRow[], isLoading: isOverridesLoading, isError: isOverridesError } = useQuery({
+    queryKey: ['user-feature-overrides', userId],
+    enabled: open && canEditSubjectOverrides,
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from('user_feature_overrides')
+        .select('feature_key, is_enabled')
+        .eq('user_id', userId);
+      if (error) throw error;
+      return (data ?? []) as OverrideRow[];
     },
     staleTime: 60_000,
   });
@@ -143,22 +149,7 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
     }
     return m;
   }, [overrideRows]);
-
-  /** Sub-users can only view flags explicitly assigned (via overrides). */
-  const visibleFeatureKeys = useMemo(() => {
-    if (isRoeiAdmin) return null;
-    const keys = new Set<string>();
-    for (const row of overrideRows ?? []) {
-      const k = String(row.feature_key ?? '').trim();
-      if (k) keys.add(k);
-    }
-    return keys;
-  }, [isRoeiAdmin, overrideRows]);
-
-  const featureFlagsVisibleToViewer = useMemo(() => {
-    if (!visibleFeatureKeys) return featureFlags;
-    return featureFlags.filter((f) => visibleFeatureKeys.has(f.feature_key));
-  }, [featureFlags, visibleFeatureKeys]);
+  const featureFlagsVisibleToViewer = featureFlags;
 
   const effectiveOverrideMap = useMemo(() => {
     const m = new Map(overrideMap);
@@ -310,9 +301,9 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
         </DialogHeader>
 
         <div className="space-y-3">
-          {!viewerCanSeeSubject ? (
+          {!canEditSubjectOverrides ? (
             <div className="rounded-md border border-border p-3 text-sm text-muted-foreground">
-              אין לך הרשאה לראות פיצ׳רים עבור משתמש זה.
+              אין הרשאה לשנות Overrides עבור משתמש זה (מותר רק באותו ארגון, וללא גישה למשתמש סופר־אדמין).
             </div>
           ) : null}
           <div className="space-y-2">
@@ -414,7 +405,7 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
                           <div className="flex justify-center">
                             <Switch
                               checked={stored}
-                              disabled={switchDisabled}
+                              disabled={switchDisabled || !canEditSubjectOverrides}
                               onCheckedChange={(v) => void handleToggle(flag.feature_key, v)}
                               aria-label={`override עבור ${displayName}`}
                             />
