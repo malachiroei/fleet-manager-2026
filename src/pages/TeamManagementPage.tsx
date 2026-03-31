@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
-import { useOrgSettings } from '@/hooks/useOrgSettings';
 import {
   useTeamMembers,
   useOrgInvitations,
@@ -35,7 +34,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { ArrowRight, Flag, Loader2, Mail, Upload, UserPlus, Users } from 'lucide-react';
+import { ArrowRight, Flag, Loader2, Mail, UserPlus, Users } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import type { Profile } from '@/types/fleet';
@@ -47,14 +46,9 @@ export default function TeamManagementPage() {
   const { profile, activeOrgId, hasPermission, isAdmin, isManager } = useAuth();
   const { viewAsProfile } = useViewAs();
   const { effectiveUserId } = useImpersonationFleetScope();
-  const manifestUi = EMPTY_FLEET_MANIFEST_UI_GATES;
   const queryClient = useQueryClient();
   const orgId = activeOrgId ?? null;
-  const settingsOrgId = orgId ?? profile?.org_id ?? null;
-  const { data: orgSettingsRow } = useOrgSettings(settingsOrgId, { enabledOnlyWithOrgId: true });
   const isSuperAdminTeamView = isRoeySuperAdminProfile(profile);
-  const showPushToPro = isSuperAdminTeamView;
-  const [pushBusy, setPushBusy] = useState(false);
   const [globalFeaturesOpen, setGlobalFeaturesOpen] = useState(false);
   const subjectIsSystemAdmin = (viewAsProfile?.is_system_admin ?? profile?.is_system_admin) === true;
   const { data: members, isLoading, isFetching: membersFetching } = useTeamMembers(orgId, {
@@ -126,43 +120,6 @@ export default function TeamManagementPage() {
 
   const inviteModalOrgId = orgId ?? profile?.org_id ?? '';
 
-  const handlePushReleaseSnapshot = async () => {
-    const snapshotOrgId = orgId ?? profile?.org_id ?? null;
-    if (!snapshotOrgId) {
-      toast.error('בחר ארגון פעיל (מתפריט הארגון) לפני דחיפת סנאפשוט.');
-      return;
-    }
-    setPushBusy(true);
-    try {
-      const snapshot = buildReleaseSnapshotPayload({
-        orgId: snapshotOrgId,
-        orgSettings: orgSettingsRow ?? null,
-        manifestUi,
-        defaultPermissions: getDefaultPermissions(),
-        previousBundledVersion: getBundledReleaseSnapshot().version,
-      });
-      downloadReleaseSnapshotJson(snapshot);
-      toast.info('הקובץ ירד, כעת העלה אותו ל-Git כדי לעדכן את הפרו');
-
-      const sessionRes = await supabase.auth.getSession();
-      const bearer = sessionRes?.data?.session?.access_token ?? getSupabaseAnonKey();
-      const invokeRes = await supabase.functions.invoke('push-release-snapshot', {
-        headers: { Authorization: `Bearer ${bearer}` },
-        body: { snapshot },
-      });
-      const data = invokeRes?.data ?? null;
-      const error = invokeRes?.error ?? null;
-      const ok = !error && data && typeof data === 'object' && (data as { ok?: boolean }).ok === true;
-      if (ok) {
-        toast.success('בנוסף: נדחף לריפו הטסט ב-GitHub (לא פרודקשן; פרסום גרסה בלבד מעדכן את הפרו).');
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'דחיפה נכשלה');
-    } finally {
-      setPushBusy(false);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-4xl mx-auto p-6 space-y-6" dir="rtl">
@@ -202,34 +159,6 @@ export default function TeamManagementPage() {
             ) : null}
           </div>
         </div>
-
-        {showPushToPro ? (
-          <Card className="border-primary/30 bg-primary/5">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Upload className="h-5 w-5" />
-                גשר עדכונים לפרודקשן (Git)
-              </CardTitle>
-              <CardDescription>
-                יוצר קובץ <code className="text-xs">release_snapshot.json</code> מהגדרות הארגון הנוכחי, פיצ׳רי UI
-                מהמניפסט, ומבנה הרשאות ברירת מחדל — מוריד את הקובץ ומנסה לדחוף ל-GitHub דרך Edge Function
-                (דורש סודות GITHUB_TOKEN + GITHUB_REPO).
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button
-                type="button"
-                variant="default"
-                disabled={pushBusy || !(orgId ?? profile?.org_id)}
-                onClick={() => void handlePushReleaseSnapshot()}
-                className="gap-2"
-              >
-                {pushBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                דחוף עדכונים לפרו
-              </Button>
-            </CardContent>
-          </Card>
-        ) : null}
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
