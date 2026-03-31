@@ -228,20 +228,12 @@ export default function ServiceUpdatePage() {
       await updateVehicle.mutateAsync(payload);
 
       // Persist a service log entry (email trigger depends on this succeeding).
-      const orgId = resolvedVehicle.org_id ?? null;
       const { error: serviceLogError } = await supabase.from('vehicle_service_logs' as any).insert({
-        org_id: orgId,
-        vehicle_id: resolvedVehicle.id,
+        plate_number: resolvedVehicle.plate_number,
         service_type: 'service_update',
-        service_date: serviceDate,
-        odometer_km: mileageNum,
-        invoice_photo_url: photoUrl,
-        created_by: user.id,
-        metadata: {
-          next_service_date: nextServiceDate,
-          next_service_km: nextServiceKm,
-          service_interval_km: resolvedVehicle.service_interval_km,
-        },
+        odometer_reading: mileageNum,
+        photo_url: photoUrl,
+        user_id: user.id,
       } as any);
       if (serviceLogError) throw serviceLogError;
 
