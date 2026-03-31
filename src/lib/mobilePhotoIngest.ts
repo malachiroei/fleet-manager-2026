@@ -4,7 +4,7 @@
  */
 
 /** Delay after stopping the temporary front-camera stream before opening rear (Android / Samsung). */
-export const ANDROID_WEBCAM_WARMUP_POST_STOP_MS = 1000;
+export const ANDROID_WEBCAM_WARMUP_POST_STOP_MS = 400;
 
 /**
  * Plain `accept="image/*"` on desktop lets the OS picker offer files, webcam, or “Take photo” where supported.

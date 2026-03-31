@@ -774,12 +774,6 @@ export function AppLayout({ children }: AppLayoutProps) {
           } catch {
             // ignore
           }
-
-          if (getIsDirty()) {
-            tryNavigate('/');
-            return;
-          }
-
           window.location.assign(`${window.location.origin}/`);
         }}
         className={cn(

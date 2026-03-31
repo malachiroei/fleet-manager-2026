@@ -37,10 +37,6 @@ export function Sidebar() {
               } catch {
                 // ignore
               }
-              if (getIsDirty()) {
-                tryNavigate('/');
-                return;
-              }
               window.location.assign(`${window.location.origin}/`);
             }}
           >

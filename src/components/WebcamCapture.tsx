@@ -28,7 +28,7 @@ const REAR_DEVICE_ID_STORAGE_KEY = 'fleet_manager_mileage_rear_device_id_v1';
 const POST_FIRST_WARMUP_RECHECK_MS = 2200;
 
 /** After the first front stream is live on Android, auto-switch to rear (no manual tap). */
-const ANDROID_AUTO_FLIP_TO_REAR_MS = 300;
+const ANDROID_AUTO_FLIP_TO_REAR_MS = 150;
 
 type CameraProfile = 'environment' | 'user' | 'compatible';
 
@@ -443,12 +443,36 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
 
     const [vTrack] = stream.getVideoTracks();
     if (vTrack) {
-      vTrack.addEventListener('unmute', () => markVideoPresenting());
+      vTrack.addEventListener('unmute', () => {
+        markVideoPresenting();
+        if (openRef.current && isAndroidUa() && openedProfile === 'user' && streamBootId === 0) {
+          clearAndroidAutoFlipTimer();
+          androidRearBootstrappingRef.current = true;
+          setAndroidRearBootstrapping(true);
+          androidAutoFlipTimerRef.current = setTimeout(() => {
+            androidAutoFlipTimerRef.current = null;
+            if (!openRef.current) return;
+            if (cameraProfileRef.current !== 'user') return;
+            setCameraProfile('environment');
+          }, ANDROID_AUTO_FLIP_TO_REAR_MS);
+        }
+      });
       vTrack.addEventListener('ended', () => {
         if (openRef.current) setError('המצלמה נותקה. נסו שוב.');
       });
       if (!vTrack.muted) {
         requestAnimationFrame(() => markVideoPresenting());
+        if (openRef.current && isAndroidUa() && openedProfile === 'user' && streamBootId === 0) {
+          clearAndroidAutoFlipTimer();
+          androidRearBootstrappingRef.current = true;
+          setAndroidRearBootstrapping(true);
+          androidAutoFlipTimerRef.current = setTimeout(() => {
+            androidAutoFlipTimerRef.current = null;
+            if (!openRef.current) return;
+            if (cameraProfileRef.current !== 'user') return;
+            setCameraProfile('environment');
+          }, ANDROID_AUTO_FLIP_TO_REAR_MS);
+        }
       }
     }
 
@@ -504,17 +528,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       return;
     }
 
-    if (openRef.current && isAndroidUa() && openedProfile === 'user' && streamBootId === 0) {
-      clearAndroidAutoFlipTimer();
-      androidRearBootstrappingRef.current = true;
-      setAndroidRearBootstrapping(true);
-      androidAutoFlipTimerRef.current = setTimeout(() => {
-        androidAutoFlipTimerRef.current = null;
-        if (!openRef.current) return;
-        if (cameraProfileRef.current !== 'user') return;
-        setCameraProfile('environment');
-      }, ANDROID_AUTO_FLIP_TO_REAR_MS);
-    }
+    // Android auto-flip is now triggered as soon as the front stream is active (track unmute / not muted).
 
     const runCanvasProbe = () => {
       const v = videoRef.current;
@@ -894,7 +908,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
                 onError={handleVideoError}
               />
               {showCameraLoader && (
-                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/80 px-4 text-center">
+                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-slate-950 px-4 text-center">
                   <Loader2 className="h-10 w-10 shrink-0 animate-spin text-white" aria-hidden />
                   <p className="text-xs text-white/90">טוען מצלמה…</p>
                 </div>

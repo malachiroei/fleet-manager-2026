@@ -64,10 +64,6 @@ export function MobileNav() {
                   } catch {
                     // ignore
                   }
-                  if (isDirty) {
-                    tryNavigate('/');
-                    return;
-                  }
                   window.location.assign(`${window.location.origin}/`);
                 }}
                 className="block"
