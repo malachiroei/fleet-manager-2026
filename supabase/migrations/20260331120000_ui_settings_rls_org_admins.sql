@@ -1,9 +1,9 @@
 -- ui_settings: טבלת טפסי הצהרת בריאות / מדיניות רכב וכו׳ (ממופה ב-useOrgSettings → ui_settings).
 -- בפרודקשן לעיתים חסרות מדיניות RLS או הטבלה עצמה — מתקבל 403 מ-PostgREST בעת שמירה.
 --
--- מדיניות:
--- · קריאה: משתמש מחובר השייך לארגון (org_members או profiles.org_id).
--- · כתיבה: אותו תנאי שייכות + (תפקיד מנהל ב-user_roles או admin_access/manage_team ב-profiles.permissions).
+-- מדיניות (ללא org_members — תואם פרויקטים ללא הטבלה):
+-- · קריאה: profiles.org_id של המשתמש תואם ל-org_id בשורת ui_settings.
+-- · כתיבה: אותו תנאי + (is_manager מ-user_roles או admin_access/manage_team ב-profiles.permissions).
 
 -- ── טבלה (אם עדיין לא קיימת בסביבה) ─────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.ui_settings (
@@ -44,12 +44,6 @@ SET search_path = public
 AS $$
   SELECT EXISTS (
     SELECT 1
-    FROM public.org_members om
-    WHERE om.user_id = _user_id
-      AND om.org_id = _org_id
-  )
-  OR EXISTS (
-    SELECT 1
     FROM public.profiles p
     WHERE p.id = _user_id
       AND p.org_id IS NOT NULL
@@ -58,7 +52,7 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION public.user_belongs_to_org(uuid, uuid) IS
-  'True if the user is linked to the org via org_members or profiles.org_id (legacy).';
+  'True if profiles.org_id matches the row org (no org_members required).';
 
 CREATE OR REPLACE FUNCTION public.can_edit_org_ui_settings(_user_id uuid, _org_id uuid)
 RETURNS boolean
