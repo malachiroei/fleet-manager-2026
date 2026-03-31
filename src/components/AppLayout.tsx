@@ -708,7 +708,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   /** כפתורי ניהול זהב — בר דסקטופ (md+): ריווח אחיד ותווית מלאה */
   const GoldManagementNavLinks = () => (
-    <div className="relative z-[9998] flex flex-nowrap items-center gap-4">
+    <div className="relative z-[9998] flex flex-wrap items-center gap-x-2 gap-y-1 lg:gap-x-4">
       {availableActions
         .filter((a) => a.showOn === 'both' || a.showOn === 'desktop')
         .filter((a) => a.key !== 'logout')
@@ -995,12 +995,12 @@ export function AppLayout({ children }: AppLayoutProps) {
         )}
       >
         {/* דסקטופ (md+): שלוש אזוריות — מותג | ניווט מרכזי | כלים + משתמש */}
-        <div className="hidden w-full max-w-none flex-nowrap items-center justify-between gap-4 px-4 md:flex md:px-6 lg:px-8">
+        <div className="hidden w-full max-w-full flex-nowrap items-center justify-between gap-4 overflow-hidden px-4 md:flex md:px-6 lg:px-8">
           <div className="flex shrink-0 items-center">
             <BrandMarkBlock />
           </div>
 
-          <div className="flex min-w-0 flex-1 items-center justify-center gap-4 px-2">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center justify-center gap-x-2 gap-y-1 px-2 lg:gap-x-4">
             <HomeNavLinkDesktop />
             {canAccessGoldenManagementLinks ? <GoldManagementNavLinks /> : null}
           </div>
