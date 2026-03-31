@@ -4,7 +4,7 @@
  */
 
 /** Delay after stopping the temporary front-camera stream before opening rear (Android / Samsung). */
-export const ANDROID_WEBCAM_WARMUP_POST_STOP_MS = 300;
+export const ANDROID_WEBCAM_WARMUP_POST_STOP_MS = 400;
 
 async function decodeToBitmap(source: Blob): Promise<ImageBitmap | null> {
   if (typeof createImageBitmap === 'function') {
