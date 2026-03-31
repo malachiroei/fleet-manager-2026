@@ -1,4 +1,4 @@
-import { type ElementType, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type ElementType, type MouseEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useVehicleSpecDirty } from '@/contexts/VehicleSpecDirtyContext';
 import { useViewAs } from '@/contexts/ViewAsContext';
@@ -171,12 +171,13 @@ export function AppLayout({ children }: AppLayoutProps) {
   const isRavid = email === 'ravidmalachi@gmail.com';
 
   const viewAsBannerVisible = (isMainAdmin || isRavid) && Boolean(viewAsEmail);
+  /** באנר staging מיני — גובה ~h-6 */
   const headerStickyTopClass = showStagingWarningBar
     ? viewAsBannerVisible
-      ? 'top-24'
-      : 'top-12'
+      ? 'top-16'
+      : 'top-6'
     : 'top-0';
-  const viewAsStickyTopClass = showStagingWarningBar ? 'top-12' : 'top-0';
+  const viewAsStickyTopClass = showStagingWarningBar ? 'top-6' : 'top-0';
 
   const mainFleetOrgId = useMemo(() => {
     // Prefer explicit Main Fleet org id when present.
@@ -615,7 +616,6 @@ export function AppLayout({ children }: AppLayoutProps) {
   };
 
   const MobileNavDrawer = () => {
-    const menuActions = availableActions.filter((a) => a.showOn === 'both' || a.showOn === 'mobileMenu');
     const side = isRtl ? 'right' : 'left';
     return (
       <Sheet>
@@ -625,9 +625,9 @@ export function AppLayout({ children }: AppLayoutProps) {
             variant="ghost"
             aria-label="תפריט"
             title="תפריט"
-            className="h-9 w-9 rounded-lg border border-cyan-400/30 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20 hover:text-white"
+            className="h-10 min-h-[44px] w-10 min-w-[44px] rounded-lg border border-cyan-400/30 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20 hover:text-white"
           >
-            <Menu className="h-5 w-5" />
+            <Menu className="h-5 w-5 shrink-0" />
           </Button>
         </SheetTrigger>
         <SheetContent
@@ -646,38 +646,17 @@ export function AppLayout({ children }: AppLayoutProps) {
             </div>
           </div>
 
-          <nav className="pt-3 space-y-1">
-            <Link
-              to="/"
-              className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-white/90 hover:bg-white/10"
-            >
-              <span>בית</span>
-              <Home className="h-4 w-4 opacity-80" />
-            </Link>
-
-            {menuActions
-              .filter((a) => a.key !== 'logout')
-              .map((a) => {
-                const Icon = a.icon;
-                if (!('to' in a)) return null;
-                const isMgmt = a.key === 'manage_org' || a.key === 'manage_team';
-                return (
-                  <Link
-                    key={a.key}
-                    to={a.to}
-                    className={cn(
-                      'flex items-center justify-between rounded-lg border px-3 py-2 text-sm font-semibold transition-colors',
-                      isMgmt
-                        ? cn('border-[gold]/60 bg-amber-500/10 text-amber-50 hover:bg-amber-500/15')
-                        : 'border-white/10 bg-white/5 text-white/90 hover:bg-white/10'
-                    )}
-                  >
-                    <span>{a.label}</span>
-                    <Icon className={cn('h-4 w-4', isMgmt ? 'text-amber-200' : 'text-white/70')} />
-                  </Link>
-                );
-              })}
-          </nav>
+          <div className="pt-3 space-y-2">
+            <p className="px-1 text-[11px] font-medium text-muted-foreground">כלים והגדרות</p>
+            <div className="flex flex-col gap-2">
+              <OrgSwitcher />
+              <div className="flex flex-wrap items-center gap-2">
+                <PwaInstallButton />
+                <ThemeToggle />
+                <LanguageSwitcher />
+              </div>
+            </div>
+          </div>
 
           <div className="pt-4 mt-4 border-t border-border">
             <Button
@@ -695,72 +674,171 @@ export function AppLayout({ children }: AppLayoutProps) {
     );
   };
 
-  const TopToolsBlock = () => (
+  const ViewAsExitButton = ({ className }: { className?: string }) =>
+    viewAsEmail ? (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className={cn(
+          'h-7 gap-1 px-2 text-[11px] font-semibold border-emerald-400/60 bg-emerald-500/20 text-emerald-50 hover:bg-emerald-500/30 hover:text-white shrink-0',
+          className
+        )}
+        onClick={() => {
+          if (isMainAdmin) {
+            setViewAsEmail(null);
+            if (mainFleetOrgId) setActiveOrgId(mainFleetOrgId);
+          } else {
+            setViewAsEmail(null);
+          }
+        }}
+      >
+        חזרה לתצוגת מנהל
+      </Button>
+    ) : null;
+
+  const UtilityCluster = () => (
+    <>
+      <PwaInstallButton />
+      <ThemeToggle />
+      <LanguageSwitcher />
+      <OrgSwitcher />
+    </>
+  );
+
+  const GoldManagementNavLinks = ({ flexNowrap }: { flexNowrap?: boolean }) => (
     <div
       className={cn(
-        'relative z-[9999] flex items-center justify-end gap-2 md:gap-3 shrink-0 min-w-[44px]',
-        isRtl ? 'flex-row-reverse' : ''
+        'relative z-[9998] flex flex-wrap items-center justify-end gap-2 md:gap-4',
+        flexNowrap && 'md:flex-nowrap md:shrink-0'
       )}
     >
-      {/* Mobile (<768px): single hamburger drawer */}
-      <div className="relative z-[9999] flex items-center gap-2 md:hidden min-w-[44px]">
-        <MobileNavDrawer />
-        <UserDropdown />
-      </div>
+      {availableActions
+        .filter((a) => a.showOn === 'both' || a.showOn === 'desktop')
+        .filter((a) => a.key !== 'logout')
+        .map((a) => {
+          const Icon = a.icon;
+          if (!('to' in a)) return null;
+          const isMgmt = a.key === 'manage_org' || a.key === 'manage_team';
+          if (!isMgmt) return null;
+          return (
+            <Link
+              key={a.key}
+              to={a.to}
+              className={cn(
+                'relative z-[9999] flex h-9 min-h-9 items-center gap-1.5 rounded-lg border-2 px-3 text-xs font-semibold transition-colors md:h-10 md:px-4 md:text-sm',
+                managementNavClass
+              )}
+            >
+              <Icon className="h-4 w-4 shrink-0 text-amber-200" />
+              <span className="whitespace-nowrap">{a.label}</span>
+            </Link>
+          );
+        })}
+    </div>
+  );
 
-      {/* Desktop: stable row; management actions from centralized list */}
-      <div className="relative z-[9999] hidden md:flex flex-nowrap items-center justify-end gap-3">
-        <PwaInstallButton />
-        <ThemeToggle />
-        <LanguageSwitcher />
-        <OrgSwitcher />
-        {availableActions
-          .filter((a) => a.showOn === 'both' || a.showOn === 'desktop')
-          .filter((a) => a.key !== 'logout')
-          .map((a) => {
-            const Icon = a.icon;
-            if ('to' in a) {
-              const isMgmt = a.key === 'manage_org' || a.key === 'manage_team';
-              return (
-                <Link
-                  key={a.key}
-                  to={a.to}
-                  className={cn(
-                    'flex h-8 items-center gap-1.5 rounded-lg border px-4 text-xs font-semibold transition-colors',
-                    isMgmt ? managementNavClass : 'border-white/10 bg-white/5 text-white/80 hover:bg-white/10'
-                  )}
-                >
-                  <Icon className={cn('h-3.5 w-3.5 shrink-0', isMgmt ? 'text-amber-200' : 'text-white/70')} />
-                  <span className="whitespace-nowrap">{a.label}</span>
-                </Link>
-              );
-            }
-            return null;
-          })}
-        {viewAsEmail && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 gap-1 px-2 text-[11px] font-semibold border-emerald-400/60 bg-emerald-500/20 text-emerald-50 hover:bg-emerald-500/30 hover:text-white"
-            onClick={() => setViewAsEmail(null)}
-          >
-            חזרה לתצוגת מנהל
-          </Button>
+  const handleGoHomeNav = (e: MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    try {
+      window.dispatchEvent(new CustomEvent('app:go-home'));
+    } catch {
+      /* ignore */
+    }
+    window.location.assign(`${window.location.origin}/`);
+  };
+
+  /** מובייל: שורה ייעודית — בית עדין, ניהול בזהב */
+  const MobilePrimaryNav = () => (
+    <nav
+      className="flex w-full min-w-0 flex-wrap items-stretch justify-around gap-1 rounded-lg border border-white/10 bg-black/30 px-0.5 py-1 md:hidden"
+      aria-label="ניווט ראשי"
+    >
+      <Link
+        to="/"
+        onClick={handleGoHomeNav}
+        className={cn(
+          'flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1.5 rounded-md px-1.5 text-base font-medium transition-colors active:opacity-90',
+          isHomeActive
+            ? 'bg-white/10 text-cyan-100 ring-1 ring-cyan-400/35'
+            : 'bg-white/[0.05] text-white/75 hover:bg-white/10'
         )}
-        <UserDropdown />
+      >
+        <Home className="h-5 w-5 shrink-0 opacity-90" />
+        <span className="truncate">בית</span>
+      </Link>
+      {canManageOrgUi ? (
+        <Link
+          to="/admin/org-settings"
+          className={cn(
+            'flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1.5 rounded-md border-2 px-1.5 text-base font-semibold transition-colors active:opacity-90',
+            managementNavClass
+          )}
+        >
+          <Building2 className="h-5 w-5 shrink-0 text-amber-200" />
+          <span className="truncate">ניהול</span>
+        </Link>
+      ) : null}
+      {canManageTeamUi ? (
+        <Link
+          to="/team"
+          className={cn(
+            'flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1.5 rounded-md border-2 px-1.5 text-base font-semibold transition-colors active:opacity-90',
+            managementNavClass
+          )}
+        >
+          <UserCog className="h-5 w-5 shrink-0 text-amber-200" />
+          <span className="truncate">ניהול צוות</span>
+        </Link>
+      ) : null}
+    </nav>
+  );
+
+  const HomeNavLinkDesktop = () => (
+    <Link
+      to="/"
+      onClick={handleGoHomeNav}
+      className={cn(
+        'hidden md:inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors',
+        isHomeActive
+          ? 'border-cyan-400/35 bg-cyan-500/15 text-cyan-100'
+          : 'border-white/10 bg-white/[0.06] text-white/70 hover:bg-white/10 hover:text-white/90'
+      )}
+    >
+      <Home className="h-4 w-4 shrink-0 opacity-90" />
+      <span>{t('navigation.home')}</span>
+    </Link>
+  );
+
+  const BrandMarkBlock = () => (
+    <div className={cn('flex min-w-0 flex-1 items-center gap-2 md:flex-none md:gap-3', isRtl && 'flex-row-reverse')}>
+      <div className="flex h-9 w-[3.15rem] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[#0a1525] p-1.5 md:h-12 md:w-16 md:p-2">
+        <img
+          src={getBrandLogoUrl()}
+          alt=""
+          className="max-h-[1.65rem] w-full object-contain object-center md:max-h-12"
+        />
+      </div>
+      <div className={cn('min-w-0', isRtl ? 'text-right' : 'text-left')}>
+        <span className="block max-w-[min(100%,70vw)] truncate text-sm font-bold leading-tight text-white md:max-w-none">
+          {t('navigation.fleetManager')}
+        </span>
+        <span className="hidden truncate text-[10px] text-cyan-400/55 md:block">{orgName || 'הצי הראשי - רועי'}</span>
+        <span className="hidden items-baseline gap-1 text-xs font-medium text-white/65 md:flex">
+          <span className="min-w-0 truncate">גרסה v{headerDisplayVersion}</span>
+        </span>
       </div>
     </div>
   );
 
   const MobileUserRow = () => null;
 
-  /* Desktop: full inline email + logout */
+  /* דסקטופ: מייל + התנתקות — min-w-0 מונע חפיפה עם כפתורי זהב */
   const UserInline = () =>
     user ? (
       <div
         className={cn(
-          'hidden md:flex items-center gap-2 rounded-full bg-black/40 px-3 py-1 text-xs',
+          'relative z-[10000] hidden min-w-0 max-w-full items-center gap-2 rounded-full bg-black/40 px-2 py-1 text-xs md:flex md:shrink md:px-3',
           isRtl ? 'flex-row-reverse' : 'flex-row'
         )}
       >
@@ -772,7 +850,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         </div>
         {email ? (
           <span
-            className="max-w-[160px] truncate text-[11px] text-white/70"
+            className="min-w-0 max-w-[10rem] truncate text-[11px] text-white/70 sm:max-w-[14rem]"
             title={email}
           >
             {email}
@@ -782,11 +860,11 @@ export function AppLayout({ children }: AppLayoutProps) {
           type="button"
           variant="ghost"
           size="sm"
-          className="h-7 gap-1 px-2 text-red-300 hover:bg-red-500/10 hover:text-red-200 cursor-pointer"
+          className="h-7 shrink-0 gap-1 px-2 text-red-300 hover:bg-red-500/10 hover:text-red-200 cursor-pointer"
           onClick={handleLogout}
         >
           <LogOut className="h-3.5 w-3.5 shrink-0" />
-          <span className="text-[11px] font-medium">התנתקות</span>
+          <span className="hidden text-[11px] font-medium sm:inline">התנתקות</span>
         </Button>
       </div>
     ) : null;
@@ -800,7 +878,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             type="button"
             variant="ghost"
             size="icon"
-            className="md:hidden h-9 w-9 rounded-full border border-cyan-400/30 bg-cyan-500/20 text-cyan-200 hover:bg-cyan-500/30 hover:text-cyan-100 cursor-pointer touch-manipulation shrink-0"
+            className="md:hidden h-10 min-h-[44px] w-10 min-w-[44px] rounded-full border border-cyan-400/30 bg-cyan-500/20 text-cyan-200 hover:bg-cyan-500/30 hover:text-cyan-100 cursor-pointer touch-manipulation shrink-0"
             style={{ touchAction: 'manipulation' }}
             aria-label={email || 'תפריט משתמש'}
           >
@@ -860,70 +938,21 @@ export function AppLayout({ children }: AppLayoutProps) {
     );
   };
 
-  /* קצה ימין: בית הכי ימני, אחריו לוגו + כותרת (ב־RTL פריט ראשון = ימין) */
-  const BrandAndHome = () => (
-    <div
-      className={cn('flex flex-1 min-w-0 items-center gap-3 md:gap-6', isRtl ? 'flex-row' : 'flex-row-reverse')}
-    >
-      <Link
-        to="/"
-        onClick={(e) => {
-          e.preventDefault();
-          try {
-            window.dispatchEvent(new CustomEvent('app:go-home'));
-          } catch {
-            // ignore
-          }
-          window.location.assign(`${window.location.origin}/`);
-        }}
-        className={cn(
-          'flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-2.5 md:px-3 text-sm font-medium transition-colors',
-          isHomeActive
-            ? 'bg-cyan-500/25 text-cyan-100 border border-cyan-400/40'
-            : 'text-white/75 hover:bg-white/10 hover:text-white'
-        )}
-      >
-        <Home className="h-4 w-4" />
-        <span className="hidden md:inline">{t('navigation.home')}</span>
-      </Link>
-      <div className={cn('flex min-w-0 items-center gap-2 md:gap-3', isRtl && 'flex-row-reverse')}>
-        <div className="h-12 w-16 shrink-0 overflow-hidden rounded-lg bg-[#0a1525] p-2 flex items-center justify-center">
-          <img
-            src={getBrandLogoUrl()}
-            alt=""
-            className="max-h-12 w-full object-contain object-center"
-          />
-        </div>
-        <div className={cn('min-w-0', isRtl ? 'text-right' : 'text-left')}>
-          <span className="block truncate text-sm font-bold leading-tight text-white">
-            {t('navigation.fleetManager')}
-          </span>
-          <span className="block truncate text-[10px] text-cyan-400/55">
-            {orgName || 'הצי הראשי - רועי'}
-          </span>
-          <span className="flex min-w-0 max-w-full items-baseline gap-1 text-xs text-white/65 font-medium">
-            <span className="min-w-0 truncate">גרסה v{headerDisplayVersion}</span>
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-
   return (
     <div
       className={cn(
         'flex min-h-[100dvh] flex-col overflow-x-hidden bg-[#020617]',
-        showStagingWarningBar && 'pt-12'
+        showStagingWarningBar && 'pt-6'
       )}
       dir={isRtl ? 'rtl' : 'ltr'}
     >
       {showStagingWarningBar ? (
         <div
-          className="fixed left-0 right-0 top-0 z-[999] flex h-12 items-center justify-center border-b border-red-400/60 bg-red-600 px-4 text-center shadow-md"
+          className="fixed left-0 right-0 top-0 z-[999] flex h-6 min-h-[1.5rem] items-center justify-center border-b border-red-500/45 bg-red-600 px-2 py-0.5 text-center"
           role="banner"
           aria-label="גרסת בדיקה"
         >
-          <span className="text-sm font-bold tracking-wide text-white sm:text-base">
+          <span className="text-[10px] font-semibold leading-tight tracking-wide text-white sm:text-[11px]">
             גרסת בדיקה / Test Version
           </span>
         </div>
@@ -932,7 +961,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         <div
           className={cn('sticky z-50 w-full bg-amber-500 text-black shadow-md', viewAsStickyTopClass)}
         >
-          <div className="mx-auto flex max-w-[1920px] items-center justify-between px-4 py-2 text-xs sm:text-sm">
+          <div className="mx-auto flex max-w-[1920px] items-center justify-between gap-2 px-3 py-1 text-[11px] sm:text-xs sm:px-4">
             <span className="font-medium">
               אתה נמצא כרגע בתצוגת משתמש:{' '}
               <span className="font-bold">{viewAsProfile?.full_name || viewAsEmail}</span>
@@ -958,18 +987,41 @@ export function AppLayout({ children }: AppLayoutProps) {
       )}
       <header
         className={cn(
-          'sticky z-40 border-b border-white/10 bg-[#0d1b2e] h-14',
+          'sticky z-40 border-b border-white/10 bg-[#0d1b2e] min-h-0 md:h-14',
           headerStickyTopClass
         )}
       >
-        <div className="mx-auto flex h-full w-full max-w-[1920px] items-center gap-2 px-4 md:gap-3 md:px-6">
-          <BrandAndHome />
-          <div className="flex min-w-0 flex-1 items-center justify-end">
-            <TopToolsBlock />
+        {/* דסקטופ וטאבלט (md+): שורה אחת, ללא wrap — מרווח אחיד */}
+        <div className="mx-auto hidden w-full max-w-[1920px] flex-nowrap items-center gap-4 px-4 md:flex md:px-6 lg:px-6">
+          <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-3 overflow-hidden lg:gap-4">
+            <HomeNavLinkDesktop />
+            <BrandMarkBlock />
           </div>
-          <div className={cn('hidden shrink-0 md:block', isRtl ? 'text-right' : 'text-left')}>
-            <UserInline />
+          <div className="relative z-[9998] flex min-w-0 flex-1 flex-nowrap items-center justify-end gap-4 overflow-hidden">
+            <UtilityCluster />
+            {canAccessGoldenManagementLinks ? <GoldManagementNavLinks flexNowrap /> : null}
+            <ViewAsExitButton />
           </div>
+          <UserInline />
+        </div>
+
+        {/* מובייל (מתחת ל־768px): עמודה — שורת לוגו+משתמש, אחריה פס ניווט מלא רוחב */}
+        <div className="mx-auto flex w-full max-w-[1920px] flex-col gap-2 px-4 py-2 md:hidden">
+          <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-2">
+            <div className="min-w-0 flex-1 basis-[55%]">
+              <BrandMarkBlock />
+            </div>
+            <div className="relative z-[10001] flex shrink-0 items-center gap-2">
+              <MobileNavDrawer />
+              <UserDropdown />
+            </div>
+          </div>
+          <MobilePrimaryNav />
+          {viewAsEmail ? (
+            <div className="flex w-full min-w-0 justify-end">
+              <ViewAsExitButton className="min-h-11 w-full justify-center sm:w-auto" />
+            </div>
+          ) : null}
         </div>
       </header>
 
