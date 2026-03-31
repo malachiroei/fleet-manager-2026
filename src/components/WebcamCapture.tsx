@@ -28,11 +28,12 @@ const REAR_DEVICE_ID_STORAGE_KEY = 'fleet_manager_mileage_rear_device_id_v1';
 const POST_FIRST_WARMUP_RECHECK_MS = 2200;
 
 /** After the first front stream is live on Android, auto-switch to rear (no manual tap). */
-const ANDROID_AUTO_FLIP_TO_REAR_MS = 150;
+const ANDROID_AUTO_FLIP_TO_REAR_MS = 100;
 
 type CameraProfile = 'environment' | 'user' | 'compatible';
 
 function stopStream(stream: MediaStream | null) {
+  // Stop synchronously and immediately (no async cleanup waits).
   stream?.getTracks().forEach((t) => t.stop());
 }
 

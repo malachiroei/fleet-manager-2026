@@ -4,7 +4,100 @@
  */
 
 /** Delay after stopping the temporary front-camera stream before opening rear (Android / Samsung). */
-export const ANDROID_WEBCAM_WARMUP_POST_STOP_MS = 400;
+export const ANDROID_WEBCAM_WARMUP_POST_STOP_MS = 300;
+
+async function decodeToBitmap(source: Blob): Promise<ImageBitmap | null> {
+  if (typeof createImageBitmap === 'function') {
+    try {
+      return await createImageBitmap(source);
+    } catch {
+      // fallback below
+    }
+  }
+  try {
+    const url = URL.createObjectURL(source);
+    try {
+      const img = new Image();
+      img.decoding = 'async';
+      img.src = url;
+      await img.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      ctx.drawImage(img, 0, 0);
+      const bitmap = await createImageBitmap(canvas);
+      return bitmap;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  } catch {
+    return null;
+  }
+}
+
+export async function createFastPreviewBlob(source: Blob): Promise<Blob | null> {
+  const bitmap = await decodeToBitmap(source);
+  if (!bitmap) return null;
+
+  const w = bitmap.width || 0;
+  const h = bitmap.height || 0;
+  if (w <= 0 || h <= 0) {
+    try {
+      bitmap.close();
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+
+  // Keep it simple: limit preview size to reduce CPU/memory.
+  const maxDim = 1280;
+  const scale = Math.min(1, maxDim / Math.max(w, h));
+  const outW = Math.max(2, Math.floor(w * scale));
+  const outH = Math.max(2, Math.floor(h * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = outW;
+  canvas.height = outH;
+  const ctx = canvas.getContext('2d', { alpha: false });
+  if (!ctx) {
+    try {
+      bitmap.close();
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+
+  // Performance: disable smoothing to reduce CPU cycles.
+  ctx.imageSmoothingEnabled = false;
+  try {
+    ctx.drawImage(bitmap, 0, 0, w, h, 0, 0, outW, outH);
+  } finally {
+    try {
+      bitmap.close();
+    } catch {
+      // ignore
+    }
+  }
+
+  // Preview quality tuned for speed and size.
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.7)
+  );
+  return blob;
+}
+
+export async function createFastPreviewUrl(source: Blob): Promise<string | null> {
+  try {
+    const blob = await createFastPreviewBlob(source);
+    if (!blob || blob.size === 0) return null;
+    return URL.createObjectURL(blob);
+  } catch {
+    return null;
+  }
 
 /**
  * Plain `accept="image/*"` on desktop lets the OS picker offer files, webcam, or “Take photo” where supported.

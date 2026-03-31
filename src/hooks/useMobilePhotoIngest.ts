@@ -3,6 +3,7 @@ import { flushSync } from 'react-dom';
 
 import { toast } from '@/hooks/use-toast';
 import {
+  createFastPreviewUrl,
   isAndroidUserAgent,
   readFileAsDataUrl,
   tryMaterializeImageFileFromInput,
@@ -33,6 +34,7 @@ export function useMobilePhotoIngest(options?: UseMobilePhotoIngestOptions) {
 
   const blobPreviewRevokeRef = useRef<string | null>(null);
   const ingestGenRef = useRef(0);
+  const fastPreviewSetRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -51,6 +53,7 @@ export function useMobilePhotoIngest(options?: UseMobilePhotoIngestOptions) {
         URL.revokeObjectURL(blobPreviewRevokeRef.current);
         blobPreviewRevokeRef.current = null;
       }
+      fastPreviewSetRef.current = false;
       setPhotoPreviewUrl(null);
       setPhotoFile(null);
       setIsMaterializing(false);
@@ -63,6 +66,27 @@ export function useMobilePhotoIngest(options?: UseMobilePhotoIngestOptions) {
 
       setIsMaterializing(true);
       onIngestBeginWithFile?.();
+
+      // Kick off a fast preview immediately (non-blocking).
+      void (async () => {
+        try {
+          const previewUrl = await createFastPreviewUrl(file);
+          if (gen !== ingestGenRef.current) {
+            if (previewUrl?.startsWith('blob:')) URL.revokeObjectURL(previewUrl);
+            return;
+          }
+          if (previewUrl) {
+            blobPreviewRevokeRef.current = previewUrl;
+            fastPreviewSetRef.current = true;
+            flushSync(() => {
+              setPhotoPreviewUrl(previewUrl);
+              setPreviewMountKey((k) => k + 1);
+            });
+          }
+        } catch {
+          // ignore; we'll still try the regular path below
+        }
+      })();
 
       void (async () => {
         try {
@@ -81,6 +105,11 @@ export function useMobilePhotoIngest(options?: UseMobilePhotoIngestOptions) {
 
           setPhotoFile(workFile);
           onCommittedChange?.(workFile);
+
+          // If fast preview already landed, don't redo expensive preview work.
+          if (fastPreviewSetRef.current) {
+            return;
+          }
 
           let displayUrl: string | null = null;
           if (isAndroidUserAgent()) {
