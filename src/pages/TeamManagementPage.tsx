@@ -26,6 +26,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { SimpleInviteModal } from '@/components/SimpleInviteModal';
 import { UserFeatureFlagsOverridesDialog } from '@/components/UserFeatureFlagsOverridesDialog';
 import { GlobalFeatureFlagsAdminPanel } from '@/components/GlobalFeatureFlagsAdminPanel';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import {
   Table,
   TableBody,
@@ -34,7 +35,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { ArrowRight, Loader2, Mail, Upload, UserPlus, Users } from 'lucide-react';
+import { ArrowRight, Flag, Loader2, Mail, Upload, UserPlus, Users } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import type { Profile } from '@/types/fleet';
@@ -54,6 +55,7 @@ export default function TeamManagementPage() {
   const isSuperAdminTeamView = isRoeySuperAdminProfile(profile);
   const showPushToPro = isSuperAdminTeamView;
   const [pushBusy, setPushBusy] = useState(false);
+  const [globalFeaturesOpen, setGlobalFeaturesOpen] = useState(false);
   const subjectIsSystemAdmin = (viewAsProfile?.is_system_admin ?? profile?.is_system_admin) === true;
   const { data: members, isLoading, isFetching: membersFetching } = useTeamMembers(orgId, {
     loadAllOrgs: isSuperAdminTeamView,
@@ -176,6 +178,29 @@ export default function TeamManagementPage() {
               {isSuperAdminTeamView ? 'כל הארגונים — תצוגת סופר־אדמין' : 'חברי הארגון ופיצ׳רים אישיים'}
             </p>
           </div>
+          <div className="ms-auto flex items-center gap-2">
+            {canManageGlobalFeatures ? (
+              <Dialog open={globalFeaturesOpen} onOpenChange={setGlobalFeaturesOpen}>
+                <DialogTrigger asChild>
+                  <Button
+                    type="button"
+                    className="h-9 gap-2 border-2 border-[gold] bg-amber-500/25 px-4 text-amber-50 shadow-[0_0_18px_rgba(251,191,36,0.45)] hover:bg-amber-500/40 hover:text-white hover:border-[#ffd700]"
+                  >
+                    <Flag className="h-4 w-4" />
+                    ניהול פיצ'רים גלובליים
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-5xl" dir="rtl">
+                  <DialogHeader>
+                    <DialogTitle>ניהול פיצ'רים גלובליים</DialogTitle>
+                  </DialogHeader>
+                  <div className="max-h-[75vh] overflow-auto pr-1">
+                    <GlobalFeatureFlagsAdminPanel />
+                  </div>
+                </DialogContent>
+              </Dialog>
+            ) : null}
+          </div>
         </div>
 
         {showPushToPro ? (
@@ -204,10 +229,6 @@ export default function TeamManagementPage() {
               </Button>
             </CardContent>
           </Card>
-        ) : null}
-
-        {canManageGlobalFeatures ? (
-          <GlobalFeatureFlagsAdminPanel />
         ) : null}
 
         <Card>

@@ -81,6 +81,8 @@ export function AppLayout({ children }: AppLayoutProps) {
   /** באנר "גרסת בדיקה": מוצג רק בסביבת staging */
   const isStaging =
     (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) ||
+    (typeof window !== 'undefined' &&
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) ||
     (import.meta as any).env?.MODE === 'staging';
   const showStagingWarningBar = isStaging;
 
@@ -727,7 +729,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       </div>
 
       {/* Desktop: stable row; management actions from centralized list */}
-      <div className="relative z-[9999] hidden md:flex flex-wrap items-center justify-end gap-3">
+      <div className="relative z-[9999] hidden md:flex flex-nowrap items-center justify-end gap-3">
         <PwaInstallButton />
         <ThemeToggle />
         <LanguageSwitcher />
@@ -744,7 +746,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                   key={a.key}
                   to={a.to}
                   className={cn(
-                    'flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors',
+                    'flex h-8 items-center gap-1.5 rounded-lg border px-4 text-xs font-semibold transition-colors',
                     isMgmt ? managementNavClass : 'border-white/10 bg-white/5 text-white/80 hover:bg-white/10'
                   )}
                 >
