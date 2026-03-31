@@ -110,6 +110,10 @@ export function computeSyncDiffRows(
       const u = upT[key as keyof typeof upT];
       if (valEq(c, u)) continue;
       const emptyCur = c === undefined || c === null || (typeof c === 'string' && !String(c).trim());
+      const emptyUp =
+        u === undefined || u === null || (typeof u === 'string' && !String(u).trim());
+      // Skip noise: upload and current are both "empty" for this field (no actionable diff).
+      if (emptyCur && emptyUp) continue;
       rows.push({
         id: `form:${key}`,
         category: 'forms',

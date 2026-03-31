@@ -31,6 +31,7 @@ import {
   Settings,
   Shield,
   Sun,
+  Trash2,
   Upload,
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
@@ -841,6 +842,25 @@ export default function AdminSettingsPage() {
       return ids.length > 0 && ids.every((id) => reviewSelected.has(id));
     };
 
+    const removeReviewRow = (id: string) => {
+      setReviewSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      setReviewRows((prev) => {
+        const filtered = prev.filter((r) => r.id !== id);
+        if (filtered.length === 0) {
+          queueMicrotask(() => {
+            setReviewModalOpen(false);
+            setReviewUpload(null);
+            setReviewSelected(new Set());
+          });
+        }
+        return filtered;
+      });
+    };
+
     const applyReviewSelection = async () => {
       if (!reviewUpload || !settingsOrgIdForSnapshot) return;
       if (reviewSelected.size === 0) {
@@ -1238,12 +1258,23 @@ export default function AdminSettingsPage() {
                               />
                               <Label htmlFor={row.id} className="cursor-pointer flex-1 min-w-0 leading-snug">
                                 <span className="flex flex-wrap items-center gap-2">
-                                  <span>{row.label}</span>
+                                  <span>{row.label || row.id}</span>
                                   <Badge variant={row.status === 'new' ? 'default' : 'secondary'}>
                                     {row.status === 'new' ? 'חדש' : 'שונה'}
                                   </Badge>
                                 </span>
                               </Label>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                                title="הסר מהרשימה (לא ייושם)"
+                                aria-label="הסר שורה מסקירת הסנכרון"
+                                onClick={() => removeReviewRow(row.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
                             </li>
                           ))}
                         </ul>

@@ -7,7 +7,7 @@ import {
 import { useVehicles } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
 import { useCreateHandover, sendHandoverNotificationEmail, generateReceptionPDF, generateProcedurePDF, generateHealthDeclarationPDF, generateGenericFormPDF } from '@/hooks/useHandovers';
-import { parsePolicyClauses, parseHealthItems } from '@/hooks/useOrgSettings';
+import { parsePolicyClauses, parseHealthItems, useOrgSettings } from '@/hooks/useOrgSettings';
 import { useOrgDocuments } from '@/hooks/useOrgDocuments';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -1612,7 +1612,9 @@ export default function VehicleHandoverWizard() {
   const [searchParams] = useSearchParams();
   const { data: vehicles } = useVehicles();
   const { data: drivers  } = useDrivers();
-  const { user } = useAuth();
+  const { user, activeOrgId, profile } = useAuth();
+  const handoverSettingsOrgId = activeOrgId ?? profile?.org_id ?? null;
+  const { data: orgUiSettings } = useOrgSettings(handoverSettingsOrgId);
   const { data: orgDocuments } = useOrgDocuments();
 
   const routerState = (location.state ?? {}) as VehicleHandoverWizardLocationState;
@@ -2377,6 +2379,19 @@ export default function VehicleHandoverWizard() {
 
       <main className="container py-6 pb-32 max-w-3xl mx-auto">
         <ProgressBar current={step} steps={wizardSteps} />
+
+        {showOrgSettingsEmptyTextsWarning && (
+          <div
+            className="mb-4 flex gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-100"
+            role="alert"
+          >
+            <AlertTriangle className="h-5 w-5 shrink-0 text-amber-400" aria-hidden />
+            <p className="leading-snug">
+              קיימת רשומת הגדרות ארגון, אך טקסט נוהל הרכב והצהרת הבריאות ריקים. האשף נפתח עם תוכן ברירת מחדל.
+              מומלץ למלא את הטקסטים ב&quot;הגדרות ארגון&quot; או לסנכרן מסמכי מערכת ממרכז הטפסים.
+            </p>
+          </div>
+        )}
 
         {/* כפתור הוספת טפסים כ-FAB draggable */}
         <div
