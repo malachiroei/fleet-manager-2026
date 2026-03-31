@@ -1012,9 +1012,15 @@ export function AppLayout({ children }: AppLayoutProps) {
             </div>
           </div>
 
-          <div className="flex w-full min-w-0 flex-nowrap items-center justify-center gap-x-2 border-t border-white/10 py-2 md:pb-3 lg:gap-x-4">
-            <HomeNavLinkDesktop />
-            {canAccessGoldenManagementLinks ? <GoldManagementNavLinks /> : null}
+          <div className="flex w-full min-w-0 flex-nowrap items-center justify-between gap-x-2 border-t border-white/10 py-2 md:pb-3 lg:gap-x-4">
+            <div className={cn('flex shrink-0 items-center', isRtl ? 'order-1' : 'order-2')}>
+              <HomeNavLinkDesktop />
+            </div>
+            {canAccessGoldenManagementLinks ? (
+              <div className={cn('flex min-w-0 shrink-0 items-center', isRtl ? 'order-2' : 'order-1')}>
+                <GoldManagementNavLinks />
+              </div>
+            ) : null}
           </div>
         </div>
 
