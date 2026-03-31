@@ -76,11 +76,12 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   /** קיר קשיח ייצור: fleet-manager-pro.com + www (גרסה בכותרת וכו') */
   const isProduction = isFleetManagerProHostname();
-  /** באנר "גרסת בדיקה": מוצג רק כשלא בפרודקשן (env-based) */
-  const isProdEnv =
-    (typeof process !== 'undefined' && process.env?.NODE_ENV === 'production') ||
-    (typeof import.meta !== 'undefined' && Boolean((import.meta as any).env?.PROD));
-  const showStagingWarningBar = !isProdEnv;
+  /** באנר "גרסת בדיקה": מוצג רק אם NODE_ENV אינו production */
+  const nodeEnv =
+    typeof process !== 'undefined' && typeof process.env?.NODE_ENV === 'string'
+      ? process.env.NODE_ENV
+      : (import.meta as any).env?.MODE;
+  const showStagingWarningBar = nodeEnv !== 'production';
 
   /** ריענון כותרת אחרי כתיבת fleet-pro-acknowledged-version (לפני reload) */
   const [proAckBump, setProAckBump] = useState(0);
@@ -806,12 +807,6 @@ export function AppLayout({ children }: AppLayoutProps) {
           </span>
           <span className="flex min-w-0 max-w-full items-baseline gap-1 text-xs text-white/65 font-medium">
             <span className="min-w-0 truncate">גרסה v{headerDisplayVersion}</span>
-            <span
-              className="shrink-0 text-6xl font-black leading-none text-emerald-400 drop-shadow-[0_0_12px_rgba(52,211,153,0.55),0_0_8px_rgba(16,185,129,0.5)]"
-              aria-hidden
-            >
-              *
-            </span>
           </span>
         </div>
       </div>

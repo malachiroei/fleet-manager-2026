@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Camera, Loader2, Trash2, Wrench } from 'lucide-react';
+import { ArrowRight, Camera, ImageIcon, Loader2, Trash2, Wrench } from 'lucide-react';
 
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -15,6 +15,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { WebcamCapture } from '@/components/WebcamCapture';
+import { useMobilePhotoIngest } from '@/hooks/useMobilePhotoIngest';
+import { isAndroidUserAgent, shouldAttachDirectCameraCapture } from '@/lib/mobilePhotoIngest';
 
 const DOCS_BUCKET = 'vehicle-documents';
 
@@ -71,21 +74,24 @@ export default function ServiceUpdatePage() {
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
   const [serviceDate, setServiceDate] = useState(todayYmdLocal);
   const [mileageInput, setMileageInput] = useState('');
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [blobPreviewUrl, setBlobPreviewUrl] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const photoInputRef = useRef<HTMLInputElement | null>(null);
-  const blobUrlRef = useRef<string | null>(null);
+  const android = isAndroidUserAgent();
+  const [webcamOpen, setWebcamOpen] = useState(false);
+  const [webcamMountKey, setWebcamMountKey] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    return () => {
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
-        blobUrlRef.current = null;
-      }
-    };
-  }, []);
+  const {
+    photoFile,
+    photoPreviewUrl,
+    previewMountKey,
+    isMaterializing,
+    startPhotoIngest,
+    resetPhoto,
+  } = useMobilePhotoIngest({
+    logLabel: '[ServiceUpdatePage]',
+  });
 
   const filteredVehicles = useMemo(() => {
     const q = plateSearch.trim().toLowerCase();
@@ -127,38 +133,11 @@ export default function ServiceUpdatePage() {
     return mileageNum + interval;
   }, [resolvedVehicle, mileageNum]);
 
-  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const input = e.currentTarget;
-    const file = input.files?.[0] ?? null;
-
-    if (blobUrlRef.current) {
-      URL.revokeObjectURL(blobUrlRef.current);
-      blobUrlRef.current = null;
-    }
-
-    if (!file) {
-      setPhotoFile(null);
-      setBlobPreviewUrl(null);
-      input.value = '';
-      return;
-    }
-
-    const url = URL.createObjectURL(file);
-    blobUrlRef.current = url;
-    setPhotoFile(file);
-    setBlobPreviewUrl(url);
-    input.value = '';
-  }, []);
-
-  const clearPhoto = useCallback(() => {
-    if (blobUrlRef.current) {
-      URL.revokeObjectURL(blobUrlRef.current);
-      blobUrlRef.current = null;
-    }
-    setPhotoFile(null);
-    setBlobPreviewUrl(null);
-    if (photoInputRef.current) photoInputRef.current.value = '';
-  }, []);
+  const clearPhoto = () => {
+    resetPhoto();
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (galleryInputRef.current) galleryInputRef.current.value = '';
+  };
 
   const onSelectVehicle = (id: string) => {
     setSelectedVehicleId(id);
@@ -203,6 +182,10 @@ export default function ServiceUpdatePage() {
 
     if (!photoFile) {
       toast({ title: 'נא לצרף צילום חשבונית / טיפול', variant: 'destructive' });
+      return;
+    }
+    if (isMaterializing) {
+      toast({ title: 'מעבדים את התמונה…', description: 'המתן רגע לפני השליחה.', variant: 'destructive' });
       return;
     }
 
@@ -449,37 +432,92 @@ export default function ServiceUpdatePage() {
 
               <div className="space-y-2">
                 <Label>צילום חשבונית / טיפול</Label>
-                <input
-                  ref={photoInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  className="hidden"
-                  onChange={handleFileChange}
-                />
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="secondary" onClick={() => photoInputRef.current?.click()}>
-                    <Camera className="ml-2 h-4 w-4" />
-                    מצלמה / גלריה
-                  </Button>
-                  {photoFile ? (
-                    <Button type="button" variant="outline" onClick={clearPhoto}>
-                      <Trash2 className="ml-2 h-4 w-4" />
+                {android ? (
+                  <>
+                    <input
+                      ref={galleryInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      disabled={submitting || isMaterializing}
+                      onChange={(e) => startPhotoIngest(e.target.files?.[0] ?? null, e.target)}
+                      aria-hidden
+                    />
+                    <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
+                      <Button
+                        type="button"
+                        className="h-12 flex-1 gap-2 text-base"
+                        disabled={submitting || isMaterializing}
+                        onClick={() => {
+                          setWebcamMountKey((k) => k + 1);
+                          setWebcamOpen(true);
+                        }}
+                      >
+                        <Camera className="h-4 w-4 shrink-0" />
+                        צלם מהמצלמה
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-12 flex-1 gap-2 text-base"
+                        disabled={submitting || isMaterializing}
+                        onClick={() => galleryInputRef.current?.click()}
+                      >
+                        <ImageIcon className="h-4 w-4 shrink-0" />
+                        בחר מהגלריה
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      {...(shouldAttachDirectCameraCapture() ? ({ capture: 'environment' } as const) : {})}
+                      className="hidden"
+                      disabled={submitting || isMaterializing}
+                      onChange={(e) => startPhotoIngest(e.target.files?.[0] ?? null, e.target)}
+                      aria-hidden
+                    />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="h-12 w-full gap-2 text-base"
+                      disabled={submitting || isMaterializing}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <Camera className="ml-2 h-4 w-4" />
+                      מצלמה / גלריה
+                    </Button>
+                  </>
+                )}
+
+                {photoPreviewUrl ? (
+                  <div className="space-y-3 pt-2">
+                    <img
+                      key={previewMountKey}
+                      src={photoPreviewUrl}
+                      alt="תצוגה מקדימה"
+                      className="max-h-56 w-full rounded-lg border border-white/10 object-contain bg-black"
+                      decoding="async"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-11 w-full gap-2"
+                      onClick={clearPhoto}
+                      disabled={submitting || isMaterializing}
+                    >
+                      <Trash2 className="h-4 w-4 shrink-0" />
                       מחק תמונה
                     </Button>
-                  ) : null}
-                </div>
-                {blobPreviewUrl ? (
-                  <img
-                    src={blobPreviewUrl}
-                    alt="תצוגה מקדימה"
-                    className="mt-2 max-h-56 rounded-lg border border-white/10 object-contain"
-                  />
+                  </div>
                 ) : null}
               </div>
 
               <div className="flex gap-3 pt-2">
-                <Button type="submit" className="flex-1" disabled={submitting || !resolvedVehicle}>
+                <Button type="submit" className="flex-1" disabled={submitting || !resolvedVehicle || !photoFile || isMaterializing}>
                   {submitting ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : null}
                   שמור ושלח
                 </Button>
@@ -493,6 +531,19 @@ export default function ServiceUpdatePage() {
           </CardContent>
         </Card>
       </main>
+
+      {android ? (
+        <WebcamCapture
+          key={webcamMountKey}
+          open={webcamOpen}
+          onOpenChange={setWebcamOpen}
+          onCapture={(f) => {
+            setWebcamOpen(false);
+            startPhotoIngest(f, null);
+          }}
+          disabled={submitting || isMaterializing}
+        />
+      ) : null}
     </div>
   );
 }
