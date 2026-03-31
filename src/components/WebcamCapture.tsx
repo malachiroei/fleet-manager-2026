@@ -28,7 +28,7 @@ const REAR_DEVICE_ID_STORAGE_KEY = 'fleet_manager_mileage_rear_device_id_v1';
 const POST_FIRST_WARMUP_RECHECK_MS = 2200;
 
 /** After the first front stream is live on Android, auto-switch to rear (no manual tap). */
-const ANDROID_AUTO_FLIP_TO_REAR_MS = 500;
+const ANDROID_AUTO_FLIP_TO_REAR_MS = 300;
 
 type CameraProfile = 'environment' | 'user' | 'compatible';
 
@@ -258,6 +258,8 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
 
   const [renderKey, setRenderKey] = useState(0);
 
+  const [presentingProfile, setPresentingProfile] = useState<CameraProfile | null>(null);
+
   const [cameraProfile, setCameraProfile] = useState<CameraProfile>(() => {
     /** Android: start on front — rear often shows black until the front camera was opened in this session. */
     if (isAndroidUa()) {
@@ -360,6 +362,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     setVideoReady(false);
     setCanvasProbeOk(false);
     setHasVideoFrame(false);
+    setPresentingProfile(null);
     setLoading(true);
     clearInitTimeout();
     stopStream(streamRef.current);
@@ -610,7 +613,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
   useEffect(() => {
     if (!androidRearBootstrapping) return;
     if (!open || !isAndroidUa() || cameraProfile !== 'environment') return;
-    if (hasVideoFrame && (videoReady || canvasProbeOk)) {
+    if (presentingProfile === 'environment' && hasVideoFrame && (videoReady || canvasProbeOk)) {
       androidRearBootstrappingRef.current = false;
       setAndroidRearBootstrapping(false);
       setLoading(false);
@@ -622,6 +625,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     videoReady,
     canvasProbeOk,
     androidRearBootstrapping,
+    presentingProfile,
   ]);
 
   /** Reset probe warm-up only when the dialog opens — not on `streamBootId` / profile-driven re-attach. */
@@ -880,7 +884,13 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
                 autoPlay
                 disablePictureInPicture
                 disableRemotePlayback
-                onLoadedMetadata={markVideoPresenting}
+                onLoadedMetadata={() => {
+                  const v = videoRef.current;
+                  if (v && v.videoWidth > 0 && v.videoHeight > 0) {
+                    setPresentingProfile(cameraProfileRef.current);
+                  }
+                  markVideoPresenting();
+                }}
                 onError={handleVideoError}
               />
               {showCameraLoader && (

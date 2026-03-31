@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Camera, Check, ImageIcon, X } from 'lucide-react';
 
 import { WebcamCapture } from '@/components/WebcamCapture';
@@ -43,6 +43,17 @@ export default function PhotoUpload({
 
   const android = isAndroidUserAgent();
   const controlsDisabled = disabled || isMaterializing;
+
+  useEffect(() => {
+    const onGoHome = () => {
+      setWebcamOpen(false);
+      resetPhoto();
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      if (galleryInputRef.current) galleryInputRef.current.value = '';
+    };
+    window.addEventListener('app:go-home', onGoHome as EventListener);
+    return () => window.removeEventListener('app:go-home', onGoHome as EventListener);
+  }, [resetPhoto]);
 
   const clearPhoto = () => {
     resetPhoto();

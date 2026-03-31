@@ -151,6 +151,30 @@ export default function VehicleDeliveryPage() {
     return () => setDirty(DIRTY_SOURCE_VEHICLE_DELIVERY, false);
   }, [setDirty]);
 
+  useEffect(() => {
+    const onGoHome = () => {
+      flushSync(() => {
+        setDirty(DIRTY_SOURCE_VEHICLE_DELIVERY, false);
+      });
+      setSelectedVehicle('');
+      setSelectedDriver('');
+      setOdometer('');
+      setFuelLevel(4);
+      setNotes('');
+      setHasSignature(false);
+      setReplacementApprovalChecked(false);
+      setHasReplacementApprovalSignature(false);
+      setDamageReport(cloneEmptyDamageReport());
+      setSelectedDeliveryFormIds([]);
+      setPhotoFront(null);
+      setPhotoBack(null);
+      setPhotoRight(null);
+      setPhotoLeft(null);
+    };
+    window.addEventListener('app:go-home', onGoHome as EventListener);
+    return () => window.removeEventListener('app:go-home', onGoHome as EventListener);
+  }, [setDirty]);
+
   const exitDelivery = useCallback(
     (targetPath: string) => {
       if (deliveryDirty) {

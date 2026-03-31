@@ -768,9 +768,19 @@ export function AppLayout({ children }: AppLayoutProps) {
       <Link
         to="/"
         onClick={(e) => {
-          if (!getIsDirty()) return;
           e.preventDefault();
-          tryNavigate('/');
+          try {
+            window.dispatchEvent(new CustomEvent('app:go-home'));
+          } catch {
+            // ignore
+          }
+
+          if (getIsDirty()) {
+            tryNavigate('/');
+            return;
+          }
+
+          window.location.assign(`${window.location.origin}/`);
         }}
         className={cn(
           'flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition-colors',
