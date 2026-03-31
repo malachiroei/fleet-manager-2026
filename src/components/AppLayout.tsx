@@ -567,7 +567,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const TopToolsBlock = () => (
     <div
       className={cn(
-        'relative z-[9999] flex items-center gap-2 sm:gap-3 shrink-0',
+        'relative z-[9999] flex items-center gap-2 sm:gap-3 shrink-0 flex-wrap justify-end',
         isRtl ? 'flex-row-reverse' : ''
       )}
     >
@@ -763,10 +763,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   /* קצה ימין: בית הכי ימני, אחריו לוגו + כותרת (ב־RTL פריט ראשון = ימין) */
   const BrandAndHome = () => (
     <div
-      className={cn(
-        'flex min-w-0 items-center gap-4 sm:gap-6',
-        isRtl ? 'flex-row' : 'flex-row-reverse'
-      )}
+      className={cn('flex flex-1 min-w-0 items-center gap-3 sm:gap-6', isRtl ? 'flex-row' : 'flex-row-reverse')}
     >
       <Link
         to="/"
@@ -780,14 +777,14 @@ export function AppLayout({ children }: AppLayoutProps) {
           window.location.assign(`${window.location.origin}/`);
         }}
         className={cn(
-          'flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition-colors',
+          'flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-2.5 sm:px-3 text-sm font-medium transition-colors',
           isHomeActive
             ? 'bg-cyan-500/25 text-cyan-100 border border-cyan-400/40'
             : 'text-white/75 hover:bg-white/10 hover:text-white'
         )}
       >
         <Home className="h-4 w-4" />
-        {t('navigation.home')}
+        <span className="hidden sm:inline">{t('navigation.home')}</span>
       </Link>
       <div className={cn('flex min-w-0 items-center gap-2 sm:gap-3', isRtl && 'flex-row-reverse')}>
         <div className="h-12 w-16 shrink-0 overflow-hidden rounded-lg bg-[#0a1525] p-2 flex items-center justify-center">
@@ -867,7 +864,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       >
         <div className="mx-auto flex max-w-[1920px] w-full flex-col gap-0 sm:gap-1 px-4 sm:px-6 py-3 sm:py-3">
           {/* Row 1: לוגו + בית + גלגל שיניים */}
-          <div className="flex w-full items-center justify-between gap-2 sm:gap-4 min-h-10 sm:min-h-0">
+          <div className="flex w-full flex-wrap items-center justify-between gap-x-2 gap-y-2 sm:gap-4 min-h-10 sm:min-h-0">
             <BrandAndHome />
             <TopToolsBlock />
           </div>

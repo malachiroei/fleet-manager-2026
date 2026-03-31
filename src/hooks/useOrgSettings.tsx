@@ -71,8 +71,10 @@ export function useOrgSettings(
   const requireOrg = opts?.enabledOnlyWithOrgId === true;
   return useQuery<OrgSettings | null>({
     queryKey: [...QUERY_KEY, organizationId ?? null, requireOrg],
-    enabled: requireOrg ? Boolean(organizationId) : true,
+    // Strict: never query ui_settings without a valid org id (prevents 400/RLS issues + accidental cross-org leakage).
+    enabled: Boolean(organizationId) && (requireOrg ? Boolean(organizationId) : true),
     queryFn: async () => {
+      if (!organizationId) return null;
       let query = (supabase as any).from('ui_settings').select(UI_SETTINGS_COLUMNS);
       if (organizationId) {
         query = query.eq('org_id', organizationId);
