@@ -706,13 +706,9 @@ export function AppLayout({ children }: AppLayoutProps) {
     </>
   );
 
-  const GoldManagementNavLinks = ({ flexNowrap }: { flexNowrap?: boolean }) => (
-    <div
-      className={cn(
-        'relative z-[9998] flex flex-wrap items-center justify-end gap-1',
-        flexNowrap && 'md:flex-nowrap md:shrink-0'
-      )}
-    >
+  /** כפתורי ניהול זהב — בר דסקטופ (md+): ריווח אחיד ותווית מלאה */
+  const GoldManagementNavLinks = () => (
+    <div className="relative z-[9998] flex flex-nowrap items-center gap-4">
       {availableActions
         .filter((a) => a.showOn === 'both' || a.showOn === 'desktop')
         .filter((a) => a.key !== 'logout')
@@ -728,12 +724,12 @@ export function AppLayout({ children }: AppLayoutProps) {
               title={a.label}
               aria-label={a.label}
               className={cn(
-                'relative z-[9999] flex h-9 min-h-9 items-center justify-center gap-0 rounded-lg border-2 px-2 text-xs font-medium transition-colors md:h-9 md:px-2 lg:gap-1 lg:px-3 lg:text-sm',
+                'relative z-[9999] flex h-10 min-h-10 min-w-[9rem] items-center justify-center gap-2 rounded-lg border-2 px-6 text-sm font-medium transition-colors',
                 managementNavClass
               )}
             >
-              <Icon className="h-3.5 w-3.5 shrink-0 text-amber-200 md:h-4 md:w-4" />
-              <span className="hidden whitespace-nowrap lg:inline">{a.label}</span>
+              <Icon className="h-4 w-4 shrink-0 text-amber-200" />
+              <span className="whitespace-nowrap">{a.label}</span>
             </Link>
           );
         })}
@@ -801,7 +797,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       to="/"
       onClick={handleGoHomeNav}
       className={cn(
-        'hidden md:inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors',
+        'hidden md:inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border px-5 text-sm font-medium transition-colors',
         isHomeActive
           ? 'border-cyan-400/35 bg-cyan-500/15 text-cyan-100'
           : 'border-white/10 bg-white/[0.06] text-white/70 hover:bg-white/10 hover:text-white/90'
@@ -815,7 +811,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const BrandMarkBlock = () => (
     <div
       className={cn(
-        'flex min-w-[150px] flex-1 items-center gap-2',
+        'flex shrink-0 items-center gap-2 min-w-0 md:min-w-[150px]',
         isRtl && 'flex-row-reverse'
       )}
     >
@@ -994,22 +990,26 @@ export function AppLayout({ children }: AppLayoutProps) {
       )}
       <header
         className={cn(
-          'sticky z-40 border-b border-white/10 bg-[#0d1b2e] min-h-0 md:h-14',
+          'sticky z-40 border-b border-white/10 bg-[#0d1b2e] min-h-0 md:h-16 md:border-gray-800',
           headerStickyTopClass
         )}
       >
-        {/* דסקטופ וטאבלט (md+): שורה אחת, ללא wrap — מרווח אחיד */}
-        <div className="mx-auto hidden w-full max-w-[1920px] flex-nowrap items-center gap-2 px-4 md:flex md:px-6 lg:px-6">
-          <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-visible">
-            <HomeNavLinkDesktop />
+        {/* דסקטופ (md+): שלוש אזוריות — מותג | ניווט מרכזי | כלים + משתמש */}
+        <div className="hidden w-full max-w-none flex-nowrap items-center justify-between gap-4 px-4 md:flex md:px-6 lg:px-8">
+          <div className="flex shrink-0 items-center">
             <BrandMarkBlock />
           </div>
-          <div className="relative z-[9998] flex min-w-0 flex-1 flex-nowrap items-center justify-end gap-2 overflow-hidden">
-            <UtilityCluster />
-            {canAccessGoldenManagementLinks ? <GoldManagementNavLinks flexNowrap /> : null}
-            <ViewAsExitButton />
+
+          <div className="flex min-w-0 flex-1 items-center justify-center gap-4 px-2">
+            <HomeNavLinkDesktop />
+            {canAccessGoldenManagementLinks ? <GoldManagementNavLinks /> : null}
           </div>
-          <UserInline />
+
+          <div className="relative z-[9998] flex shrink-0 flex-nowrap items-center gap-2 md:gap-3">
+            <UtilityCluster />
+            <ViewAsExitButton />
+            <UserInline />
+          </div>
         </div>
 
         {/* מובייל (מתחת ל־768px): עמודה — שורת לוגו+משתמש, אחריה פס ניווט מלא רוחב */}
