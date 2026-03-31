@@ -61,11 +61,16 @@ export default function TeamManagementPage() {
   });
   const { data: invitations, isLoading: invitationsLoading, isFetching: invitationsFetching } =
     useOrgInvitations(orgId);
-  const memberRows = members ?? [];
+  const memberRowsAll = members ?? [];
   const invitationRows = invitations ?? [];
   const viewerEmail = (profile?.email ?? '').trim().toLowerCase();
   const isRoeiAdmin = viewerEmail === 'malachiroei@gmail.com';
   const isRavid = viewerEmail === 'ravidmalachi@gmail.com';
+  const memberRows = useMemo(() => {
+    // Never show super-admin row to non-super-admin viewers.
+    if (isSuperAdminTeamView) return memberRowsAll;
+    return memberRowsAll.filter((m) => (m.email ?? '').trim().toLowerCase() !== 'malachiroei@gmail.com');
+  }, [isSuperAdminTeamView, memberRowsAll]);
 
   /** מיילים שכבר יש להם שורה ב-profiles — לא מציגים אותם כהזמנה פתוחה */
   const registeredEmails = useMemo(() => {

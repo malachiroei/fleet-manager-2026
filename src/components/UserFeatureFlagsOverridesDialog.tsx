@@ -76,7 +76,7 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
   const viewerEmail = (profile?.email ?? user?.email ?? '').trim().toLowerCase();
   const isRoeiAdmin = viewerEmail === 'malachiroei@gmail.com';
   const viewerOrgId = (activeOrgId ?? profile?.org_id ?? null) as string | null;
-  const viewerIsTeamManager = isRoeiAdmin || isAdmin || isManager || hasPermission('manage_team');
+  const viewerHasManageTeam = isRoeiAdmin || hasPermission('manage_team') || isAdmin || isManager;
 
   const { data: featureFlags = [] as FeatureFlagRow[], isLoading: isFlagsLoading, isError: isFlagsError } = useQuery({
     queryKey: ['feature-flags-user-overrides-list'],
@@ -123,7 +123,9 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
   const isSubjectRoei = subjectEmail === 'malachiroei@gmail.com';
   const sameOrg = Boolean(viewerOrgId && subjectProfile?.org_id && viewerOrgId === subjectProfile.org_id);
   const canEditSubjectOverrides = Boolean(
-    typeof userId === 'string' && userId.length > 0 && (isRoeiAdmin || (viewerIsTeamManager && sameOrg && !isSubjectRoei)),
+    typeof userId === 'string' &&
+      userId.length > 0 &&
+      (isRoeiAdmin || (viewerHasManageTeam && sameOrg && !isSubjectRoei)),
   );
 
   const { data: overrideRows = [] as OverrideRow[], isLoading: isOverridesLoading, isError: isOverridesError } = useQuery({
