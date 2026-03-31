@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -93,13 +93,30 @@ function PdfUploadSlot({ label, description, currentUrl, onUploaded, slot, readO
 }
 
 // ─── Document row ──────────────────────────────────────────────────
+function docTitleLooksInvalid(doc: OrgDocument): boolean {
+  return !String(doc.title ?? '').trim();
+}
+
 function DocRow({ doc, onEdit, onDelete, readOnly }: {
   doc: OrgDocument; onEdit: (d: OrgDocument) => void; onDelete: (id: string) => void; readOnly?: boolean;
 }) {
+  const titleTrim = String(doc.title ?? '').trim();
+  const invalid = docTitleLooksInvalid(doc);
   return (
-    <div className="flex items-start gap-3 border border-border rounded-xl p-4">
+    <div
+      className={`flex items-start gap-3 border rounded-xl p-4 ${
+        invalid ? 'border-amber-500/50 bg-amber-500/5' : 'border-border'
+      }`}
+    >
       <div className="flex-1 min-w-0">
-        <p className="font-semibold text-foreground truncate">{doc.title}</p>
+        <p className="font-semibold text-foreground truncate">
+          {titleTrim || <span className="text-amber-700 dark:text-amber-300">(ללא כותרת)</span>}
+        </p>
+        {invalid && (
+          <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+            שורה לא תקינה — מומלץ למחוק או לערוך ולשמור כותרת.
+          </p>
+        )}
         {doc.description && <p className="text-xs text-muted-foreground mt-0.5">{doc.description}</p>}
         <div className="flex flex-wrap gap-2 mt-2">
           {doc.include_in_handover && <span className="text-xs bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20 rounded-full px-2 py-0.5">כלול באשף מסירה</span>}
@@ -412,9 +429,15 @@ export default function OrgSettingsPage() {
         await updateDoc.mutateAsync({ id: editingDoc.id, ...data });
       } else {
         await createDoc.mutateAsync({
-          title: '', description: '', file_url: null,
-          include_in_handover: false, is_standalone: false,
-          requires_signature: true, sort_order: 0, is_active: true, ...data,
+          include_in_handover: false,
+          is_standalone: false,
+          requires_signature: true,
+          sort_order: 0,
+          is_active: true,
+          title: '',
+          description: '',
+          file_url: null,
+          ...data,
         });
       }
       setAddingDoc(false); setEditingDoc(null);
@@ -430,6 +453,39 @@ export default function OrgSettingsPage() {
     try { await deleteDoc.mutateAsync(id); toast.success('מסמך הוסר'); }
     catch { toast.error('מחיקה נכשלה'); }
   };
+
+  const [repairingDocs, setRepairingDocs] = useState(false);
+  const handleRepairInvalidDocs = async () => {
+    if (readOnly) return;
+    const bad = (docs ?? []).filter((d) => !String(d.title ?? '').trim());
+    if (bad.length === 0) {
+      toast.info('אין מסמכים ללא כותרת למחיקה');
+      return;
+    }
+    if (!confirm(`למחוק ${bad.length} מסמכים ללא כותרת? פעולה זו אינה הפיכה מממשק המשתמש.`)) return;
+    setRepairingDocs(true);
+    try {
+      for (const d of bad) {
+        await deleteDoc.mutateAsync(d.id);
+      }
+      toast.success(`הוסרו ${bad.length} מסמכים ריקים`);
+    } catch {
+      toast.error('ניקוי נכשל');
+    } finally {
+      setRepairingDocs(false);
+    }
+  };
+
+  const sortedDocs = useMemo(() => {
+    const list = [...(docs ?? [])];
+    list.sort((a, b) => {
+      const ae = !String(a.title ?? '').trim();
+      const be = !String(b.title ?? '').trim();
+      if (ae !== be) return ae ? -1 : 1;
+      return 0;
+    });
+    return list;
+  }, [docs]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -710,9 +766,22 @@ export default function OrgSettingsPage() {
                       <div><CardTitle>מסמכים נוספים</CardTitle><CardDescription>טפסים מותאמים — לאשף המסירה או כקישורים עצמאיים לנהג.</CardDescription></div>
                     </div>
                     {!readOnly && (
-                      <Button size="sm" className="gap-2 shrink-0" onClick={() => { setAddingDoc(true); setEditingDoc(null); }}>
-                        <Plus className="h-4 w-4" /> הוסף מסמך
-                      </Button>
+                      <div className="flex flex-wrap gap-2 shrink-0 justify-end">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="gap-2"
+                          disabled={repairingDocs || docsLoading}
+                          onClick={() => void handleRepairInvalidDocs()}
+                        >
+                          {repairingDocs ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                          ניקוי שורות ללא כותרת
+                        </Button>
+                        <Button size="sm" className="gap-2" onClick={() => { setAddingDoc(true); setEditingDoc(null); }}>
+                          <Plus className="h-4 w-4" /> הוסף מסמך
+                        </Button>
+                      </div>
                     )}
                   </div>
                 </CardHeader>
@@ -729,7 +798,7 @@ export default function OrgSettingsPage() {
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {(docs ?? []).map((doc) => (
+                      {sortedDocs.map((doc) => (
                         <React.Fragment key={doc.id}>
                           {editingDoc?.id === doc.id ? (
                             <DocForm initial={doc} onSave={handleSaveDoc} onCancel={() => setEditingDoc(null)} saving={updateDoc.isPending} />
