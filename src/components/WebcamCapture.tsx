@@ -256,6 +256,8 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
   const openRef = useRef(open);
   openRef.current = open;
 
+  const [renderKey, setRenderKey] = useState(0);
+
   const [cameraProfile, setCameraProfile] = useState<CameraProfile>(() => {
     /** Android: start on front — rear often shows black until the front camera was opened in this session. */
     if (isAndroidUa()) {
@@ -313,12 +315,20 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       }
       return;
     }
-    setLoading(false);
     if (v.videoWidth > 0 && v.videoHeight > 0) {
       setHasVideoFrame(true);
       setVideoReady(true);
+      setLoading(false);
     }
   }, [clearInitTimeout]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!isAndroidUa()) return;
+    setRenderKey(0);
+    const t = setTimeout(() => setRenderKey(1), 400);
+    return () => clearTimeout(t);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -442,8 +452,11 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     initTimeoutRef.current = setTimeout(() => {
       initTimeoutRef.current = null;
       if (!openRef.current) return;
-      if (videoRef.current && videoRef.current.readyState >= 2) {
-        markVideoPresenting();
+      const v = videoRef.current;
+      if (v && v.readyState >= 2 && v.videoWidth > 0 && v.videoHeight > 0) {
+        setHasVideoFrame(true);
+        setVideoReady(true);
+        setLoading(false);
         return;
       }
       clearAndroidAutoFlipTimer();
@@ -630,7 +643,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       stopStream(streamRef.current);
       streamRef.current = null;
     };
-  }, [open, attachStream, clearInitTimeout, clearAndroidAutoFlipTimer]);
+  }, [open, renderKey, attachStream, clearInitTimeout, clearAndroidAutoFlipTimer]);
 
   useEffect(() => {
     if (!open) return;
@@ -849,7 +862,10 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
               </DialogDescription>
             </DialogHeader>
 
-            <div className="relative aspect-[3/4] w-full min-h-[200px] overflow-hidden rounded-lg bg-black">
+            <div
+              key={isAndroidUa() ? renderKey : undefined}
+              className="relative aspect-[3/4] w-full min-h-[200px] overflow-hidden rounded-lg bg-black"
+            >
               {/* Mirror canvas under the video: rear stream can fail canvas drawImage while the video tag still paints. */}
               <canvas
                 ref={previewCanvasRef}
@@ -865,9 +881,6 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
                 disablePictureInPicture
                 disableRemotePlayback
                 onLoadedMetadata={markVideoPresenting}
-                onLoadedData={markVideoPresenting}
-                onPlaying={markVideoPresenting}
-                onCanPlay={markVideoPresenting}
                 onError={handleVideoError}
               />
               {showCameraLoader && (

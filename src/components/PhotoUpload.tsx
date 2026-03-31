@@ -27,7 +27,6 @@ export default function PhotoUpload({
   const [webcamMountKey, setWebcamMountKey] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
-  const fallbackInputRef = useRef<HTMLInputElement>(null);
 
   const onCommittedChange = useMemo(() => onPhotoCapture, [onPhotoCapture]);
 
@@ -49,7 +48,6 @@ export default function PhotoUpload({
     resetPhoto();
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (galleryInputRef.current) galleryInputRef.current.value = '';
-    if (fallbackInputRef.current) fallbackInputRef.current.value = '';
   };
 
   const openNativePicker = () => {
@@ -62,14 +60,6 @@ export default function PhotoUpload({
         <>
           <input
             ref={galleryInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            disabled={controlsDisabled}
-            onChange={(e) => startPhotoIngest(e.target.files?.[0] ?? null, e.target)}
-          />
-          <input
-            ref={fallbackInputRef}
             type="file"
             accept="image/*"
             className="hidden"
@@ -167,14 +157,6 @@ export default function PhotoUpload({
                 מהגלריה
               </Button>
             </div>
-            <button
-              type="button"
-              className="text-xs underline decoration-muted-foreground/60 underline-offset-2 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
-              disabled={controlsDisabled}
-              onClick={() => fallbackInputRef.current?.click()}
-            >
-              או בחר קובץ
-            </button>
           </div>
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground">
