@@ -1232,17 +1232,18 @@ function renderStepContent({
   }
 
   const builtinTemplateKey = String((doc.json_schema as any)?.builtin_template_key ?? '');
+  const docTitle = safeDocTitle(doc);
   const isPracticalDrivingTestForm =
-    builtinTemplateKey === 'system-practical-driving-test' || doc.title.includes('מבחן מעשי בנהיגה');
+    builtinTemplateKey === 'system-practical-driving-test' || docTitle.includes('מבחן מעשי בנהיגה');
   const isTrafficLiabilityForm =
     builtinTemplateKey === 'system-traffic-liability-annex' ||
-    (doc.title.includes('אחריות אישית') && doc.title.includes('עבירות תנועה'));
+    (docTitle.includes('אחריות אישית') && docTitle.includes('עבירות תנועה'));
   const isUpgradeForm =
-    builtinTemplateKey === 'system-upgrade-request' || doc.title.includes('שדרוג');
+    builtinTemplateKey === 'system-upgrade-request' || docTitle.includes('שדרוג');
   const isReturnForm =
-    builtinTemplateKey === 'system-return-form' || doc.title.includes('החזרת רכב');
+    builtinTemplateKey === 'system-return-form' || docTitle.includes('החזרת רכב');
   const isReplacementUsageForm =
-    builtinTemplateKey === 'system-replacement-usage' || doc.title.includes('שימוש ברכב חלופי');
+    builtinTemplateKey === 'system-replacement-usage' || docTitle.includes('שימוש ברכב חלופי');
   const now = new Date();
   const defaultDateIso = now.toISOString().slice(0, 10);
   const defaultTimeIso = now.toTimeString().slice(0, 5);
@@ -1594,11 +1595,17 @@ function renderStepContent({
   );
 }
 
+/** DB may return null title for bad rows — never call .includes on raw doc.title */
+function safeDocTitle(doc: { title?: string | null }): string {
+  return String(doc?.title ?? '');
+}
+
 function getStepKindForDoc(doc: DeliveryFormDoc): WizardStepKind {
   const builtinKey = String((doc.json_schema as any)?.builtin_template_key ?? '').trim();
+  const title = safeDocTitle(doc);
   if (doc.template_name === 'health' || builtinKey === 'system-health-statement') return 'health';
   if (doc.template_name === 'procedure' || builtinKey === 'system-vehicle-policy') return 'procedure';
-  if (doc.template_name === 'license' || doc.title.includes('רישיון')) return 'license';
+  if (doc.template_name === 'license' || title.includes('רישיון')) return 'license';
   return 'generic';
 }
 
@@ -1760,9 +1767,7 @@ export default function VehicleHandoverWizard() {
 
   // All forms except 'טופס קבלת רכב' for the picker
   const formsPickerForms = useMemo(
-    () => availableDeliveryForms.filter(
-      (doc) => doc.title !== 'טופס קבלת רכב'
-    ),
+    () => availableDeliveryForms.filter((doc) => safeDocTitle(doc) !== 'טופס קבלת רכב'),
     [availableDeliveryForms],
   );
   const selectedFormsInitializedRef = useRef(false);
@@ -1811,9 +1816,11 @@ export default function VehicleHandoverWizard() {
   }, [availableDeliveryForms, selectedDeliveryFormIds]);
 
   const receptionFormDoc = useMemo(() => {
-    const inSelection = selectedDeliveryForms.find((doc) => doc.title.includes('טופס קבלת רכב'));
+    const inSelection = selectedDeliveryForms.find((doc) => safeDocTitle(doc).includes('טופס קבלת רכב'));
     if (inSelection) return inSelection;
-    return availableDeliveryForms.find((doc) => doc.title.includes('טופס קבלת רכב')) ?? null;
+    return (
+      availableDeliveryForms.find((doc) => safeDocTitle(doc).includes('טופס קבלת רכב')) ?? null
+    );
   }, [selectedDeliveryForms, availableDeliveryForms]);
 
   const receptionDeclarationText =
@@ -1824,14 +1831,14 @@ export default function VehicleHandoverWizard() {
   const procedureFormDoc = useMemo(
     () =>
       availableDeliveryForms.find(
-        (doc) => doc.template_name === 'procedure' || doc.title.includes('נוהל'),
+        (doc) => doc.template_name === 'procedure' || safeDocTitle(doc).includes('נוהל'),
       ) ?? null,
     [availableDeliveryForms],
   );
   const healthFormDoc = useMemo(
     () =>
       availableDeliveryForms.find(
-        (doc) => doc.template_name === 'health' || doc.title.includes('בריאות'),
+        (doc) => doc.template_name === 'health' || safeDocTitle(doc).includes('בריאות'),
       ) ?? null,
     [availableDeliveryForms],
   );
