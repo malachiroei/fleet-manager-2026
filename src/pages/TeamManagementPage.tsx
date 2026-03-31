@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { SimpleInviteModal } from '@/components/SimpleInviteModal';
 import { UserFeatureFlagsOverridesDialog } from '@/components/UserFeatureFlagsOverridesDialog';
+import { GlobalFeatureFlagsAdminPanel } from '@/components/GlobalFeatureFlagsAdminPanel';
 import {
   Table,
   TableBody,
@@ -103,6 +104,7 @@ export default function TeamManagementPage() {
 
   // Strict privacy: team page is only for admins/managers (or explicit manage_team permission).
   const canManageTeam = isAdmin || isManager || hasPermission('manage_team') || isSuperAdminTeamView;
+  const canManageGlobalFeatures = isRoeiAdmin || hasPermission('manage_team') || isAdmin || isManager;
 
   if (!canManageTeam) {
     return <Navigate to="/" replace />;
@@ -204,6 +206,10 @@ export default function TeamManagementPage() {
           </Card>
         ) : null}
 
+        {canManageGlobalFeatures ? (
+          <GlobalFeatureFlagsAdminPanel />
+        ) : null}
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <div>
@@ -289,7 +295,7 @@ export default function TeamManagementPage() {
                                   setFeatureOverridesDialogOpen(true);
                                 }}
                               >
-                                ניהול פיצ׳רים (משתמש)
+                                ניהול פיצ'רים
                               </Button>
                             </TableCell>
                             <TableCell className="w-[140px] text-center text-xs align-middle">
