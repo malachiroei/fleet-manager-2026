@@ -8,6 +8,9 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
@@ -39,7 +42,17 @@ import {
   downloadReleaseSnapshotJson,
   EMPTY_FLEET_MANIFEST_UI_GATES,
   getBundledReleaseSnapshot,
+  type ReleaseSnapshotFile,
 } from '@/lib/releaseSnapshot';
+import {
+  buildApplySystemSettingRows,
+  computeSyncDiffRows,
+  fetchSyncBaselines,
+  mergeOrgSettingsFromUpload,
+  parseSystemSettingsUpload,
+  type SyncDiffRow,
+} from '@/lib/settingsSyncReview';
+import { upsertSystemSettingsRows } from '@/lib/systemSettingsUpsert';
 import { getSupabaseAnonKey } from '@/integrations/supabase/publicEnv';
 import { toast } from 'sonner';
 import { version as codeVersion } from '@/constants/version';
@@ -271,6 +284,16 @@ export default function AdminSettingsPage() {
     const [isGithubSnapshotLoading, setIsGithubSnapshotLoading] = useState(false);
 
     const restoreInputRef = useRef<HTMLInputElement | null>(null);
+    const reviewUploadInputRef = useRef<HTMLInputElement | null>(null);
+
+    const updateOrgSettingsMutation = useUpdateOrgSettings();
+
+    const [reviewModalOpen, setReviewModalOpen] = useState(false);
+    const [reviewRows, setReviewRows] = useState<SyncDiffRow[]>([]);
+    const [reviewUpload, setReviewUpload] = useState<Partial<ReleaseSnapshotFile> | null>(null);
+    const [reviewSelected, setReviewSelected] = useState<Set<string>>(() => new Set());
+    const [isReviewFileBusy, setIsReviewFileBusy] = useState(false);
+    const [isApplyingReview, setIsApplyingReview] = useState(false);
 
     const formatDate = (iso: string | null) => {
       if (!iso) return 'לא בוצעה';
@@ -736,7 +759,131 @@ export default function AdminSettingsPage() {
       await restoreSettingsFromFile(file);
     };
 
-   return (
+    const openReviewFromFile = async (file: File) => {
+      setIsReviewFileBusy(true);
+      try {
+        const raw = await file.text();
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          toast.error('קובץ JSON לא תקין');
+          return;
+        }
+        const { snapshot, error } = parseSystemSettingsUpload(parsed);
+        if (error) {
+          toast.error(error);
+          return;
+        }
+        if (!settingsOrgIdForSnapshot) {
+          toast.error('בחר ארגון פעיל (מתפריט הארגון) לפני יישום הגדרות');
+          return;
+        }
+        const baseline = await fetchSyncBaselines(supabase);
+        const built = buildReleaseSnapshotPayload({
+          orgId: settingsOrgIdForSnapshot,
+          orgSettings: orgSettingsRow ?? null,
+          manifestUi: manifestUiGates,
+          defaultPermissions: getDefaultPermissions(),
+          previousBundledVersion: getBundledReleaseSnapshot().version,
+        });
+        const current: ReleaseSnapshotFile = {
+          ...built,
+          defaultPermissions: baseline.permissions,
+          uiFeatures: { ...built.uiFeatures, ...baseline.uiFeatures },
+        };
+        const rows = computeSyncDiffRows(current, snapshot);
+        if (rows.length === 0) {
+          toast.info('אין הבדלים בין הקובץ להגדרות הנוכחיות במערכת');
+          return;
+        }
+        setReviewUpload(snapshot);
+        setReviewRows(rows);
+        setReviewSelected(new Set(rows.filter((r) => r.defaultSelected).map((r) => r.id)));
+        setReviewModalOpen(true);
+      } catch (e) {
+        console.error(e);
+        toast.error('טעינת הקובץ נכשלה');
+      } finally {
+        setIsReviewFileBusy(false);
+      }
+    };
+
+    const handleReviewFilePicked = (e: ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (file) void openReviewFromFile(file);
+    };
+
+    const toggleReviewRow = (id: string, checked: boolean) => {
+      setReviewSelected((prev) => {
+        const next = new Set(prev);
+        if (checked) next.add(id);
+        else next.delete(id);
+        return next;
+      });
+    };
+
+    const toggleReviewCategory = (category: SyncDiffRow['category'], checked: boolean) => {
+      const ids = reviewRows.filter((r) => r.category === category).map((r) => r.id);
+      setReviewSelected((prev) => {
+        const next = new Set(prev);
+        for (const id of ids) {
+          if (checked) next.add(id);
+          else next.delete(id);
+        }
+        return next;
+      });
+    };
+
+    const categoryAllSelected = (category: SyncDiffRow['category']) => {
+      const ids = reviewRows.filter((r) => r.category === category).map((r) => r.id);
+      return ids.length > 0 && ids.every((id) => reviewSelected.has(id));
+    };
+
+    const applyReviewSelection = async () => {
+      if (!reviewUpload || !settingsOrgIdForSnapshot) return;
+      if (reviewSelected.size === 0) {
+        toast.error('סמן לפחות פריט אחד ליישום');
+        return;
+      }
+      setIsApplyingReview(true);
+      try {
+        const hasForm = [...reviewSelected].some((id) => id.startsWith('form:'));
+        if (hasForm) {
+          const patch = mergeOrgSettingsFromUpload(
+            orgSettingsRow ?? null,
+            settingsOrgIdForSnapshot,
+            reviewUpload,
+            reviewSelected,
+          );
+          await updateOrgSettingsMutation.mutateAsync(patch);
+        }
+        const baseline = await fetchSyncBaselines(supabase);
+        const sysRows = buildApplySystemSettingRows(
+          reviewUpload,
+          reviewSelected,
+          baseline.permissions,
+          baseline.uiFeatures,
+        );
+        if (sysRows.length > 0) {
+          await upsertSystemSettingsRows(supabase, sysRows);
+        }
+        toast.success('הפריטים הנבחרים יושמו בהצלחה');
+        setReviewModalOpen(false);
+        setReviewRows([]);
+        setReviewUpload(null);
+        setReviewSelected(new Set());
+        await queryClient.invalidateQueries({ queryKey: ['org-settings'] });
+      } catch (e) {
+        console.error(e);
+        toast.error(e instanceof Error ? e.message : 'יישום נכשל');
+      } finally {
+        setIsApplyingReview(false);
+      }
+    };
+
+    return (
      <div className="min-h-screen bg-[#020617] text-white">
        <header className="bg-card border-b border-border sticky top-0 z-10">
          <div className="container py-4">
@@ -970,6 +1117,26 @@ export default function AdminSettingsPage() {
                   <Button
                     variant="outline"
                     size="sm"
+                    type="button"
+                    onClick={() => reviewUploadInputRef.current?.click()}
+                    disabled={
+                      isReviewFileBusy ||
+                      isApplyingReview ||
+                      isRestoringSettings ||
+                      isBackingUpSettings
+                    }
+                  >
+                    {isReviewFileBusy ? (
+                      <Loader2 className="h-4 w-4 animate-spin ml-2" />
+                    ) : (
+                      <Upload className="h-4 w-4 ml-2" />
+                    )}
+                    העלאה ויישום הגדרות
+                    <span className="sr-only">Upload &amp; Apply Settings</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={handleRestoreButtonClick}
                     disabled={isRestoringSettings || isBackingUpSettings}
                   >
@@ -997,9 +1164,111 @@ export default function AdminSettingsPage() {
                   className="hidden"
                   onChange={handleRestoreFilePicked}
                 />
+                <input
+                  ref={reviewUploadInputRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={handleReviewFilePicked}
+                />
               </div>
             </CardContent>
           </Card>
+
+          <Dialog open={reviewModalOpen} onOpenChange={setReviewModalOpen}>
+            <DialogContent className="max-w-lg max-h-[90vh] flex flex-col gap-0 sm:max-w-2xl" dir="rtl">
+              <DialogHeader>
+                <DialogTitle>סינכרון הגדרות — סקירה לפני יישום</DialogTitle>
+                <DialogDescription asChild>
+                  <div className="space-y-3 text-sm text-muted-foreground">
+                    <p>
+                      יושמו לענן רק הפריטים שתסמן. הפריטים מסומנים כ<strong className="text-foreground">חדש</strong>{' '}
+                      או <strong className="text-foreground">שונה</strong> ביחס למצב הנוכחי (כולל ערכים שמורים ב־
+                      <code className="text-xs">system_settings</code>).
+                    </p>
+                    <ul className="list-disc pr-5 space-y-1">
+                      <li>
+                        <strong className="text-foreground">טפסים ומסמכים:</strong> הצהרת בריאות, מדיניות רכב, כתובות
+                        PDF — נשמרים ב־<code className="text-xs">ui_settings</code> לארגון הפעיל.
+                      </li>
+                      <li>
+                        <strong className="text-foreground">הרשאות משתמשים:</strong> רמות גישה ברירת מחדל לפי מפתחות
+                        הרשאה — נשמרות ב־<code className="text-xs">system_settings</code> (
+                        <code className="text-xs">fleet_sync_default_permissions</code>).
+                      </li>
+                      <li>
+                        <strong className="text-foreground">הגדרות ממשק:</strong> דגלי תצוגה (כותרת, לוח בקרה, תחזוקה
+                        וכו׳) — נשמרים ב־<code className="text-xs">system_settings</code> (
+                        <code className="text-xs">fleet_sync_ui_features</code>).
+                      </li>
+                    </ul>
+                  </div>
+                </DialogDescription>
+              </DialogHeader>
+              <ScrollArea className="max-h-[50vh] pr-3 -mr-1">
+                <div className="space-y-4 py-2">
+                  {(['forms', 'permissions', 'ui'] as const).map((cat) => {
+                    const rows = reviewRows.filter((r) => r.category === cat);
+                    if (rows.length === 0) return null;
+                    const title =
+                      cat === 'forms'
+                        ? 'טפסים ומסמכים'
+                        : cat === 'permissions'
+                          ? 'הרשאות משתמשים (ברירת מחדל)'
+                          : 'הגדרות ממשק (דגלי תצוגה)';
+                    return (
+                      <div key={cat} className="space-y-2 border-b border-border pb-3 last:border-b-0">
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            id={`cat-${cat}`}
+                            checked={categoryAllSelected(cat)}
+                            onCheckedChange={(v) => toggleReviewCategory(cat, v === true)}
+                          />
+                          <Label htmlFor={`cat-${cat}`} className="cursor-pointer text-sm font-semibold">
+                            {title}
+                          </Label>
+                        </div>
+                        <ul className="space-y-2 pr-6 list-none">
+                          {rows.map((row) => (
+                            <li key={row.id} className="flex items-start gap-2">
+                              <Checkbox
+                                id={row.id}
+                                checked={reviewSelected.has(row.id)}
+                                onCheckedChange={(v) => toggleReviewRow(row.id, v === true)}
+                              />
+                              <Label htmlFor={row.id} className="cursor-pointer flex-1 min-w-0 leading-snug">
+                                <span className="flex flex-wrap items-center gap-2">
+                                  <span>{row.label}</span>
+                                  <Badge variant={row.status === 'new' ? 'default' : 'secondary'}>
+                                    {row.status === 'new' ? 'חדש' : 'שונה'}
+                                  </Badge>
+                                </span>
+                              </Label>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    );
+                  })}
+                </div>
+              </ScrollArea>
+              <DialogFooter className="gap-2 sm:gap-0 flex-col sm:flex-row sm:justify-between">
+                <Button type="button" variant="outline" onClick={() => setReviewModalOpen(false)}>
+                  ביטול
+                </Button>
+                <Button type="button" onClick={() => void applyReviewSelection()} disabled={isApplyingReview}>
+                  {isApplyingReview ? (
+                    <>
+                      <Loader2 className="h-4 w-4 ml-2 animate-spin" />
+                      מיישם…
+                    </>
+                  ) : (
+                    'יישום הפריטים המסומנים'
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
        </main>
      </div>
