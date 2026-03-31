@@ -706,9 +706,9 @@ export function AppLayout({ children }: AppLayoutProps) {
     </>
   );
 
-  /** כפתורי ניהול זהב — בר דסקטופ (md+): ריווח אחיד ותווית מלאה */
+  /** כפתורי ניהול זהב — md: אייקון בלבד בשורה אחת; lg+: תוויות + רוחב מינימלי */
   const GoldManagementNavLinks = () => (
-    <div className="relative z-[9998] flex flex-wrap items-center gap-x-2 gap-y-1 lg:gap-x-4">
+    <div className="relative z-[9998] flex flex-nowrap items-center gap-x-2 lg:gap-x-4">
       {availableActions
         .filter((a) => a.showOn === 'both' || a.showOn === 'desktop')
         .filter((a) => a.key !== 'logout')
@@ -724,12 +724,12 @@ export function AppLayout({ children }: AppLayoutProps) {
               title={a.label}
               aria-label={a.label}
               className={cn(
-                'relative z-[9999] flex h-10 min-h-10 min-w-[9rem] items-center justify-center gap-2 rounded-lg border-2 px-6 text-sm font-medium transition-colors',
+                'relative z-[9999] flex h-10 min-h-10 min-w-0 items-center justify-center gap-0 rounded-lg border-2 px-2 text-sm font-medium transition-colors lg:min-w-[9rem] lg:gap-2 lg:px-6',
                 managementNavClass
               )}
             >
               <Icon className="h-4 w-4 shrink-0 text-amber-200" />
-              <span className="whitespace-nowrap">{a.label}</span>
+              <span className="hidden whitespace-nowrap lg:inline">{a.label}</span>
             </Link>
           );
         })}
@@ -811,7 +811,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const BrandMarkBlock = () => (
     <div
       className={cn(
-        'flex shrink-0 items-center gap-2 min-w-0 md:min-w-[150px]',
+        'flex shrink-0 items-center gap-2 min-w-0 lg:min-w-[150px]',
         isRtl && 'flex-row-reverse'
       )}
     >
@@ -1000,7 +1000,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             <BrandMarkBlock />
           </div>
 
-          <div className="flex min-w-0 flex-1 flex-wrap items-center justify-center gap-x-2 gap-y-1 px-2 lg:gap-x-4">
+          <div className="flex min-w-0 flex-1 flex-nowrap items-center justify-center gap-x-2 px-2 lg:gap-x-4">
             <HomeNavLinkDesktop />
             {canAccessGoldenManagementLinks ? <GoldManagementNavLinks /> : null}
           </div>
