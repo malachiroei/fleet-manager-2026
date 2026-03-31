@@ -28,9 +28,19 @@ import {
   Settings,
   Shield,
   Sun,
+  Upload,
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { useAuth } from '@/hooks/useAuth';
+import { useOrgSettings } from '@/hooks/useOrgSettings';
+import { getDefaultPermissions } from '@/lib/permissions';
+import {
+  buildReleaseSnapshotPayload,
+  downloadReleaseSnapshotJson,
+  EMPTY_FLEET_MANIFEST_UI_GATES,
+  getBundledReleaseSnapshot,
+} from '@/lib/releaseSnapshot';
+import { getSupabaseAnonKey } from '@/integrations/supabase/publicEnv';
 import { toast } from 'sonner';
 import { version as codeVersion } from '@/constants/version';
 import { clearAllBrowserCaches, triggerServiceWorkerUpdateCheck } from '@/lib/pwaServiceWorkerControl';
@@ -52,16 +62,18 @@ import {
 import { isFleetProductionHost } from '@/lib/pwaPromptRegister';
 import { FLEET_KV_TABLE } from '@/lib/fleetKvTable';
 import { createUiSyncBundle } from '@/lib/featureFlagRegistry';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 const UI_SYNC_ALLOWED_EMAIL = 'malachiroei@gmail.com';
+/** סנכרון release_snapshot — רק לרועי (מופיע ב-localhost וב-staging כמו בכל סביבה שבה הוא מחובר) */
+const PROD_RELEASE_SYNC_EMAIL = 'malachiroei@gmail.com';
 const UI_SYNC_PROD_REPO = 'malachiroei/fleet-manager-2026';
 const UI_SYNC_BUNDLE_PATH = 'ui-sync-bundle.json';
 
 export default function AdminSettingsPage() {
     const { theme, setTheme } = useTheme();
     const queryClient = useQueryClient();
-    const { isAdmin, profile, refreshProfile, user, roles } = useAuth();
-    const isAdminRoleOnly = roles.includes('admin');
+    const { isAdmin, profile, refreshProfile, user, activeOrgId } = useAuth();
     const isFleetProDomain = isFleetManagerProHostname();
     const [lastPricingUpload, setLastPricingUpload] = useState<string | null>(localStorage.getItem('last_pricing_upload'));
     const lastVehicleUpload = localStorage.getItem('last_vehicle_upload');
@@ -89,8 +101,20 @@ export default function AdminSettingsPage() {
     })();
 
     const [isPublishingUiSyncBundle, setIsPublishingUiSyncBundle] = useState(false);
+    const [pushProdSyncBusy, setPushProdSyncBusy] = useState(false);
+
+    const settingsOrgIdForSnapshot = activeOrgId ?? profile?.org_id ?? null;
+    const { data: orgSettingsRow } = useOrgSettings(settingsOrgIdForSnapshot, {
+      enabledOnlyWithOrgId: true,
+    });
+    const manifestUiGates = EMPTY_FLEET_MANIFEST_UI_GATES;
 
     const canPublishUiToProduction = (user?.email ?? '').trim().toLowerCase() === UI_SYNC_ALLOWED_EMAIL;
+
+    const canShowProdReleaseSyncButton = useMemo(() => {
+      const e = (user?.email ?? profile?.email ?? '').trim().toLowerCase();
+      return e === PROD_RELEASE_SYNC_EMAIL;
+    }, [user?.email, profile?.email]);
 
     const handlePublishUiUpdatesToProduction = useCallback(async () => {
       const githubToken = String(import.meta.env.VITE_GITHUB_UI_SYNC_TOKEN ?? '').trim();
@@ -159,6 +183,55 @@ export default function AdminSettingsPage() {
         setIsPublishingUiSyncBundle(false);
       }
     }, [canPublishUiToProduction]);
+
+    const handlePushReleaseSnapshotToProd = useCallback(async () => {
+      const snapshotOrgId = activeOrgId ?? profile?.org_id ?? null;
+      if (!snapshotOrgId) {
+        toast.error('בחר ארגון פעיל (מתפריט הארגון) לפני דחיפת סנאפשוט.');
+        return;
+      }
+      const viewer = (user?.email ?? profile?.email ?? '').trim().toLowerCase();
+      if (viewer !== PROD_RELEASE_SYNC_EMAIL) {
+        toast.error('אין הרשאה לסנכרון זה');
+        return;
+      }
+      setPushProdSyncBusy(true);
+      try {
+        const snapshot = buildReleaseSnapshotPayload({
+          orgId: snapshotOrgId,
+          orgSettings: orgSettingsRow ?? null,
+          manifestUi: manifestUiGates,
+          defaultPermissions: getDefaultPermissions(),
+          previousBundledVersion: getBundledReleaseSnapshot().version,
+        });
+        downloadReleaseSnapshotJson(snapshot);
+        toast.info('הקובץ ירד, כעת מנסים לדחוף ל-Git…');
+
+        const sessionRes = await supabase.auth.getSession();
+        const bearer = sessionRes?.data?.session?.access_token ?? getSupabaseAnonKey();
+        const invokeRes = await supabase.functions.invoke('push-release-snapshot', {
+          headers: { Authorization: `Bearer ${bearer}` },
+          body: { snapshot },
+        });
+        const data = invokeRes?.data ?? null;
+        const error = invokeRes?.error ?? null;
+        const ok = !error && data && typeof data === 'object' && (data as { ok?: boolean }).ok === true;
+        if (ok) {
+          toast.success('נדחף ל-GitHub — עדכון טפסים/פוליסות/לוגואים בפרו דרך הפריסה הרגילה.');
+        }
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'דחיפה נכשלה');
+      } finally {
+        setPushProdSyncBusy(false);
+      }
+    }, [
+      activeOrgId,
+      profile?.org_id,
+      user?.email,
+      profile?.email,
+      orgSettingsRow,
+      manifestUiGates,
+    ]);
 
     // ── notification_emails — stored in system_settings ───────────────────────
     const [notificationEmailsRaw, setNotificationEmailsRaw] = useState('malachiroei@gmail.com');
@@ -826,18 +899,42 @@ export default function AdminSettingsPage() {
           {/* Fleet Data Importer */}
           <FleetDataImporter />
 
-          {isAdminRoleOnly ? (
-            <Card>
+          {canShowProdReleaseSyncButton ? (
+            <Card className="border-primary/30 bg-primary/5">
               <CardHeader className="pb-2">
-                <CardTitle>ניהול פיצ׳רים גלובליים</CardTitle>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Upload className="h-5 w-5" />
+                  סנכרון הגדרות לפרודקשן
+                </CardTitle>
                 <CardDescription>
-                  ניהול הפיצ׳רים עבר למסך ניהול צוות.
+                  יוצר <code className="text-xs">release_snapshot.json</code> מהגדרות הארגון הפעיל, מוריד עותק
+                  מקומי, ומנסה לדחוף ל-GitHub דרך Edge Function <code className="text-xs">push-release-snapshot</code>.
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <Button asChild className="gap-2">
-                  <Link to="/team">ניהול פיצ'רים</Link>
-                </Button>
+              <CardContent className="space-y-2">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      className="gap-2"
+                      disabled={pushProdSyncBusy || !settingsOrgIdForSnapshot}
+                      onClick={() => void handlePushReleaseSnapshotToProd()}
+                    >
+                      {pushProdSyncBusy ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Upload className="h-4 w-4" />
+                      )}
+                      סנכרון הגדרות לפרודקשן
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-sm text-center">
+                    (עדכון טפסים, פוליסות ולוגואים בפרו)
+                  </TooltipContent>
+                </Tooltip>
+                <p className="text-xs text-muted-foreground">
+                  (עדכון טפסים, פוליסות ולוגואים בפרו)
+                </p>
               </CardContent>
             </Card>
           ) : null}
