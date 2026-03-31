@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { useAuth } from '@/hooks/useAuth';
-import { useOrgSettings } from '@/hooks/useOrgSettings';
+import { useOrgSettings, useUpdateOrgSettings } from '@/hooks/useOrgSettings';
 import { getDefaultPermissions } from '@/lib/permissions';
 import {
   buildReleaseSnapshotPayload,
