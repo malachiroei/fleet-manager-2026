@@ -709,7 +709,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const GoldManagementNavLinks = ({ flexNowrap }: { flexNowrap?: boolean }) => (
     <div
       className={cn(
-        'relative z-[9998] flex flex-wrap items-center justify-end gap-2',
+        'relative z-[9998] flex flex-wrap items-center justify-end gap-1',
         flexNowrap && 'md:flex-nowrap md:shrink-0'
       )}
     >
@@ -725,13 +725,15 @@ export function AppLayout({ children }: AppLayoutProps) {
             <Link
               key={a.key}
               to={a.to}
+              title={a.label}
+              aria-label={a.label}
               className={cn(
-                'relative z-[9999] flex h-9 min-h-9 items-center gap-1 rounded-lg border-2 px-2 text-xs font-semibold transition-colors md:h-9 md:px-3 md:text-sm',
+                'relative z-[9999] flex h-9 min-h-9 items-center justify-center gap-0 rounded-lg border-2 px-2 text-xs font-medium transition-colors md:h-9 md:px-2 lg:gap-1 lg:px-3 lg:text-sm',
                 managementNavClass
               )}
             >
               <Icon className="h-3.5 w-3.5 shrink-0 text-amber-200 md:h-4 md:w-4" />
-              <span className="whitespace-nowrap">{a.label}</span>
+              <span className="hidden whitespace-nowrap lg:inline">{a.label}</span>
             </Link>
           );
         })}
@@ -771,7 +773,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         <Link
           to="/admin/org-settings"
           className={cn(
-            'flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1 rounded-md border-2 px-2 text-sm font-semibold transition-colors active:opacity-90',
+            'flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1 rounded-md border-2 px-2 text-sm font-medium transition-colors active:opacity-90',
             managementNavClass
           )}
         >
@@ -783,7 +785,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         <Link
           to="/team"
           className={cn(
-            'flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1 rounded-md border-2 px-2 text-sm font-semibold transition-colors active:opacity-90',
+            'flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1 rounded-md border-2 px-2 text-sm font-medium transition-colors active:opacity-90',
             managementNavClass
           )}
         >
@@ -813,7 +815,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const BrandMarkBlock = () => (
     <div
       className={cn(
-        'flex min-w-0 flex-1 items-center gap-2 md:min-w-fit md:flex-none md:shrink-0',
+        'flex min-w-[150px] flex-1 items-center gap-2',
         isRtl && 'flex-row-reverse'
       )}
     >
