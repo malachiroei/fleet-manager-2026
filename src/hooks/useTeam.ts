@@ -110,10 +110,11 @@ export function useOrgInvitations(_orgId: string | null | undefined) {
   const { profile } = useAuth();
 
   return useQuery({
-    queryKey: [...ORG_INVITATIONS_QUERY_KEY, 'all-unfiltered'],
-    enabled: !!profile,
+    queryKey: [...ORG_INVITATIONS_QUERY_KEY, _orgId ?? 'none'],
+    enabled: Boolean(profile) && Boolean(_orgId),
     queryFn: async (): Promise<OrgInvitation[]> => {
-      const { data, error } = await (supabase as any).from('org_invitations').select('*');
+      if (!_orgId) return [];
+      const { data, error } = await (supabase as any).from('org_invitations').select('*').eq('org_id', _orgId);
       if (error) {
         console.error('Supabase Error:', error);
         return [];
@@ -124,20 +125,19 @@ export function useOrgInvitations(_orgId: string | null | undefined) {
 }
 
 export function useTeamMembersForSwitcher(orgId: string | null | undefined) {
+  const { profile } = useAuth();
+  const loadAllOrgs = isSuperAdminPermissionBypass(profile);
   return useQuery({
     queryKey: ['team-members-switcher', orgId ?? null],
     enabled: !!orgId,
     queryFn: async (): Promise<TeamMemberSummary[]> => {
       if (!orgId) return [];
 
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, full_name, email, org_id, status')
-        // Include all profiles in this org, plus key hierarchy emails regardless of org
-        .or(
-          `org_id.eq.${orgId},email.in.(malachiroei@gmail.com,ravidmalachi@gmail.com,roeima21@gmail.com)`
-        )
-        .order('full_name');
+      let q = supabase.from('profiles').select('id, full_name, email, org_id, status').order('full_name');
+      if (!loadAllOrgs) {
+        q = q.eq('org_id', orgId);
+      }
+      const { data, error } = await q;
 
       if (error) throw error;
 

@@ -173,6 +173,8 @@ export default function AdminSettingsPage() {
           if (!key) continue;
           if (seen.has(key)) continue;
           seen.add(key);
+          // Show only flags that have a corresponding UI element (registry entry).
+          if (!registryEntryForKey(key)) continue;
           out.push(row);
         }
         return out;

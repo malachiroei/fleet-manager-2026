@@ -95,6 +95,8 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
         if (!key) continue;
         if (seen.has(key)) continue;
         seen.add(key);
+        // Show only UI-exposed flags (registry entry exists).
+        if (!registryEntryForKey(key)) continue;
         out.push(row);
       }
       return out;

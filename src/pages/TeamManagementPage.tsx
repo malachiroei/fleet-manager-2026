@@ -96,7 +96,8 @@ export default function TeamManagementPage() {
   const showSensitiveColumns = isSuperAdminTeamView;
   const tableColCount = showSensitiveColumns ? 5 : 4;
 
-  const canManageTeam = isAdmin || isManager || hasPermission('manage_team') || Boolean(activeOrgId ?? profile?.org_id);
+  // Strict privacy: team page is only for admins/managers (or explicit manage_team permission).
+  const canManageTeam = isAdmin || isManager || hasPermission('manage_team') || isSuperAdminTeamView;
 
   if (!canManageTeam) {
     return <Navigate to="/" replace />;
@@ -228,15 +229,15 @@ export default function TeamManagementPage() {
                 <TableHeader>
                   <TableRow>
                     {showSensitiveColumns ? (
-                      <TableHead className="min-w-[132px] align-bottom">
+                      <TableHead className="w-[150px] align-middle">
                         <span className="block text-sm font-medium">מזהה ארגון</span>
                         <span className="block font-mono text-[10px] font-normal text-muted-foreground">Org ID</span>
                       </TableHead>
                     ) : null}
-                    <TableHead className="align-middle">שם</TableHead>
-                    <TableHead className="align-middle">אימייל</TableHead>
-                    <TableHead className="min-w-[240px] align-middle">פיצ׳רים</TableHead>
-                    <TableHead className="text-center align-middle">סטטוס</TableHead>
+                    <TableHead className="w-[190px] align-middle">שם</TableHead>
+                    <TableHead className="w-[240px] align-middle">אימייל</TableHead>
+                    <TableHead className="w-[260px] align-middle">פיצ׳רים</TableHead>
+                    <TableHead className="w-[140px] text-center align-middle">סטטוס</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -257,15 +258,17 @@ export default function TeamManagementPage() {
                         return (
                           <TableRow key={m.id ?? `m-${mi}`}>
                             {showSensitiveColumns ? (
-                              <TableCell className="font-mono text-[10px] text-muted-foreground max-w-[140px] truncate align-middle">
+                              <TableCell className="w-[150px] font-mono text-[10px] text-muted-foreground truncate align-middle">
                                 {m.org_id ?? '—'}
                               </TableCell>
                             ) : null}
-                            <TableCell className="font-medium align-middle">{m.full_name || '—'}</TableCell>
-                            <TableCell className="text-muted-foreground align-middle" dir="ltr">
+                            <TableCell className="w-[190px] font-medium align-middle">
+                              <span className="truncate block">{m.full_name || '—'}</span>
+                            </TableCell>
+                            <TableCell className="w-[240px] text-muted-foreground align-middle" dir="ltr">
                               <span className="truncate block">{m.email || '—'}</span>
                             </TableCell>
-                            <TableCell className="text-xs align-middle">
+                            <TableCell className="w-[260px] text-xs align-middle">
                               <p className="text-muted-foreground leading-snug mb-2 max-w-[360px]">
                                 Overrides לפיצ׳רים גלובליים (למשתמש זה בלבד).
                               </p>
@@ -284,7 +287,7 @@ export default function TeamManagementPage() {
                                 ניהול פיצ׳רים (משתמש)
                               </Button>
                             </TableCell>
-                            <TableCell className="text-center text-xs align-middle">
+                            <TableCell className="w-[140px] text-center text-xs align-middle">
                               {m?.status === 'pending_approval' ? (
                                 <div className="flex flex-col items-center justify-center gap-2">
                                   <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
@@ -325,6 +328,59 @@ export default function TeamManagementPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Pending approvals / invitations (admin/team only). */}
+        {canManageTeam ? (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Mail className="h-5 w-5" />
+                הרשמות ממתינות / הזמנות פתוחות
+              </CardTitle>
+              <CardDescription>
+                {invitationRowsVisible.length} הזמנות פתוחות בארגון
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {invitationRowsVisible.length === 0 ? (
+                <p className="text-sm text-muted-foreground">אין הזמנות פתוחות.</p>
+              ) : (
+                <div className="rounded-md border border-border overflow-x-auto">
+                  <Table className="table-fixed">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[260px] align-middle">אימייל</TableHead>
+                        <TableHead className="w-[180px] align-middle">סטטוס</TableHead>
+                        <TableHead className="align-middle">פרטים</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {invitationRowsVisible.map((inv, idx) => (
+                        <TableRow key={inv.id ?? `inv-${idx}`}>
+                          <TableCell className="w-[260px] text-muted-foreground align-middle" dir="ltr">
+                            <span className="truncate block">{inv.email ?? '—'}</span>
+                          </TableCell>
+                          <TableCell className="w-[180px] align-middle">
+                            <span className="inline-flex items-center justify-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                              {inv.status ? String(inv.status) : 'pending'}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground align-middle">
+                            {showSensitiveColumns && inv.org_id ? (
+                              <span className="font-mono text-[10px]">org: {String(inv.org_id)}</span>
+                            ) : (
+                              <span>—</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ) : null}
       </div>
 
       <SimpleInviteModal
