@@ -1997,7 +1997,7 @@ export default function VehicleHandoverWizard() {
   const wizardSteps = useMemo<WizardStep[]>(() => {
     const steps: WizardStep[] = [...BASE_STEPS];
     const dynamicSteps = selectedDeliveryFormIds
-      .map((id) => availableDeliveryForms.find((f) => f.id === id && f.title !== 'טופס קבלת רכב'))
+      .map((id) => availableDeliveryForms.find((f) => f.id === id && safeDocTitle(f) !== 'טופס קבלת רכב'))
       .filter(Boolean)
       .map((doc) => ({
         icon: FileText,
