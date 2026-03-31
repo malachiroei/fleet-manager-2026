@@ -709,7 +709,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const GoldManagementNavLinks = ({ flexNowrap }: { flexNowrap?: boolean }) => (
     <div
       className={cn(
-        'relative z-[9998] flex flex-wrap items-center justify-end gap-2 md:gap-4',
+        'relative z-[9998] flex flex-wrap items-center justify-end gap-2',
         flexNowrap && 'md:flex-nowrap md:shrink-0'
       )}
     >
@@ -726,11 +726,11 @@ export function AppLayout({ children }: AppLayoutProps) {
               key={a.key}
               to={a.to}
               className={cn(
-                'relative z-[9999] flex h-9 min-h-9 items-center gap-1.5 rounded-lg border-2 px-3 text-xs font-semibold transition-colors md:h-10 md:px-4 md:text-sm',
+                'relative z-[9999] flex h-9 min-h-9 items-center gap-1 rounded-lg border-2 px-2 text-xs font-semibold transition-colors md:h-9 md:px-3 md:text-sm',
                 managementNavClass
               )}
             >
-              <Icon className="h-4 w-4 shrink-0 text-amber-200" />
+              <Icon className="h-3.5 w-3.5 shrink-0 text-amber-200 md:h-4 md:w-4" />
               <span className="whitespace-nowrap">{a.label}</span>
             </Link>
           );
@@ -751,14 +751,14 @@ export function AppLayout({ children }: AppLayoutProps) {
   /** מובייל: שורה ייעודית — בית עדין, ניהול בזהב */
   const MobilePrimaryNav = () => (
     <nav
-      className="flex w-full min-w-0 flex-wrap items-stretch justify-around gap-1 rounded-lg border border-white/10 bg-black/30 px-0.5 py-1 md:hidden"
+      className="flex w-full min-w-0 flex-wrap items-stretch justify-around gap-2 rounded-lg border border-white/10 bg-black/30 px-0.5 py-1 md:hidden"
       aria-label="ניווט ראשי"
     >
       <Link
         to="/"
         onClick={handleGoHomeNav}
         className={cn(
-          'flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1.5 rounded-md px-1.5 text-base font-medium transition-colors active:opacity-90',
+          'flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1.5 rounded-md px-2 text-base font-medium transition-colors active:opacity-90',
           isHomeActive
             ? 'bg-white/10 text-cyan-100 ring-1 ring-cyan-400/35'
             : 'bg-white/[0.05] text-white/75 hover:bg-white/10'
@@ -771,11 +771,11 @@ export function AppLayout({ children }: AppLayoutProps) {
         <Link
           to="/admin/org-settings"
           className={cn(
-            'flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1.5 rounded-md border-2 px-1.5 text-base font-semibold transition-colors active:opacity-90',
+            'flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1 rounded-md border-2 px-2 text-sm font-semibold transition-colors active:opacity-90',
             managementNavClass
           )}
         >
-          <Building2 className="h-5 w-5 shrink-0 text-amber-200" />
+          <Building2 className="h-4 w-4 shrink-0 text-amber-200" />
           <span className="truncate">ניהול</span>
         </Link>
       ) : null}
@@ -783,11 +783,11 @@ export function AppLayout({ children }: AppLayoutProps) {
         <Link
           to="/team"
           className={cn(
-            'flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1.5 rounded-md border-2 px-1.5 text-base font-semibold transition-colors active:opacity-90',
+            'flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1 rounded-md border-2 px-2 text-sm font-semibold transition-colors active:opacity-90',
             managementNavClass
           )}
         >
-          <UserCog className="h-5 w-5 shrink-0 text-amber-200" />
+          <UserCog className="h-4 w-4 shrink-0 text-amber-200" />
           <span className="truncate">ניהול צוות</span>
         </Link>
       ) : null}
@@ -811,16 +811,21 @@ export function AppLayout({ children }: AppLayoutProps) {
   );
 
   const BrandMarkBlock = () => (
-    <div className={cn('flex min-w-0 flex-1 items-center gap-2 md:flex-none md:gap-3', isRtl && 'flex-row-reverse')}>
-      <div className="flex h-9 w-[3.15rem] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[#0a1525] p-1.5 md:h-12 md:w-16 md:p-2">
+    <div
+      className={cn(
+        'flex min-w-0 flex-1 items-center gap-2 md:min-w-fit md:flex-none md:shrink-0',
+        isRtl && 'flex-row-reverse'
+      )}
+    >
+      <div className="flex h-9 min-w-fit w-[3.15rem] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[#0a1525] p-1.5 md:h-12 md:w-16 md:min-w-[4rem] md:p-2">
         <img
           src={getBrandLogoUrl()}
           alt=""
-          className="max-h-[1.65rem] w-full object-contain object-center md:max-h-12"
+          className="max-h-[1.65rem] w-full min-w-0 object-contain object-center md:max-h-12"
         />
       </div>
       <div className={cn('min-w-0', isRtl ? 'text-right' : 'text-left')}>
-        <span className="block max-w-[min(100%,70vw)] truncate text-sm font-bold leading-tight text-white md:max-w-none">
+        <span className="block max-w-[min(100%,70vw)] truncate text-sm font-bold leading-tight text-white md:max-w-[min(100%,28rem)]">
           {t('navigation.fleetManager')}
         </span>
         <span className="hidden truncate text-[10px] text-cyan-400/55 md:block">{orgName || 'הצי הראשי - רועי'}</span>
@@ -992,12 +997,12 @@ export function AppLayout({ children }: AppLayoutProps) {
         )}
       >
         {/* דסקטופ וטאבלט (md+): שורה אחת, ללא wrap — מרווח אחיד */}
-        <div className="mx-auto hidden w-full max-w-[1920px] flex-nowrap items-center gap-4 px-4 md:flex md:px-6 lg:px-6">
-          <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-3 overflow-hidden lg:gap-4">
+        <div className="mx-auto hidden w-full max-w-[1920px] flex-nowrap items-center gap-2 px-4 md:flex md:px-6 lg:px-6">
+          <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-visible">
             <HomeNavLinkDesktop />
             <BrandMarkBlock />
           </div>
-          <div className="relative z-[9998] flex min-w-0 flex-1 flex-nowrap items-center justify-end gap-4 overflow-hidden">
+          <div className="relative z-[9998] flex min-w-0 flex-1 flex-nowrap items-center justify-end gap-2 overflow-hidden">
             <UtilityCluster />
             {canAccessGoldenManagementLinks ? <GoldManagementNavLinks flexNowrap /> : null}
             <ViewAsExitButton />
