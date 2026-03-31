@@ -9,7 +9,7 @@ import { useTeamMembersForSwitcher } from '@/hooks/useTeam';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { AIChatAssistant } from './AIChatAssistant';
 import { useTheme } from '@/hooks/useTheme';
-import { Sun, Moon, Building2, LogOut, Home, ArrowRight, ChevronDown, Building, Settings, UserCog } from 'lucide-react';
+import { Sun, Moon, Building2, LogOut, Home, ArrowRight, ChevronDown, Building, Settings, UserCog, Menu } from 'lucide-react';
 import { PwaInstallButton } from './PwaInstallButton';
 import { Button } from './ui/button';
 import {
@@ -237,6 +237,22 @@ export function AppLayout({ children }: AppLayoutProps) {
   const handleLogout = () => {
     void signOut();
   };
+
+  type HeaderAction =
+    | { key: 'manage_org'; label: string; to: string; icon: React.ElementType; showOn: 'mobileMenu' | 'desktop' | 'both' }
+    | { key: 'manage_team'; label: string; to: string; icon: React.ElementType; showOn: 'mobileMenu' | 'desktop' | 'both' }
+    | { key: 'logout'; label: string; onSelect: () => void; icon: React.ElementType; showOn: 'mobileMenu' | 'desktop' | 'both' };
+
+  const availableActions = useMemo<HeaderAction[]>(() => {
+    const out: HeaderAction[] = [];
+    // Secondary actions: collapse into hamburger on small screens.
+    if (canAccessGoldenManagementLinks) {
+      out.push({ key: 'manage_org', label: 'ארגון', to: '/admin/org-settings', icon: Building2, showOn: 'both' });
+      out.push({ key: 'manage_team', label: 'ניהול צוות', to: '/team', icon: UserCog, showOn: 'both' });
+    }
+    out.push({ key: 'logout', label: 'התנתקות', onSelect: handleLogout, icon: LogOut, showOn: 'both' });
+    return out;
+  }, [canAccessGoldenManagementLinks]);
 
   const ThemeToggle = () => (
     <button
@@ -564,62 +580,92 @@ export function AppLayout({ children }: AppLayoutProps) {
     );
   };
 
+  const MobileActionsMenu = () => {
+    const actions = availableActions.filter((a) => a.showOn === 'both' || a.showOn === 'mobileMenu');
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            aria-label="תפריט פעולות"
+            title="תפריט"
+            className="h-8 w-8 rounded-lg border border-cyan-400/30 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20 hover:text-white"
+          >
+            <Menu className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align={isRtl ? 'start' : 'end'} className="min-w-[220px]">
+          {actions.map((a) => {
+            const Icon = a.icon;
+            if (a.key === 'logout') {
+              return (
+                <DropdownMenuItem
+                  key={a.key}
+                  className="cursor-pointer text-red-500 focus:text-red-500 focus:bg-red-500/10 gap-2"
+                  onSelect={a.onSelect}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {a.label}
+                </DropdownMenuItem>
+              );
+            }
+            return (
+              <DropdownMenuItem key={a.key} asChild className="cursor-pointer">
+                <Link to={a.to} className="w-full flex items-center justify-between text-xs">
+                  <span className="font-medium">{a.label}</span>
+                  <Icon className="h-4 w-4 shrink-0" />
+                </Link>
+              </DropdownMenuItem>
+            );
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
+
   const TopToolsBlock = () => (
     <div
       className={cn(
-        'relative z-[9999] flex items-center gap-2 sm:gap-3 shrink-0 flex-wrap justify-end',
+        'relative z-[9999] flex items-center justify-end gap-2 sm:gap-3 shrink-0 min-w-[44px]',
         isRtl ? 'flex-row-reverse' : ''
       )}
     >
-      {/* Mobile: ניהול צוות (מנהל/מנהל צי) + תפריט הגדרות */}
-      <div className="relative z-[9999] flex items-center gap-2 sm:hidden">
-        {canAccessGoldenManagementLinks ? (
-          <Link
-            to="/team"
-            className={cn(
-              'flex h-8 items-center gap-1 rounded-lg border px-2 transition-colors',
-              managementNavClass
-            )}
-          >
-            <UserCog className="h-3.5 w-3.5 shrink-0 text-amber-200" />
-            <span className="text-[11px] font-semibold leading-none text-amber-50">ניהול</span>
-          </Link>
-        ) : null}
+      {/* Mobile: hamburger menu for secondary actions + settings/org/view-as */}
+      <div className="relative z-[9999] flex items-center gap-2 sm:hidden min-w-[44px]">
+        <MobileActionsMenu />
         <MobileSettingsMenu />
       </div>
 
-      {/* Desktop: שורת הכלים המלאה כמו קודם */}
-      <div className="relative z-[9999] hidden sm:flex items-center gap-3">
+      {/* Desktop: stable row; management actions from centralized list */}
+      <div className="relative z-[9999] hidden sm:flex items-center justify-end gap-3 min-w-[420px]">
         <PwaInstallButton />
-            <ThemeToggle />
-            <LanguageSwitcher />
+        <ThemeToggle />
+        <LanguageSwitcher />
         <OrgSwitcher />
-        {canAccessGoldenManagementLinks ? (
-          <Link
-            to="/admin/org-settings"
-            className={cn(
-              'flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors',
-              managementNavClass
-            )}
-          >
-            <Building2 className="h-3.5 w-3.5 text-amber-200" />
-            <span className="hidden sm:inline">ארגון</span>
-          </Link>
-        ) : null}
-        {canAccessGoldenManagementLinks ? (
-          <Link
-            to="/team"
-            className={cn(
-              'flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors',
-              managementNavClass
-            )}
-          >
-            <UserCog className="h-3.5 w-3.5 text-amber-200" />
-            <span className="hidden sm:inline">ניהול</span>
-            <span className="hidden sm:inline text-amber-200/90">·</span>
-            <span className="hidden sm:inline">צוות</span>
-          </Link>
-        ) : null}
+        {availableActions
+          .filter((a) => a.showOn === 'both' || a.showOn === 'desktop')
+          .filter((a) => a.key !== 'logout')
+          .map((a) => {
+            const Icon = a.icon;
+            if ('to' in a) {
+              const isMgmt = a.key === 'manage_org' || a.key === 'manage_team';
+              return (
+                <Link
+                  key={a.key}
+                  to={a.to}
+                  className={cn(
+                    'flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors',
+                    isMgmt ? managementNavClass : 'border-white/10 bg-white/5 text-white/80 hover:bg-white/10'
+                  )}
+                >
+                  <Icon className={cn('h-3.5 w-3.5', isMgmt ? 'text-amber-200' : 'text-white/70')} />
+                  <span className="hidden sm:inline">{a.label}</span>
+                </Link>
+              );
+            }
+            return null;
+          })}
         {viewAsEmail && (
           <Button
             type="button"

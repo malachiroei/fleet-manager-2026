@@ -75,19 +75,30 @@ export function useOrgSettings(
     enabled: Boolean(organizationId) && (requireOrg ? Boolean(organizationId) : true),
     queryFn: async () => {
       if (!organizationId) return null;
-      let query = (supabase as any).from('ui_settings').select(UI_SETTINGS_COLUMNS);
-      if (organizationId) {
-        query = query.eq('org_id', organizationId);
-      }
-      const { data, error } = await query.limit(1).maybeSingle();
-      if (error) {
-        if (isUiSettingsUnavailableError(error)) {
-          console.warn('[useOrgSettings] ui_settings לא זמין (404/חסר בטסט), מחזירים הגדרות ריקות:', error.message);
-          return emptyOrgSettings(organizationId);
+      try {
+        let query = (supabase as any).from('ui_settings').select(UI_SETTINGS_COLUMNS);
+        if (organizationId) {
+          query = query.eq('org_id', organizationId);
         }
-        throw error;
+        const { data, error } = await query.limit(1).maybeSingle();
+        if (error) {
+          const msg = `${(error as any)?.message ?? ''} ${(error as any)?.details ?? ''}`.toLowerCase();
+          if (msg.includes('400') || msg.includes('bad request')) {
+            console.warn('[useOrgSettings] 400/BadRequest for org_id; returning null', { organizationId });
+            return null;
+          }
+          if (isUiSettingsUnavailableError(error)) {
+            console.warn('[useOrgSettings] ui_settings לא זמין (404/חסר בטסט), מחזירים הגדרות ריקות:', (error as any)?.message);
+            return emptyOrgSettings(organizationId);
+          }
+          throw error;
+        }
+        return data as OrgSettings | null;
+      } catch (e) {
+        // Final safety net for header rendering paths.
+        console.warn('[useOrgSettings] query failed; returning null', e);
+        return null;
       }
-      return data as OrgSettings | null;
     },
     staleTime: 5 * 60 * 1000,
   });
