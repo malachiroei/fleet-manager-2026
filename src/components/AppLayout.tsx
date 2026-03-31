@@ -12,6 +12,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { Sun, Moon, Building2, LogOut, Home, ArrowRight, ChevronDown, Building, Settings, UserCog, Menu } from 'lucide-react';
 import { PwaInstallButton } from './PwaInstallButton';
 import { Button } from './ui/button';
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -509,7 +510,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             className="h-8 gap-1.5 border-cyan-400/20 bg-cyan-500/10 px-2.5 text-xs font-medium text-cyan-100 hover:bg-cyan-500/20 hover:text-cyan-100"
           >
             <Building className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline max-w-[120px] truncate">
+            <span className="hidden md:inline max-w-[120px] truncate">
               {organization?.name ??
                 (orgName || (isMainAdmin ? 'הצי הראשי - רועי' : 'החלף צי'))}
             </span>
@@ -631,21 +632,102 @@ export function AppLayout({ children }: AppLayoutProps) {
     );
   };
 
+  const MobileNavDrawer = () => {
+    const menuActions = availableActions.filter((a) => a.showOn === 'both' || a.showOn === 'mobileMenu');
+    const side = isRtl ? 'right' : 'left';
+    return (
+      <Sheet>
+        <SheetTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            aria-label="תפריט"
+            title="תפריט"
+            className="h-9 w-9 rounded-lg border border-cyan-400/30 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20 hover:text-white"
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+        </SheetTrigger>
+        <SheetContent
+          side={side as any}
+          className={cn('w-[85vw] max-w-[360px] p-4', isRtl ? 'text-right' : 'text-left')}
+        >
+          <div className="flex items-center justify-between gap-3 pb-3 border-b border-border">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-500/20 text-xs font-bold text-cyan-200">
+                {initials}
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold truncate">{name || email}</div>
+                {email ? <div className="text-xs text-muted-foreground truncate">{email}</div> : null}
+              </div>
+            </div>
+          </div>
+
+          <nav className="pt-3 space-y-1">
+            <Link
+              to="/"
+              className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-white/90 hover:bg-white/10"
+            >
+              <span>בית</span>
+              <Home className="h-4 w-4 opacity-80" />
+            </Link>
+
+            {menuActions
+              .filter((a) => a.key !== 'logout')
+              .map((a) => {
+                const Icon = a.icon;
+                if (!('to' in a)) return null;
+                const isMgmt = a.key === 'manage_org' || a.key === 'manage_team';
+                return (
+                  <Link
+                    key={a.key}
+                    to={a.to}
+                    className={cn(
+                      'flex items-center justify-between rounded-lg border px-3 py-2 text-sm font-semibold transition-colors',
+                      isMgmt
+                        ? cn('border-[gold]/60 bg-amber-500/10 text-amber-50 hover:bg-amber-500/15')
+                        : 'border-white/10 bg-white/5 text-white/90 hover:bg-white/10'
+                    )}
+                  >
+                    <span>{a.label}</span>
+                    <Icon className={cn('h-4 w-4', isMgmt ? 'text-amber-200' : 'text-white/70')} />
+                  </Link>
+                );
+              })}
+          </nav>
+
+          <div className="pt-4 mt-4 border-t border-border">
+            <Button
+              type="button"
+              variant="destructive"
+              className="w-full justify-between"
+              onClick={handleLogout}
+            >
+              <span>התנתקות</span>
+              <LogOut className="h-4 w-4" />
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+    );
+  };
+
   const TopToolsBlock = () => (
     <div
       className={cn(
-        'relative z-[9999] flex items-center justify-end gap-2 sm:gap-3 shrink-0 min-w-[44px]',
+        'relative z-[9999] flex items-center justify-end gap-2 md:gap-3 shrink-0 min-w-[44px]',
         isRtl ? 'flex-row-reverse' : ''
       )}
     >
-      {/* Mobile: hamburger menu for secondary actions + settings/org/view-as */}
-      <div className="relative z-[9999] flex items-center gap-2 sm:hidden min-w-[44px]">
-        <MobileActionsMenu />
-        <MobileSettingsMenu />
+      {/* Mobile (<768px): single hamburger drawer */}
+      <div className="relative z-[9999] flex items-center gap-2 md:hidden min-w-[44px]">
+        <MobileNavDrawer />
+        <UserDropdown />
       </div>
 
       {/* Desktop: stable row; management actions from centralized list */}
-      <div className="relative z-[9999] hidden sm:flex flex-wrap items-center justify-end gap-3">
+      <div className="relative z-[9999] hidden md:flex flex-wrap items-center justify-end gap-3">
         <PwaInstallButton />
         <ThemeToggle />
         <LanguageSwitcher />
@@ -689,31 +771,14 @@ export function AppLayout({ children }: AppLayoutProps) {
     </div>
   );
 
-  const MobileUserRow = () =>
-    user ? (
-      <div className="flex sm:hidden w-full items-center justify-between gap-2 pt-1">
-        <div className="flex items-center gap-2 min-w-0">
-          <div
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-500/20 text-[10px] font-bold text-cyan-200"
-            title={name || email}
-          >
-            {initials}
-          </div>
-          {email && (
-            <span className="max-w-[160px] truncate text-[11px] text-white/70" title={email}>
-              {email}
-            </span>
-          )}
-        </div>
-      </div>
-    ) : null;
+  const MobileUserRow = () => null;
 
   /* Desktop: full inline email + logout */
   const UserInline = () =>
     user ? (
       <div
         className={cn(
-          'hidden sm:flex items-center gap-2 rounded-full bg-black/40 px-3 py-1 text-xs',
+          'hidden md:flex items-center gap-2 rounded-full bg-black/40 px-3 py-1 text-xs',
           isRtl ? 'flex-row-reverse' : 'flex-row'
         )}
       >
@@ -753,7 +818,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             type="button"
             variant="ghost"
             size="icon"
-            className="sm:hidden h-9 w-9 rounded-full border border-cyan-400/30 bg-cyan-500/20 text-cyan-200 hover:bg-cyan-500/30 hover:text-cyan-100 cursor-pointer touch-manipulation shrink-0"
+            className="md:hidden h-9 w-9 rounded-full border border-cyan-400/30 bg-cyan-500/20 text-cyan-200 hover:bg-cyan-500/30 hover:text-cyan-100 cursor-pointer touch-manipulation shrink-0"
             style={{ touchAction: 'manipulation' }}
             aria-label={email || 'תפריט משתמש'}
           >
@@ -816,7 +881,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   /* קצה ימין: בית הכי ימני, אחריו לוגו + כותרת (ב־RTL פריט ראשון = ימין) */
   const BrandAndHome = () => (
     <div
-      className={cn('flex flex-1 min-w-0 items-center gap-3 sm:gap-6', isRtl ? 'flex-row' : 'flex-row-reverse')}
+      className={cn('flex flex-1 min-w-0 items-center gap-3 md:gap-6', isRtl ? 'flex-row' : 'flex-row-reverse')}
     >
       <Link
         to="/"
@@ -830,16 +895,16 @@ export function AppLayout({ children }: AppLayoutProps) {
           window.location.assign(`${window.location.origin}/`);
         }}
         className={cn(
-          'flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-2.5 sm:px-3 text-sm font-medium transition-colors',
+          'flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-2.5 md:px-3 text-sm font-medium transition-colors',
           isHomeActive
             ? 'bg-cyan-500/25 text-cyan-100 border border-cyan-400/40'
             : 'text-white/75 hover:bg-white/10 hover:text-white'
         )}
       >
         <Home className="h-4 w-4" />
-        <span className="hidden sm:inline">{t('navigation.home')}</span>
+        <span className="hidden md:inline">{t('navigation.home')}</span>
       </Link>
-      <div className={cn('flex min-w-0 items-center gap-2 sm:gap-3', isRtl && 'flex-row-reverse')}>
+      <div className={cn('flex min-w-0 items-center gap-2 md:gap-3', isRtl && 'flex-row-reverse')}>
         <div className="h-12 w-16 shrink-0 overflow-hidden rounded-lg bg-[#0a1525] p-2 flex items-center justify-center">
           <img
             src={getBrandLogoUrl()}
@@ -911,19 +976,22 @@ export function AppLayout({ children }: AppLayoutProps) {
       )}
       <header
         className={cn(
-          'sticky z-40 border-b border-white/10 bg-[#0d1b2e] min-h-[4.25rem] sm:min-h-0',
+          'sticky z-40 border-b border-white/10 bg-[#0d1b2e] h-14',
           headerStickyTopClass
         )}
       >
-        <div className="mx-auto flex max-w-[1920px] w-full flex-col gap-0 sm:gap-1 px-4 sm:px-6 py-3 sm:py-3">
-          {/* Row 1: לוגו + בית + גלגל שיניים */}
-          <div className="flex w-full flex-wrap items-center justify-between gap-x-2 gap-y-2 sm:gap-4 min-h-10 sm:min-h-0">
+        <div className="mx-auto flex max-w-[1920px] w-full h-full items-center px-4 md:px-6">
+          {/* Thin sticky top bar: logo left, drawer+avatar right */}
+          <div className="flex w-full items-center justify-between gap-3">
             <BrandAndHome />
             <TopToolsBlock />
           </div>
-          {/* Row 2: מידע משתמש במובייל + שורת משתמש בדסקטופ */}
-          <MobileUserRow />
-          <div className={cn('hidden sm:block pt-1', isRtl ? 'flex w-full justify-end' : 'flex w-full justify-start')}>
+          <div
+            className={cn(
+              'hidden md:flex w-full justify-start',
+              isRtl ? 'justify-end' : 'justify-start'
+            )}
+          >
             <UserInline />
           </div>
         </div>
