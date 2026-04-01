@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,6 +7,10 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
 import {
   ArrowRight, Building2, FileText, Heart, Loader2, Save,
   Upload, ExternalLink, Trash2, Plus, Pencil, FileCheck, Tag,
@@ -25,6 +29,21 @@ import {
   useUpdateOrgDocument, useDeleteOrgDocument,
   OrgDocument,
 } from '@/hooks/useOrgDocuments';
+import { isFleetAppStagingEnvironment } from '@/lib/fleetAppStagingEnvironment';
+import {
+  applyOrgDocumentsFromSnapshot,
+  buildOrgCrossEnvSnapshot,
+  buildOrgSettingsPatchFromSelection,
+  buildOrganizationUpdateFromSelection,
+  computeOrgCrossEnvDiffRows,
+  importSelectionTouchesDocuments,
+  importSelectionTouchesOrganizationRow,
+  importSelectionTouchesUiSettings,
+  parseOrgCrossEnvSnapshot,
+  type OrgCrossEnvSnapshotFile,
+  type OrgExportSelections,
+  type OrgReleaseDiffRow,
+} from '@/lib/orgSettingsReleaseSnapshot';
 
 // ─── PDF Template Upload slot ─────────────────────────────────────
 function PdfUploadSlot({ label, description, currentUrl, onUploaded, slot, readOnly }: {
@@ -213,6 +232,24 @@ export default function OrgSettingsPage() {
   const [isRestoring, setIsRestoring] = useState(false);
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
   const restoreInputRef = useRef<HTMLInputElement>(null);
+  const crossEnvImportInputRef = useRef<HTMLInputElement>(null);
+
+  const isStagingForCrossEnvSync = isFleetAppStagingEnvironment();
+
+  const [syncExportModalOpen, setSyncExportModalOpen] = useState(false);
+  const [exportSelections, setExportSelections] = useState<OrgExportSelections>({
+    documents: true,
+    uiSettings: true,
+    orgDetails: true,
+  });
+  const [isExportingSnapshot, setIsExportingSnapshot] = useState(false);
+
+  const [importReviewOpen, setImportReviewOpen] = useState(false);
+  const [importRows, setImportRows] = useState<OrgReleaseDiffRow[]>([]);
+  const [importSelected, setImportSelected] = useState<Set<string>>(() => new Set());
+  const [importSnapshot, setImportSnapshot] = useState<OrgCrossEnvSnapshotFile | null>(null);
+  const [importFileBusy, setImportFileBusy] = useState(false);
+  const [applyImportBusy, setApplyImportBusy] = useState(false);
 
   // Tab 1 state — name & email from organizations; rest from organization_settings
   const [orgName, setOrgName] = useState('');
@@ -521,6 +558,159 @@ export default function OrgSettingsPage() {
     return list;
   }, [docs]);
 
+  const allDocsForImport = useMemo(() => docs ?? [], [docs]);
+
+  const handleConfirmExportSnapshot = () => {
+    if (!exportSelections.documents && !exportSelections.uiSettings && !exportSelections.orgDetails) {
+      toast.error('בחר לפחות קטגוריה אחת לייצוא');
+      return;
+    }
+    if (!orgId) {
+      toast.error('אין ארגון פעיל');
+      return;
+    }
+    setIsExportingSnapshot(true);
+    try {
+      const snapshot = buildOrgCrossEnvSnapshot({
+        organization: organization ?? null,
+        settings: settings ?? null,
+        documents: allDocsForImport,
+        selections: exportSelections,
+      });
+      downloadJsonFile('release_snapshot.json', snapshot);
+      toast.success('הקובץ release_snapshot.json הורד (ללא מזהה ארגון בסביבת היעד)');
+      setSyncExportModalOpen(false);
+    } catch (e) {
+      console.error(e);
+      toast.error('ייצוא הסנאפשוט נכשל');
+    } finally {
+      setIsExportingSnapshot(false);
+    }
+  };
+
+  const openCrossEnvImportPicker = () => crossEnvImportInputRef.current?.click();
+
+  const handleCrossEnvImportFilePicked = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || readOnly) return;
+    if (!orgId) {
+      toast.error('אין ארגון פעיל');
+      return;
+    }
+    setImportFileBusy(true);
+    try {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(await file.text());
+      } catch {
+        toast.error('קובץ JSON לא תקין');
+        return;
+      }
+      const { snapshot, error } = parseOrgCrossEnvSnapshot(parsed);
+      if (error || !snapshot) {
+        toast.error(error ?? 'קובץ לא תקין');
+        return;
+      }
+      const rows = computeOrgCrossEnvDiffRows({
+        snapshot,
+        organization: organization ?? null,
+        settings: settings ?? null,
+        documents: allDocsForImport,
+      });
+      if (rows.length === 0) {
+        toast.info('אין הבדלים בין הקובץ להגדרות הנוכחיות');
+        return;
+      }
+      setImportSnapshot(snapshot);
+      setImportRows(rows);
+      setImportSelected(new Set(rows.filter((r) => r.defaultSelected).map((r) => r.id)));
+      setImportReviewOpen(true);
+    } catch (err) {
+      console.error(err);
+      toast.error('טעינת הקובץ נכשלה');
+    } finally {
+      setImportFileBusy(false);
+    }
+  };
+
+  const toggleImportRow = (id: string, checked: boolean) => {
+    setImportSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const toggleImportCategory = (category: OrgReleaseDiffRow['category'], checked: boolean) => {
+    const ids = importRows.filter((r) => r.category === category).map((r) => r.id);
+    setImportSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (checked) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  };
+
+  const importCategoryAllSelected = (category: OrgReleaseDiffRow['category']) => {
+    const ids = importRows.filter((r) => r.category === category).map((r) => r.id);
+    return ids.length > 0 && ids.every((id) => importSelected.has(id));
+  };
+
+  const handleApplyCrossEnvImport = async () => {
+    if (!importSnapshot || !orgId) return;
+    if (importSelected.size === 0) {
+      toast.error('סמן לפחות פריט אחד ליישום');
+      return;
+    }
+    setApplyImportBusy(true);
+    try {
+      if (importSelectionTouchesOrganizationRow(importSelected)) {
+        const orgUp = buildOrganizationUpdateFromSelection(importSnapshot, importSelected, orgId);
+        if (orgUp && (orgUp.name !== undefined || orgUp.email !== undefined)) {
+          await updateOrganization.mutateAsync(orgUp);
+        }
+      }
+      if (importSelectionTouchesUiSettings(importSelected)) {
+        const patch = buildOrgSettingsPatchFromSelection(
+          importSnapshot,
+          importSelected,
+          settings ?? null,
+          orgId,
+        );
+        await updateSettings.mutateAsync(patch);
+      }
+      if (importSelectionTouchesDocuments(importSelected)) {
+        await applyOrgDocumentsFromSnapshot({
+          supabase,
+          snapshot: importSnapshot,
+          selected: importSelected,
+          currentDocuments: allDocsForImport,
+        });
+      }
+      toast.success('העדכונים מהסטייג׳ינג יושמו בהצלחה');
+      setImportReviewOpen(false);
+      setImportRows([]);
+      setImportSnapshot(null);
+      setImportSelected(new Set());
+      await queryClient.invalidateQueries({ queryKey: ['org-settings'] });
+      await queryClient.invalidateQueries({ queryKey: ['org-documents'] });
+      await queryClient.invalidateQueries({ queryKey: ['organization', orgId] });
+      window.location.reload();
+    } catch (err) {
+      console.error(err);
+      toast.error(err instanceof Error ? err.message : 'יישום נכשל');
+    } finally {
+      setApplyImportBusy(false);
+    }
+  };
+
+  const crossEnvSyncDisabled =
+    readOnly || !orgId || orgLoading || settingsLoading || docsLoading || isExportingSnapshot || importFileBusy;
+
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-4xl mx-auto p-6 space-y-6" dir="rtl">
@@ -550,6 +740,30 @@ export default function OrgSettingsPage() {
               {isCheckingUpdates ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : <RefreshCw className="h-4 w-4 ml-2" />}
               בדוק עדכונים
             </Button>
+            {!readOnly && (
+              isStagingForCrossEnvSync ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={crossEnvSyncDisabled}
+                  onClick={() => setSyncExportModalOpen(true)}
+                  className="gap-2"
+                >
+                  סנכרון הגדרות
+                </Button>
+              ) : (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={crossEnvSyncDisabled}
+                  onClick={openCrossEnvImportPicker}
+                  className="gap-2"
+                >
+                  {importFileBusy ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : <Upload className="h-4 w-4 ml-2" />}
+                  טען עדכונים מסטייג׳ינג
+                </Button>
+              )
+            )}
             <input
               ref={restoreInputRef}
               type="file"
@@ -560,8 +774,145 @@ export default function OrgSettingsPage() {
                 if (f) void handleRestorePicked(f);
               }}
             />
+            <input
+              ref={crossEnvImportInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={handleCrossEnvImportFilePicked}
+            />
           </div>
         </div>
+
+        <Dialog open={syncExportModalOpen} onOpenChange={setSyncExportModalOpen}>
+          <DialogContent className="max-w-md" dir="rtl">
+            <DialogHeader>
+              <DialogTitle>סנכרון הגדרות — בחירת תוכן לייצוא</DialogTitle>
+              <DialogDescription className="text-sm text-muted-foreground">
+                יווצר קובץ <code className="text-xs">release_snapshot.json</code> ללא מזהה הארגון ב-Supabase, לייבוא בפרודקשן.
+                הגדרות הטפסים נשמרות בטבלת <code className="text-xs">ui_settings</code>; המסמכים המותאמים ב־
+                <code className="text-xs">org_documents</code>.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <Checkbox
+                  checked={exportSelections.documents}
+                  onCheckedChange={(v) =>
+                    setExportSelections((s) => ({ ...s, documents: v === true }))
+                  }
+                />
+                <span className="text-sm">מסמכים (org_documents)</span>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <Checkbox
+                  checked={exportSelections.uiSettings}
+                  onCheckedChange={(v) =>
+                    setExportSelections((s) => ({ ...s, uiSettings: v === true }))
+                  }
+                />
+                <span className="text-sm">הגדרות ממשק וטפסים (טקסטים ותבניות PDF)</span>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <Checkbox
+                  checked={exportSelections.orgDetails}
+                  onCheckedChange={(v) =>
+                    setExportSelections((s) => ({ ...s, orgDetails: v === true }))
+                  }
+                />
+                <span className="text-sm">פרטי ארגון (שם, דוא״ל, ח.פ./ע.מ.)</span>
+              </label>
+            </div>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button type="button" variant="outline" onClick={() => setSyncExportModalOpen(false)}>
+                ביטול
+              </Button>
+              <Button type="button" onClick={handleConfirmExportSnapshot} disabled={isExportingSnapshot}>
+                {isExportingSnapshot ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : <Download className="h-4 w-4 ml-2" />}
+                הורד release_snapshot.json
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={importReviewOpen} onOpenChange={setImportReviewOpen}>
+          <DialogContent className="max-w-lg max-h-[90vh] flex flex-col gap-0 sm:max-w-2xl" dir="rtl">
+            <DialogHeader>
+              <DialogTitle>טעינת עדכונים מסטייג׳ינג — סקירה לפני יישום</DialogTitle>
+              <DialogDescription asChild>
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  <p>
+                    ייושמו רק הפריטים המסומנים. השינויים נכתבים ל־<code className="text-xs">ui_settings</code>, ל־
+                    <code className="text-xs">organizations</code> ול־<code className="text-xs">org_documents</code> בארגון
+                    הפעיל בפרודקשן.
+                  </p>
+                </div>
+              </DialogDescription>
+            </DialogHeader>
+            <ScrollArea className="max-h-[50vh] pr-3 -mr-1">
+              <div className="space-y-4 py-2">
+                {(['org', 'ui', 'documents'] as const).map((cat) => {
+                  const rows = importRows.filter((r) => r.category === cat);
+                  if (rows.length === 0) return null;
+                  const title =
+                    cat === 'org'
+                      ? 'פרטי ארגון'
+                      : cat === 'ui'
+                        ? 'הגדרות טפסים ותבניות'
+                        : 'מסמכים מותאמים';
+                  return (
+                    <div key={cat} className="space-y-2 border-b border-border pb-3 last:border-b-0">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id={`import-cat-${cat}`}
+                          checked={importCategoryAllSelected(cat)}
+                          onCheckedChange={(v) => toggleImportCategory(cat, v === true)}
+                        />
+                        <Label htmlFor={`import-cat-${cat}`} className="cursor-pointer text-sm font-semibold">
+                          {title}
+                        </Label>
+                      </div>
+                      <ul className="space-y-2 pr-6 list-none">
+                        {rows.map((row) => (
+                          <li key={row.id} className="flex items-start gap-2">
+                            <Checkbox
+                              id={row.id}
+                              checked={importSelected.has(row.id)}
+                              onCheckedChange={(v) => toggleImportRow(row.id, v === true)}
+                            />
+                            <Label htmlFor={row.id} className="cursor-pointer flex-1 min-w-0 leading-snug">
+                              <span className="flex flex-wrap items-center gap-2">
+                                <span>{row.label}</span>
+                                <Badge variant={row.status === 'new' ? 'default' : 'secondary'}>
+                                  {row.status === 'new' ? 'חדש' : 'שונה'}
+                                </Badge>
+                              </span>
+                            </Label>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+            <DialogFooter className="gap-2 sm:gap-0 flex-col sm:flex-row sm:justify-between">
+              <Button type="button" variant="outline" onClick={() => setImportReviewOpen(false)}>
+                ביטול
+              </Button>
+              <Button type="button" onClick={() => void handleApplyCrossEnvImport()} disabled={applyImportBusy}>
+                {applyImportBusy ? (
+                  <>
+                    <Loader2 className="h-4 w-4 ml-2 animate-spin" />
+                    מיישם…
+                  </>
+                ) : (
+                  'יישום הפריטים המסומנים'
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {(orgLoading || settingsLoading) ? (
           <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
