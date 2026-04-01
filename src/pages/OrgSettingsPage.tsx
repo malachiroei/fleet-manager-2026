@@ -564,27 +564,38 @@ export default function OrgSettingsPage() {
 
   const allDocsForImport = useMemo(() => docs ?? [], [docs]);
 
+  const exportFormUiSnapshot = useMemo(
+    () => ({
+      org_id_number: orgIdNumber,
+      health_statement_text: healthText,
+      vehicle_policy_text: policyText,
+      health_statement_pdf_url: healthPdfUrl,
+      vehicle_policy_pdf_url: policyPdfUrl,
+    }),
+    [orgIdNumber, healthText, policyText, healthPdfUrl, policyPdfUrl],
+  );
+
+  const activeExportDocFingerprints = useMemo(() => {
+    return (docs ?? [])
+      .filter((d) => d.is_active !== false && String(d.title ?? '').trim())
+      .map((d) => docFingerprint(d));
+  }, [docs]);
+
   const handleSyncExportDialogChange = (open: boolean) => {
     setSyncExportModalOpen(open);
     if (open) {
-      const fps = (docs ?? [])
-        .filter((d) => String(d.title ?? '').trim())
-        .map((d) => docFingerprint(d));
-      setExportSelections(createDefaultOrgExportSelections(fps));
+      setExportSelections(createDefaultOrgExportSelections(activeExportDocFingerprints));
     }
   };
 
   useEffect(() => {
     if (!syncExportModalOpen || docsLoading) return;
-    const fps = (docs ?? [])
-      .filter((d) => String(d.title ?? '').trim())
-      .map((d) => docFingerprint(d));
-    if (fps.length === 0) return;
+    if (activeExportDocFingerprints.length === 0) return;
     setExportSelections((prev) => {
       if (prev.documentFingerprints.size !== 0) return prev;
-      return { ...prev, documentFingerprints: new Set(fps) };
+      return { ...prev, documentFingerprints: new Set(activeExportDocFingerprints) };
     });
-  }, [syncExportModalOpen, docsLoading, docs]);
+  }, [syncExportModalOpen, docsLoading, activeExportDocFingerprints]);
 
   const handleConfirmExportSnapshot = async () => {
     if (!exportSelectionHasAnyContent(exportSelections)) {
@@ -835,6 +846,7 @@ export default function OrgSettingsPage() {
           onOpenChange={handleSyncExportDialogChange}
           documents={docs ?? []}
           documentsLoading={docsLoading}
+          formUiSnapshot={exportFormUiSnapshot}
           selections={exportSelections}
           setSelections={setExportSelections}
           onConfirmExport={handleConfirmExportSnapshot}

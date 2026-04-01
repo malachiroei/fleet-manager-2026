@@ -12,3 +12,6 @@ export function orgDocumentTemplateBody(schema: unknown, description?: string | 
 
 /** When ui_settings.vehicle_policy_text is empty, use this org_documents row title as fallback. */
 export const VEHICLE_POLICY_FALLBACK_DOC_TITLE = 'נוהל שימוש ברכב';
+
+/** כותרת מסמך מזוהה עם טקסט הצהרת הבריאות — לדילול כפילויות בייצוא */
+export const HEALTH_STATEMENT_FALLBACK_DOC_TITLE = 'הצהרת בריאות';
