@@ -71,9 +71,23 @@ export type OrgExportSelections = {
   orgDetails: boolean;
 };
 
+/** ערכי טפסים כפי שמוצגים במסך (מקור אמת לייצוא כש־useOrgSettings מחזיר null) */
+export type OrgSettingsFormUiSnapshot = {
+  org_id_number: string;
+  health_statement_text: string;
+  vehicle_policy_text: string;
+  health_statement_pdf_url: string | null;
+  vehicle_policy_pdf_url: string | null;
+};
+
 export function buildOrgCrossEnvSnapshot(args: {
   organization: Organization | null | undefined;
+  /** שם, דוא״ל וח.פ. מהשדות בטאב פרטי חברה */
+  organizationForm?: { name: string; email: string | null; org_id_number: string };
+  /** שורת ui_settings מהשרת (גיבוי כשאין טופס) */
   settings: OrgSettings | null | undefined;
+  /** ערכי טקסט/PDF מהמסך — דורסים את settings לייצוא */
+  formUiSnapshot?: OrgSettingsFormUiSnapshot | null;
   documents: OrgDocument[] | null | undefined;
   selections: OrgExportSelections;
 }): OrgCrossEnvSnapshotFile {
@@ -86,24 +100,37 @@ export function buildOrgCrossEnvSnapshot(args: {
   };
 
   const { selections, organization, settings, documents } = args;
+  const formOrg = args.organizationForm;
+  const uiFromForm = args.formUiSnapshot;
+  const uiFromServer =
+    settings != null
+      ? {
+          org_id_number: settings.org_id_number ?? '',
+          health_statement_text: settings.health_statement_text ?? '',
+          vehicle_policy_text: settings.vehicle_policy_text ?? '',
+          health_statement_pdf_url: settings.health_statement_pdf_url ?? null,
+          vehicle_policy_pdf_url: settings.vehicle_policy_pdf_url ?? null,
+        }
+      : null;
+  const uiSource: OrgSettingsFormUiSnapshot | null = uiFromForm ?? uiFromServer;
 
-  if (selections.orgDetails && organization) {
+  if (selections.orgDetails) {
     base.organization = {
-      name: organization.name ?? '',
-      email: organization.email ?? null,
-      org_id_number: settings?.org_id_number ?? '',
+      name: formOrg?.name ?? organization?.name ?? '',
+      email: formOrg?.email !== undefined ? formOrg.email : (organization?.email ?? null),
+      org_id_number: formOrg?.org_id_number ?? settings?.org_id_number ?? '',
     };
   }
 
-  if (selections.uiSettings && settings) {
+  if (selections.uiSettings && uiSource) {
     base.uiSettingsTemplate = {
-      health_statement_text: settings.health_statement_text ?? '',
-      vehicle_policy_text: settings.vehicle_policy_text ?? '',
-      health_statement_pdf_url: settings.health_statement_pdf_url ?? null,
-      vehicle_policy_pdf_url: settings.vehicle_policy_pdf_url ?? null,
+      health_statement_text: uiSource.health_statement_text,
+      vehicle_policy_text: uiSource.vehicle_policy_text,
+      health_statement_pdf_url: uiSource.health_statement_pdf_url,
+      vehicle_policy_pdf_url: uiSource.vehicle_policy_pdf_url,
     };
     if (!selections.orgDetails) {
-      base.uiSettingsTemplate.org_id_number = settings.org_id_number ?? '';
+      base.uiSettingsTemplate.org_id_number = uiSource.org_id_number;
     }
   }
 

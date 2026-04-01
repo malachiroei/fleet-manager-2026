@@ -27,8 +27,11 @@ import { useUiLabels, useUpdateUiLabels, UiLabel } from '@/hooks/useUiLabels';
 import {
   useOrgDocumentsAdmin, useCreateOrgDocument,
   useUpdateOrgDocument, useDeleteOrgDocument,
+  fetchOrgDocumentsAdmin,
+  ORG_DOCUMENTS_ADMIN_QUERY_KEY,
   OrgDocument,
 } from '@/hooks/useOrgDocuments';
+import { ExportChecklistDialog } from '@/components/ExportChecklistDialog';
 import { isFleetAppStagingEnvironment } from '@/lib/fleetAppStagingEnvironment';
 import {
   applyOrgDocumentsFromSnapshot,
@@ -560,7 +563,7 @@ export default function OrgSettingsPage() {
 
   const allDocsForImport = useMemo(() => docs ?? [], [docs]);
 
-  const handleConfirmExportSnapshot = () => {
+  const handleConfirmExportSnapshot = async () => {
     if (!exportSelections.documents && !exportSelections.uiSettings && !exportSelections.orgDetails) {
       toast.error('בחר לפחות קטגוריה אחת לייצוא');
       return;
@@ -571,10 +574,28 @@ export default function OrgSettingsPage() {
     }
     setIsExportingSnapshot(true);
     try {
+      await queryClient.invalidateQueries({ queryKey: ORG_DOCUMENTS_ADMIN_QUERY_KEY });
+      const documentsFresh = await queryClient.fetchQuery({
+        queryKey: ORG_DOCUMENTS_ADMIN_QUERY_KEY,
+        queryFn: fetchOrgDocumentsAdmin,
+      });
+      const formUiSnapshot = {
+        org_id_number: orgIdNumber,
+        health_statement_text: healthText,
+        vehicle_policy_text: policyText,
+        health_statement_pdf_url: healthPdfUrl,
+        vehicle_policy_pdf_url: policyPdfUrl,
+      };
       const snapshot = buildOrgCrossEnvSnapshot({
         organization: organization ?? null,
+        organizationForm: {
+          name: orgName.trim(),
+          email: adminEmail.trim() ? adminEmail.trim() : null,
+          org_id_number: orgIdNumber.trim(),
+        },
         settings: settings ?? null,
-        documents: allDocsForImport,
+        formUiSnapshot,
+        documents: documentsFresh,
         selections: exportSelections,
       });
       downloadJsonFile('release_snapshot.json', snapshot);
@@ -743,6 +764,7 @@ export default function OrgSettingsPage() {
             {!readOnly && (
               isStagingForCrossEnvSync ? (
                 <Button
+                  type="button"
                   variant="secondary"
                   size="sm"
                   disabled={crossEnvSyncDisabled}
@@ -753,6 +775,7 @@ export default function OrgSettingsPage() {
                 </Button>
               ) : (
                 <Button
+                  type="button"
                   variant="secondary"
                   size="sm"
                   disabled={crossEnvSyncDisabled}
@@ -784,56 +807,14 @@ export default function OrgSettingsPage() {
           </div>
         </div>
 
-        <Dialog open={syncExportModalOpen} onOpenChange={setSyncExportModalOpen}>
-          <DialogContent className="max-w-md" dir="rtl">
-            <DialogHeader>
-              <DialogTitle>סנכרון הגדרות — בחירת תוכן לייצוא</DialogTitle>
-              <DialogDescription className="text-sm text-muted-foreground">
-                יווצר קובץ <code className="text-xs">release_snapshot.json</code> ללא מזהה הארגון ב-Supabase, לייבוא בפרודקשן.
-                הגדרות הטפסים נשמרות בטבלת <code className="text-xs">ui_settings</code>; המסמכים המותאמים ב־
-                <code className="text-xs">org_documents</code>.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-3 py-2">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <Checkbox
-                  checked={exportSelections.documents}
-                  onCheckedChange={(v) =>
-                    setExportSelections((s) => ({ ...s, documents: v === true }))
-                  }
-                />
-                <span className="text-sm">מסמכים (org_documents)</span>
-              </label>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <Checkbox
-                  checked={exportSelections.uiSettings}
-                  onCheckedChange={(v) =>
-                    setExportSelections((s) => ({ ...s, uiSettings: v === true }))
-                  }
-                />
-                <span className="text-sm">הגדרות ממשק וטפסים (טקסטים ותבניות PDF)</span>
-              </label>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <Checkbox
-                  checked={exportSelections.orgDetails}
-                  onCheckedChange={(v) =>
-                    setExportSelections((s) => ({ ...s, orgDetails: v === true }))
-                  }
-                />
-                <span className="text-sm">פרטי ארגון (שם, דוא״ל, ח.פ./ע.מ.)</span>
-              </label>
-            </div>
-            <DialogFooter className="gap-2 sm:gap-0">
-              <Button type="button" variant="outline" onClick={() => setSyncExportModalOpen(false)}>
-                ביטול
-              </Button>
-              <Button type="button" onClick={handleConfirmExportSnapshot} disabled={isExportingSnapshot}>
-                {isExportingSnapshot ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : <Download className="h-4 w-4 ml-2" />}
-                הורד release_snapshot.json
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <ExportChecklistDialog
+          open={syncExportModalOpen}
+          onOpenChange={setSyncExportModalOpen}
+          selections={exportSelections}
+          setSelections={setExportSelections}
+          onConfirmExport={handleConfirmExportSnapshot}
+          isExporting={isExportingSnapshot}
+        />
 
         <Dialog open={importReviewOpen} onOpenChange={setImportReviewOpen}>
           <DialogContent className="max-w-lg max-h-[90vh] flex flex-col gap-0 sm:max-w-2xl" dir="rtl">
