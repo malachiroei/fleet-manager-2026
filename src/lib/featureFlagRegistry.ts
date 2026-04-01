@@ -96,13 +96,6 @@ export const FEATURE_FLAG_REGISTRY: FeatureFlagRegistryEntry[] = [
     category: 'quick_actions',
   },
   {
-    key: 'TEMP_TEST_BUTTON',
-    display_name_he: 'כפתור בדיקה זמני',
-    description: 'כפתור זמני לצורך בדיקות לפני עלייה לייצור',
-    ui_mapping: 'Dashboard -> כפתור בדיקה זמני',
-    category: 'quick_actions',
-  },
-  {
     key: 'qa_admin_settings',
     display_name_he: 'הגדרות מערכת',
     description: 'קישור מהיר — הגדרות מנהל',

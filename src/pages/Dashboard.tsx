@@ -10,7 +10,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useViewAs } from '@/contexts/ViewAsContext';
 import type { PermissionKey } from '@/lib/permissions';
-import { isFeatureEnabled } from '@/hooks/useFeatureFlags';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -169,7 +168,7 @@ export default function Dashboard() {
   const isMobile = useIsMobile();
   const { user, profile, hasPermission, isAdmin, isManager, isDriver, roles: userRoles, loading, activeOrgId } = useAuth();
   const { viewAsEmail } = useViewAs();
-  const { data: features, isPending: flagsPending } = useFeatureFlags();
+  const { isPending: flagsPending } = useFeatureFlags();
   const { canAccessUi } = usePermissions();
   const showDashboardTreatmentCard = false;
   const showDashboardTestCard = false;
@@ -177,9 +176,6 @@ export default function Dashboard() {
   const totalAlerts = (alerts?.filter(a => a.status === 'expired' || a.status === 'warning').length) ?? 0;
   const isStatsLoading = isLoading || !stats;
   const isInitialUiLoading = loading || flagsPending;
-  const showTempTestButton = isFeatureEnabled(features, 'TEMP_TEST_BUTTON');
-
-  console.log('Current Active Org ID:', activeOrgId);
 
   useEffect(() => {
     if (!activeOrgId && !viewAsEmail) return;
@@ -370,18 +366,6 @@ export default function Dashboard() {
 
   return (
     <div className="container py-6 md:py-8 pb-32 sm:pb-8 space-y-6 md:space-y-8 relative z-[1]">
-      {showTempTestButton ? (
-        <div className="flex justify-center">
-          <Button
-            type="button"
-            variant="secondary"
-            className="h-11 px-6 text-base"
-            onClick={() => toast.info('כפתור בדיקה זמני')}
-          >
-            כפתור בדיקה זמני
-          </Button>
-        </div>
-      ) : null}
       <div className="rounded-2xl border bg-card p-4 md:p-6">
         <h1 className="hidden sm:block text-2xl md:text-3xl font-bold tracking-tight text-foreground">
           {t('dashboard.title')}
