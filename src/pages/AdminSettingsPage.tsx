@@ -40,7 +40,6 @@ import { useOrgSettings, useUpdateOrgSettings } from '@/hooks/useOrgSettings';
 import { getDefaultPermissions } from '@/lib/permissions';
 import {
   buildReleaseSnapshotPayload,
-  downloadReleaseSnapshotJson,
   EMPTY_FLEET_MANIFEST_UI_GATES,
   getBundledReleaseSnapshot,
   type ReleaseSnapshotFile,
@@ -54,7 +53,6 @@ import {
   type SyncDiffRow,
 } from '@/lib/settingsSyncReview';
 import { upsertSystemSettingsRows } from '@/lib/systemSettingsUpsert';
-import { getSupabaseAnonKey } from '@/integrations/supabase/publicEnv';
 import { toast } from 'sonner';
 import { version as codeVersion } from '@/constants/version';
 import { clearAllBrowserCaches, triggerServiceWorkerUpdateCheck } from '@/lib/pwaServiceWorkerControl';
@@ -74,11 +72,6 @@ import {
 } from '@/lib/versionManifest';
 import { isFleetProductionHost } from '@/lib/pwaPromptRegister';
 import { FLEET_KV_TABLE } from '@/lib/fleetKvTable';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-
-const PROD_RELEASE_SYNC_LABEL = 'סנכרון הגדרות לפרודקשן (עדכון טפסים ולוגואים)';
-/** סנכרון release_snapshot — רק ל-malachiroei@gmail.com */
-const PROD_RELEASE_SYNC_EMAIL = 'malachiroei@gmail.com';
 
 export default function AdminSettingsPage() {
     const { theme, setTheme } = useTheme();
@@ -88,67 +81,11 @@ export default function AdminSettingsPage() {
     const lastVehicleUpload = localStorage.getItem('last_vehicle_upload');
     const lastDriverUpload = localStorage.getItem('last_driver_upload');
 
-    const [pushProdSyncBusy, setPushProdSyncBusy] = useState(false);
-
     const settingsOrgIdForSnapshot = activeOrgId ?? profile?.org_id ?? null;
     const { data: orgSettingsRow } = useOrgSettings(settingsOrgIdForSnapshot, {
       enabledOnlyWithOrgId: true,
     });
     const manifestUiGates = EMPTY_FLEET_MANIFEST_UI_GATES;
-
-    const canShowProdReleaseSyncButton = useMemo(() => {
-      const e = (user?.email ?? profile?.email ?? '').trim().toLowerCase();
-      return e === PROD_RELEASE_SYNC_EMAIL;
-    }, [user?.email, profile?.email]);
-
-    const handlePushReleaseSnapshotToProd = useCallback(async () => {
-      const snapshotOrgId = activeOrgId ?? profile?.org_id ?? null;
-      if (!snapshotOrgId) {
-        toast.error('בחר ארגון פעיל (מתפריט הארגון) לפני דחיפת סנאפשוט.');
-        return;
-      }
-      const viewer = (user?.email ?? profile?.email ?? '').trim().toLowerCase();
-      if (viewer !== PROD_RELEASE_SYNC_EMAIL) {
-        toast.error('אין הרשאה לסנכרון זה');
-        return;
-      }
-      setPushProdSyncBusy(true);
-      try {
-        const snapshot = buildReleaseSnapshotPayload({
-          orgId: snapshotOrgId,
-          orgSettings: orgSettingsRow ?? null,
-          manifestUi: manifestUiGates,
-          defaultPermissions: getDefaultPermissions(),
-          previousBundledVersion: getBundledReleaseSnapshot().version,
-        });
-        downloadReleaseSnapshotJson(snapshot);
-        toast.info('הקובץ ירד, כעת מנסים לדחוף ל-Git…');
-
-        const sessionRes = await supabase.auth.getSession();
-        const bearer = sessionRes?.data?.session?.access_token ?? getSupabaseAnonKey();
-        const invokeRes = await supabase.functions.invoke('push-release-snapshot', {
-          headers: { Authorization: `Bearer ${bearer}` },
-          body: { snapshot },
-        });
-        const data = invokeRes?.data ?? null;
-        const error = invokeRes?.error ?? null;
-        const ok = !error && data && typeof data === 'object' && (data as { ok?: boolean }).ok === true;
-        if (ok) {
-          toast.success('נדחף ל-GitHub — עדכון טפסים/פוליסות/לוגואים בפרו דרך הפריסה הרגילה.');
-        }
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : 'דחיפה נכשלה');
-      } finally {
-        setPushProdSyncBusy(false);
-      }
-    }, [
-      activeOrgId,
-      profile?.org_id,
-      user?.email,
-      profile?.email,
-      orgSettingsRow,
-      manifestUiGates,
-    ]);
 
     // ── notification_emails — stored in system_settings ───────────────────────
     const [notificationEmailsRaw, setNotificationEmailsRaw] = useState('malachiroei@gmail.com');
@@ -928,43 +865,6 @@ export default function AdminSettingsPage() {
           {/* Fleet Data Importer */}
           <FleetDataImporter />
 
-          {canShowProdReleaseSyncButton ? (
-            <Card className="border-primary/30 bg-primary/5">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Upload className="h-5 w-5 shrink-0" />
-                  {PROD_RELEASE_SYNC_LABEL}
-                </CardTitle>
-                <CardDescription>
-                  יוצר <code className="text-xs">release_snapshot.json</code> מהגדרות הארגון הפעיל, מוריד עותק
-                  מקומי, ומנסה לדחוף ל-GitHub דרך Edge Function <code className="text-xs">push-release-snapshot</code>.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      className="gap-2 max-w-full whitespace-normal text-right"
-                      disabled={pushProdSyncBusy || !settingsOrgIdForSnapshot}
-                      onClick={() => void handlePushReleaseSnapshotToProd()}
-                    >
-                      {pushProdSyncBusy ? (
-                        <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-                      ) : (
-                        <Upload className="h-4 w-4 shrink-0" />
-                      )}
-                      {PROD_RELEASE_SYNC_LABEL}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-sm text-center">
-                    דורש ארגון פעיל · מוריד JSON ומפעיל דחיפה ל-Git (אם ה-Edge Function מוגדר)
-                  </TooltipContent>
-                </Tooltip>
-              </CardContent>
-            </Card>
-          ) : null}
-
           {/* Notification Emails — system_settings */}
           <Card>
             <CardHeader>
@@ -1101,7 +1001,7 @@ export default function AdminSettingsPage() {
                   <span className="font-medium">{lastUpdateDate}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">version_snapshot.json ב-GitHub:</span>
+                  <span className="text-muted-foreground">גרסת עדכון זמינה:</span>
                   <span className="font-medium" dir="ltr">
                     {isGithubSnapshotLoading
                       ? 'טוען…'
@@ -1198,31 +1098,12 @@ export default function AdminSettingsPage() {
           <Dialog open={reviewModalOpen} onOpenChange={setReviewModalOpen}>
             <DialogContent className="max-w-lg max-h-[90vh] flex flex-col gap-0 sm:max-w-2xl" dir="rtl">
               <DialogHeader>
-                <DialogTitle>סינכרון הגדרות — סקירה לפני יישום</DialogTitle>
+                <DialogTitle>יישום הגדרות — סקירה לפני אישור</DialogTitle>
                 <DialogDescription asChild>
-                  <div className="space-y-3 text-sm text-muted-foreground">
-                    <p>
-                      יושמו לענן רק הפריטים שתסמן. הפריטים מסומנים כ<strong className="text-foreground">חדש</strong>{' '}
-                      או <strong className="text-foreground">שונה</strong> ביחס למצב הנוכחי (כולל ערכים שמורים ב־
-                      <code className="text-xs">system_settings</code>).
-                    </p>
-                    <ul className="list-disc pr-5 space-y-1">
-                      <li>
-                        <strong className="text-foreground">טפסים ומסמכים:</strong> הצהרת בריאות, מדיניות רכב, כתובות
-                        PDF — נשמרים ב־<code className="text-xs">ui_settings</code> לארגון הפעיל.
-                      </li>
-                      <li>
-                        <strong className="text-foreground">הרשאות משתמשים:</strong> רמות גישה ברירת מחדל לפי מפתחות
-                        הרשאה — נשמרות ב־<code className="text-xs">system_settings</code> (
-                        <code className="text-xs">fleet_sync_default_permissions</code>).
-                      </li>
-                      <li>
-                        <strong className="text-foreground">הגדרות ממשק:</strong> דגלי תצוגה (כותרת, לוח בקרה, תחזוקה
-                        וכו׳) — נשמרים ב־<code className="text-xs">system_settings</code> (
-                        <code className="text-xs">fleet_sync_ui_features</code>).
-                      </li>
-                    </ul>
-                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    ייושמו רק הפריטים המסומנים. סימון <strong className="text-foreground">חדש</strong> או{' '}
+                    <strong className="text-foreground">שונה</strong> מציין את ההבדל ביחס למצב הנוכחי.
+                  </p>
                 </DialogDescription>
               </DialogHeader>
               <ScrollArea className="max-h-[50vh] pr-3 -mr-1">
