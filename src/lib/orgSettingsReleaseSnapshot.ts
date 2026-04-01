@@ -49,7 +49,8 @@ function valEq(a: unknown, b: unknown): boolean {
   return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
 
-function docFingerprint(d: OrgReleaseSnapshotDocument | OrgDocument): string {
+/** מפתח יציב לשורת מסמך (כותרת + סדר) — ייצוא/ייבוא */
+export function docFingerprint(d: OrgReleaseSnapshotDocument | OrgDocument): string {
   const t = String(d.title ?? '').trim();
   const o = d.sort_order ?? 0;
   return `${t}@@${o}`;
@@ -65,11 +66,38 @@ function stripDocForExport(d: OrgDocument): OrgReleaseSnapshotDocument {
   return rest as OrgReleaseSnapshotDocument;
 }
 
-export type OrgExportSelections = {
-  documents: boolean;
-  uiSettings: boolean;
+/** שדות טופס וממשק — כל אחד נשמר בנפרד בסנאפשוט */
+export type OrgExportFieldSelections = {
   orgDetails: boolean;
+  vehiclePolicyText: boolean;
+  healthStatementText: boolean;
+  /** תבניות PDF (לוגו/מיתוג על גבי טפסי חתימה) */
+  brandPdfTemplates: boolean;
 };
+
+export type OrgExportSelections = {
+  fields: OrgExportFieldSelections;
+  /** docFingerprint לכל מסמך לייצוא; ריק = אין מסמכים בקובץ */
+  documentFingerprints: Set<string>;
+};
+
+export function createDefaultOrgExportSelections(allDocFingerprints: Iterable<string>): OrgExportSelections {
+  return {
+    fields: {
+      orgDetails: true,
+      vehiclePolicyText: true,
+      healthStatementText: true,
+      brandPdfTemplates: true,
+    },
+    documentFingerprints: new Set(allDocFingerprints),
+  };
+}
+
+export function exportSelectionHasAnyContent(selections: OrgExportSelections): boolean {
+  const f = selections.fields;
+  if (f.orgDetails || f.vehiclePolicyText || f.healthStatementText || f.brandPdfTemplates) return true;
+  return selections.documentFingerprints.size > 0;
+}
 
 /** ערכי טפסים כפי שמוצגים במסך (מקור אמת לייצוא כש־useOrgSettings מחזיר null) */
 export type OrgSettingsFormUiSnapshot = {
@@ -113,8 +141,9 @@ export function buildOrgCrossEnvSnapshot(args: {
         }
       : null;
   const uiSource: OrgSettingsFormUiSnapshot | null = uiFromForm ?? uiFromServer;
+  const f = selections.fields;
 
-  if (selections.orgDetails) {
+  if (f.orgDetails) {
     base.organization = {
       name: formOrg?.name ?? organization?.name ?? '',
       email: formOrg?.email !== undefined ? formOrg.email : (organization?.email ?? null),
@@ -122,20 +151,33 @@ export function buildOrgCrossEnvSnapshot(args: {
     };
   }
 
-  if (selections.uiSettings && uiSource) {
-    base.uiSettingsTemplate = {
-      health_statement_text: uiSource.health_statement_text,
-      vehicle_policy_text: uiSource.vehicle_policy_text,
-      health_statement_pdf_url: uiSource.health_statement_pdf_url,
-      vehicle_policy_pdf_url: uiSource.vehicle_policy_pdf_url,
-    };
-    if (!selections.orgDetails) {
-      base.uiSettingsTemplate.org_id_number = uiSource.org_id_number;
+  if (uiSource && (f.vehiclePolicyText || f.healthStatementText || f.brandPdfTemplates)) {
+    const tmpl: Partial<
+      Pick<
+        OrgSettings,
+        | 'org_id_number'
+        | 'health_statement_text'
+        | 'vehicle_policy_text'
+        | 'health_statement_pdf_url'
+        | 'vehicle_policy_pdf_url'
+      >
+    > = {};
+    if (f.vehiclePolicyText) tmpl.vehicle_policy_text = uiSource.vehicle_policy_text;
+    if (f.healthStatementText) tmpl.health_statement_text = uiSource.health_statement_text;
+    if (f.brandPdfTemplates) {
+      tmpl.health_statement_pdf_url = uiSource.health_statement_pdf_url;
+      tmpl.vehicle_policy_pdf_url = uiSource.vehicle_policy_pdf_url;
+    }
+    if (!f.orgDetails) tmpl.org_id_number = uiSource.org_id_number;
+    if (Object.keys(tmpl).length > 0) {
+      base.uiSettingsTemplate = tmpl;
     }
   }
 
-  if (selections.documents && documents?.length) {
-    base.org_documents = documents.map(stripDocForExport);
+  const docList = documents ?? [];
+  const picked = docList.filter((d) => selections.documentFingerprints.has(docFingerprint(d)));
+  if (picked.length > 0) {
+    base.org_documents = picked.map(stripDocForExport);
   }
 
   return base;
@@ -152,7 +194,10 @@ export function parseOrgCrossEnvSnapshot(raw: unknown): {
 
   const hasOrg =
     o.organization && typeof o.organization === 'object' && Object.keys(o.organization as object).length > 0;
-  const hasUi = o.uiSettingsTemplate && typeof o.uiSettingsTemplate === 'object';
+  const hasUi =
+    o.uiSettingsTemplate &&
+    typeof o.uiSettingsTemplate === 'object' &&
+    Object.keys(o.uiSettingsTemplate as object).length > 0;
   const docs = o.org_documents;
   const hasDocs = Array.isArray(docs) && docs.length > 0;
 
@@ -202,7 +247,7 @@ const UI_FIELD_LABELS: Array<{
   key: keyof NonNullable<OrgCrossEnvSnapshotFile['uiSettingsTemplate']>;
   label: string;
 }> = [
-  { key: 'org_id_number', label: 'ח.פ. / ע.מ. (שדה בטבלת הגדרות טפסים)' },
+  { key: 'org_id_number', label: 'ח.פ. / ע.מ.' },
   { key: 'health_statement_text', label: 'הצהרת בריאות — טקסט' },
   { key: 'vehicle_policy_text', label: 'נוהל שימוש ברכב — טקסט' },
   { key: 'health_statement_pdf_url', label: 'הצהרת בריאות — קישור PDF' },

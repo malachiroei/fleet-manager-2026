@@ -39,6 +39,9 @@ import {
   buildOrgSettingsPatchFromSelection,
   buildOrganizationUpdateFromSelection,
   computeOrgCrossEnvDiffRows,
+  createDefaultOrgExportSelections,
+  docFingerprint,
+  exportSelectionHasAnyContent,
   importSelectionTouchesDocuments,
   importSelectionTouchesOrganizationRow,
   importSelectionTouchesUiSettings,
@@ -240,11 +243,9 @@ export default function OrgSettingsPage() {
   const isStagingForCrossEnvSync = isFleetAppStagingEnvironment();
 
   const [syncExportModalOpen, setSyncExportModalOpen] = useState(false);
-  const [exportSelections, setExportSelections] = useState<OrgExportSelections>({
-    documents: true,
-    uiSettings: true,
-    orgDetails: true,
-  });
+  const [exportSelections, setExportSelections] = useState<OrgExportSelections>(() =>
+    createDefaultOrgExportSelections([]),
+  );
   const [isExportingSnapshot, setIsExportingSnapshot] = useState(false);
 
   const [importReviewOpen, setImportReviewOpen] = useState(false);
@@ -563,9 +564,31 @@ export default function OrgSettingsPage() {
 
   const allDocsForImport = useMemo(() => docs ?? [], [docs]);
 
+  const handleSyncExportDialogChange = (open: boolean) => {
+    setSyncExportModalOpen(open);
+    if (open) {
+      const fps = (docs ?? [])
+        .filter((d) => String(d.title ?? '').trim())
+        .map((d) => docFingerprint(d));
+      setExportSelections(createDefaultOrgExportSelections(fps));
+    }
+  };
+
+  useEffect(() => {
+    if (!syncExportModalOpen || docsLoading) return;
+    const fps = (docs ?? [])
+      .filter((d) => String(d.title ?? '').trim())
+      .map((d) => docFingerprint(d));
+    if (fps.length === 0) return;
+    setExportSelections((prev) => {
+      if (prev.documentFingerprints.size !== 0) return prev;
+      return { ...prev, documentFingerprints: new Set(fps) };
+    });
+  }, [syncExportModalOpen, docsLoading, docs]);
+
   const handleConfirmExportSnapshot = async () => {
-    if (!exportSelections.documents && !exportSelections.uiSettings && !exportSelections.orgDetails) {
-      toast.error('בחר לפחות קטגוריה אחת לייצוא');
+    if (!exportSelectionHasAnyContent(exportSelections)) {
+      toast.error('בחר לפחות פריט אחד לייצוא');
       return;
     }
     if (!orgId) {
@@ -599,7 +622,7 @@ export default function OrgSettingsPage() {
         selections: exportSelections,
       });
       downloadJsonFile('release_snapshot.json', snapshot);
-      toast.success('הקובץ release_snapshot.json הורד (ללא מזהה ארגון בסביבת היעד)');
+      toast.success('הקובץ הורד בהצלחה');
       setSyncExportModalOpen(false);
     } catch (e) {
       console.error(e);
@@ -730,7 +753,7 @@ export default function OrgSettingsPage() {
   };
 
   const crossEnvSyncDisabled =
-    readOnly || !orgId || orgLoading || settingsLoading || docsLoading || isExportingSnapshot || importFileBusy;
+    readOnly || !orgId || orgLoading || settingsLoading || isExportingSnapshot || importFileBusy;
 
   return (
     <div className="min-h-screen bg-background">
@@ -768,10 +791,10 @@ export default function OrgSettingsPage() {
                   variant="secondary"
                   size="sm"
                   disabled={crossEnvSyncDisabled}
-                  onClick={() => setSyncExportModalOpen(true)}
+                  onClick={() => handleSyncExportDialogChange(true)}
                   className="gap-2"
                 >
-                  סנכרון הגדרות
+                  העברת הגדרות לפרו
                 </Button>
               ) : (
                 <Button
@@ -809,7 +832,9 @@ export default function OrgSettingsPage() {
 
         <ExportChecklistDialog
           open={syncExportModalOpen}
-          onOpenChange={setSyncExportModalOpen}
+          onOpenChange={handleSyncExportDialogChange}
+          documents={docs ?? []}
+          documentsLoading={docsLoading}
           selections={exportSelections}
           setSelections={setExportSelections}
           onConfirmExport={handleConfirmExportSnapshot}
@@ -819,15 +844,11 @@ export default function OrgSettingsPage() {
         <Dialog open={importReviewOpen} onOpenChange={setImportReviewOpen}>
           <DialogContent className="max-w-lg max-h-[90vh] flex flex-col gap-0 sm:max-w-2xl" dir="rtl">
             <DialogHeader>
-              <DialogTitle>טעינת עדכונים מסטייג׳ינג — סקירה לפני יישום</DialogTitle>
+              <DialogTitle>ייבוא עדכונים — סקירה לפני יישום</DialogTitle>
               <DialogDescription asChild>
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>
-                    ייושמו רק הפריטים המסומנים. השינויים נכתבים ל־<code className="text-xs">ui_settings</code>, ל־
-                    <code className="text-xs">organizations</code> ול־<code className="text-xs">org_documents</code> בארגון
-                    הפעיל בפרודקשן.
-                  </p>
-                </div>
+                <p className="text-sm text-muted-foreground">
+                  ייושמו רק הפריטים המסומנים להלן, לארגון הנוכחי במערכת.
+                </p>
               </DialogDescription>
             </DialogHeader>
             <ScrollArea className="max-h-[50vh] pr-3 -mr-1">
