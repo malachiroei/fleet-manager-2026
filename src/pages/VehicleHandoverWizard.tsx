@@ -6,6 +6,7 @@ import {
 } from '@/contexts/VehicleSpecDirtyContext';
 import { useVehicles } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
+import type { Driver } from '@/types/fleet';
 import { useCreateHandover, sendHandoverNotificationEmail, generateReceptionPDF, generateProcedurePDF, generateHealthDeclarationPDF, generateGenericFormPDF } from '@/hooks/useHandovers';
 import { parsePolicyClauses, parseHealthItems, useOrgSettings } from '@/hooks/useOrgSettings';
 import { useOrgDocuments } from '@/hooks/useOrgDocuments';
@@ -95,9 +96,23 @@ interface VehicleHandoverWizardLocationState {
   reportUrl?: string;
 }
 
+const EMPTY_WIZARD_LOCATION_STATE: VehicleHandoverWizardLocationState = Object.freeze({});
+
 const idNumberRegex = /^\d{9}$/;
 const phoneRegex = /^0\d{8,9}$/;
 const ignitionCodeRegex = /^\d{4,6}$/;
+
+function orgDocSchemaStringField(schema: unknown, key: string): string {
+  if (!schema || typeof schema !== 'object') return '';
+  const raw = (schema as Record<string, unknown>)[key];
+  if (raw === undefined || raw === null) return '';
+  return typeof raw === 'string' ? raw : String(raw);
+}
+
+function orgDocTemplateBody(schema: unknown, description?: string | null): string {
+  const fromSchema = orgDocSchemaStringField(schema, 'template_content');
+  return fromSchema || String(description ?? '');
+}
 
 function extractCommitmentSection(text?: string): string[] {
   if (!text?.trim()) {
@@ -157,7 +172,7 @@ function parseAccessoriesFromTemplate(text?: string): AccessoryItem[] {
     const candidate = line
       .replace(/^\[[^\]]*]\s*/, '')
       .replace(/^[-•]\s*/, '')
-      .replace(/^\d+[).\-]\s*/, '')
+      .replace(/^\d+[).-]\s*/, '')
       .trim();
     if (!candidate) return;
     if (
@@ -177,7 +192,7 @@ function parseAccessoriesFromTemplate(text?: string): AccessoryItem[] {
 
     const match = candidate.match(/^(.*?)(?:\s*\(([^)]*)\))?$/);
     if (!match) return;
-    let name = (match[1] ?? '').trim().replace(/\s*-\s*תקרה[:：]?.*$/i, '').trim();
+    const name = (match[1] ?? '').trim().replace(/\s*-\s*תקרה[:：]?.*$/i, '').trim();
     if (!name) return;
     const priceRaw = (match[2] ?? '').trim();
     const ceilingMatch = candidate.match(/תקרה[:：]?\s*([\d,.\s]+(?:₪|ש["״]?ח)?)/i);
@@ -211,7 +226,7 @@ function parseProcedureClausesFromTemplateFallback(text?: string): ProcedureClau
   const clauses = lines
     .map((line, index) => ({
       id: index + 1,
-      text: line.replace(/^\d+[).\-]?\s*/, '').trim(),
+      text: line.replace(/^\d+[).-]?\s*/, '').trim(),
     }))
     .filter((item) => item.text.length > 0);
   return clauses;
@@ -234,7 +249,7 @@ function parseHealthItemsFromTemplateFallback(text?: string): HealthDeclaration[
   return lines
     .map((textLine, index) => ({
       id: `health_fallback_${index + 1}`,
-      text: textLine.replace(/^\d+[).\-]?\s*/, '').trim(),
+      text: textLine.replace(/^\d+[).-]?\s*/, '').trim(),
       checked: false,
     }))
     .filter((item) => item.text.length > 0);
@@ -1231,7 +1246,7 @@ function renderStepContent({
     );
   }
 
-  const builtinTemplateKey = String((doc.json_schema as any)?.builtin_template_key ?? '');
+  const builtinTemplateKey = orgDocSchemaStringField(doc.json_schema, 'builtin_template_key');
   const docTitle = safeDocTitle(doc);
   const isPracticalDrivingTestForm =
     builtinTemplateKey === 'system-practical-driving-test' || docTitle.includes('מבחן מעשי בנהיגה');
@@ -1451,7 +1466,7 @@ function renderStepContent({
         ) : isTrafficLiabilityForm ? (
           <div className="space-y-4">
             <div className="space-y-2 text-sm text-slate-700 leading-6">
-              {String((doc.json_schema as any)?.template_content ?? doc.description ?? '')
+              {orgDocTemplateBody(doc.json_schema, doc.description)
                 .split('\n')
                 .map((line) => line.trim())
                 .filter(Boolean)
@@ -1485,7 +1500,7 @@ function renderStepContent({
         ) : isUpgradeForm ? (
           <div className="space-y-4">
             <div className="space-y-2 text-sm text-slate-700 leading-6">
-              {String((doc.json_schema as any)?.template_content ?? doc.description ?? '')
+              {orgDocTemplateBody(doc.json_schema, doc.description)
                 .split('\n')
                 .map((line) => line.trim())
                 .filter(Boolean)
@@ -1511,7 +1526,7 @@ function renderStepContent({
         ) : isReturnForm ? (
           <div className="space-y-4">
             <div className="space-y-2 text-sm text-slate-700 leading-6">
-              {String((doc.json_schema as any)?.template_content ?? doc.description ?? '')
+              {orgDocTemplateBody(doc.json_schema, doc.description)
                 .split('\n')
                 .map((line) => line.trim())
                 .filter(Boolean)
@@ -1548,7 +1563,7 @@ function renderStepContent({
           </div>
         ) : isReplacementUsageForm ? (
           <div className="space-y-2 text-sm text-slate-700 leading-6">
-            {String((doc.json_schema as any)?.template_content ?? doc.description ?? '')
+            {orgDocTemplateBody(doc.json_schema, doc.description)
               .split('\n')
               .map((line) => line.trim())
               .filter(Boolean)
@@ -1558,7 +1573,7 @@ function renderStepContent({
           </div>
         ) : (
           <div className="space-y-2 text-sm text-slate-700 leading-6">
-            {String((doc.json_schema as any)?.template_content ?? doc.description ?? '')
+            {orgDocTemplateBody(doc.json_schema, doc.description)
               .split('\n')
               .map((line) => line.trim())
               .filter(Boolean)
@@ -1601,7 +1616,7 @@ function safeDocTitle(doc: { title?: string | null }): string {
 }
 
 function getStepKindForDoc(doc: DeliveryFormDoc): WizardStepKind {
-  const builtinKey = String((doc.json_schema as any)?.builtin_template_key ?? '').trim();
+  const builtinKey = orgDocSchemaStringField(doc.json_schema, 'builtin_template_key').trim();
   const title = safeDocTitle(doc);
   if (doc.template_name === 'health' || builtinKey === 'system-health-statement') return 'health';
   if (doc.template_name === 'procedure' || builtinKey === 'system-vehicle-policy') return 'procedure';
@@ -1624,7 +1639,13 @@ export default function VehicleHandoverWizard() {
   const { data: orgUiSettings } = useOrgSettings(handoverSettingsOrgId);
   const { data: orgDocuments } = useOrgDocuments();
 
-  const routerState = (location.state ?? {}) as VehicleHandoverWizardLocationState;
+  const routerState = useMemo((): VehicleHandoverWizardLocationState => {
+    const s = location.state;
+    if (s && typeof s === 'object' && !Array.isArray(s)) {
+      return s as VehicleHandoverWizardLocationState;
+    }
+    return EMPTY_WIZARD_LOCATION_STATE;
+  }, [location.state]);
   const stateVehicleId = routerState.vehicleId?.trim() ?? '';
   const stateDriverId = routerState.driverId?.trim() ?? '';
   const stateReportUrl = routerState.reportUrl?.trim() ?? '';
@@ -1688,7 +1709,10 @@ export default function VehicleHandoverWizard() {
 
   const vehicle = vehicles?.find(v => v.id === vehicleId);
   const driver  = drivers?.find(d => d.id === driverId);
-  const driverExt = (driver ?? {}) as any;
+  const driverExt: Pick<Driver, 'employee_number' | 'address'> = {
+    employee_number: driver?.employee_number ?? null,
+    address: driver?.address ?? null,
+  };
 
   const vehicleLabel = vehicle
     ? `${vehicle.manufacturer} ${vehicle.model} (${vehicle.plate_number})`
@@ -1823,10 +1847,10 @@ export default function VehicleHandoverWizard() {
     );
   }, [selectedDeliveryForms, availableDeliveryForms]);
 
-  const receptionDeclarationText =
-    String((receptionFormDoc?.json_schema as any)?.template_content ?? '').trim() ||
-    String(receptionFormDoc?.description ?? '').trim() ||
-    '';
+  const receptionDeclarationText = orgDocTemplateBody(
+    receptionFormDoc?.json_schema,
+    receptionFormDoc?.description,
+  ).trim();
 
   const procedureFormDoc = useMemo(
     () =>
@@ -1843,16 +1867,36 @@ export default function VehicleHandoverWizard() {
     [availableDeliveryForms],
   );
 
-  const procedureTemplateText = useMemo(
-    () =>
-      String((procedureFormDoc?.json_schema as any)?.template_content ?? procedureFormDoc?.description ?? '').trim(),
+  const docProcedureText = useMemo(
+    () => orgDocTemplateBody(procedureFormDoc?.json_schema, procedureFormDoc?.description).trim(),
     [procedureFormDoc],
   );
-  const healthTemplateText = useMemo(
-    () =>
-      String((healthFormDoc?.json_schema as any)?.template_content ?? healthFormDoc?.description ?? '').trim(),
+  const docHealthText = useMemo(
+    () => orgDocTemplateBody(healthFormDoc?.json_schema, healthFormDoc?.description).trim(),
     [healthFormDoc],
   );
+  const orgPolicyText = useMemo(
+    () => String(orgUiSettings?.vehicle_policy_text ?? '').trim(),
+    [orgUiSettings?.vehicle_policy_text],
+  );
+  const orgHealthText = useMemo(
+    () => String(orgUiSettings?.health_statement_text ?? '').trim(),
+    [orgUiSettings?.health_statement_text],
+  );
+
+  const procedureTemplateText = useMemo(
+    () => docProcedureText || orgPolicyText,
+    [docProcedureText, orgPolicyText],
+  );
+  const healthTemplateText = useMemo(
+    () => docHealthText || orgHealthText,
+    [docHealthText, orgHealthText],
+  );
+
+  const showOrgSettingsEmptyTextsWarning = useMemo(() => {
+    const rowExists = Boolean(orgUiSettings?.id);
+    return rowExists && !orgPolicyText && !orgHealthText;
+  }, [orgUiSettings?.id, orgPolicyText, orgHealthText]);
 
   const parsedClauses = useMemo(() => parsePolicyClauses(procedureTemplateText), [procedureTemplateText]);
   const fallbackProcedureClauses = useMemo(
@@ -2034,17 +2078,11 @@ export default function VehicleHandoverWizard() {
     currentStepDef,
     genericSigOkByDocId,
     healthItems,
-    licenseBack,
-    licenseExpiry,
-    fuelLevel,
-    licenseNumber,
     manualFieldsValid,
-    odometerReading,
     procedureRead,
     sig1OK,
     sig2OK,
     sig3OK,
-    skipLicenseStep,
   ]);
 
   const hasLicenseStep = useMemo(() => wizardSteps.some((wizardStep) => wizardStep.kind === 'license'), [wizardSteps]);
@@ -2105,7 +2143,9 @@ export default function VehicleHandoverWizard() {
 
     // ── Step 1: Generate PDFs (each failure is isolated) ──────────────────────
     console.log('[Wizard] handleFinish start', { vehicleId, driverId, handoverId, reportUrl });
-    const ts     = Date.now();
+    // Unique storage path at submit time (not render)
+    // eslint-disable-next-line react-hooks/purity -- event handler: folder name must be unique per completion
+    const ts = Date.now();
     const folder = `documents/${vehicleId || 'unknown'}/${ts}`;
 
     const deliveryPdfBase = {
@@ -2157,7 +2197,7 @@ export default function VehicleHandoverWizard() {
     if (genericSelectedDocs.length > 0) {
       const genericResults = await Promise.all(
         genericSelectedDocs.map(async (doc) => {
-          const templateText = String((doc.json_schema as any)?.template_content ?? doc.description ?? '').trim();
+          const templateText = orgDocTemplateBody(doc.json_schema, doc.description).trim();
           if (!templateText) return { docId: doc.id, url: null as string | null };
           const practicalUi = practicalTestUiByDocId[doc.id];
           const trafficUi = trafficLiabilityUiByDocId[doc.id];
@@ -2165,7 +2205,7 @@ export default function VehicleHandoverWizard() {
           const returnUi = returnFormUiByDocId[doc.id];
           const genericBlob = await generateGenericFormPDF({
             title: doc.title,
-            builtinTemplateKey: String((doc.json_schema as any)?.builtin_template_key ?? ''),
+            builtinTemplateKey: orgDocSchemaStringField(doc.json_schema, 'builtin_template_key'),
             vehicleLabel,
             driverName,
             date: today,

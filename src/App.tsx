@@ -201,6 +201,3 @@ const App = () => (
 );
 
 export default App;
-/ /   F o r c e   b u i l d   2 . 0  
- / /   F o r c e   b u i l d   2 . 0  
- 
