@@ -9,7 +9,21 @@ import {
   HEALTH_STATEMENT_FALLBACK_DOC_TITLE,
   VEHICLE_POLICY_FALLBACK_DOC_TITLE,
 } from '@/lib/orgDocumentTemplate';
-import { docFingerprint, type OrgExportSelections, type OrgSettingsFormUiSnapshot } from '@/lib/orgSettingsReleaseSnapshot';
+import {
+  docFingerprint,
+  safeExportDocumentFingerprints,
+  safeExportFields,
+  type OrgExportSelections,
+  type OrgSettingsFormUiSnapshot,
+} from '@/lib/orgSettingsReleaseSnapshot';
+
+const EMPTY_FORM_UI: OrgSettingsFormUiSnapshot = {
+  org_id_number: '',
+  health_statement_text: '',
+  vehicle_policy_text: '',
+  health_statement_pdf_url: null,
+  vehicle_policy_pdf_url: null,
+};
 
 function trimTitle(doc: OrgDocument): string {
   return String(doc.title ?? '').trim();
@@ -22,10 +36,11 @@ function isActiveDoc(doc: OrgDocument): boolean {
 export type ExportChecklistDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  documents: OrgDocument[];
+  /** אופציונלי — בסביבה חדשה ללא שורות org_documents ייתכן undefined */
+  documents?: OrgDocument[] | null;
   documentsLoading?: boolean;
   /** ערכי הטופס מהמסך — לבדיקה אם להציג צ׳קבוקסי טקסט/PDF */
-  formUiSnapshot: OrgSettingsFormUiSnapshot;
+  formUiSnapshot?: OrgSettingsFormUiSnapshot | null;
   selections: OrgExportSelections;
   setSelections: Dispatch<SetStateAction<OrgExportSelections>>;
   onConfirmExport: () => void | Promise<void>;
@@ -35,14 +50,17 @@ export type ExportChecklistDialogProps = {
 export function ExportChecklistDialog({
   open,
   onOpenChange,
-  documents,
+  documents: documentsProp,
   documentsLoading = false,
-  formUiSnapshot,
+  formUiSnapshot: formUiProp,
   selections,
   setSelections,
   onConfirmExport,
   isExporting,
 }: ExportChecklistDialogProps) {
+  const documents = Array.isArray(documentsProp) ? documentsProp : [];
+  const formUiSnapshot = formUiProp ?? EMPTY_FORM_UI;
+
   const activeTitledDocs = useMemo(
     () => documents.filter((d) => isActiveDoc(d) && trimTitle(d).length > 0),
     [documents],
@@ -83,28 +101,31 @@ export function ExportChecklistDialog({
 
   const docFingerprints = useMemo(() => activeTitledDocs.map((d) => docFingerprint(d)), [activeTitledDocs]);
 
+  const fpSet = safeExportDocumentFingerprints(selections);
+  const f = safeExportFields(selections);
+
   const allDocsSelected =
-    docFingerprints.length > 0 && docFingerprints.every((fp) => selections.documentFingerprints.has(fp));
+    docFingerprints.length > 0 && docFingerprints.every((fp) => fpSet.has(fp));
 
   const setField = (patch: Partial<OrgExportSelections['fields']>) => {
     setSelections((s) => ({
-      ...s,
-      fields: { ...s.fields, ...patch },
+      fields: { ...safeExportFields(s), ...patch },
+      documentFingerprints: safeExportDocumentFingerprints(s),
     }));
   };
 
   const toggleDoc = (fp: string, checked: boolean) => {
     setSelections((s) => {
-      const next = new Set(s.documentFingerprints);
+      const next = new Set(safeExportDocumentFingerprints(s));
       if (checked) next.add(fp);
       else next.delete(fp);
-      return { ...s, documentFingerprints: next };
+      return { fields: safeExportFields(s), documentFingerprints: next };
     });
   };
 
   const toggleAllDocs = (checked: boolean) => {
     setSelections((s) => ({
-      ...s,
+      fields: safeExportFields(s),
       documentFingerprints: checked ? new Set(docFingerprints) : new Set(),
     }));
   };
@@ -113,7 +134,8 @@ export function ExportChecklistDialog({
     if (!open) return;
     const validFps = new Set(activeTitledDocs.map((d) => docFingerprint(d)));
     setSelections((prev) => {
-      const fields = { ...prev.fields };
+      const prevFields = safeExportFields(prev);
+      const fields = { ...prevFields };
       let fieldsChanged = false;
       if (!showVehiclePolicyText && fields.vehiclePolicyText) {
         fields.vehiclePolicyText = false;
@@ -127,15 +149,14 @@ export function ExportChecklistDialog({
         fields.brandPdfTemplates = false;
         fieldsChanged = true;
       }
-      const nextFps = new Set([...prev.documentFingerprints].filter((fp) => validFps.has(fp)));
+      const prevFps = safeExportDocumentFingerprints(prev);
+      const nextFps = new Set([...prevFps].filter((fp) => validFps.has(fp)));
       const fpsChanged =
-        nextFps.size !== prev.documentFingerprints.size ||
-        ![...prev.documentFingerprints].every((fp) => nextFps.has(fp));
+        nextFps.size !== prevFps.size || ![...prevFps].every((fp) => nextFps.has(fp));
       if (!fieldsChanged && !fpsChanged) return prev;
       return {
-        ...prev,
-        fields: fieldsChanged ? fields : prev.fields,
-        documentFingerprints: fpsChanged ? nextFps : prev.documentFingerprints,
+        fields: fieldsChanged ? fields : prevFields,
+        documentFingerprints: fpsChanged ? nextFps : prevFps,
       };
     });
   }, [
@@ -146,8 +167,6 @@ export function ExportChecklistDialog({
     activeDocFingerprintsKey,
     setSelections,
   ]);
-
-  const f = selections.fields;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -232,7 +251,7 @@ export function ExportChecklistDialog({
                           <Checkbox
                             id={id}
                             className="mt-0.5"
-                            checked={selections.documentFingerprints.has(fp)}
+                            checked={fpSet.has(fp)}
                             onCheckedChange={(v) => toggleDoc(fp, v === true)}
                           />
                           <span className="text-sm leading-snug">

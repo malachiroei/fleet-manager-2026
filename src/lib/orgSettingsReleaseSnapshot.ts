@@ -81,7 +81,8 @@ export type OrgExportSelections = {
   documentFingerprints: Set<string>;
 };
 
-export function createDefaultOrgExportSelections(allDocFingerprints: Iterable<string>): OrgExportSelections {
+export function createDefaultOrgExportSelections(allDocFingerprints?: Iterable<string> | null): OrgExportSelections {
+  const iter = allDocFingerprints ?? [];
   return {
     fields: {
       orgDetails: true,
@@ -89,14 +90,36 @@ export function createDefaultOrgExportSelections(allDocFingerprints: Iterable<st
       healthStatementText: true,
       brandPdfTemplates: true,
     },
-    documentFingerprints: new Set(allDocFingerprints),
+    documentFingerprints: new Set(Array.from(iter)),
   };
 }
 
-export function exportSelectionHasAnyContent(selections: OrgExportSelections): boolean {
-  const f = selections.fields;
+/** מסד ריק / state חלקי — מונע קריסה על documentFingerprints undefined */
+export function safeExportDocumentFingerprints(
+  selections: Pick<OrgExportSelections, 'documentFingerprints'> | null | undefined,
+): Set<string> {
+  const d = selections?.documentFingerprints;
+  return d instanceof Set ? d : new Set<string>();
+}
+
+export function safeExportFields(selections: OrgExportSelections | null | undefined): OrgExportFieldSelections {
+  const f = selections?.fields;
+  if (!f) {
+    return {
+      orgDetails: false,
+      vehiclePolicyText: false,
+      healthStatementText: false,
+      brandPdfTemplates: false,
+    };
+  }
+  return f;
+}
+
+export function exportSelectionHasAnyContent(selections: OrgExportSelections | null | undefined): boolean {
+  if (!selections) return false;
+  const f = safeExportFields(selections);
   if (f.orgDetails || f.vehiclePolicyText || f.healthStatementText || f.brandPdfTemplates) return true;
-  return selections.documentFingerprints.size > 0;
+  return safeExportDocumentFingerprints(selections).size > 0;
 }
 
 /** ערכי טפסים כפי שמוצגים במסך (מקור אמת לייצוא כש־useOrgSettings מחזיר null) */
@@ -141,7 +164,8 @@ export function buildOrgCrossEnvSnapshot(args: {
         }
       : null;
   const uiSource: OrgSettingsFormUiSnapshot | null = uiFromForm ?? uiFromServer;
-  const f = selections.fields;
+  const f = safeExportFields(selections);
+  const docFp = safeExportDocumentFingerprints(selections);
 
   if (f.orgDetails) {
     base.organization = {
@@ -174,8 +198,8 @@ export function buildOrgCrossEnvSnapshot(args: {
     }
   }
 
-  const docList = documents ?? [];
-  const picked = docList.filter((d) => selections.documentFingerprints.has(docFingerprint(d)));
+  const docList = Array.isArray(documents) ? documents : [];
+  const picked = docList.filter((d) => docFp.has(docFingerprint(d)));
   if (picked.length > 0) {
     base.org_documents = picked.map(stripDocForExport);
   }
