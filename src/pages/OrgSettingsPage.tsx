@@ -12,7 +12,9 @@ import {
   Upload, ExternalLink, Trash2, Plus, Pencil, FileCheck, Tag,
   Download, RotateCcw, RefreshCw,
 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 import { getTestStaticManifestUrl, isFleetManagerProHostname } from '@/lib/versionManifest';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrganization, useUpdateOrganization } from '@/hooks/useOrganizations';
@@ -195,6 +197,7 @@ const ORG_DETAILS_EDIT_CODE = '2101';
 
 // ─── Main Page ─────────────────────────────────────────────────────
 export default function OrgSettingsPage() {
+  const queryClient = useQueryClient();
   const { activeOrgId, isAdmin, isManager, isDriver, hasPermission, user, profile } = useAuth();
   const isRoeyMainAdmin =
     (profile?.email ?? user?.email ?? '').trim().toLowerCase() === 'malachiroei@gmail.com';
@@ -455,6 +458,42 @@ export default function OrgSettingsPage() {
   };
 
   const [repairingDocs, setRepairingDocs] = useState(false);
+  const [hardResettingUi, setHardResettingUi] = useState(false);
+
+  /** Temporary: physical delete on org_documents (inactive + blank title). ui_settings has no is_active/title. */
+  const handleHardResetUiSettings = async () => {
+    if (readOnly) return;
+    if (
+      !confirm(
+        'לאשר מחיקה קשה? יימחקו לצמיתות מ־org_documents: כל השורות עם is_active=false, וכל השורות שכותרתן ריקה או רווחים בלבד. לא ניתן לבטל.',
+      )
+    ) {
+      return;
+    }
+    setHardResettingUi(true);
+    try {
+      const { error: delInactive } = await (supabase as any).from('org_documents').delete().eq('is_active', false);
+      if (delInactive) throw delInactive;
+      const { data: rows, error: selErr } = await (supabase as any).from('org_documents').select('id, title');
+      if (selErr) throw selErr;
+      const blankIds = (rows ?? [])
+        .filter((r: { title?: string | null }) => !String(r.title ?? '').trim())
+        .map((r: { id: string }) => r.id);
+      if (blankIds.length > 0) {
+        const { error: delBlank } = await (supabase as any).from('org_documents').delete().in('id', blankIds);
+        if (delBlank) throw delBlank;
+      }
+      await queryClient.invalidateQueries({ queryKey: ['org-documents'] });
+      await queryClient.invalidateQueries({ queryKey: ['org-settings'] });
+      toast.success('ניקוי קשה הושלם');
+    } catch (e: unknown) {
+      console.error(e);
+      toast.error(e instanceof Error ? e.message : 'ניקוי קשה נכשל');
+    } finally {
+      setHardResettingUi(false);
+    }
+  };
+
   const handleRepairInvalidDocs = async () => {
     if (readOnly) return;
     const bad = (docs ?? []).filter((d) => !String(d.title ?? '').trim());
@@ -477,13 +516,8 @@ export default function OrgSettingsPage() {
   };
 
   const sortedDocs = useMemo(() => {
-    const list = [...(docs ?? [])];
-    list.sort((a, b) => {
-      const ae = !String(a.title ?? '').trim();
-      const be = !String(b.title ?? '').trim();
-      if (ae !== be) return ae ? -1 : 1;
-      return 0;
-    });
+    const list = [...(docs ?? [])].filter((d) => String(d.title ?? '').trim());
+    list.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     return list;
   }, [docs]);
 
@@ -772,11 +806,23 @@ export default function OrgSettingsPage() {
                           variant="outline"
                           size="sm"
                           className="gap-2"
-                          disabled={repairingDocs || docsLoading}
+                          disabled={repairingDocs || docsLoading || hardResettingUi}
                           onClick={() => void handleRepairInvalidDocs()}
                         >
                           {repairingDocs ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                           ניקוי שורות ללא כותרת
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          className="gap-2"
+                          disabled={hardResettingUi || docsLoading || repairingDocs}
+                          title="מחיקה קשה ב־org_documents (שורות לא פעילות או ללא כותרת)"
+                          onClick={() => void handleHardResetUiSettings()}
+                        >
+                          {hardResettingUi ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                          Hard Reset UI Settings
                         </Button>
                         <Button size="sm" className="gap-2" onClick={() => { setAddingDoc(true); setEditingDoc(null); }}>
                           <Plus className="h-4 w-4" /> הוסף מסמך
@@ -791,7 +837,7 @@ export default function OrgSettingsPage() {
                   )}
                   {docsLoading ? (
                     <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-                  ) : (docs ?? []).length === 0 && !addingDoc ? (
+                  ) : sortedDocs.length === 0 && !addingDoc ? (
                     <div className="text-center py-10 text-muted-foreground">
                       <FileText className="h-8 w-8 mx-auto mb-2 opacity-30" />
                       <p className="text-sm">אין מסמכים נוספים עדיין</p>

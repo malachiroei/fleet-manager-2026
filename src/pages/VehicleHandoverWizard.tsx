@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
+import { orgDocumentTemplateBody } from '@/lib/orgDocumentTemplate';
 import { HANDOVER_ACCESSORY_CEILINGS, formatCeilingPrice } from '@/lib/accessoryCeilings';
 import { cloneEmptyDamageReport, hasAnyDamage, summarizeDamageReport, type VehicleDamageReport } from '@/lib/vehicleDamage';
 // Badge no longer needed — replaced with plain span
@@ -107,11 +108,6 @@ function orgDocSchemaStringField(schema: unknown, key: string): string {
   const raw = (schema as Record<string, unknown>)[key];
   if (raw === undefined || raw === null) return '';
   return typeof raw === 'string' ? raw : String(raw);
-}
-
-function orgDocTemplateBody(schema: unknown, description?: string | null): string {
-  const fromSchema = orgDocSchemaStringField(schema, 'template_content');
-  return fromSchema || String(description ?? '');
 }
 
 function extractCommitmentSection(text?: string): string[] {
@@ -1466,7 +1462,7 @@ function renderStepContent({
         ) : isTrafficLiabilityForm ? (
           <div className="space-y-4">
             <div className="space-y-2 text-sm text-slate-700 leading-6">
-              {orgDocTemplateBody(doc.json_schema, doc.description)
+              {orgDocumentTemplateBody(doc.json_schema, doc.description)
                 .split('\n')
                 .map((line) => line.trim())
                 .filter(Boolean)
@@ -1500,7 +1496,7 @@ function renderStepContent({
         ) : isUpgradeForm ? (
           <div className="space-y-4">
             <div className="space-y-2 text-sm text-slate-700 leading-6">
-              {orgDocTemplateBody(doc.json_schema, doc.description)
+              {orgDocumentTemplateBody(doc.json_schema, doc.description)
                 .split('\n')
                 .map((line) => line.trim())
                 .filter(Boolean)
@@ -1526,7 +1522,7 @@ function renderStepContent({
         ) : isReturnForm ? (
           <div className="space-y-4">
             <div className="space-y-2 text-sm text-slate-700 leading-6">
-              {orgDocTemplateBody(doc.json_schema, doc.description)
+              {orgDocumentTemplateBody(doc.json_schema, doc.description)
                 .split('\n')
                 .map((line) => line.trim())
                 .filter(Boolean)
@@ -1563,7 +1559,7 @@ function renderStepContent({
           </div>
         ) : isReplacementUsageForm ? (
           <div className="space-y-2 text-sm text-slate-700 leading-6">
-            {orgDocTemplateBody(doc.json_schema, doc.description)
+            {orgDocumentTemplateBody(doc.json_schema, doc.description)
               .split('\n')
               .map((line) => line.trim())
               .filter(Boolean)
@@ -1573,7 +1569,7 @@ function renderStepContent({
           </div>
         ) : (
           <div className="space-y-2 text-sm text-slate-700 leading-6">
-            {orgDocTemplateBody(doc.json_schema, doc.description)
+            {orgDocumentTemplateBody(doc.json_schema, doc.description)
               .split('\n')
               .map((line) => line.trim())
               .filter(Boolean)
@@ -1782,9 +1778,10 @@ export default function VehicleHandoverWizard() {
   const [recentlyToggledFormId, setRecentlyToggledFormId] = useState<string | null>(null);
   const [recentlyToggledAdded, setRecentlyToggledAdded] = useState(false);
 
-  // All active forms (for backward compatibility)
+  // All active forms (for backward compatibility); hide rows with no display title
   const availableDeliveryForms = useMemo(
-    () => (orgDocuments ?? []).filter((doc) => doc.is_active),
+    () =>
+      (orgDocuments ?? []).filter((doc) => doc.is_active && String(doc.title ?? '').trim().length > 0),
     [orgDocuments],
   );
 
@@ -1847,7 +1844,7 @@ export default function VehicleHandoverWizard() {
     );
   }, [selectedDeliveryForms, availableDeliveryForms]);
 
-  const receptionDeclarationText = orgDocTemplateBody(
+  const receptionDeclarationText = orgDocumentTemplateBody(
     receptionFormDoc?.json_schema,
     receptionFormDoc?.description,
   ).trim();
@@ -1868,11 +1865,11 @@ export default function VehicleHandoverWizard() {
   );
 
   const docProcedureText = useMemo(
-    () => orgDocTemplateBody(procedureFormDoc?.json_schema, procedureFormDoc?.description).trim(),
+    () => orgDocumentTemplateBody(procedureFormDoc?.json_schema, procedureFormDoc?.description).trim(),
     [procedureFormDoc],
   );
   const docHealthText = useMemo(
-    () => orgDocTemplateBody(healthFormDoc?.json_schema, healthFormDoc?.description).trim(),
+    () => orgDocumentTemplateBody(healthFormDoc?.json_schema, healthFormDoc?.description).trim(),
     [healthFormDoc],
   );
   const orgPolicyText = useMemo(
@@ -2197,7 +2194,7 @@ export default function VehicleHandoverWizard() {
     if (genericSelectedDocs.length > 0) {
       const genericResults = await Promise.all(
         genericSelectedDocs.map(async (doc) => {
-          const templateText = orgDocTemplateBody(doc.json_schema, doc.description).trim();
+          const templateText = orgDocumentTemplateBody(doc.json_schema, doc.description).trim();
           if (!templateText) return { docId: doc.id, url: null as string | null };
           const practicalUi = practicalTestUiByDocId[doc.id];
           const trafficUi = trafficLiabilityUiByDocId[doc.id];
