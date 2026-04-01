@@ -3,6 +3,9 @@
   "private": true,
   "version": "2.7.67",
   "type": "module",
+  "engines": {
+    "node": ">=20.0.0 <23.0.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "node scripts/generate-app-icon.mjs && vite build",

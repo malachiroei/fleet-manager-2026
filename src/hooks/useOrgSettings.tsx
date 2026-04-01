@@ -1,5 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import {
+  orgDocumentTemplateBody,
+  VEHICLE_POLICY_FALLBACK_DOC_TITLE,
+} from '@/lib/orgDocumentTemplate';
 
 export interface OrgSettings {
   id: string;
@@ -93,7 +97,24 @@ export function useOrgSettings(
           }
           throw error;
         }
-        return data as OrgSettings | null;
+        const row = data as OrgSettings | null;
+        if (row && !String(row.vehicle_policy_text ?? '').trim()) {
+          const { data: docRows, error: docErr } = await (supabase as any)
+            .from('org_documents')
+            .select('title, description, json_schema')
+            .eq('is_active', true)
+            .order('sort_order', { ascending: true });
+          if (!docErr && docRows?.length) {
+            const match = (docRows as { title?: string | null; description?: string; json_schema?: unknown }[]).find(
+              (d) => String(d.title ?? '').trim() === VEHICLE_POLICY_FALLBACK_DOC_TITLE,
+            );
+            const body = match ? orgDocumentTemplateBody(match.json_schema, match.description).trim() : '';
+            if (body) {
+              return { ...row, vehicle_policy_text: body };
+            }
+          }
+        }
+        return row;
       } catch (e) {
         // Final safety net for header rendering paths.
         console.warn('[useOrgSettings] query failed; returning null', e);
