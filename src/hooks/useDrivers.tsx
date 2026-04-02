@@ -5,6 +5,7 @@ import { toast } from '@/hooks/use-toast';
 import { formatSupabaseError } from '@/lib/supabaseError';
 import { useAuth } from '@/hooks/useAuth';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
+import { fleetManagerVisibilityOrFilter } from '@/lib/fleetManagerScope';
 
 export function useDrivers() {
   const {
@@ -43,7 +44,7 @@ export function useDrivers() {
       if (isDriverContextOnly && impersonatedUserId) {
         base = base.eq('user_id', impersonatedUserId);
       } else if (applyFleetManagerSlice && fleetManagerListUserId) {
-        base = base.eq('managed_by_user_id', fleetManagerListUserId);
+        base = base.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
       }
       const { data, error } = await base.order('full_name');
 
@@ -55,7 +56,7 @@ export function useDrivers() {
         if (isDriverContextOnly && impersonatedUserId) {
           fallbackQ = fallbackQ.eq('user_id', impersonatedUserId);
         } else if (applyFleetManagerSlice && fleetManagerListUserId) {
-          fallbackQ = fallbackQ.eq('managed_by_user_id', fleetManagerListUserId);
+          fallbackQ = fallbackQ.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
         }
         const fallback = await fallbackQ.order('full_name');
         if (fallback.error) {
@@ -111,7 +112,7 @@ export function useDriver(id: string) {
       if (orgId == null) return null;
       let q = supabase.from('drivers').select('*').eq('id', id).eq('org_id', orgId);
       if (applyFleetManagerSlice && fleetManagerListUserId) {
-        q = q.eq('managed_by_user_id', fleetManagerListUserId);
+        q = q.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
       }
       const { data, error } = await q.maybeSingle();
       if (error) throw error;

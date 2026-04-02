@@ -3,8 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useViewAs } from '@/contexts/ViewAsContext';
-import { isFleetBootstrapOwnerEmail, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
-import { FALLBACK_MAIN_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
+import { isFleetBootstrapOwnerEmail, resolveSessionEmail, RAVID_MANAGER_EMAIL } from '@/lib/fleetBootstrapEmails';
+import { FALLBACK_MAIN_FLEET_ORG_ID, RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 
 /**
  * הקשר לרשימות צי: org (כולל View As), נהג בלבד כשמוחלפים משתמש עם רק תפקיד נהג,
@@ -26,7 +26,17 @@ export function useImpersonationFleetScope() {
   /** באנר תצוגה כ… פעיל (גם אם profiles עדיין לא נפתר בגלל RLS) */
   const viewAsBannerActive = Boolean(viewAsEmail?.trim());
 
-  const orgFromContext = (viewAsProfile?.org_id ?? activeOrgId ?? null) as string | null;
+  const viewAsNorm = (viewAsEmail ?? '').trim().toLowerCase();
+  /**
+   * תצוגה כרביד: תמיד ארגון הצי של רביד — לא viewAsProfile.org_id שעלול להישאר «הצי הראשי» ב-DB.
+   * אחרת: activeOrgId (מחובר ישירות או אחרי handleViewAs) ואז פרופיל המחליף.
+   */
+  const orgFromContext = (
+    (viewAsNorm === RAVID_MANAGER_EMAIL ? RAVID_FLEET_ORG_ID : null) ??
+    activeOrgId ??
+    viewAsProfile?.org_id ??
+    null
+  ) as string | null;
   /** בלי org בפרופיל/מחליף — בעלי bootstrap נופלים לצי הראשי הידוע (אותו UUID כמו במחליף) */
   const effectiveOrgId =
     orgFromContext ??

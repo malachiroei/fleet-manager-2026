@@ -4,6 +4,7 @@ import type { Vehicle } from '@/types/fleet';
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
+import { fleetManagerVisibilityOrFilter } from '@/lib/fleetManagerScope';
 
 export interface ActiveDriverVehicleAssignment {
   id: string;
@@ -59,7 +60,7 @@ export function useActiveDriverVehicleAssignments() {
       if (isDriverContextOnly && scopedDriverId) {
         vehiclesQuery = vehiclesQuery.eq('assigned_driver_id', scopedDriverId);
       } else if (applyFleetManagerSlice && fleetManagerListUserId) {
-        vehiclesQuery = vehiclesQuery.eq('managed_by_user_id', fleetManagerListUserId);
+        vehiclesQuery = vehiclesQuery.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
       }
       const { data: vehicleIds, error: vehiclesError } = await vehiclesQuery;
       if (vehiclesError) throw vehiclesError;
@@ -118,7 +119,7 @@ export function useVehicles() {
       if (isDriverContextOnly && scopedDriverId) {
         q = q.eq('assigned_driver_id', scopedDriverId);
       } else if (applyFleetManagerSlice && fleetManagerListUserId) {
-        q = q.eq('managed_by_user_id', fleetManagerListUserId);
+        q = q.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
       }
       const { data, error } = await q;
       if (error) throw error;
@@ -142,7 +143,7 @@ export function useVehicle(id: string) {
       if (orgId != null) {
         query = query.eq('org_id', orgId);
         if (applyFleetManagerSlice && fleetManagerListUserId) {
-          query = query.eq('managed_by_user_id', fleetManagerListUserId);
+          query = query.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
         }
       }
       const { data, error } = await query.maybeSingle();

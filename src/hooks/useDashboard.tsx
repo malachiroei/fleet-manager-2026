@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
 import { isFleetBootstrapOwnerEmail, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
+import { fleetManagerVisibilityOrFilter } from '@/lib/fleetManagerScope';
 
 const COMPLIANCE_IN_CHUNK = 80;
 
@@ -114,8 +115,8 @@ export function useDashboardStats() {
         let vq = supabase.from('vehicles').select('id').eq('org_id', effectiveOrgId);
         let dq = supabase.from('drivers').select('id').eq('org_id', effectiveOrgId);
         if (applyFleetManagerSlice && fleetManagerListUserId) {
-          vq = vq.eq('managed_by_user_id', fleetManagerListUserId);
-          dq = dq.eq('managed_by_user_id', fleetManagerListUserId);
+          vq = vq.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
+          dq = dq.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
         }
         const { data: vRows, error: vErr } = await vq;
         if (vErr) throw vErr;
