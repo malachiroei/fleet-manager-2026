@@ -32,12 +32,15 @@ import {
 import { isFleetManagerProHostname, normalizeVersion } from '@/lib/versionManifest';
 import { getFleetEnvironmentBannerKind } from '@/lib/fleetAppStagingEnvironment';
 import { isFleetBootstrapOwnerEmail, resolveSessionEmail, RAVID_MANAGER_EMAIL } from '@/lib/fleetBootstrapEmails';
-import { FALLBACK_MAIN_FLEET_ORG_ID, RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
+import { FALLBACK_MAIN_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 import type { TeamMemberSummary } from '@/hooks/useTeam';
 
 /** קישור מנהל ראשי ↔ מנהל צי ↔ נהג — כש־RLS לא מחזיר את כל ה־profiles במחליף */
 const MAIN_ADMIN_SWITCHER_EMAIL = 'malachiroei@gmail.com';
 const ROEI_DRIVER_EMAIL = 'roeima21@gmail.com';
+
+/** ארגון רביד בתצוגה כמשתמש — נעילה מפורשת (לא תלוי ב-profile.org_id של המנהל המחובר). */
+const VIEW_AS_RAVID_ORG_ID = '2bb0f9c3-b210-4099-b0c5-de92794d5cc9' as const;
 
 function augmentSwitcherMembers(
   teamMembers: TeamMemberSummary[],
@@ -65,7 +68,7 @@ function augmentSwitcherMembers(
   }
 
   /** תמיד ארגון רביד האמיתי — לא mainFleet של רועי (אחרת View-As נשאר על הצי הראשי). */
-  const orgForSyntheticRavid = RAVID_FLEET_ORG_ID;
+  const orgForSyntheticRavid = VIEW_AS_RAVID_ORG_ID;
   if (opts.isMainAdmin && !visible.some((m) => m.email?.toLowerCase() === RAVID_MANAGER_EMAIL)) {
     visible = [
       ...visible,
@@ -187,10 +190,18 @@ export function AppLayout({ children }: AppLayoutProps) {
   }, [activeOrgId, teamMembers, teamMembersError]);
 
   // When impersonating: active org must follow the impersonated user (not the logged-in admin's org).
-  // 1) Prefer resolved profile.org_id (works even when org_members is not visible under RLS).
-  // 2) Fallback: first org_members row for that user.
+  // רביד: תמיד VIEW_AS_RAVID_ORG_ID — לא מסתמכים על profile.org_id שעלול להצביע על הצי הראשי.
+  // אחרים: 1) profile.org_id 2) org_members
   useEffect(() => {
     if (!viewAsEmail?.trim()) return;
+    const norm = viewAsEmail.trim().toLowerCase();
+    if (norm === RAVID_MANAGER_EMAIL) {
+      if (activeOrgId !== VIEW_AS_RAVID_ORG_ID) {
+        console.log('[Impersonation] Pin activeOrgId to Ravid fleet org', { viewAsEmail });
+        setActiveOrgId(VIEW_AS_RAVID_ORG_ID);
+      }
+      return;
+    }
     const fromProfile = viewAsProfile?.org_id?.trim() || null;
     if (fromProfile && activeOrgId !== fromProfile) {
       console.log('[Impersonation] Setting activeOrgId from view-as profile', {
@@ -206,6 +217,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     (async () => {
       const viewAsAuthId = viewAsProfile?.id ?? viewAsProfile?.user_id;
       if (!viewAsEmail?.trim() || !viewAsAuthId) return;
+      if (viewAsEmail.trim().toLowerCase() === RAVID_MANAGER_EMAIL) return;
       if (viewAsProfile?.org_id?.trim()) return;
 
       try {
@@ -341,6 +353,21 @@ export function AppLayout({ children }: AppLayoutProps) {
     window.location.href = `${window.location.origin}/`;
   }, [setViewAsEmail, isMainAdmin, isRavid, profile?.org_id, setActiveOrgId, navigate]);
 
+  /** תצוגה כחבר צוות: לרביד תמיד מעבירים ל-VIEW_AS_RAVID_ORG_ID (לא org של המנהל המחובר). */
+  const handleViewAs = useCallback(
+    (member: Pick<TeamMemberSummary, 'email'> & Partial<Pick<TeamMemberSummary, 'org_id'>>) => {
+      const trimmed = (member.email ?? '').trim();
+      setViewAsEmail(trimmed || null);
+      if (trimmed.toLowerCase() === RAVID_MANAGER_EMAIL) {
+        setActiveOrgId(VIEW_AS_RAVID_ORG_ID);
+        return;
+      }
+      const oid = member.org_id != null ? String(member.org_id).trim() : '';
+      if (oid) setActiveOrgId(oid);
+    },
+    [setViewAsEmail, setActiveOrgId],
+  );
+
   const handleLogout = () => {
     void signOut();
   };
@@ -452,12 +479,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                 <DropdownMenuItem
                   key={member.id}
                   className="text-xs cursor-pointer"
-                  onClick={() => {
-                    setViewAsEmail(member.email ?? null);
-                    if (member.org_id) {
-                      setActiveOrgId(member.org_id as any);
-                    }
-                  }}
+                  onClick={() => handleViewAs(member)}
                 >
                   <div className="flex flex-col">
                     <span className="font-medium truncate">
@@ -557,10 +579,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             </DropdownMenuItem>
             <DropdownMenuItem
               className="text-xs cursor-pointer"
-              onClick={() => {
-                setViewAsEmail(RAVID_MANAGER_EMAIL);
-                setActiveOrgId(RAVID_FLEET_ORG_ID);
-              }}
+              onClick={() => handleViewAs({ email: RAVID_MANAGER_EMAIL })}
             >
               <div className="flex flex-col">
                 <span className="font-medium truncate">רביד (מנהל צי)</span>
@@ -640,14 +659,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                 <DropdownMenuItem
                   key={member.id}
                   className="text-xs cursor-pointer"
-                onClick={() => {
-                  // CRITICAL: viewAsEmail drives the orange banner; always set it from member.email
-                  setViewAsEmail(member.email ?? null);
-                  // Also align org to the member's org when available
-                  if (member.org_id) {
-                    setActiveOrgId(member.org_id as any);
-                  }
-                }}
+                  onClick={() => handleViewAs(member)}
                 >
                   <div className="flex flex-col">
                     <span className="font-medium truncate">

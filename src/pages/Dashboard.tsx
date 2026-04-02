@@ -179,11 +179,13 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!activeOrgId && !viewAsEmail) return;
-    queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
-    queryClient.invalidateQueries({ queryKey: ['compliance-alerts'] });
-    queryClient.invalidateQueries({ queryKey: ['vehicles'] });
-    queryClient.invalidateQueries({ queryKey: ['drivers'] });
-    queryClient.invalidateQueries({ queryKey: ['feature-flags'] });
+    void queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+    void queryClient.invalidateQueries({ queryKey: ['compliance-alerts'] });
+    void queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+    void queryClient.invalidateQueries({ queryKey: ['drivers'] });
+    void queryClient.invalidateQueries({ queryKey: ['feature-flags'] });
+    void queryClient.refetchQueries({ queryKey: ['dashboard-stats'] });
+    void queryClient.refetchQueries({ queryKey: ['compliance-alerts'] });
   }, [activeOrgId, viewAsEmail, queryClient]);
 
   const email = user?.email || '';
