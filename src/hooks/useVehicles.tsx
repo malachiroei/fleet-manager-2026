@@ -129,22 +129,15 @@ export function useVehicles() {
 }
 
 export function useVehicle(id: string) {
-  const {
-    effectiveOrgId,
-    applyFleetManagerSlice,
-    fleetManagerListUserId,
-  } = useImpersonationFleetScope();
+  const { effectiveOrgId } = useImpersonationFleetScope();
   const orgId = effectiveOrgId ?? undefined;
 
   return useQuery({
-    queryKey: ['vehicle', id, orgId, applyFleetManagerSlice, fleetManagerListUserId],
+    queryKey: ['vehicle', id, orgId],
     queryFn: async () => {
       let query = supabase.from('vehicles').select('*').eq('id', id);
       if (orgId != null) {
         query = query.eq('org_id', orgId);
-        if (applyFleetManagerSlice && fleetManagerListUserId) {
-          query = query.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
-        }
       }
       const { data, error } = await query.maybeSingle();
       if (error) throw error;

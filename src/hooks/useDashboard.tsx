@@ -177,8 +177,8 @@ export function useComplianceAlerts() {
     queryFn: async (): Promise<ComplianceItem[]> => {
       const { data: rows, error } = await supabase
         .from('compliance_alerts')
-        .select('id, entity_type, entity_id, alert_type, expiry_date, status')
-        .order('expiry_date', { ascending: true });
+        .select('id, entity_type, entity_id, alert_type, expiry_date, status, created_at')
+        .order('created_at', { ascending: true });
 
       if (error) throw error;
       const list = rows ?? [];

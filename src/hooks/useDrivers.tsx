@@ -97,24 +97,21 @@ function mapRowToDriverSummary(row: Record<string, unknown>): DriverSummary {
 }
 
 export function useDriver(id: string) {
-  const {
-    effectiveOrgId,
-    fleetListReady,
-    applyFleetManagerSlice,
-    fleetManagerListUserId,
-  } = useImpersonationFleetScope();
+  const { effectiveOrgId, fleetListReady } = useImpersonationFleetScope();
   const orgId = effectiveOrgId;
 
   return useQuery({
-    queryKey: ['driver', id, orgId, applyFleetManagerSlice, fleetManagerListUserId],
+    queryKey: ['driver', id, orgId],
     enabled: !!id && orgId != null && fleetListReady,
     queryFn: async () => {
       if (orgId == null) return null;
-      let q = supabase.from('drivers').select('*').eq('id', id).eq('org_id', orgId);
-      if (applyFleetManagerSlice && fleetManagerListUserId) {
-        q = q.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
-      }
-      const { data, error } = await q.maybeSingle();
+      // בלי .or(managed_by…) כאן — שילוב עם .eq('id') שובר PostgREST (400). הרשאות: RLS + org_id.
+      const { data, error } = await supabase
+        .from('drivers')
+        .select('*')
+        .eq('id', id)
+        .eq('org_id', orgId)
+        .maybeSingle();
       if (error) throw error;
       return data as Driver | null;
     },

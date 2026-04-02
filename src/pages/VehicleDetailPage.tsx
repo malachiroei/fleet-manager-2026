@@ -248,7 +248,7 @@ function HandoverHistoryList({ handovers }: { handovers: any[] }) {
 export default function VehicleDetailPage() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
-  const { data: vehicle, isLoading } = useVehicle(id || '');
+  const { data: vehicle, isLoading, isError, error, refetch } = useVehicle(id || '');
   const { data: activeAssignments } = useActiveDriverVehicleAssignments();
   const currentAssignedDriverId = (activeAssignments ?? []).find((assignment) => assignment.vehicle_id === vehicle?.id)?.driver_id ?? '';
   const { data: assignedDriver } = useDriver(currentAssignedDriverId || '');
@@ -379,6 +379,41 @@ export default function VehicleDetailPage() {
         <main className="container py-6 space-y-4">
           <Skeleton className="h-48 w-full" />
           <Skeleton className="h-32 w-full" />
+        </main>
+      </div>
+    );
+  }
+
+  if (isError) {
+    const msg = error instanceof Error ? error.message : String(error ?? 'שגיאה');
+    return (
+      <div className="min-h-screen bg-[#020617] text-white">
+        <header className="bg-card border-b border-border sticky top-0 z-10">
+          <div className="container py-4">
+            <div className="flex items-center gap-3">
+              <Link to="/vehicles">
+                <Button variant="ghost" size="icon">
+                  <ArrowRight className="h-5 w-5" />
+                </Button>
+              </Link>
+              <h1 className="font-bold text-xl">שגיאה בטעינת הרכב</h1>
+            </div>
+          </div>
+        </header>
+        <main className="container py-6">
+          <Card>
+            <CardContent className="p-4 sm:p-8 space-y-4 text-center">
+              <p className="text-destructive text-sm">{msg}</p>
+              <Button type="button" onClick={() => void refetch()}>
+                נסה שוב
+              </Button>
+              <Link to="/vehicles">
+                <Button variant="outline" className="ml-2">
+                  חזור לרשימה
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
         </main>
       </div>
     );

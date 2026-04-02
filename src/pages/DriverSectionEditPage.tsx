@@ -46,7 +46,7 @@ function expiryFromDate(iso: string | null | undefined, years: number): string {
 export default function DriverSectionEditPage() {
   const { id, sectionId } = useParams<{ id: string; sectionId: string }>();
   const navigate = useNavigate();
-  const { data: driver, isLoading } = useDriver(id || '');
+  const { data: driver, isLoading, isError, error, refetch } = useDriver(id || '');
   const updateDriver = useUpdateDriver();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { setDirty, tryNavigate } = useVehicleSpecDirty();
@@ -72,6 +72,30 @@ export default function DriverSectionEditPage() {
         </header>
         <main className="container py-6">
           <Skeleton className="h-64 w-full" />
+        </main>
+      </div>
+    );
+  }
+
+  if (isError) {
+    const msg = error instanceof Error ? error.message : String(error ?? 'שגיאה');
+    return (
+      <div className="min-h-screen bg-[#020617] text-white">
+        <header className="sticky top-0 z-10 border-b border-border bg-card">
+          <div className="container flex items-center gap-3 py-4">
+            <Link to="/drivers">
+              <Button variant="ghost" size="icon">
+                <ArrowRight className="h-5 w-5" />
+              </Button>
+            </Link>
+            <h1 className="text-xl font-bold">שגיאה בטעינת הנהג</h1>
+          </div>
+        </header>
+        <main className="container space-y-4 py-6">
+          <p className="text-destructive text-sm">{msg}</p>
+          <Button type="button" onClick={() => void refetch()}>
+            נסה שוב
+          </Button>
         </main>
       </div>
     );
