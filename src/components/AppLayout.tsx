@@ -31,13 +31,12 @@ import {
 } from '@/constants/version';
 import { isFleetManagerProHostname, normalizeVersion } from '@/lib/versionManifest';
 import { getFleetEnvironmentBannerKind } from '@/lib/fleetAppStagingEnvironment';
-import { isFleetBootstrapOwnerEmail, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
-import { FALLBACK_MAIN_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
+import { isFleetBootstrapOwnerEmail, resolveSessionEmail, RAVID_MANAGER_EMAIL } from '@/lib/fleetBootstrapEmails';
+import { FALLBACK_MAIN_FLEET_ORG_ID, RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 import type { TeamMemberSummary } from '@/hooks/useTeam';
 
 /** קישור מנהל ראשי ↔ מנהל צי ↔ נהג — כש־RLS לא מחזיר את כל ה־profiles במחליף */
 const MAIN_ADMIN_SWITCHER_EMAIL = 'malachiroei@gmail.com';
-const RAVID_MANAGER_EMAIL = 'ravidmalachi@gmail.com';
 const ROEI_DRIVER_EMAIL = 'roeima21@gmail.com';
 
 function augmentSwitcherMembers(
@@ -65,7 +64,8 @@ function augmentSwitcherMembers(
     visible = visible.filter((m) => m.email && allow.has(m.email.toLowerCase()));
   }
 
-  const orgForRavid = opts.mainFleetOrgId ?? opts.profileOrgId ?? opts.activeOrgId ?? null;
+  /** תמיד ארגון רביד האמיתי — לא mainFleet של רועי (אחרת View-As נשאר על הצי הראשי). */
+  const orgForSyntheticRavid = RAVID_FLEET_ORG_ID;
   if (opts.isMainAdmin && !visible.some((m) => m.email?.toLowerCase() === RAVID_MANAGER_EMAIL)) {
     visible = [
       ...visible,
@@ -73,7 +73,7 @@ function augmentSwitcherMembers(
         id: 'synthetic-ravid',
         full_name: 'רביד מלחי',
         email: RAVID_MANAGER_EMAIL,
-        org_id: orgForRavid,
+        org_id: orgForSyntheticRavid,
         source: 'profile',
       },
     ];
@@ -186,23 +186,38 @@ export function AppLayout({ children }: AppLayoutProps) {
     });
   }, [activeOrgId, teamMembers, teamMembersError]);
 
-  // When impersonating, ensure the active org is taken from the target user's org_members.
-  // This prevents stale org context (and blank dashboard due to orgId=null) after switching users.
+  // When impersonating: active org must follow the impersonated user (not the logged-in admin's org).
+  // 1) Prefer resolved profile.org_id (works even when org_members is not visible under RLS).
+  // 2) Fallback: first org_members row for that user.
+  useEffect(() => {
+    if (!viewAsEmail?.trim()) return;
+    const fromProfile = viewAsProfile?.org_id?.trim() || null;
+    if (fromProfile && activeOrgId !== fromProfile) {
+      console.log('[Impersonation] Setting activeOrgId from view-as profile', {
+        viewAsEmail,
+        fromProfile,
+      });
+      setActiveOrgId(fromProfile);
+    }
+  }, [viewAsEmail, viewAsProfile?.org_id, activeOrgId, setActiveOrgId]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const viewAsAuthId = viewAsProfile?.id ?? viewAsProfile?.user_id;
-      if (!viewAsEmail || !viewAsAuthId) return;
+      if (!viewAsEmail?.trim() || !viewAsAuthId) return;
+      if (viewAsProfile?.org_id?.trim()) return;
 
       try {
-        const { data: membership, error } = await (supabase as any)
+        const { data: rows, error } = await (supabase as any)
           .from('org_members')
           .select('org_id')
           .eq('user_id', viewAsAuthId)
-          .maybeSingle();
-        const nextOrgId = (membership as any)?.org_id as string | undefined;
-        if (!cancelled && nextOrgId && activeOrgId !== nextOrgId) {
-          console.log('[Impersonation] Setting activeOrgId from org_members', {
+          .limit(1);
+        if (error || cancelled) return;
+        const nextOrgId = (rows?.[0] as { org_id?: string } | undefined)?.org_id;
+        if (nextOrgId && activeOrgId !== nextOrgId) {
+          console.log('[Impersonation] Setting activeOrgId from org_members (fallback)', {
             viewAsEmail,
             nextOrgId,
           });
@@ -215,7 +230,14 @@ export function AppLayout({ children }: AppLayoutProps) {
     return () => {
       cancelled = true;
     };
-  }, [viewAsEmail, viewAsProfile?.id, viewAsProfile?.user_id, activeOrgId, setActiveOrgId]);
+  }, [
+    viewAsEmail,
+    viewAsProfile?.id,
+    viewAsProfile?.user_id,
+    viewAsProfile?.org_id,
+    activeOrgId,
+    setActiveOrgId,
+  ]);
 
   console.log('CURRENT PROFILE STATUS:', profile?.status);
 
@@ -238,17 +260,15 @@ export function AppLayout({ children }: AppLayoutProps) {
   const viewAsStickyTopClass = showFleetEnvironmentBanner ? 'top-6' : 'top-0';
 
   const mainFleetOrgId = useMemo(() => {
-    // Prefer explicit Main Fleet org id when present.
     const explicitMainFleet = memberOrganizations.find((o) => o.id === FALLBACK_MAIN_FLEET_ORG_ID);
     if (explicitMainFleet) return explicitMainFleet.id;
 
     const mainFleet = memberOrganizations.find((o) => {
       const name = (o.name ?? '').toLowerCase();
-      // Prefer explicit English name when available, otherwise fallback to the Hebrew "Ravid fleet" naming.
       return (
         (name.includes('main') && name.includes('fleet')) ||
         name.includes('רביד צי') ||
-        name.includes('רביד') // very soft fallback
+        (name.includes('ראשי') && name.includes('רועי'))
       );
     });
     return mainFleet?.id ?? memberOrganizations[0]?.id ?? null;
@@ -539,8 +559,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               className="text-xs cursor-pointer"
               onClick={() => {
                 setViewAsEmail(RAVID_MANAGER_EMAIL);
-                const oid = profile?.org_id?.trim() || null;
-                if (oid) setActiveOrgId(oid);
+                setActiveOrgId(RAVID_FLEET_ORG_ID);
               }}
             >
               <div className="flex flex-col">

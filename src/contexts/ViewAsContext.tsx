@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useMemo, useState, ReactNode } fr
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import type { Profile } from '@/types/fleet';
+import { RAVID_MANAGER_EMAIL } from '@/lib/fleetBootstrapEmails';
+import { RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 
 interface ViewAsContextValue {
   viewAsEmail: string | null;
@@ -65,10 +67,16 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
               (p) => (p.email ?? '').trim().toLowerCase() === normalizedEmail
             );
             const pool = exact.length > 0 ? exact : matches;
-            const preferred =
+            let preferred =
               (activeOrgId ? pool.find((p) => p.org_id === activeOrgId) : null) ??
               pool[0] ??
               null;
+            if (
+              normalizedEmail === RAVID_MANAGER_EMAIL &&
+              pool.some((p) => p.org_id === RAVID_FLEET_ORG_ID)
+            ) {
+              preferred = pool.find((p) => p.org_id === RAVID_FLEET_ORG_ID) ?? preferred;
+            }
             row = preferred;
           }
         }

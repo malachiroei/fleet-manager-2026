@@ -1,6 +1,9 @@
 /** מיילים שמקבלים הרשאות מנהל מלאות גם כש־user_roles ריק (סנכרון פרו / RLS). */
 const OWNERS = ['malachiroei@gmail.com', 'ravidmalachi@gmail.com'] as const;
 
+/** מנהל צי — תצוגה כמשתמש / ארגון נפרד מהצי הראשי */
+export const RAVID_MANAGER_EMAIL = 'ravidmalachi@gmail.com';
+
 /**
  * אימייל לזיהוי הרשאות: אם `profiles.email` ריק ב-DB, נופלים ל-auth.
  * (`profile?.email ?? user?.email` לא מספיק — מחרוזת ריקה לא מפעילה את ה-??.)
