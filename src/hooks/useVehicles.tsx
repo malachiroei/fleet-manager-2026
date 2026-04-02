@@ -105,12 +105,6 @@ export function useVehicles() {
     enabled: fleetListReady && effectiveOrgId != null,
     queryFn: async () => {
       if (effectiveOrgId == null) return [] as Vehicle[];
-      console.log(
-        '[Debug Scope] applyFleetManagerSlice:',
-        applyFleetManagerSlice,
-        'Target ID:',
-        fleetManagerListUserId
-      );
       let q = supabase
         .from('vehicles')
         .select('*')
@@ -129,8 +123,8 @@ export function useVehicles() {
 }
 
 export function useVehicle(id: string) {
-  const { effectiveOrgId } = useImpersonationFleetScope();
-  const orgId = effectiveOrgId ?? undefined;
+  const { effectiveOrgId, fleetListReady } = useImpersonationFleetScope();
+  const orgId = effectiveOrgId ?? null;
 
   return useQuery({
     queryKey: ['vehicle', id, orgId],
@@ -143,7 +137,7 @@ export function useVehicle(id: string) {
       if (error) throw error;
       return data as Vehicle | null;
     },
-    enabled: !!id,
+    enabled: Boolean(id && fleetListReady && orgId != null),
   });
 }
 

@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { getSupabaseAnonKey, getSupabasePublishableKey, getSupabaseUrl } from '@/integrations/supabase/publicEnv';
 import type { VehicleHandover } from '@/types/fleet';
 import { useAuth } from '@/hooks/useAuth';
+import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import hebrewFontUrl from '@/assets/fonts/NotoSansHebrew.ttf?url';
@@ -1078,12 +1079,12 @@ export function buildHandoverRecordUrl(vehicleId: string, handoverId: string) {
 }
 
 export function useHandovers(vehicleId?: string) {
-  const { activeOrgId } = useAuth();
-  const orgId = activeOrgId ?? null;
+  const { effectiveOrgId, fleetListReady } = useImpersonationFleetScope();
+  const orgId = effectiveOrgId ?? null;
 
   return useQuery({
     queryKey: ['handovers', vehicleId, orgId],
-    enabled: orgId != null,
+    enabled: fleetListReady && orgId != null,
     queryFn: async () => {
       if (orgId == null) return [] as VehicleHandover[];
       let query = supabase
@@ -1146,12 +1147,12 @@ export function useCreateHandover() {
 }
 
 export function useHandoverHistory() {
-  const { activeOrgId } = useAuth();
-  const orgId = activeOrgId ?? null;
+  const { effectiveOrgId, fleetListReady } = useImpersonationFleetScope();
+  const orgId = effectiveOrgId ?? null;
 
   return useQuery({
     queryKey: ['handover-history', orgId],
-    enabled: orgId != null,
+    enabled: fleetListReady && orgId != null,
     staleTime: 1000 * 60 * 5,
     queryFn: async () => {
       if (orgId == null) return [] as HandoverHistoryItem[];

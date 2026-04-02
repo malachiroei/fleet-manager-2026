@@ -33,13 +33,6 @@ export function useDrivers() {
     enabled: fleetListReady && orgId != null,
     queryFn: async () => {
       if (orgId == null) return [] as DriverSummary[];
-      console.log(
-        '[Debug Scope] applyFleetManagerSlice:',
-        applyFleetManagerSlice,
-        'Target ID:',
-        fleetManagerListUserId
-      );
-
       let base = supabase.from('drivers').select('*').eq('org_id', orgId);
       if (isDriverContextOnly && impersonatedUserId) {
         base = base.eq('user_id', impersonatedUserId);

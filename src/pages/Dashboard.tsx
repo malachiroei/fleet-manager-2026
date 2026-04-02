@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
@@ -177,20 +177,21 @@ export default function Dashboard() {
   const isStatsLoading = isLoading || !stats;
   const isInitialUiLoading = loading || flagsPending;
 
+  const scopeRefreshKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!activeOrgId && !viewAsEmail) return;
+    if (!activeOrgId && !viewAsEmail?.trim()) return;
+    const key = `${activeOrgId ?? ''}|${(viewAsEmail ?? '').trim()}`;
+    if (scopeRefreshKeyRef.current === key) return;
+    scopeRefreshKeyRef.current = key;
     void queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
     void queryClient.invalidateQueries({ queryKey: ['compliance-alerts'] });
     void queryClient.invalidateQueries({ queryKey: ['vehicles'] });
     void queryClient.invalidateQueries({ queryKey: ['drivers'] });
     void queryClient.invalidateQueries({ queryKey: ['feature-flags'] });
-    void queryClient.refetchQueries({ queryKey: ['dashboard-stats'] });
-    void queryClient.refetchQueries({ queryKey: ['compliance-alerts'] });
   }, [activeOrgId, viewAsEmail, queryClient]);
 
   const email = user?.email || '';
   const isMainAdmin = email.toLowerCase() === 'malachiroei@gmail.com';
-  const isSystemAdmin = ['malachiroei@gmail.com', 'ravidmalachi@gmail.com'].includes(email);
   const isOwner = isMainAdmin;
   const effectiveIsAdmin = isOwner || isAdmin;
   const { data: pendingUsersCount = 0 } = useQuery({
@@ -212,19 +213,6 @@ export default function Dashboard() {
         return 0;
       }
     },
-  });
-
-  console.log('Dashboard userRole', {
-    userRoles: userRoles ?? [],
-    userRole: userRoles?.join(', ') ?? '(none)',
-    email: email || '(no email)',
-    viewAsEmail,
-    isSystemAdmin,
-    isAdmin,
-    effectiveIsAdmin,
-    isManager,
-    isDriver,
-    loadingAuth: loading,
   });
 
   // Base quick actions; filtering happens afterwards

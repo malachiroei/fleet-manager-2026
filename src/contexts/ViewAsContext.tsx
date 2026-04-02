@@ -98,13 +98,6 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
           ...row,
           user_id: row.user_id ?? row.id,
         };
-        console.log('[ViewAs] resolved profile', {
-          email: normalizedEmail,
-          activeOrgId,
-          resolvedId: resolvedProfile.id,
-          resolvedUserId: resolvedProfile.user_id,
-          resolvedOrgId: resolvedProfile.org_id,
-        });
         setViewAsProfile(resolvedProfile);
       } finally {
         if (!cancelled) setViewAsLoading(false);
@@ -115,8 +108,13 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
     };
   }, [normalizedEmail, activeOrgId]);
 
+  const contextValue = useMemo(
+    () => ({ viewAsEmail, setViewAsEmail, viewAsProfile, viewAsLoading }),
+    [viewAsEmail, setViewAsEmail, viewAsProfile, viewAsLoading],
+  );
+
   return (
-    <ViewAsContext.Provider value={{ viewAsEmail, setViewAsEmail, viewAsProfile, viewAsLoading }}>
+    <ViewAsContext.Provider value={contextValue}>
       {children}
     </ViewAsContext.Provider>
   );

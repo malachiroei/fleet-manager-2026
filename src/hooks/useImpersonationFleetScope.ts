@@ -25,6 +25,12 @@ export function useImpersonationFleetScope() {
   const isImpersonating = Boolean(viewAsEmail?.trim() && impersonatedUserId);
   /** באנר תצוגה כ… פעיל (גם אם profiles עדיין לא נפתר בגלל RLS) */
   const viewAsBannerActive = Boolean(viewAsEmail?.trim());
+  /**
+   * בין לחיצת View-As לבין טעינת viewAsProfile — effectiveUserId עדיין של המנהל המחובר.
+   * אם מפעילים applyFleetManagerSlice עם UUID של רועי על org של רביד, מתקבל 0 שורות ואז
+   * fallback של הדשבורד (מנהל ראשי) מציג את כל הצי הגלובלי — נראה כמו «רואים את רועי».
+   */
+  const viewAsProfilePending = Boolean(viewAsEmail?.trim()) && !impersonatedUserId;
 
   const viewAsNorm = (viewAsEmail ?? '').trim().toLowerCase();
   /**
@@ -51,6 +57,8 @@ export function useImpersonationFleetScope() {
   const rolesQuery = useQuery({
     queryKey: ['view-as-target-roles', effectiveUserId, isImpersonating],
     enabled: Boolean(isImpersonating && effectiveUserId),
+    retry: false,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('user_roles')
@@ -75,6 +83,8 @@ export function useImpersonationFleetScope() {
   const driverRowQuery = useQuery({
     queryKey: ['view-as-scoped-driver', effectiveOrgId, impersonatedUserId, isDriverContextOnly],
     enabled: Boolean(isDriverContextOnly && effectiveOrgId && impersonatedUserId),
+    retry: false,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('drivers')
@@ -115,24 +125,10 @@ export function useImpersonationFleetScope() {
 
   /** Per-manager lists within org for admins/managers; viewers keep org-wide lists (NULL managed_by pool). */
   const applyFleetManagerSlice =
+    !viewAsProfilePending &&
     fleetManagerListUserId != null &&
     !isDriverContextOnly &&
     fleetListSubjectIsElevated;
-
-  console.log(
-    '[Debug Scope Hook] isImpersonating:',
-    isImpersonating,
-    'viewAsEmail:',
-    viewAsEmail,
-    'effectiveUserId:',
-    effectiveUserId,
-    'impersonatedUserId:',
-    impersonatedUserId,
-    'applyFleetManagerSlice:',
-    applyFleetManagerSlice,
-    'fleetManagerListUserId:',
-    fleetManagerListUserId
-  );
 
   return {
     effectiveOrgId,

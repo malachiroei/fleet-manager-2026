@@ -140,7 +140,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const isHomeActive = location.pathname === '/';
   const { data: organization } = useOrganization(activeOrgId ?? null);
   const orgName = organization?.name?.trim() ?? '';
-  const { data: teamMembers = [], error: teamMembersError } = useTeamMembersForSwitcher(activeOrgId ?? null as any);
+  const { data: teamMembers = [] } = useTeamMembersForSwitcher(activeOrgId ?? null as any);
   const { viewAsEmail, setViewAsEmail, viewAsProfile } = useViewAs();
 
   /** קיר קשיח ייצור: fleet-manager-pro.com + www (גרסה בכותרת וכו') */
@@ -182,13 +182,6 @@ export function AppLayout({ children }: AppLayoutProps) {
   /** מוצג בכותרת — תמיד גרסת הבנדל מ־package.json (זהה לשורת «מידע מערכת») */
   const headerDisplayVersion = useMemo(() => normalizeVersion(bundleVersion), [bundleVersion]);
 
-  useEffect(() => {
-    console.log('TeamMembers for Org:', activeOrgId, {
-      teamMembers,
-      teamMembersError,
-    });
-  }, [activeOrgId, teamMembers, teamMembersError]);
-
   // When impersonating: active org must follow the impersonated user (not the logged-in admin's org).
   // רביד: תמיד VIEW_AS_RAVID_ORG_ID — לא מסתמכים על profile.org_id שעלול להצביע על הצי הראשי.
   // אחרים: 1) profile.org_id 2) org_members
@@ -197,17 +190,12 @@ export function AppLayout({ children }: AppLayoutProps) {
     const norm = viewAsEmail.trim().toLowerCase();
     if (norm === RAVID_MANAGER_EMAIL) {
       if (activeOrgId !== VIEW_AS_RAVID_ORG_ID) {
-        console.log('[Impersonation] Pin activeOrgId to Ravid fleet org', { viewAsEmail });
         setActiveOrgId(VIEW_AS_RAVID_ORG_ID);
       }
       return;
     }
     const fromProfile = viewAsProfile?.org_id?.trim() || null;
     if (fromProfile && activeOrgId !== fromProfile) {
-      console.log('[Impersonation] Setting activeOrgId from view-as profile', {
-        viewAsEmail,
-        fromProfile,
-      });
       setActiveOrgId(fromProfile);
     }
   }, [viewAsEmail, viewAsProfile?.org_id, activeOrgId, setActiveOrgId]);
@@ -250,8 +238,6 @@ export function AppLayout({ children }: AppLayoutProps) {
     activeOrgId,
     setActiveOrgId,
   ]);
-
-  console.log('CURRENT PROFILE STATUS:', profile?.status);
 
   const isMainAdmin = email === MAIN_ADMIN_SWITCHER_EMAIL;
   const canManageTeamUi = isMainAdmin || hasPermission('manage_team') || isOrgAdminOrManager;
@@ -322,7 +308,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   }, [profile, user, viewAsEmail, activeOrgId, mainFleetOrgId, setActiveOrgId]);
 
   /**
-   * יציאה מ-View-As + רענון מלא — מונע «תקיעה» במצב תצוגה (מטמון React / שאילתות).
+   * יציאה מ-View-As + ניווט לדשבורד (בלי reload מלא — מונע חניקת דפדפן).
    * API האפליקציה: setViewAsEmail (לא setViewAs).
    */
   const exitViewAsToDashboard = useCallback(() => {
@@ -349,8 +335,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       /* ignore */
     }
 
-    void navigate('/');
-    window.location.href = `${window.location.origin}/`;
+    void navigate('/', { replace: true });
   }, [setViewAsEmail, isMainAdmin, isRavid, profile?.org_id, setActiveOrgId, navigate]);
 
   /** תצוגה כחבר צוות: לרביד תמיד מעבירים ל-VIEW_AS_RAVID_ORG_ID (לא org של המנהל המחובר). */

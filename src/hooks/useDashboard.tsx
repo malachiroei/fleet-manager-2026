@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { DashboardStats, ComplianceStatus } from '@/types/fleet';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useViewAs } from '@/contexts/ViewAsContext';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
 import { isFleetBootstrapOwnerEmail, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
 import { fleetManagerVisibilityOrFilter } from '@/lib/fleetManagerScope';
@@ -27,6 +28,7 @@ interface ComplianceItem {
 
 export function useDashboardStats() {
   const { roles: loggedInRoles, user, profile } = useAuth();
+  const { viewAsEmail } = useViewAs();
   const {
     effectiveOrgId,
     effectiveUserId,
@@ -50,6 +52,7 @@ export function useDashboardStats() {
       'dashboard-stats',
       effectiveOrgId,
       effectiveUserId,
+      viewAsEmail ?? '',
       isImpersonating,
       isDriverContextOnly,
       scopedDriverId,
@@ -86,13 +89,6 @@ export function useDashboardStats() {
           expiredCount: 0,
         };
       }
-      console.log(
-        '[Debug Scope] applyFleetManagerSlice:',
-        applyFleetManagerSlice,
-        'Target ID:',
-        fleetManagerListUserId
-      );
-
       let vehiclesCount = 0;
       let driversCount = 0;
 
@@ -127,8 +123,14 @@ export function useDashboardStats() {
         vehiclesCount = (vRows ?? []).length;
         driversCount = (dRows ?? []).length;
 
-        // Owner fallback: if active org is empty, show global fleet totals.
-        if (isMainAdmin && vehiclesCount === 0 && driversCount === 0) {
+        // Owner fallback: אם הארגון ריק — ספירה גלובלית (לא בתצוגת משתמש / impersonation).
+        if (
+          isMainAdmin &&
+          !viewAsEmail?.trim() &&
+          !isImpersonating &&
+          vehiclesCount === 0 &&
+          driversCount === 0
+        ) {
           const [gv, gd] = await Promise.all([
             supabase.from('vehicles').select('id'),
             supabase.from('drivers').select('id'),
@@ -173,14 +175,20 @@ export function useComplianceAlerts() {
       scopedDriverId,
     ],
     enabled: fleetListReady && effectiveUserId != null,
-    staleTime: 30_000,
+    staleTime: 60_000,
+    /** 400 על compliance_alerts + retry ברירת מחדל = אלפי בקשות והקפאת UI */
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     queryFn: async (): Promise<ComplianceItem[]> => {
       const { data: rows, error } = await supabase
         .from('compliance_alerts')
-        .select('id, entity_type, entity_id, alert_type, expiry_date, status, created_at')
-        .order('created_at', { ascending: true });
+        .select('id, entity_type, entity_id, alert_type, expiry_date, status');
 
-      if (error) throw error;
+      if (error) {
+        console.warn('[useComplianceAlerts] compliance_alerts select failed — returning empty', error.message);
+        return [];
+      }
       const list = rows ?? [];
       if (list.length === 0) return [];
 
@@ -196,7 +204,10 @@ export function useComplianceAlerts() {
           .from('vehicles')
           .select('id, plate_number, org_id, managed_by_user_id, assigned_driver_id')
           .in('id', part);
-        if (verr) throw verr;
+        if (verr) {
+          console.warn('[useComplianceAlerts] vehicles chunk failed — skipping chunk', verr.message);
+          continue;
+        }
         for (const v of vrows ?? []) {
           vehicleById.set(v.id, {
             plate_number: v.plate_number ?? null,
@@ -216,7 +227,10 @@ export function useComplianceAlerts() {
           .from('drivers')
           .select('id, full_name, org_id, managed_by_user_id')
           .in('id', part);
-        if (derr) throw derr;
+        if (derr) {
+          console.warn('[useComplianceAlerts] drivers chunk failed — skipping chunk', derr.message);
+          continue;
+        }
         for (const d of drows ?? []) {
           driverById.set(d.id, {
             full_name: d.full_name ?? null,
