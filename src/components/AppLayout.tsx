@@ -1,4 +1,4 @@
-import { type ElementType, type MouseEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type ElementType, type MouseEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useVehicleSpecDirty } from '@/contexts/VehicleSpecDirtyContext';
 import { useViewAs } from '@/contexts/ViewAsContext';
@@ -30,16 +30,70 @@ import {
   FLEET_PRO_ACK_VERSION_UPDATED_EVENT,
 } from '@/constants/version';
 import { isFleetManagerProHostname, normalizeVersion } from '@/lib/versionManifest';
+import { getFleetEnvironmentBannerKind } from '@/lib/fleetAppStagingEnvironment';
+import { isFleetBootstrapOwnerEmail, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
+import { FALLBACK_MAIN_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
+import type { TeamMemberSummary } from '@/hooks/useTeam';
 
-function isLocalDevHostname(hostname: string): boolean {
-  const h = hostname.trim().toLowerCase();
-  if (!h) return false;
-  if (h === 'localhost' || h === '127.0.0.1' || h === '[::1]') return true;
-  if (h.endsWith('.local')) return true;
-  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
-  if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
-  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
-  return false;
+/** קישור מנהל ראשי ↔ מנהל צי ↔ נהג — כש־RLS לא מחזיר את כל ה־profiles במחליף */
+const MAIN_ADMIN_SWITCHER_EMAIL = 'malachiroei@gmail.com';
+const RAVID_MANAGER_EMAIL = 'ravidmalachi@gmail.com';
+const ROEI_DRIVER_EMAIL = 'roeima21@gmail.com';
+
+function augmentSwitcherMembers(
+  teamMembers: TeamMemberSummary[],
+  opts: {
+    selfEmail: string;
+    isMainAdmin: boolean;
+    isRavid: boolean;
+    activeOrgId: string | null;
+    mainFleetOrgId: string | null;
+    profileOrgId: string | null | undefined;
+  },
+): TeamMemberSummary[] {
+  const self = opts.selfEmail.toLowerCase();
+  let visible = teamMembers.filter(
+    (m) =>
+      m.email &&
+      m.email.toLowerCase() !== self &&
+      m.email.toLowerCase() !== MAIN_ADMIN_SWITCHER_EMAIL,
+  );
+  visible = visible.filter((m) => (m.full_name || '').trim() !== 'רביד צי רכבים');
+
+  if (opts.isMainAdmin) {
+    const allow = new Set([RAVID_MANAGER_EMAIL]);
+    visible = visible.filter((m) => m.email && allow.has(m.email.toLowerCase()));
+  }
+
+  const orgForRavid = opts.mainFleetOrgId ?? opts.profileOrgId ?? opts.activeOrgId ?? null;
+  if (opts.isMainAdmin && !visible.some((m) => m.email?.toLowerCase() === RAVID_MANAGER_EMAIL)) {
+    visible = [
+      ...visible,
+      {
+        id: 'synthetic-ravid',
+        full_name: 'רביד מלחי',
+        email: RAVID_MANAGER_EMAIL,
+        org_id: orgForRavid,
+        source: 'profile',
+      },
+    ];
+  }
+
+  const orgForRoei = opts.activeOrgId ?? opts.profileOrgId ?? null;
+  if (opts.isRavid && !visible.some((m) => m.email?.toLowerCase() === ROEI_DRIVER_EMAIL)) {
+    visible = [
+      ...visible,
+      {
+        id: 'synthetic-roeima21',
+        full_name: 'רועי (נהג)',
+        email: ROEI_DRIVER_EMAIL,
+        org_id: orgForRoei,
+        source: 'profile',
+      },
+    ];
+  }
+
+  return visible;
 }
 
 interface AppLayoutProps {
@@ -64,8 +118,14 @@ export function AppLayout({ children }: AppLayoutProps) {
     hasPermission,
   } = useAuth();
   const isDriverOnlyHeader = Boolean(isDriver && !isManager && !isAdmin);
+  /** כולל bootstrap / is_system_admin כש־user_roles ריק בפרו */
+  const isElevatedHeader =
+    isAdmin ||
+    isManager ||
+    profile?.is_system_admin === true ||
+    isFleetBootstrapOwnerEmail(resolveSessionEmail(profile, user));
   /** מנהל ארגון / מנהל צי — כפתורי ניהול בכותרת (ארגון, צוות) */
-  const isOrgAdminOrManager = (isAdmin || isManager) && !isDriverOnlyHeader;
+  const isOrgAdminOrManager = isElevatedHeader && !isDriverOnlyHeader;
   /** בולטים בזהב/ענבר כדי שלא יפספסו */
   const managementNavClass =
     'relative z-[9999] !flex items-center justify-center border-2 !border-solid !border-[gold] bg-amber-500/25 text-amber-50 shadow-[0_0_18px_rgba(251,191,36,0.45)] hover:bg-amber-500/40 hover:text-white hover:!border-[#ffd700]';
@@ -82,12 +142,10 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   /** קיר קשיח ייצור: fleet-manager-pro.com + www (גרסה בכותרת וכו') */
   const isProduction = isFleetManagerProHostname();
-  /** באנר "גרסת בדיקה": staging ב-Vercel + כל מארח פיתוח מקומי נפוץ */
-  const isStaging =
-    (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) ||
-    (typeof window !== 'undefined' && isLocalDevHostname(window.location.hostname)) ||
-    import.meta.env.MODE === 'staging';
-  const showStagingWarningBar = isStaging;
+  /** באנר סביבה: לפי פרויקט Supabase (FLEET_*_REF) + hostname — לא רק localhost */
+  const fleetEnvBannerKind =
+    typeof window !== 'undefined' ? getFleetEnvironmentBannerKind() : 'none';
+  const showFleetEnvironmentBanner = fleetEnvBannerKind !== 'none';
 
   /**
    * ייצור: אחרי `FLEET_PRO_ACK_VERSION_UPDATED_EVENT` — אם `fleet-pro-acknowledged-version` בפועל השתנה,
@@ -161,27 +219,27 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   console.log('CURRENT PROFILE STATUS:', profile?.status);
 
-  const isMainAdmin = email === 'malachiroei@gmail.com';
+  const isMainAdmin = email === MAIN_ADMIN_SWITCHER_EMAIL;
   const canManageTeamUi = isMainAdmin || hasPermission('manage_team') || isOrgAdminOrManager;
   const canManageOrgUi = isMainAdmin || hasPermission('admin_access') || isOrgAdminOrManager;
 
   /** Gold header buttons (Roei Admin + Ravid Manager). */
   const canAccessGoldenManagementLinks = !isDriverOnlyHeader && (canManageOrgUi || canManageTeamUi);
-  const isDriverRoei = email === 'roeima21@gmail.com';
-  const isRavid = email === 'ravidmalachi@gmail.com';
+  const isDriverRoei = email === ROEI_DRIVER_EMAIL;
+  const isRavid = email === RAVID_MANAGER_EMAIL;
 
   const viewAsBannerVisible = (isMainAdmin || isRavid) && Boolean(viewAsEmail);
   /** באנר staging מיני — גובה ~h-6 */
-  const headerStickyTopClass = showStagingWarningBar
+  const headerStickyTopClass = showFleetEnvironmentBanner
     ? viewAsBannerVisible
       ? 'top-16'
       : 'top-6'
     : 'top-0';
-  const viewAsStickyTopClass = showStagingWarningBar ? 'top-6' : 'top-0';
+  const viewAsStickyTopClass = showFleetEnvironmentBanner ? 'top-6' : 'top-0';
 
   const mainFleetOrgId = useMemo(() => {
     // Prefer explicit Main Fleet org id when present.
-    const explicitMainFleet = memberOrganizations.find((o) => o.id === '857f2311-2ec5-41d3-8e32-dacd450a9a77');
+    const explicitMainFleet = memberOrganizations.find((o) => o.id === FALLBACK_MAIN_FLEET_ORG_ID);
     if (explicitMainFleet) return explicitMainFleet.id;
 
     const mainFleet = memberOrganizations.find((o) => {
@@ -223,6 +281,46 @@ export function AppLayout({ children }: AppLayoutProps) {
     }
   }, [isRavid, profile?.org_id, activeOrgId, setActiveOrgId]);
 
+  /** bootstrap בלי org בפרופיל — מסנכרן מחליף ורשימת צוות ל־UUID הצי הראשי */
+  useEffect(() => {
+    if (!isFleetBootstrapOwnerEmail(resolveSessionEmail(profile, user))) return;
+    if (viewAsEmail) return;
+    if (activeOrgId) return;
+    setActiveOrgId(mainFleetOrgId ?? FALLBACK_MAIN_FLEET_ORG_ID);
+  }, [profile, user, viewAsEmail, activeOrgId, mainFleetOrgId, setActiveOrgId]);
+
+  /**
+   * יציאה מ-View-As + רענון מלא — מונע «תקיעה» במצב תצוגה (מטמון React / שאילתות).
+   * API האפליקציה: setViewAsEmail (לא setViewAs).
+   */
+  const exitViewAsToDashboard = useCallback(() => {
+    setViewAsEmail(null);
+
+    const mainOrgId = FALLBACK_MAIN_FLEET_ORG_ID;
+    if (isMainAdmin) {
+      setActiveOrgId(mainOrgId);
+    } else if (isRavid && profile?.org_id?.trim()) {
+      setActiveOrgId(profile.org_id.trim());
+    } else {
+      setActiveOrgId(mainOrgId);
+    }
+
+    try {
+      localStorage.removeItem('viewAsUser');
+    } catch {
+      /* ignore */
+    }
+
+    try {
+      window.dispatchEvent(new CustomEvent('app:go-home'));
+    } catch {
+      /* ignore */
+    }
+
+    void navigate('/');
+    window.location.href = `${window.location.origin}/`;
+  }, [setViewAsEmail, isMainAdmin, isRavid, profile?.org_id, setActiveOrgId, navigate]);
+
   const handleLogout = () => {
     void signOut();
   };
@@ -263,32 +361,14 @@ export function AppLayout({ children }: AppLayoutProps) {
       : memberOrganizations;
 
     // חברי צוות זמינים (אותה לוגיקה כמו OrgSwitcher)
-    let mobileMembers = teamMembers.filter(
-      (m) =>
-        m.email &&
-        m.email.toLowerCase() !== email &&
-        m.email.toLowerCase() !== 'malachiroei@gmail.com'
-    );
-    mobileMembers = mobileMembers.filter((m) => (m.full_name || '').trim() !== 'רביד צי רכבים');
-
-    if (isMainAdmin) {
-      const allowedEmails = new Set(['ravidmalachi@gmail.com']);
-      mobileMembers = mobileMembers.filter(
-        (m) => m.email && allowedEmails.has(m.email.toLowerCase())
-      );
-    }
-
-    if (isRavid && mobileMembers.length === 0) {
-      mobileMembers = [
-        {
-          id: 'synthetic-roeima21',
-          full_name: 'ROEIMA21',
-          email: 'roeima21@gmail.com',
-          org_id: profile?.org_id ?? null,
-          source: 'profile',
-        },
-      ] as any;
-    }
+    const mobileMembers = augmentSwitcherMembers(teamMembers, {
+      selfEmail: email,
+      isMainAdmin,
+      isRavid,
+      activeOrgId,
+      mainFleetOrgId,
+      profileOrgId: profile?.org_id,
+    });
 
   return (
       <DropdownMenu>
@@ -436,8 +516,42 @@ export function AppLayout({ children }: AppLayoutProps) {
   };
 
   const OrgSwitcher = () => {
-    // Hide switcher רק עבור משתמש קצה (Roei)
-    if (isDriverRoei) return null;
+    /** נהג רועי: אין רשימת ארגונים — רק מעבר לתצוגת מנהל (רביד) */
+    if (isDriverRoei) {
+      return (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 border-cyan-400/20 bg-cyan-500/10 px-2.5 text-xs font-medium text-cyan-100 hover:bg-cyan-500/20 hover:text-cyan-100"
+            >
+              <Building className="h-3.5 w-3.5" />
+              <span className="hidden md:inline max-w-[140px] truncate">חשבונות מקושרים</span>
+              <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align={isRtl ? 'start' : 'end'} className="min-w-[220px]">
+            <DropdownMenuItem disabled className="text-[11px] font-semibold opacity-80">
+              תצוגה כמנהל
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="text-xs cursor-pointer"
+              onClick={() => {
+                setViewAsEmail(RAVID_MANAGER_EMAIL);
+                const oid = profile?.org_id?.trim() || null;
+                if (oid) setActiveOrgId(oid);
+              }}
+            >
+              <div className="flex flex-col">
+                <span className="font-medium truncate">רביד (מנהל צי)</span>
+                <span className="text-[11px] text-muted-foreground truncate">{RAVID_MANAGER_EMAIL}</span>
+              </div>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      );
+    }
 
     // אם אין ארגונים משויכים בכלל, נסתיר רק למשתמשים רגילים – אבל לא למנהל הראשי ולא לרביד
     if (memberOrganizations.length === 0 && !isMainAdmin && !isRavid) return null;
@@ -446,43 +560,13 @@ export function AppLayout({ children }: AppLayoutProps) {
       ? (mainFleetOrgId ? memberOrganizations.filter((org) => org.id === mainFleetOrgId) : memberOrganizations)
       : memberOrganizations;
 
-    // Team members view:
-    // - For main admin: רק רביד (sub-admin)
-    // - עבור משתמשים אחרים (כולל רביד): כל מי שנמצא באותו org חוץ מעצמם
-    let visibleMembers = teamMembers.filter(
-      (m) =>
-        m.email &&
-        m.email.toLowerCase() !== email && // לא להציג את המשתמש עצמו
-        m.email.toLowerCase() !== 'malachiroei@gmail.com' // לא להציג את רועי כ"חבר צוות" אצל רביד או אחרים
-    );
-    // Remove any member that duplicates the org-level "רביד צי רכבים"
-    visibleMembers = visibleMembers.filter((m) => (m.full_name || '').trim() !== 'רביד צי רכבים');
-
-    if (isMainAdmin) {
-      const allowedEmails = new Set(['ravidmalachi@gmail.com']);
-      visibleMembers = visibleMembers.filter(
-        (m) => m.email && allowedEmails.has(m.email.toLowerCase())
-      );
-    }
-
-    // Safety net: when logged in as Ravid and no members found, ensure Roei appears
-    if (isRavid && visibleMembers.length === 0) {
-      visibleMembers = [
-        {
-          id: 'synthetic-roeima21',
-          full_name: 'ROEIMA21',
-          email: 'roeima21@gmail.com',
-          org_id: profile?.org_id ?? null,
-          source: 'profile',
-        },
-      ] as any;
-    }
-    console.log('DEBUG SWITCHER:', {
+    const visibleMembers = augmentSwitcherMembers(teamMembers, {
+      selfEmail: email,
+      isMainAdmin,
+      isRavid,
       activeOrgId,
-      teamMembersCount: teamMembers.length,
-      visibleCount: visibleMembers.length,
-      emails: teamMembers.map((m) => m.email),
-      orgItems: orgItems.map((o) => o.name),
+      mainFleetOrgId,
+      profileOrgId: profile?.org_id,
     });
     return (
       <DropdownMenu>
@@ -503,7 +587,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         <DropdownMenuContent align={isRtl ? 'start' : 'end'} className="min-w-[220px]">
           {viewAsEmail && (
             <DropdownMenuItem
-              onClick={() => setViewAsEmail(null)}
+              onClick={() => exitViewAsToDashboard()}
               className="text-xs font-semibold text-emerald-200 bg-emerald-950/60 cursor-pointer mb-1"
             >
               חזרה לתצוגת מנהל
@@ -513,7 +597,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             value={activeOrgId ?? ''}
             onValueChange={(id) => {
               if (!id) return;
-              if (isMainAdmin && id === '857f2311-2ec5-41d3-8e32-dacd450a9a77') {
+              if (isMainAdmin && id === FALLBACK_MAIN_FLEET_ORG_ID) {
                 // Manual override: reset to admin view and main admin org
                 setViewAsEmail(null);
                 if (mainFleetOrgId) setActiveOrgId(mainFleetOrgId);
@@ -684,14 +768,7 @@ export function AppLayout({ children }: AppLayoutProps) {
           'h-7 gap-1 px-2 text-[11px] font-semibold border-emerald-400/60 bg-emerald-500/20 text-emerald-50 hover:bg-emerald-500/30 hover:text-white shrink-0',
           className
         )}
-        onClick={() => {
-          if (isMainAdmin) {
-            setViewAsEmail(null);
-            if (mainFleetOrgId) setActiveOrgId(mainFleetOrgId);
-          } else {
-            setViewAsEmail(null);
-          }
-        }}
+        onClick={() => exitViewAsToDashboard()}
       >
         חזרה לתצוגת מנהל
       </Button>
@@ -738,12 +815,16 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   const handleGoHomeNav = (e: MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
+    if (viewAsEmail) {
+      exitViewAsToDashboard();
+      return;
+    }
     try {
       window.dispatchEvent(new CustomEvent('app:go-home'));
     } catch {
       /* ignore */
     }
-    window.location.assign(`${window.location.origin}/`);
+    void navigate('/');
   };
 
   /** מובייל: שורה ייעודית — בית עדין, ניהול בזהב */
@@ -945,18 +1026,28 @@ export function AppLayout({ children }: AppLayoutProps) {
     <div
       className={cn(
         'flex min-h-[100dvh] flex-col overflow-x-hidden bg-[#020617]',
-        showStagingWarningBar && 'pt-6'
+        showFleetEnvironmentBanner && 'pt-6'
       )}
       dir={isRtl ? 'rtl' : 'ltr'}
     >
-      {showStagingWarningBar ? (
+      {fleetEnvBannerKind === 'staging' ? (
         <div
           className="fixed left-0 right-0 top-0 z-[999] flex h-6 min-h-[1.5rem] items-center justify-center border-b border-red-500/45 bg-red-600 px-2 py-0.5 text-center"
           role="banner"
-          aria-label="גרסת בדיקה"
+          aria-label="סביבת טסט"
         >
           <span className="text-[10px] font-semibold leading-tight tracking-wide text-white sm:text-[11px]">
-            גרסת בדיקה / Test Version
+            סביבת טסט · גרסת בדיקה · Staging
+          </span>
+        </div>
+      ) : fleetEnvBannerKind === 'production-local' ? (
+        <div
+          className="fixed left-0 right-0 top-0 z-[999] flex h-6 min-h-[1.5rem] items-center justify-center border-b border-emerald-600/50 bg-emerald-900/95 px-2 py-0.5 text-center"
+          role="banner"
+          aria-label="גרסת עבודה"
+        >
+          <span className="text-[10px] font-semibold leading-tight tracking-wide text-emerald-50 sm:text-[11px]">
+            גרסת עבודה · נתוני ייצור · Production DB
           </span>
         </div>
       ) : null}
@@ -973,15 +1064,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               size="sm"
               variant="outline"
               className="h-7 px-3 text-xs font-semibold border-black/40 bg-black/80 text-amber-50 hover:bg-black/90"
-              onClick={() => {
-                // Manual override: reset impersonation and org to admin defaults for main admin
-                if (isMainAdmin) {
-                  setViewAsEmail(null);
-                  if (mainFleetOrgId) setActiveOrgId(mainFleetOrgId);
-                } else {
-                  setViewAsEmail(null);
-                }
-              }}
+              onClick={() => exitViewAsToDashboard()}
             >
               חזור לתצוגת מנהל
             </Button>
