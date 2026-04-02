@@ -13,15 +13,29 @@ export function useOrganization(orgId?: string | null) {
     queryFn: async (): Promise<Organization | null> => {
       if (!orgId) return null;
 
-      // עמודות בסיס בלבד — בטסט לעיתים אין migration ל-release_snapshot_ack_version
-      const { data, error } = await supabase
+      // `email` — בפרו ייתכן עמודה חסרה → PostgREST 400; נופלים ל־id,name בלבד
+      const full = await supabase
         .from('organizations')
         .select('id, name, email')
         .eq('id', orgId)
         .maybeSingle();
 
-      if (error) throw error;
-      return (data ?? null) as Organization | null;
+      if (!full.error) {
+        return (full.data ?? null) as Organization | null;
+      }
+
+      const msg = String((full.error as { message?: string }).message ?? '');
+      const code = String((full.error as { code?: string }).code ?? '');
+      const missingColumn =
+        code === '42703' ||
+        /column|does not exist|schema cache|Could not find the/i.test(msg);
+
+      if (!missingColumn) throw full.error;
+
+      const slim = await supabase.from('organizations').select('id, name').eq('id', orgId).maybeSingle();
+      if (slim.error) throw slim.error;
+      const row = slim.data as { id: string; name: string } | null;
+      return row ? { ...row, email: null } : null;
     },
   });
 }

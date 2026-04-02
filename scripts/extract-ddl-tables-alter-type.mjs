@@ -1,0 +1,205 @@
+/**
+ * Extract CREATE TYPE (incl. DO $smart$ wrappers), CREATE TABLE, ALTER TABLE
+ * from supabase/full_schema_smart.sql in file order.
+ * Output: supabase/full_schema_tables_alter_type.sql
+ */
+import { readFileSync, writeFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const root = resolve(__dirname, '..');
+const srcPath = resolve(root, 'supabase/full_schema_smart.sql');
+const outPath = resolve(root, 'supabase/full_schema_tables_alter_type.sql');
+
+const sql = readFileSync(srcPath, 'utf8');
+
+/** Scan from i; return index after comment/whitespace */
+function skipWsComments(str, i) {
+  const n = str.length;
+  while (i < n) {
+    const c = str[i];
+    if (c === ' ' || c === '\t' || c === '\n' || c === '\r') {
+      i++;
+      continue;
+    }
+    if (str.slice(i, i + 2) === '--') {
+      while (i < n && str[i] !== '\n') i++;
+      continue;
+    }
+    if (str.slice(i, i + 2) === '/*') {
+      i += 2;
+      while (i < n - 1 && str.slice(i, i + 2) !== '*/') i++;
+      i = Math.min(n, i + 2);
+      continue;
+    }
+    break;
+  }
+  return i;
+}
+
+/** Read until semicolon at depth 0 outside quotes / dollar quotes */
+function readStatementToSemicolon(str, start) {
+  const n = str.length;
+  let i = start;
+  let depth = 0;
+  let inSingle = false;
+  let inDouble = false;
+  let dollarTag = null; // null | '' for $$ | 'tag' for $tag$
+
+  while (i < n) {
+    const c = str[i];
+
+    if (dollarTag !== null) {
+      if (dollarTag === '') {
+        if (c === '$' && str[i + 1] === '$') {
+          dollarTag = null;
+          i += 2;
+          continue;
+        }
+      } else {
+        const close = `$${dollarTag}$`;
+        if (str.slice(i, i + close.length) === close) {
+          i += close.length;
+          dollarTag = null;
+          continue;
+        }
+      }
+      i++;
+      continue;
+    }
+
+    if (inSingle) {
+      if (c === "'" && str[i + 1] === "'") {
+        i += 2;
+        continue;
+      }
+      if (c === '\\' && i + 1 < n) {
+        i += 2;
+        continue;
+      }
+      if (c === "'") inSingle = false;
+      i++;
+      continue;
+    }
+    if (inDouble) {
+      if (c === '"' && str[i + 1] === '"') {
+        i += 2;
+        continue;
+      }
+      if (c === '"') inDouble = false;
+      i++;
+      continue;
+    }
+
+    if (c === "'") {
+      inSingle = true;
+      i++;
+      continue;
+    }
+    if (c === '"') {
+      inDouble = true;
+      i++;
+      continue;
+    }
+
+    if (c === '$') {
+      const rest = str.slice(i + 1);
+      const m = rest.match(/^([A-Za-z0-9_]*)\$/);
+      if (m) {
+        dollarTag = m[1] ?? '';
+        i += 1 + m[0].length;
+        continue;
+      }
+    }
+
+    if (c === '(') depth++;
+    if (c === ')') depth = Math.max(0, depth - 1);
+
+    if (c === ';' && depth === 0) {
+      return { end: i + 1, text: str.slice(start, i + 1).trim() };
+    }
+    i++;
+  }
+  return null;
+}
+
+function startsWithIgnoreCase(str, i, prefix) {
+  return str.slice(i, i + prefix.length).toLowerCase() === prefix.toLowerCase();
+}
+
+const out = [];
+let i = 0;
+const n = sql.length;
+
+while (i < n) {
+  i = skipWsComments(sql, i);
+  if (i >= n) break;
+
+  // DO $smart$ ... END $smart$;  (CREATE TYPE wrappers)
+  if (startsWithIgnoreCase(sql, i, 'DO $smart$')) {
+    const endMarker = 'END $smart$;';
+    const j = sql.indexOf(endMarker, i);
+    if (j === -1) break;
+    const block = sql.slice(i, j + endMarker.length).trim();
+    out.push(block);
+    i = j + endMarker.length;
+    continue;
+  }
+
+  // CREATE TABLE IF NOT EXISTS
+  if (startsWithIgnoreCase(sql, i, 'CREATE TABLE IF NOT EXISTS')) {
+    const stmt = readStatementToSemicolon(sql, i);
+    if (!stmt) break;
+    out.push(stmt.text);
+    i = stmt.end;
+    continue;
+  }
+
+  // CREATE TABLE (without IF NOT EXISTS — rare in smart file)
+  if (
+    startsWithIgnoreCase(sql, i, 'CREATE TABLE ') &&
+    !startsWithIgnoreCase(sql, i, 'CREATE TABLE IF NOT EXISTS')
+  ) {
+    const stmt = readStatementToSemicolon(sql, i);
+    if (!stmt) break;
+    out.push(stmt.text);
+    i = stmt.end;
+    continue;
+  }
+
+  // CREATE TYPE as standalone (not inside DO — rare)
+  if (startsWithIgnoreCase(sql, i, 'CREATE TYPE ')) {
+    const stmt = readStatementToSemicolon(sql, i);
+    if (!stmt) break;
+    out.push(stmt.text);
+    i = stmt.end;
+    continue;
+  }
+
+  // ALTER TABLE
+  if (startsWithIgnoreCase(sql, i, 'ALTER TABLE ')) {
+    const stmt = readStatementToSemicolon(sql, i);
+    if (!stmt) break;
+    out.push(stmt.text);
+    i = stmt.end;
+    continue;
+  }
+
+  // Any other SQL statement: skip to next semicolon (top-level), stay ordered
+  const skipped = readStatementToSemicolon(sql, i);
+  if (skipped) {
+    i = skipped.end;
+    continue;
+  }
+  i++;
+}
+
+const header = `-- Extracted from full_schema_smart.sql
+-- Statements: DO $smart$ blocks (CREATE TYPE), CREATE TABLE, ALTER TABLE — original file order only.
+-- Generated by scripts/extract-ddl-tables-alter-type.mjs
+
+`;
+
+writeFileSync(outPath, header + out.join('\n\n') + '\n', 'utf8');
+console.log('Wrote', out.length, 'statements ->', outPath);

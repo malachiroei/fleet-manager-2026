@@ -188,6 +188,9 @@ export function createUiSyncBundle(uiVersion: string): UiSyncBundle {
   };
 }
 
+/** מפתחות רשומים — ברירת מחדל «דלוק» בלקוח כשאין שורה ב-feature_flags (פרו חדש / טבלה ריקה). */
+export const FEATURE_FLAG_REGISTRY_KEYS: readonly string[] = FEATURE_FLAG_REGISTRY.map((e) => e.key);
+
 const registryByKey = new Map(FEATURE_FLAG_REGISTRY.map((e) => [e.key, e]));
 
 export function registryEntryForKey(key: string): FeatureFlagRegistryEntry | undefined {

@@ -2,20 +2,21 @@ import { useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { isFeatureEnabled, useFeatureFlags } from '@/hooks/useFeatureFlags';
 import type { PermissionKey } from '@/lib/permissions';
+import { isFleetBootstrapOwnerEmail, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
 
 /**
  * Unified permissions gate for UI sections.
  * - Route-level role/permission gate: useAuth().hasPermission
  * - Feature-flag gate (user overrides + global defaults): useFeatureFlags()
  *
- * Important: when feature flags are unresolved, we default to HIDE (false)
- * to avoid showing disabled UI briefly in view-as mode.
+ * When `featureFlags` is still undefined (edge case), allow UI — permission gates remain.
+ * While loading, `useFeatureFlags` supplies placeholderData so flags are usually defined.
  */
 export function usePermissions() {
   const { user, profile, hasPermission } = useAuth();
   const { data: featureFlags } = useFeatureFlags();
-  const email = (profile?.email ?? user?.email ?? '').trim().toLowerCase();
-  const isSuperAdmin = email === 'malachiroei@gmail.com';
+  const email = resolveSessionEmail(profile, user);
+  const isSuperAdmin = isFleetBootstrapOwnerEmail(email);
 
   const canAccessPermission = useCallback(
     (permission?: PermissionKey) => {
@@ -31,7 +32,7 @@ export function usePermissions() {
       if (featureKey === 'qa_team') {
         return isSuperAdmin || hasPermission('manage_team');
       }
-      if (!featureFlags) return false;
+      if (!featureFlags) return true;
       return isFeatureEnabled(featureFlags, featureKey);
     },
     [featureFlags, hasPermission, isSuperAdmin],

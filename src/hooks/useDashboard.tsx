@@ -3,6 +3,7 @@ import type { DashboardStats, ComplianceStatus } from '@/types/fleet';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
+import { isFleetBootstrapOwnerEmail, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
 
 interface ComplianceItem {
   id: string;
@@ -14,7 +15,7 @@ interface ComplianceItem {
 }
 
 export function useDashboardStats() {
-  const { roles: loggedInRoles, user } = useAuth();
+  const { roles: loggedInRoles, user, profile } = useAuth();
   const {
     effectiveOrgId,
     effectiveUserId,
@@ -31,6 +32,8 @@ export function useDashboardStats() {
     .sort()
     .join('|');
 
+  const sessionEmailSig = resolveSessionEmail(profile, user);
+
   return useQuery({
     queryKey: [
       'dashboard-stats',
@@ -42,14 +45,36 @@ export function useDashboardStats() {
       loggedInRolesSig,
       applyFleetManagerSlice,
       fleetManagerListUserId,
+      sessionEmailSig,
     ],
-    enabled: fleetListReady && effectiveUserId != null && effectiveOrgId != null,
+    enabled: fleetListReady && effectiveUserId != null,
     queryFn: async (): Promise<DashboardStats> => {
-      if (!effectiveOrgId || !effectiveUserId) {
+      if (!effectiveUserId) {
         return { totalVehicles: 0, totalDrivers: 0, alertsCount: 0, warningCount: 0, expiredCount: 0 };
       }
-      const normalizedEmail = (user?.email ?? '').trim().toLowerCase();
+
+      const normalizedEmail = resolveSessionEmail(profile, user);
       const isMainAdmin = normalizedEmail === 'malachiroei@gmail.com';
+
+      /** בלי org (פרו/RLS) — רק בעלי bootstrap: ספירה גלובלית */
+      if (!effectiveOrgId) {
+        if (!isFleetBootstrapOwnerEmail(normalizedEmail)) {
+          return { totalVehicles: 0, totalDrivers: 0, alertsCount: 0, warningCount: 0, expiredCount: 0 };
+        }
+        const [gv, gd] = await Promise.all([
+          supabase.from('vehicles').select('id'),
+          supabase.from('drivers').select('id'),
+        ]);
+        if (gv.error) throw gv.error;
+        if (gd.error) throw gd.error;
+        return {
+          totalVehicles: (gv.data ?? []).length,
+          totalDrivers: (gd.data ?? []).length,
+          alertsCount: 0,
+          warningCount: 0,
+          expiredCount: 0,
+        };
+      }
       console.log(
         '[Debug Scope] applyFleetManagerSlice:',
         applyFleetManagerSlice,

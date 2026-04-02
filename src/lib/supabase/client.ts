@@ -38,7 +38,11 @@ const {
 } = resolveSupabaseViteEnv();
 
 const skipRefGuard = trimEnv(import.meta.env.NEXT_PUBLIC_SUPABASE_SKIP_PROJECT_REF_CHECK) === '1';
-const expectedProjectRef = trimEnv(import.meta.env.NEXT_PUBLIC_SUPABASE_PROJECT_REF);
+const refFromUrl = extractProjectRefFromSupabaseUrl(SUPABASE_URL) ?? '';
+const expectedProjectRef =
+  trimEnv(import.meta.env.NEXT_PUBLIC_SUPABASE_PROJECT_REF) ||
+  trimEnv(import.meta.env.VITE_SUPABASE_PROJECT_REF) ||
+  refFromUrl;
 
 const envGuard = evaluateSupabaseEnvironmentGuard(SUPABASE_URL, expectedProjectRef, skipRefGuard, {
   urlEnvSource,
@@ -84,19 +88,30 @@ if (typeof window !== 'undefined' && !skipRefGuard && envGuard.ok) {
   }
 }
 
-if (!envGuard.ok) {
+if (envGuard.ok === false) {
   // eslint-disable-next-line no-console
   console.error(envGuard.message);
 }
 
 type SupabaseClientType = ReturnType<typeof createClient<Database>>;
 
+const noopSubscription = { unsubscribe: () => {} };
+
 const createBlockedSupabaseClient = (message: string): SupabaseClientType => {
   const blockedError = new Error(message);
+  const authStub = {
+    onAuthStateChange: () => ({ data: { subscription: noopSubscription } }),
+    getSession: async () => ({ data: { session: null }, error: null }),
+    getUser: async () => ({ data: { user: null }, error: blockedError }),
+    signOut: async () => ({ error: blockedError }),
+    signInWithPassword: async () => ({ data: null, error: blockedError }),
+  };
   return new Proxy(
-    {},
+    { auth: authStub },
     {
-      get() {
+      get(target, prop: string | symbol) {
+        if (prop === 'auth') return authStub;
+        if (prop === 'then' || prop === 'catch' || prop === 'finally') return undefined;
         return () => {
           throw blockedError;
         };

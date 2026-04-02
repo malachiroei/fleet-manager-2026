@@ -139,7 +139,10 @@ export function useTeamMembersForSwitcher(orgId: string | null | undefined) {
       }
       const { data, error } = await q;
 
-      if (error) throw error;
+      if (error) {
+        console.warn('[useTeamMembersForSwitcher] profiles query failed — empty list', error);
+        return [];
+      }
 
       const profiles = (data ?? []) as { id: string; full_name: string | null; email: string | null; org_id: string | null }[];
 

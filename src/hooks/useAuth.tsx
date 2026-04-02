@@ -3,6 +3,7 @@ import { User, Session, type AuthChangeEvent } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import type { AppRole, Profile } from '@/types/fleet';
 import { hasPermission as checkPermission, type PermissionKey } from '@/lib/permissions';
+import { isFleetBootstrapOwnerEmail, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
 import { clearFleetProUpdateModalSuppressFlag } from '@/lib/pwaUpdateModalBridge';
 
 const ACTIVE_ORG_STORAGE_KEY = 'fleet-manager-active-org';
@@ -492,22 +493,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return lower === 'driver' || lower === 'employee' || lower === 'viewer';
   });
 
+  /** כש־user_roles ריק בפרו (RLS / העתקה), עדיין לא לנעול UI למנהל מערכת או בעלים ידוע. */
+  const sessionEmailResolved = resolveSessionEmail(profile, user);
+  const isAdminEffective =
+    isAdmin || profile?.is_system_admin === true || isFleetBootstrapOwnerEmail(sessionEmailResolved);
+  const isManagerEffective = isManager || isAdminEffective;
+
   const hasPermission = useCallback(
     (permission: PermissionKey) => {
       // Primary: use profile permissions (may be partially populated).
-      const allowed = checkPermission(profile, permission, { isAdmin, isManager });
+      const allowed = checkPermission(profile, permission, {
+        isAdmin: isAdminEffective,
+        isManager: isManagerEffective,
+      });
       if (allowed) return true;
 
       // Fallback for common driver scenario: allow "handover" when role is driver/viewer/employee
       // but the profile.permissions JSON doesn't include the key.
-      if (!isAdmin && !isManager && permission === 'handover') {
+      if (!isAdminEffective && !isManagerEffective && permission === 'handover') {
         const roleLowerSet = roles.map((r) => roleLower(r));
         if (roleLowerSet.some((r) => r === 'driver' || r === 'employee' || r === 'viewer')) return true;
       }
 
       return false;
     },
-    [profile, isAdmin, isManager, roles]
+    [profile, isAdminEffective, isManagerEffective, roles, sessionEmailResolved]
   );
 
   return (

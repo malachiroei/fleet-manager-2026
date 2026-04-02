@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useViewAs } from '@/contexts/ViewAsContext';
+import { isFleetBootstrapOwnerEmail, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
+import { FALLBACK_MAIN_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 
 /**
  * הקשר לרשימות צי: org (כולל View As), נהג בלבד כשמוחלפים משתמש עם רק תפקיד נהג,
@@ -14,13 +16,27 @@ function rolesIncludeFleetElevated(roles: string[]): boolean {
 }
 
 export function useImpersonationFleetScope() {
-  const { user, activeOrgId, roles: loggedInRoles } = useAuth();
+  const { user, profile, activeOrgId, roles: loggedInRoles } = useAuth();
+  const sessionEmail = resolveSessionEmail(profile, user);
   const { viewAsEmail, viewAsProfile } = useViewAs();
 
   const impersonatedUserId = (viewAsProfile?.id ?? viewAsProfile?.user_id ?? null) as string | null;
-  const isImpersonating = Boolean(viewAsEmail && impersonatedUserId);
-  const effectiveOrgId = (viewAsProfile?.org_id ?? activeOrgId ?? null) as string | null;
+  /** פרופיל נטען — טעינת תפקידי נהג/מנהל לפי המשתמש המוחלף */
+  const isImpersonating = Boolean(viewAsEmail?.trim() && impersonatedUserId);
+  /** באנר תצוגה כ… פעיל (גם אם profiles עדיין לא נפתר בגלל RLS) */
+  const viewAsBannerActive = Boolean(viewAsEmail?.trim());
+
+  const orgFromContext = (viewAsProfile?.org_id ?? activeOrgId ?? null) as string | null;
+  /** בלי org בפרופיל/מחליף — בעלי bootstrap נופלים לצי הראשי הידוע (אותו UUID כמו במחליף) */
+  const effectiveOrgId =
+    orgFromContext ??
+    (isFleetBootstrapOwnerEmail(sessionEmail) ? FALLBACK_MAIN_FLEET_ORG_ID : null);
+
   const effectiveUserId = (impersonatedUserId ?? user?.id ?? null) as string | null;
+
+  /** בעלי צי ידועים: בלי impersonation מלא (או בלי באנר) — אפשר מסלול בלי org ב-query enable */
+  const bootstrapOwnerMayLackOrg =
+    isFleetBootstrapOwnerEmail(sessionEmail) && !isImpersonating && !viewAsBannerActive;
 
   const rolesQuery = useQuery({
     queryKey: ['view-as-target-roles', effectiveUserId, isImpersonating],
@@ -67,7 +83,7 @@ export function useImpersonationFleetScope() {
   const driverScopePending = Boolean(isDriverContextOnly && driverRowQuery.isLoading);
 
   const fleetListReady =
-    effectiveOrgId != null &&
+    (effectiveOrgId != null || bootstrapOwnerMayLackOrg) &&
     !scopePending &&
     (!isImpersonating || rolesQuery.isFetched) &&
     (!isDriverContextOnly || !driverScopePending);
