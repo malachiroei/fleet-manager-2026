@@ -1,8 +1,6 @@
 -- =============================================================================
--- דיווח קילומטראז׳ בפרו: RPC אחד (SECURITY DEFINER) = INSERT mileage_logs +
--- UPDATE vehicles.current_odometer — עוקף כשלי RLS כשהמדיניות לא מסונכרנת.
--- שמות פרמטרים: vehicle_id, odometer_value, photo_url (התאמה ל-PostgREST / Supabase RPC).
--- #variable_conflict: פרמטרים בשם זהה לעמודות (vehicle_id וכו') נפתרים למשתני פונקציה.
+-- פרודקשן: PostgREST מחפש submit_mileage_report(vehicle_id, odometer_value, photo_url).
+-- מחליף גרסאות קודמות עם p_vehicle_id / p_odometer_value ומרענן מטמון API.
 -- =============================================================================
 
 CREATE OR REPLACE FUNCTION public.submit_mileage_report(
@@ -126,10 +124,7 @@ EXCEPTION
 END;
 $$;
 
-COMMENT ON FUNCTION public.submit_mileage_report(uuid, numeric, text) IS
-  'Authenticated mileage report: log row + bump vehicle odometer (bypasses RLS on tables).';
-
 REVOKE ALL ON FUNCTION public.submit_mileage_report(uuid, numeric, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.submit_mileage_report(uuid, numeric, text) TO authenticated;
 
-DROP TRIGGER IF EXISTS trg_mileage_logs_notify ON public.mileage_logs;
+NOTIFY pgrst, 'reload schema';

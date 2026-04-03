@@ -1,13 +1,11 @@
 -- =============================================================================
--- Fix: submit_mileage_report referenced user_may_cross_org_fleet_read() which
--- is absent when migration 20260402180000 was never applied on production.
--- Replaces RPC with self-contained platform-owner email check (same rule as 02180000).
--- Safe to run even if 20260406100000 was already applied with the old body.
+-- כמו 20260406100000: submit_mileage_report ללא תלות ב-user_may_cross_org_fleet_read;
+-- גוף מעודכן עם שמות פרמטרים vehicle_id, odometer_value, photo_url + use_variable.
 -- =============================================================================
 
 CREATE OR REPLACE FUNCTION public.submit_mileage_report(
-  p_vehicle_id uuid,
-  p_odometer_value numeric,
+  vehicle_id uuid,
+  odometer_value numeric,
   photo_url text
 )
 RETURNS jsonb
@@ -15,6 +13,7 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
+#variable_conflict use_variable
 DECLARE
   uid uuid := auth.uid();
   v_org_id uuid;
@@ -27,7 +26,7 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'error', 'not_authenticated');
   END IF;
 
-  IF p_vehicle_id IS NULL OR p_odometer_value IS NULL OR p_odometer_value <= 0 THEN
+  IF vehicle_id IS NULL OR odometer_value IS NULL OR odometer_value <= 0 THEN
     RETURN jsonb_build_object('ok', false, 'error', 'invalid_payload');
   END IF;
 
@@ -38,7 +37,7 @@ BEGIN
   SELECT v.org_id, v.assigned_driver_id
   INTO v_org_id, v_assign
   FROM public.vehicles v
-  WHERE v.id = p_vehicle_id;
+  WHERE v.id = vehicle_id;
 
   IF NOT FOUND THEN
     RETURN jsonb_build_object('ok', false, 'error', 'vehicle_not_found');
@@ -69,7 +68,7 @@ BEGIN
       SELECT 1
       FROM public.driver_vehicle_assignments a
       INNER JOIN public.drivers d ON d.id = a.driver_id
-      WHERE a.vehicle_id = p_vehicle_id
+      WHERE a.vehicle_id = vehicle_id
         AND a.unassigned_at IS NULL
         AND d.user_id = uid
         AND (
@@ -105,18 +104,18 @@ BEGIN
   END IF;
 
   INSERT INTO public.mileage_logs (vehicle_id, odometer_value, photo_url, user_id)
-  VALUES (p_vehicle_id, p_odometer_value, trim(photo_url), uid)
+  VALUES (vehicle_id, odometer_value, trim(photo_url), uid)
   RETURNING id INTO new_log_id;
 
   UPDATE public.vehicles v
   SET
-    current_odometer = GREATEST(COALESCE(v.current_odometer, 0), ceiling(p_odometer_value)::integer),
+    current_odometer = GREATEST(COALESCE(v.current_odometer, 0), ceiling(odometer_value)::integer),
     last_odometer_date = CASE
-      WHEN ceiling(p_odometer_value)::integer >= COALESCE(v.current_odometer, 0) THEN CURRENT_DATE
+      WHEN ceiling(odometer_value)::integer >= COALESCE(v.current_odometer, 0) THEN CURRENT_DATE
       ELSE v.last_odometer_date
     END,
     updated_at = now()
-  WHERE v.id = p_vehicle_id;
+  WHERE v.id = vehicle_id;
 
   RETURN jsonb_build_object('ok', true, 'log_id', new_log_id);
 EXCEPTION
