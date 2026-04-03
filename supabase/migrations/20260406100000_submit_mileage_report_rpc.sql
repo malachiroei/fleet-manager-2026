@@ -7,7 +7,7 @@
 CREATE OR REPLACE FUNCTION public.submit_mileage_report(
   p_vehicle_id uuid,
   p_odometer_value numeric,
-  p_photo_url text
+  photo_url text
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -105,7 +105,7 @@ BEGIN
   END IF;
 
   INSERT INTO public.mileage_logs (vehicle_id, odometer_value, photo_url, user_id)
-  VALUES (p_vehicle_id, p_odometer_value, trim(p_photo_url), uid)
+  VALUES (p_vehicle_id, p_odometer_value, trim(photo_url), uid)
   RETURNING id INTO new_log_id;
 
   UPDATE public.vehicles v

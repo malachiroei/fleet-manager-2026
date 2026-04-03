@@ -262,7 +262,7 @@ export default function ReportMileagePage() {
       const { data: rpcRaw, error: rpcTransportError } = await (supabase as any).rpc('submit_mileage_report', {
         p_vehicle_id: selectedVehicle.id,
         p_odometer_value: odometerValue,
-        p_photo_url: photoUrl,
+        photo_url: photoUrl,
       });
 
       if (rpcTransportError) {
