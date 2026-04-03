@@ -71,6 +71,15 @@ function logMileageLogsInsertError(insertError: {
   });
 }
 
+/** Prod drift: old RPC/trigger used column `odometer`; table column is `odometer_value`. */
+function describeMileageSchemaMismatch(raw: string | undefined): string | null {
+  const t = (raw ?? '').toLowerCase();
+  if (t.includes('odometer') && t.includes('does not exist') && t.includes('mileage_logs')) {
+    return 'במסד הפרו הפונקציה submit_mileage_report (או טריגר) מפנה לעמודה odometer — בטבלה השם הנכון הוא odometer_value. הריצו את המיגרציה האחרונה (20260408100000) ב-Supabase.';
+  }
+  return null;
+}
+
 export default function ReportMileagePage() {
   const navigate = useNavigate();
   const { user, profile, loading, activeOrgId } = useAuth();
@@ -272,9 +281,11 @@ export default function ReportMileagePage() {
           details: (rpcTransportError as any).details,
           hint: (rpcTransportError as any).hint,
         });
+        const schemaHint = describeMileageSchemaMismatch(rpcTransportError.message);
         toast({
           title: 'שגיאה בשמירת הדיווח (מסד נתונים)',
           description:
+            schemaHint ||
             rpcTransportError.message ||
             'ודאו שמיגרציית submit_mileage_report הורצה בפרויקט Supabase (20260406100000).',
           variant: 'destructive',
@@ -286,14 +297,16 @@ export default function ReportMileagePage() {
       if (!rpcResult?.ok) {
         const errKey = rpcResult?.error ?? 'unknown';
         console.error('[ReportMileagePage] submit_mileage_report rejected', rpcResult);
+        const fallbackDetail =
+          errKey === 'vehicle_forbidden'
+            ? 'אין הרשאה לרכב זה — בדקו org_id / שיוך נהג.'
+            : errKey === 'no_report_permission'
+              ? 'אין הרשאת דיווח קילומטראז׳ בפרופיל.'
+              : `${errKey}${rpcResult?.detail ? ` — ${rpcResult.detail}` : ''}`;
+        const schemaHint = describeMileageSchemaMismatch(rpcResult?.detail) ?? describeMileageSchemaMismatch(fallbackDetail);
         toast({
           title: 'שגיאה בשמירת הדיווח (מסד נתונים)',
-          description:
-            errKey === 'vehicle_forbidden'
-              ? 'אין הרשאה לרכב זה — בדקו org_id / שיוך נהג.'
-              : errKey === 'no_report_permission'
-                ? 'אין הרשאת דיווח קילומטראז׳ בפרופיל.'
-                : `${errKey}${rpcResult?.detail ? ` — ${rpcResult.detail}` : ''}`,
+          description: schemaHint || fallbackDetail,
           variant: 'destructive',
         });
         return;
