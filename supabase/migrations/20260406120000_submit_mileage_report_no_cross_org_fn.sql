@@ -1,7 +1,8 @@
 -- =============================================================================
--- דיווח קילומטראז׳ בפרו: RPC אחד (SECURITY DEFINER) = INSERT mileage_logs +
--- UPDATE vehicles.current_odometer — עוקף כשלי RLS כשהמדיניות לא מסונכרנת.
--- בנוסף: מסיר טריגר http() ישן שלא עובד בלי הרחבה + הגדרות app.settings.
+-- Fix: submit_mileage_report referenced user_may_cross_org_fleet_read() which
+-- is absent when migration 20260402180000 was never applied on production.
+-- Replaces RPC with self-contained platform-owner email check (same rule as 02180000).
+-- Safe to run even if 20260406100000 was already applied with the old body.
 -- =============================================================================
 
 CREATE OR REPLACE FUNCTION public.submit_mileage_report(
@@ -43,7 +44,6 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'error', 'vehicle_not_found');
   END IF;
 
-  -- Inline platform-owner check (do not call user_may_cross_org_fleet_read — may be missing if 20260402180000 not applied on prod).
   may_vehicle :=
     EXISTS (
       SELECT 1
@@ -125,10 +125,5 @@ EXCEPTION
 END;
 $$;
 
-COMMENT ON FUNCTION public.submit_mileage_report(uuid, numeric, text) IS
-  'Authenticated mileage report: log row + bump vehicle odometer (bypasses RLS on tables).';
-
 REVOKE ALL ON FUNCTION public.submit_mileage_report(uuid, numeric, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.submit_mileage_report(uuid, numeric, text) TO authenticated;
-
-DROP TRIGGER IF EXISTS trg_mileage_logs_notify ON public.mileage_logs;
