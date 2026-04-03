@@ -1,8 +1,9 @@
 /**
  * סנכרון נתונים: Staging → Production (Service Role).
  *
- * כולל: organizations, profiles (לפי אימייל), user_roles, org_members, drivers, vehicles,
- * תחזוקה, driver_documents, ui_customization, ui_settings, org_documents, feature_flags,
+ * כולל: organizations (כל השורות), profiles (לפי אימייל), user_roles, org_members, drivers, vehicles,
+ * תחזוקה, driver_documents, ui_customization, ui_settings (לכל הארגונים), organization_settings,
+ * system_settings (מניפסט / כפתורים גלובליים), org_documents, feature_flags,
  * user_feature_overrides, vehicle_handovers, driver_vehicle_assignments — והעתקת קבצי Storage.
  *
  * משתני סביבה (חובה):
@@ -112,6 +113,29 @@ function rewriteUrlsRow(row: Record<string, unknown>): Record<string, unknown> {
   return out;
 }
 
+/** החלפת hostname סטייג׳ינג→פרו בכל מחרוזת (jsonb / מניפסט / הגדרות). */
+function rewriteDeepUrls(value: unknown): unknown {
+  if (typeof value === 'string') {
+    return rewriteStorageUrlsInValue(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(rewriteDeepUrls);
+  }
+  if (value && typeof value === 'object') {
+    const o = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(o)) {
+      out[k] = rewriteDeepUrls(v);
+    }
+    return out;
+  }
+  return value;
+}
+
+function rewriteRowDeepHosts(row: Record<string, unknown>): Record<string, unknown> {
+  return rewriteDeepUrls(row) as Record<string, unknown>;
+}
+
 async function fetchAllRows(client: SupabaseClient, table: string): Promise<Record<string, unknown>[]> {
   const out: Record<string, unknown>[] = [];
   let from = 0;
@@ -201,29 +225,73 @@ function inferSourceOrgId(stagingProfiles: Record<string, unknown>[]): string | 
   return best;
 }
 
-async function syncOrganizationsFromStagingSource(
-  staging: SupabaseClient,
-  prod: SupabaseClient,
-  sourceOrgId: string | null,
-): Promise<void> {
-  if (!SYNC_TARGET_ORG_ID || !sourceOrgId) {
-    console.log('\n[organizations] דילוג — חסר SYNC_TARGET_ORG_ID או מקור ארגון בסטייג\'ינג');
-    return;
-  }
+/** כל שורות organizations (שמות, custom_labels, settings) — תואם פרו/טסט עם אותם UUID ארגון. */
+async function syncAllOrganizations(staging: SupabaseClient, prod: SupabaseClient): Promise<void> {
   if (!(await tableExists(staging, 'organizations')) || !(await tableExists(prod, 'organizations'))) {
     console.log('\n[organizations] דילוג — הטבלה לא קיימת');
     return;
   }
-  const { data: src, error: e1 } = await staging.from('organizations').select('*').eq('id', sourceOrgId).maybeSingle();
-  if (e1) throw new Error(`[organizations] staging read: ${e1.message}`);
-  if (!src) {
-    console.warn(`[organizations] לא נמצא ארגון מקור ${sourceOrgId} בסטייג'ינג`);
+  const rows = await fetchAllRows(staging, 'organizations');
+  const mapped = rows.map((r) => rewriteRowDeepHosts({ ...r }));
+  await upsertChunks(prod, 'organizations', mapped, 'id');
+  console.log(`\n[organizations] upsert מלא ${mapped.length} ארגונים (כולל תוויות/הגדרות כפתורים)`);
+}
+
+async function syncSystemSettings(staging: SupabaseClient, prod: SupabaseClient): Promise<void> {
+  if (!(await tableExists(staging, 'system_settings')) || !(await tableExists(prod, 'system_settings'))) {
+    console.log('\n[system_settings] דילוג — הטבלה לא קיימת');
     return;
   }
-  const row = { ...(src as Record<string, unknown>), id: SYNC_TARGET_ORG_ID };
-  const { error: e2 } = await prod.from('organizations').upsert(row, { onConflict: 'id' });
-  if (e2) throw new Error(`[organizations] prod upsert: ${e2.message}`);
-  console.log(`[organizations] עודכן פרו ${SYNC_TARGET_ORG_ID} מתוך סטייג'ינג ${sourceOrgId}`);
+  const rows = await fetchAllRows(staging, 'system_settings');
+  const mapped = rows.map((r) => ({
+    key: r.key,
+    value: rewriteDeepUrls(r.value),
+    updated_at: r.updated_at ?? new Date().toISOString(),
+  })) as Record<string, unknown>[];
+  await upsertChunks(prod, 'system_settings', mapped, 'key');
+  console.log(`\n[system_settings] upsert ${mapped.length} מפתחות (version_manifest, מיילים, וכו׳)`);
+}
+
+/** ui_settings לכל org_id (לא רק ארגון «הנפוף») — onConflict על org_id. */
+async function syncUiSettingsAllOrgs(staging: SupabaseClient, prod: SupabaseClient): Promise<void> {
+  if (!(await tableExists(staging, 'ui_settings')) || !(await tableExists(prod, 'ui_settings'))) {
+    console.log('\n[ui_settings] דילוג — הטבלה לא קיימת');
+    return;
+  }
+  const rows = await fetchAllRows(staging, 'ui_settings');
+  const mapped = rows.map((r) => rewriteRowDeepHosts({ ...r }));
+  for (let i = 0; i < mapped.length; i += UPSERT_CHUNK) {
+    const chunk = mapped.slice(i, i + UPSERT_CHUNK);
+    const { error } = await prod.from('ui_settings').upsert(chunk, { onConflict: 'org_id' });
+    if (error) throw new Error(`[ui_settings] upsert: ${error.message}`);
+    console.log(`  [ui_settings] upsert ${Math.min(i + chunk.length, mapped.length)}/${mapped.length}`);
+  }
+  console.log(`\n[ui_settings] סה״כ ${mapped.length} שורות (כל הארגונים)`);
+}
+
+async function syncOrganizationSettingsAll(staging: SupabaseClient, prod: SupabaseClient): Promise<void> {
+  if (
+    !(await tableExists(staging, 'organization_settings')) ||
+    !(await tableExists(prod, 'organization_settings'))
+  ) {
+    console.log('\n[organization_settings] דילוג — הטבלה לא קיימת');
+    return;
+  }
+  const rows = await fetchAllRows(staging, 'organization_settings');
+  const mapped = rows.map((r) => rewriteRowDeepHosts({ ...r }));
+  await upsertChunks(prod, 'organization_settings', mapped, 'id');
+  console.log(`\n[organization_settings] upsert ${mapped.length} שורות`);
+}
+
+async function syncOrgDocumentsAll(staging: SupabaseClient, prod: SupabaseClient): Promise<void> {
+  if (!(await tableExists(staging, 'org_documents')) || !(await tableExists(prod, 'org_documents'))) {
+    console.log('\n[org_documents] דילוג — הטבלה לא קיימת');
+    return;
+  }
+  const rows = await fetchAllRows(staging, 'org_documents');
+  const mapped = rows.map((r) => rewriteRowDeepHosts({ ...r }));
+  await upsertChunks(prod, 'org_documents', mapped, 'id');
+  console.log(`\n[org_documents] upsert מלא ${mapped.length} שורות`);
 }
 
 async function buildEmailToProdProfileId(prod: SupabaseClient): Promise<Map<string, string>> {
@@ -389,9 +457,23 @@ async function syncOrgMembers(
     console.log('  אין שורות ממופות');
     return;
   }
-  const { error } = await prod.from('org_members').upsert(mapped, { onConflict: 'user_id,org_id' });
-  if (error) throw new Error(`[org_members] upsert: ${error.message}`);
-  console.log(`  upsert ${mapped.length} שורות`);
+  const existing = await fetchAllRows(prod, 'org_members');
+  const key = (u: string, o: string) => `${u}|${o}`;
+  const existingKeys = new Set(
+    existing.map((r) => key(String(r.user_id ?? ''), String(r.org_id ?? ''))),
+  );
+  const toInsert = mapped.filter((r) => !existingKeys.has(key(String(r.user_id), String(r.org_id))));
+  if (toInsert.length === 0) {
+    console.log(`  כל ${mapped.length} החברויות כבר קיימות בפרו`);
+    return;
+  }
+  for (let i = 0; i < toInsert.length; i += UPSERT_CHUNK) {
+    const chunk = toInsert.slice(i, i + UPSERT_CHUNK);
+    const { error } = await prod.from('org_members').insert(chunk);
+    if (error) throw new Error(`[org_members] insert: ${error.message}`);
+    console.log(`  הוכנסו ${Math.min(i + chunk.length, toInsert.length)}/${toInsert.length}`);
+  }
+  console.log(`  סה״כ חברויות חדשות: ${toInsert.length} (מתוך ${mapped.length} ממופות)`);
 }
 
 async function syncGenericOrgTable(
@@ -557,7 +639,7 @@ async function main(): Promise<void> {
   const sourceOrgId = inferSourceOrgId(stagingProfiles);
   console.log(`מזוהה ארגון מקור בסטייג'ינג: ${sourceOrgId ?? '(לא נמצא)'}`);
 
-  await syncOrganizationsFromStagingSource(staging, prod, sourceOrgId);
+  await syncAllOrganizations(staging, prod);
 
   const emailToProdId = await buildEmailToProdProfileId(prod);
   const stagingIdToEmail = await buildStagingProfileIdToEmail(staging);
@@ -663,16 +745,19 @@ async function main(): Promise<void> {
   console.log('\n[5] ui_customization');
   if (await tableExists(staging, 'ui_customization') && (await tableExists(prod, 'ui_customization'))) {
     const uiRows = await fetchAllRows(staging, 'ui_customization');
-    await upsertChunks(prod, 'ui_customization', uiRows, 'key');
+    const uiForProd = uiRows.map((r) => rewriteRowDeepHosts({ ...r }));
+    await upsertChunks(prod, 'ui_customization', uiForProd, 'key');
   } else {
     console.log('  דילוג — ui_customization');
   }
 
-  await syncGenericOrgTable('ui_settings', staging, prod, 'ui_settings', 'id', sourceOrgId);
-  await syncGenericOrgTable('org_documents', staging, prod, 'org_documents', 'id', sourceOrgId);
+  await syncUiSettingsAllOrgs(staging, prod);
+  await syncOrganizationSettingsAll(staging, prod);
+  await syncOrgDocumentsAll(staging, prod);
 
   await syncFeatureFlags(staging, prod);
   await syncUserFeatureOverrides(staging, prod, stagingToProdUser);
+  await syncSystemSettings(staging, prod);
 
   if (await tableExists(staging, 'vehicle_handovers') && (await tableExists(prod, 'vehicle_handovers'))) {
     console.log('\n[vehicle_handovers]');

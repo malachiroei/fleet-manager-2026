@@ -42,6 +42,12 @@ const ROEI_DRIVER_EMAIL = 'roeima21@gmail.com';
 /** ארגון רביד בתצוגה כמשתמש — נעילה מפורשת (לא תלוי ב-profile.org_id של המנהל המחובר). */
 const VIEW_AS_RAVID_ORG_ID = '2bb0f9c3-b210-4099-b0c5-de92794d5cc9' as const;
 
+/** מובייל (רוחב מתחת ל־768px): ניווט מלא מונע תקיעות Router/WebView (במיוחד אחרי View-As) — אותו דפוס כמו תפריט המובייל לבית. */
+function shouldUseHardNavigationToHome(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia('(max-width: 767px)').matches;
+}
+
 function augmentSwitcherMembers(
   teamMembers: TeamMemberSummary[],
   opts: {
@@ -308,7 +314,8 @@ export function AppLayout({ children }: AppLayoutProps) {
   }, [profile, user, viewAsEmail, activeOrgId, mainFleetOrgId, setActiveOrgId]);
 
   /**
-   * יציאה מ-View-As + ניווט לדשבורד (בלי reload מלא — מונע חניקת דפדפן).
+   * יציאה מ-View-As + ניווט לדשבורד.
+   * בדסקטופ: SPA navigate. במובייל: טעינה מלאה — מפחית תקיעות WebView/Safari אחרי החלפת org/View-As.
    * API האפליקציה: setViewAsEmail (לא setViewAs).
    */
   const exitViewAsToDashboard = useCallback(() => {
@@ -333,6 +340,11 @@ export function AppLayout({ children }: AppLayoutProps) {
       window.dispatchEvent(new CustomEvent('app:go-home'));
     } catch {
       /* ignore */
+    }
+
+    if (shouldUseHardNavigationToHome()) {
+      window.location.assign(`${window.location.origin}/`);
+      return;
     }
 
     void navigate('/', { replace: true });
@@ -781,7 +793,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         variant="outline"
         size="sm"
         className={cn(
-          'h-7 gap-1 px-2 text-[11px] font-semibold border-emerald-400/60 bg-emerald-500/20 text-emerald-50 hover:bg-emerald-500/30 hover:text-white shrink-0',
+          'h-7 gap-1 px-2 text-[11px] font-semibold border-emerald-400/60 bg-emerald-500/20 text-emerald-50 hover:bg-emerald-500/30 hover:text-white shrink-0 touch-manipulation',
           className
         )}
         onClick={() => exitViewAsToDashboard()}
@@ -839,6 +851,10 @@ export function AppLayout({ children }: AppLayoutProps) {
       window.dispatchEvent(new CustomEvent('app:go-home'));
     } catch {
       /* ignore */
+    }
+    if (shouldUseHardNavigationToHome()) {
+      window.location.assign(`${window.location.origin}/`);
+      return;
     }
     void navigate('/');
   };
@@ -1079,7 +1095,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             <Button
               size="sm"
               variant="outline"
-              className="h-7 px-3 text-xs font-semibold border-black/40 bg-black/80 text-amber-50 hover:bg-black/90"
+              className="h-7 min-h-9 px-3 text-xs font-semibold border-black/40 bg-black/80 text-amber-50 hover:bg-black/90 touch-manipulation shrink-0"
               onClick={() => exitViewAsToDashboard()}
             >
               חזור לתצוגת מנהל

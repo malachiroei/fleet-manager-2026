@@ -2,9 +2,9 @@
 -- Staging: הפרדת נתונים רביד מול רועי (Supabase SQL Editor או psql).
 -- בדוק SELECT לפני עדכון אם האימיילים אצלכם שונים.
 --
--- אם בארגון רביד מופיעים רכב/נהג של רועי: הרץ גם
+-- אחרי שינויי סכימה / העתקת DB: להשלמת שיוך צי מלא הרץ גם
 --   scripts/sql/staging_ravid_single_fleet_pin_and_sweep.sql
--- (משאיר 99-888-77 + «רביד הקוף» אצל רביד, מחזיר את השאר לצי רועי).
+-- (כל הצי תחת malachiroei@gmail.com; סילברדו 99-888-77 + «רביד הקוף» תחת ravidmalachi@gmail.com).
 -- =============================================================================
 
 BEGIN;
@@ -36,7 +36,12 @@ BEGIN
   SELECT p.id, ravid_org
   FROM public.profiles p
   WHERE lower(trim(p.email)) = 'ravidmalachi@gmail.com'
-  ON CONFLICT (user_id, org_id) DO NOTHING;
+    AND NOT EXISTS (
+      SELECT 1
+      FROM public.org_members om
+      WHERE om.user_id = p.id
+        AND om.org_id = ravid_org
+    );
 END $$;
 
 COMMIT;
