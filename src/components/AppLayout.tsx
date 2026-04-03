@@ -42,10 +42,19 @@ const ROEI_DRIVER_EMAIL = 'roeima21@gmail.com';
 /** ארגון רביד בתצוגה כמשתמש — נעילה מפורשת (לא תלוי ב-profile.org_id של המנהל המחובר). */
 const VIEW_AS_RAVID_ORG_ID = '2bb0f9c3-b210-4099-b0c5-de92794d5cc9' as const;
 
-/** מובייל (רוחב מתחת ל־768px): ניווט מלא מונע תקיעות Router/WebView (במיוחד אחרי View-As) — אותו דפוס כמו תפריט המובייל לבית. */
+/**
+ * ניווט מלא (מומלץ אחרי View-As): מסכים צרים, מגע גס (טאבלטים), או WebView.
+ * רוחב ≥768 עם עכבר בלבד — נשארים ב-SPA ב-handleGoHome בלי View-As.
+ */
 function shouldUseHardNavigationToHome(): boolean {
   if (typeof window === 'undefined') return false;
-  return window.matchMedia('(max-width: 767px)').matches;
+  if (window.matchMedia('(max-width: 767px)').matches) return true;
+  try {
+    if (window.matchMedia('(pointer: coarse)').matches) return true;
+  } catch {
+    /* ignore */
+  }
+  return false;
 }
 
 function augmentSwitcherMembers(
@@ -319,7 +328,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   /**
    * יציאה מ-View-As + ניווט לדשבורד.
-   * בדסקטופ: SPA navigate. במובייל: טעינה מלאה — מפחית תקיעות WebView/Safari אחרי החלפת org/View-As.
+   * תמיד טעינה מלאה — navigate('/') לעיתים לא מגיב (כבר ב־/, Router מתעלם, WebView אחרי החלפת org).
    * API האפליקציה: setViewAsEmail (לא setViewAs).
    */
   const exitViewAsToDashboard = useCallback(() => {
@@ -348,13 +357,8 @@ export function AppLayout({ children }: AppLayoutProps) {
       /* ignore */
     }
 
-    if (shouldUseHardNavigationToHome()) {
-      window.location.assign(`${window.location.origin}/`);
-      return;
-    }
-
-    void navigate('/', { replace: true });
-  }, [setViewAsEmail, isMainAdmin, isRavid, isDriverRoei, profile?.org_id, setActiveOrgId, navigate]);
+    window.location.assign(`${window.location.origin}/`);
+  }, [setViewAsEmail, isMainAdmin, isRavid, isDriverRoei, profile?.org_id, setActiveOrgId]);
 
   /** תצוגה כחבר צוות: לרביד תמיד מעבירים ל-VIEW_AS_RAVID_ORG_ID (לא org של המנהל המחובר). */
   const handleViewAs = useCallback(
@@ -628,8 +632,8 @@ export function AppLayout({ children }: AppLayoutProps) {
         <DropdownMenuContent align={isRtl ? 'start' : 'end'} className="min-w-[220px]">
           {viewAsEmail && (
             <DropdownMenuItem
-              onClick={() => exitViewAsToDashboard()}
               className="text-xs font-semibold text-emerald-200 bg-emerald-950/60 cursor-pointer mb-1"
+              onSelect={() => exitViewAsToDashboard()}
             >
               חזרה לתצוגת מנהל
             </DropdownMenuItem>
@@ -799,9 +803,11 @@ export function AppLayout({ children }: AppLayoutProps) {
         variant="outline"
         size="sm"
         className={cn(
-          'h-7 gap-1 px-2 text-[11px] font-semibold border-emerald-400/60 bg-emerald-500/20 text-emerald-50 hover:bg-emerald-500/30 hover:text-white shrink-0 touch-manipulation',
+          'relative z-[2] h-7 gap-1 px-2 text-[11px] font-semibold border-emerald-400/60 bg-emerald-500/20 text-emerald-50 hover:bg-emerald-500/30 hover:text-white shrink-0 touch-manipulation cursor-pointer',
           className
         )}
+        style={{ touchAction: 'manipulation' }}
+        onPointerDown={(e) => e.stopPropagation()}
         onClick={() => exitViewAsToDashboard()}
       >
         חזרה לתצוגת מנהל
@@ -1091,17 +1097,23 @@ export function AppLayout({ children }: AppLayoutProps) {
       ) : null}
       {viewAsBannerVisible && (
         <div
-          className={cn('sticky z-50 w-full bg-amber-500 text-black shadow-md', viewAsStickyTopClass)}
+          className={cn(
+            'sticky z-[70] w-full bg-amber-500 text-black shadow-md pointer-events-auto',
+            viewAsStickyTopClass
+          )}
         >
-          <div className="mx-auto flex max-w-[1920px] items-center justify-between gap-2 px-3 py-1 text-[11px] sm:text-xs sm:px-4">
-            <span className="font-medium">
+          <div className="mx-auto flex max-w-[1920px] items-center justify-between gap-2 px-3 py-1 text-[11px] sm:text-xs sm:px-4 pointer-events-auto">
+            <span className="font-medium min-w-0">
               אתה נמצא כרגע בתצוגת משתמש:{' '}
               <span className="font-bold">{viewAsProfile?.full_name || viewAsEmail}</span>
             </span>
             <Button
+              type="button"
               size="sm"
               variant="outline"
-              className="h-7 min-h-9 px-3 text-xs font-semibold border-black/40 bg-black/80 text-amber-50 hover:bg-black/90 touch-manipulation shrink-0"
+              className="relative z-[2] h-7 min-h-9 px-3 text-xs font-semibold border-black/40 bg-black/80 text-amber-50 hover:bg-black/90 touch-manipulation shrink-0 cursor-pointer"
+              style={{ touchAction: 'manipulation' }}
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={() => exitViewAsToDashboard()}
             >
               חזור לתצוגת מנהל
