@@ -1,3 +1,6 @@
+DROP POLICY IF EXISTS "Authenticated users can create drivers" ON public.drivers;
+DROP POLICY IF EXISTS "Authenticated users can create vehicles" ON public.vehicles;
+
 -- Add INSERT policy for authenticated users on drivers table
 CREATE POLICY "Authenticated users can create drivers"
 ON public.drivers
