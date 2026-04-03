@@ -85,6 +85,7 @@ BEGIN
         )
       );
 
-    GRANT SELECT, INSERT ON public.mileage_logs TO authenticated;
+    -- GRANT בתוך DO חייב דרך EXECUTE (אחרת PostgreSQL/on error — ללא הרשאות למרות מדיניות RLS)
+    EXECUTE 'GRANT SELECT, INSERT ON public.mileage_logs TO authenticated';
   END IF;
 END $$;
