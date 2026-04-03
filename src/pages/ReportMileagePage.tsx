@@ -80,6 +80,20 @@ function describeMileageSchemaMismatch(raw: string | undefined): string | null {
   return null;
 }
 
+/** PostgREST 403 / PG 42501: role authenticated ללא EXECUTE על ה-RPC. */
+function describeMileageRpcForbidden(msg?: string, code?: string): string | null {
+  const blob = `${msg ?? ''} ${code ?? ''}`.toLowerCase();
+  if (
+    blob.includes('forbidden') ||
+    blob.includes('403') ||
+    blob.includes('42501') ||
+    blob.includes('permission denied')
+  ) {
+    return 'השרת דחה את submit_mileage_report (Forbidden / חסר הרשאה). בפרו: הריצו GRANT EXECUTE ON FUNCTION public.submit_mileage_report(uuid, numeric, text) TO authenticated; ורעננו schema ב-API (או NOTIFY pgrst). ודאו שמחוברים כמשתמש רשום.';
+  }
+  return null;
+}
+
 export default function ReportMileagePage() {
   const navigate = useNavigate();
   const { user, profile, loading, activeOrgId } = useAuth();
@@ -282,10 +296,15 @@ export default function ReportMileagePage() {
           hint: (rpcTransportError as any).hint,
         });
         const schemaHint = describeMileageSchemaMismatch(rpcTransportError.message);
+        const forbiddenHint = describeMileageRpcForbidden(
+          rpcTransportError.message,
+          rpcTransportError.code,
+        );
         toast({
           title: 'שגיאה בשמירת הדיווח (מסד נתונים)',
           description:
             schemaHint ||
+            forbiddenHint ||
             rpcTransportError.message ||
             'ודאו שמיגרציית submit_mileage_report הורצה בפרויקט Supabase (20260406100000).',
           variant: 'destructive',
@@ -303,10 +322,13 @@ export default function ReportMileagePage() {
             : errKey === 'no_report_permission'
               ? 'אין הרשאת דיווח קילומטראז׳ בפרופיל.'
               : `${errKey}${rpcResult?.detail ? ` — ${rpcResult.detail}` : ''}`;
-        const schemaHint = describeMileageSchemaMismatch(rpcResult?.detail) ?? describeMileageSchemaMismatch(fallbackDetail);
+        const schemaHint =
+          describeMileageSchemaMismatch(rpcResult?.detail) ?? describeMileageSchemaMismatch(fallbackDetail);
+        const forbiddenHint =
+          describeMileageRpcForbidden(rpcResult?.detail) ?? describeMileageRpcForbidden(fallbackDetail);
         toast({
           title: 'שגיאה בשמירת הדיווח (מסד נתונים)',
-          description: schemaHint || fallbackDetail,
+          description: schemaHint || forbiddenHint || fallbackDetail,
           variant: 'destructive',
         });
         return;
