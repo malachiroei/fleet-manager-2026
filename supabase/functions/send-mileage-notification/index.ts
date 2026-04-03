@@ -1,5 +1,4 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -7,10 +6,18 @@ const corsHeaders = {
 };
 
 interface DirectMileageNotificationRequest {
-  to: string;
+  to?: string;
   subject: string;
   odometerReading: number;
   reportUrl: string;
+}
+
+function escHtml(s: string): string {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 serve(async (req) => {
@@ -20,14 +27,13 @@ serve(async (req) => {
 
   try {
     const resendApiKey = Deno.env.get('RESEND_API_KEY');
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    const fromEmail = 'onboarding@resend.dev';
+    const fromEmail =
+      Deno.env.get('NOTIFY_FROM_EMAIL') || 'Fleet Manager Pro <invites@fleet-manager-pro.com>';
 
-    if (!resendApiKey || !supabaseUrl || !serviceRoleKey) {
+    if (!resendApiKey) {
       return new Response(
         JSON.stringify({
-          error: 'Missing required env secrets (RESEND_API_KEY / SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)',
+          error: 'Missing RESEND_API_KEY (set in Supabase Edge Function secrets for production)',
         }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
@@ -36,13 +42,15 @@ serve(async (req) => {
     const body = (await req.json()) as DirectMileageNotificationRequest;
     console.log('Payload received:', body);
 
-    const to = 'malachiroei@gmail.com';
+    const to = (body.to && String(body.to).includes('@') ? String(body.to).trim() : '') || 'malachiroei@gmail.com';
     const subject = body.subject;
+    const km = Number(body.odometerReading);
+    const safeUrl = escHtml(body.reportUrl);
     const html = `
       <div dir="rtl" style="font-family: Arial, sans-serif; text-align: right;">
         <h2>דווח קילומטראז׳ חדש</h2>
-        <p><strong>קילומטראז׳:</strong> ${Number(body.odometerReading).toLocaleString('he-IL')} ק"מ</p>
-        <p><strong>צילום לוח שעונים:</strong> <a href="${body.reportUrl}" target="_blank">צפייה בתמונה</a></p>
+        <p><strong>קילומטראז׳:</strong> ${km.toLocaleString('he-IL')} ק"מ</p>
+        <p><strong>צילום לוח שעונים:</strong> <a href="${safeUrl}" target="_blank" rel="noopener noreferrer">צפייה בתמונה</a></p>
         <p style="font-size: 12px; color: #6b7280; margin-top: 16px;">
           נשלח אוטומטית ממערכת Fleet Manager Pro.
         </p>
@@ -51,7 +59,7 @@ serve(async (req) => {
 
     let result: unknown = null;
     try {
-      console.log('Sending email to malachiroei@gmail.com via Resend...');
+      console.log('Sending mileage notification via Resend to', to);
       const resendResp = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {

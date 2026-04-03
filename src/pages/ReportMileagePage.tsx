@@ -259,37 +259,44 @@ export default function ReportMileagePage() {
         return;
       }
 
-      const payload: Record<string, unknown> = {
-        vehicle_id: selectedVehicle.id,
-        odometer_value: odometerValue,
-        photo_url: photoUrl,
-        user_id: user.id,
-      };
+      const { data: rpcRaw, error: rpcTransportError } = await (supabase as any).rpc('submit_mileage_report', {
+        p_vehicle_id: selectedVehicle.id,
+        p_odometer_value: odometerValue,
+        p_photo_url: photoUrl,
+      });
 
-      const { data: insertedRows, error: insertError } = await supabase
-        .from('mileage_logs' as any)
-        .insert(payload as any)
-        .select('id');
-
-      if (insertError) {
-        logMileageLogsInsertError(insertError);
-        const detailParts = [insertError.message, insertError.hint, insertError.details].filter(
-          (p): p is string => Boolean(p && String(p).trim())
-        );
+      if (rpcTransportError) {
+        logMileageLogsInsertError({
+          message: rpcTransportError.message,
+          code: rpcTransportError.code,
+          details: (rpcTransportError as any).details,
+          hint: (rpcTransportError as any).hint,
+        });
         toast({
           title: 'שגיאה בשמירת הדיווח (מסד נתונים)',
           description:
-            detailParts.join(' — ') ||
-            'ייתכן חסימת RLS או שדה חסר. פרטים בקונסול.',
+            rpcTransportError.message ||
+            'ודאו שמיגרציית submit_mileage_report הורצה בפרויקט Supabase (20260406100000).',
           variant: 'destructive',
         });
         return;
       }
 
-      if (!insertedRows?.length) {
-        console.warn(
-          '[ReportMileagePage] mileage_logs insert returned no row in .select — verify RLS FOR SELECT on mileage_logs'
-        );
+      const rpcResult = rpcRaw as { ok?: boolean; error?: string; detail?: string; log_id?: string } | null;
+      if (!rpcResult?.ok) {
+        const errKey = rpcResult?.error ?? 'unknown';
+        console.error('[ReportMileagePage] submit_mileage_report rejected', rpcResult);
+        toast({
+          title: 'שגיאה בשמירת הדיווח (מסד נתונים)',
+          description:
+            errKey === 'vehicle_forbidden'
+              ? 'אין הרשאה לרכב זה — בדקו org_id / שיוך נהג.'
+              : errKey === 'no_report_permission'
+                ? 'אין הרשאת דיווח קילומטראז׳ בפרופיל.'
+                : `${errKey}${rpcResult?.detail ? ` — ${rpcResult.detail}` : ''}`,
+          variant: 'destructive',
+        });
+        return;
       }
 
       try {
@@ -315,22 +322,8 @@ export default function ReportMileagePage() {
       }
 
       const orgId = selectedVehicle.org_id ?? profile?.org_id ?? activeOrgId ?? null;
-      if (!orgId) {
-        console.error('[ReportMileagePage] missing orgId for vehicles odometer update', {
-          vehicleId: selectedVehicle.id,
-        });
-      }
 
-      const { error: updateError } = await supabase
-        .from('vehicles')
-        .update({ current_odometer: odometerValue })
-        .eq('id', selectedVehicle.id)
-        .eq('org_id', orgId as string);
-
-      if (updateError) {
-        console.error('Failed to update vehicle odometer:', updateError);
-      }
-
+      let emailProblem: string | null = null;
       try {
         const notifyRes = await invokeSupabaseEdgeFunction('send-mileage-notification', {
           to: 'malachiroei@gmail.com',
@@ -340,13 +333,17 @@ export default function ReportMileagePage() {
         });
         if (notifyRes.error) {
           console.error('[send-mileage-notification] invoke error', notifyRes.error);
-        }
-        const payload = notifyRes.data as { error?: string } | null;
-        if (payload?.error) {
-          console.error('[send-mileage-notification] function body error', payload.error);
+          emailProblem = `${notifyRes.error.message} — בדקו RESEND_API_KEY ב-Supabase (Edge Functions → Secrets) ופריסת הפונקציה.`;
+        } else {
+          const payload = notifyRes.data as { error?: string } | null;
+          if (payload?.error) {
+            console.error('[send-mileage-notification] function body error', payload.error);
+            emailProblem = String(payload.error).slice(0, 280);
+          }
         }
       } catch (notifyErr) {
         console.error('[send-mileage-notification] threw:', notifyErr);
+        emailProblem = notifyErr instanceof Error ? notifyErr.message : 'שליחת מייל נכשלה';
       }
 
       queryClient.invalidateQueries({ queryKey: ['vehicle', selectedVehicle.id, orgId] });
@@ -354,8 +351,11 @@ export default function ReportMileagePage() {
       queryClient.invalidateQueries({ queryKey: ['vehicle-documents', selectedVehicle.id] });
 
       toast({
-        title: 'הדיווח נשמר בהצלחה',
-        description: `קילומטראז׳ ${odometerValue.toLocaleString('he-IL')} ק״מ נרשם במערכת. מעבירים לדף הבית…`,
+        title: emailProblem ? 'הדיווח נשמר; יש בעיה במייל' : 'הדיווח נשמר והרכב עודכן',
+        description: emailProblem
+          ? `${emailProblem} | קילומטראז׳ ${odometerValue.toLocaleString('he-IL')} ק״מ במערכת.`
+          : `קילומטראז׳ ${odometerValue.toLocaleString('he-IL')} ק״מ. מעבירים לדף הבית…`,
+        variant: emailProblem ? 'destructive' : 'default',
       });
       navigate('/', { replace: true });
     } catch (err: unknown) {
