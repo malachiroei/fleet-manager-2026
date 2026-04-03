@@ -254,7 +254,9 @@ export function AppLayout({ children }: AppLayoutProps) {
   const isDriverRoei = email === ROEI_DRIVER_EMAIL;
   const isRavid = email === RAVID_MANAGER_EMAIL;
 
-  const viewAsBannerVisible = (isMainAdmin || isRavid) && Boolean(viewAsEmail);
+  /** כולל נהג רועי בתצוגה כרביד — אחרת אין באנר יציאה והמנעול על org שלו נלחם ב-View-As. */
+  const viewAsBannerVisible =
+    Boolean(viewAsEmail) && (isMainAdmin || isRavid || isDriverRoei);
   /** באנר staging מיני — גובה ~h-6 */
   const headerStickyTopClass = showFleetEnvironmentBanner
     ? viewAsBannerVisible
@@ -290,20 +292,22 @@ export function AppLayout({ children }: AppLayoutProps) {
   // Ensure Roei (driver-only) is always locked to his org and cannot switch orgs
   useEffect(() => {
     if (!isDriverRoei) return;
+    if (viewAsEmail?.trim()) return; // View-As (למשל כרביד) — org נקבע במקום אחר; אחרת לולאה אינסופית
     const targetOrgId = profile?.org_id as string | null | undefined;
     if (targetOrgId && activeOrgId !== targetOrgId) {
       setActiveOrgId(targetOrgId);
     }
-  }, [isDriverRoei, profile?.org_id, activeOrgId, setActiveOrgId]);
+  }, [isDriverRoei, viewAsEmail, profile?.org_id, activeOrgId, setActiveOrgId]);
 
   // Ensure Ravid is locked to his org and cannot switch orgs
   useEffect(() => {
     if (!isRavid) return;
+    if (viewAsEmail?.trim()) return; // בתצוגה כמשתמש אחר — אל תנעל ל-org של רביד
     const targetOrgId = profile?.org_id as string | null | undefined;
     if (targetOrgId && activeOrgId !== targetOrgId) {
       setActiveOrgId(targetOrgId);
     }
-  }, [isRavid, profile?.org_id, activeOrgId, setActiveOrgId]);
+  }, [isRavid, viewAsEmail, profile?.org_id, activeOrgId, setActiveOrgId]);
 
   /** bootstrap בלי org בפרופיל — מסנכרן מחליף ורשימת צוות ל־UUID הצי הראשי */
   useEffect(() => {
@@ -325,6 +329,8 @@ export function AppLayout({ children }: AppLayoutProps) {
     if (isMainAdmin) {
       setActiveOrgId(mainOrgId);
     } else if (isRavid && profile?.org_id?.trim()) {
+      setActiveOrgId(profile.org_id.trim());
+    } else if (isDriverRoei && profile?.org_id?.trim()) {
       setActiveOrgId(profile.org_id.trim());
     } else {
       setActiveOrgId(mainOrgId);
@@ -348,7 +354,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     }
 
     void navigate('/', { replace: true });
-  }, [setViewAsEmail, isMainAdmin, isRavid, profile?.org_id, setActiveOrgId, navigate]);
+  }, [setViewAsEmail, isMainAdmin, isRavid, isDriverRoei, profile?.org_id, setActiveOrgId, navigate]);
 
   /** תצוגה כחבר צוות: לרביד תמיד מעבירים ל-VIEW_AS_RAVID_ORG_ID (לא org של המנהל המחובר). */
   const handleViewAs = useCallback(
@@ -1083,7 +1089,7 @@ export function AppLayout({ children }: AppLayoutProps) {
           </span>
         </div>
       ) : null}
-      {(isMainAdmin || isRavid) && viewAsEmail && (
+      {viewAsBannerVisible && (
         <div
           className={cn('sticky z-50 w-full bg-amber-500 text-black shadow-md', viewAsStickyTopClass)}
         >
