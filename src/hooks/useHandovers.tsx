@@ -1571,7 +1571,18 @@ export async function sendHandoverNotificationEmail(input: SendHandoverEmailInpu
     },
   };
 
-  const { error, data } = await supabase.functions.invoke('send-handover-notification', { body });
+  const anonKey = getSupabaseAnonKey() || getSupabasePublishableKey();
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData?.session?.access_token ?? '';
+  const bearer = accessToken || anonKey || '';
+
+  const { error, data } = await supabase.functions.invoke('send-handover-notification', {
+    body,
+    headers: {
+      ...(anonKey ? { apikey: anonKey } : {}),
+      Authorization: `Bearer ${bearer}`,
+    },
+  });
 
   if (!error && !(data as any)?.error) {
     return;

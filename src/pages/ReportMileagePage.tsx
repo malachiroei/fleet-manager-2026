@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Camera, Gauge, ImageIcon, Loader2, Wrench } from 'lucide-react';
 
 import { supabase } from '@/integrations/supabase/client';
+import { invokeSupabaseEdgeFunction } from '@/lib/supabase/invokeEdgeFunction';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useVehicles } from '@/hooks/useVehicles';
@@ -331,20 +332,19 @@ export default function ReportMileagePage() {
       }
 
       try {
-        const sessionRes = await supabase.auth.getSession();
-        const token = sessionRes?.data?.session?.access_token ?? null;
-
-        await supabase.functions.invoke('send-mileage-notification', {
-          headers: {
-            Authorization: `Bearer ${token ?? ''}`,
-          },
-          body: {
-            to: 'malachiroei@gmail.com',
-            subject: `עדכון קילומטראז' - ${selectedVehicle.plate_number}`,
-            odometerReading: odometerValue,
-            reportUrl: photoUrl,
-          },
+        const notifyRes = await invokeSupabaseEdgeFunction('send-mileage-notification', {
+          to: 'malachiroei@gmail.com',
+          subject: `עדכון קילומטראז' - ${selectedVehicle.plate_number}`,
+          odometerReading: odometerValue,
+          reportUrl: photoUrl,
         });
+        if (notifyRes.error) {
+          console.error('[send-mileage-notification] invoke error', notifyRes.error);
+        }
+        const payload = notifyRes.data as { error?: string } | null;
+        if (payload?.error) {
+          console.error('[send-mileage-notification] function body error', payload.error);
+        }
       } catch (notifyErr) {
         console.error('[send-mileage-notification] threw:', notifyErr);
       }

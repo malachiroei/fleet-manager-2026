@@ -116,13 +116,16 @@ export function useFeatureFlags() {
 
         const mergedFlags: FeatureFlagsMap = { ...dbFlags, ...overrides };
 
+        const nestedFormsKeys = new Set<string>(QA_FORMS_NESTED_KEYS as readonly string[]);
+
         FEATURE_FLAG_REGISTRY_KEYS.forEach((key) => {
           // מוודא שגם דשבורד וגם פעולות (action_ / qa_) יהיו דלוקים כברירת מחדל אם אין override אישי
           const isDashboardOrAction =
             key.startsWith('dashboard_') || key.startsWith('action_') || key.startsWith('qa_');
           const hasOverride = overrides[key] !== undefined;
+          const treatLikeQuickAction = isDashboardOrAction || nestedFormsKeys.has(key);
 
-          if (isDashboardOrAction && !hasOverride) {
+          if (treatLikeQuickAction && !hasOverride) {
             mergedFlags[key] = true;
           } else if (mergedFlags[key] === undefined) {
             mergedFlags[key] = true;

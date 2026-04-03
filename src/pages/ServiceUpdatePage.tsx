@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Camera, ImageIcon, Loader2, Trash2, Wrench } from 'lucide-react';
 
 import { supabase } from '@/integrations/supabase/client';
+import { invokeSupabaseEdgeFunction } from '@/lib/supabase/invokeEdgeFunction';
 import { useAuth } from '@/hooks/useAuth';
 import { isFeatureEnabled, useFeatureFlags } from '@/hooks/useFeatureFlags';
 import { useVehicles, useUpdateVehicle } from '@/hooks/useVehicles';
@@ -256,28 +257,26 @@ export default function ServiceUpdatePage() {
       }
 
       try {
-        const sessionRes = await supabase.auth.getSession();
-        const token = sessionRes?.data?.session?.access_token ?? null;
-        const invokeResult = await supabase.functions.invoke('send-mileage-notification', {
-          headers: {
-            Authorization: `Bearer ${token ?? ''}`,
-          },
-          body: {
-            to: 'malachiroei@gmail.com',
-            subject: `עדכון טיפול - ${resolvedVehicle.plate_number}`,
-            serviceType: 'service_update',
-            plateNumber: resolvedVehicle.plate_number,
-            odometerReading: mileageNum,
-            serviceDate,
-            reportUrl: photoUrl,
-            photoUrl,
-          },
+        const invokeResult = await invokeSupabaseEdgeFunction('send-service-update-notification', {
+          subject: 'עדכון טיפול',
+          plateNumber: resolvedVehicle.plate_number,
+          vehicleLabel,
+          serviceDate,
+          nextServiceDate,
+          currentMileage: mileageNum,
+          nextServiceKm,
+          serviceIntervalKm: resolvedVehicle.service_interval_km ?? null,
+          invoicePhotoUrl: photoUrl,
         });
         if (invokeResult.error) {
-          console.error('[send-mileage-notification] (service update) invoke returned error', invokeResult.error);
+          console.error('[send-service-update-notification] invoke error', invokeResult.error);
+        }
+        const payload = invokeResult.data as { error?: string } | null;
+        if (payload?.error) {
+          console.error('[send-service-update-notification] function body error', payload.error);
         }
       } catch (notifyErr) {
-        console.error('[send-mileage-notification] (service update) threw', notifyErr);
+        console.error('[send-service-update-notification] threw', notifyErr);
       }
 
       queryClient.invalidateQueries({ queryKey: ['vehicle', resolvedVehicle.id] });

@@ -20,8 +20,17 @@ WHERE feature_key IN (
   'qa_add_mileage',
   'qa_vehicle_delivery',
   'qa_handover_car',
+  'qa_forms',
+  'form_delivery',
   'form_return',
   'qa_return_car'
 );
+
+INSERT INTO public.feature_flags (feature_key, display_name_he, description, category, is_enabled_globally)
+VALUES
+  ('qa_forms', 'טפסים', 'מרכז טפסים', 'quick_actions', true),
+  ('form_delivery', 'טפסי מסירה', 'include_in_delivery', 'forms', true),
+  ('form_return', 'טפסי החזרה', 'include_in_return', 'forms', true)
+ON CONFLICT (feature_key) DO UPDATE SET is_enabled_globally = true;
 
 NOTIFY pgrst, 'reload schema';
