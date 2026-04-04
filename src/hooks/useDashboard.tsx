@@ -245,11 +245,12 @@ export function useDashboardStats() {
       }
 
       const normalizedEmail = resolveSessionEmail(profile, user);
-      const isMainAdmin = normalizedEmail === 'malachiroei@gmail.com';
+      /** כמו useAuth — שניהם רואים fallback גלובלי כשהארגון הפעיל ריק */
+      const isFleetBootstrapOwner = isFleetBootstrapOwnerEmail(normalizedEmail);
 
       /** בלי org (פרו/RLS) — רק בעלי bootstrap: ספירה גלובלית */
       if (!effectiveOrgId) {
-        if (!isFleetBootstrapOwnerEmail(normalizedEmail)) {
+        if (!isFleetBootstrapOwner) {
           return { totalVehicles: 0, totalDrivers: 0, alertsCount: 0, warningCount: 0, expiredCount: 0 };
         }
         const [gv, gd] = await Promise.all([
@@ -302,7 +303,7 @@ export function useDashboardStats() {
 
         // Owner fallback: אם הארגון ריק — ספירה גלובלית (לא בתצוגת משתמש / impersonation).
         if (
-          isMainAdmin &&
+          isFleetBootstrapOwner &&
           !viewAsEmail?.trim() &&
           !isImpersonating &&
           vehiclesCount === 0 &&
