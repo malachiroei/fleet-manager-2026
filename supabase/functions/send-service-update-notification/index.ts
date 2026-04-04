@@ -1,3 +1,7 @@
+/**
+ * Secrets (Supabase → Edge Functions): RESEND_API_KEY (חובה).
+ * אופציונלי: NOTIFY_FROM_EMAIL — חייב להיות דומיין מאומת ב-Resend (לא onboarding@resend.dev לייצור).
+ */
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 
 const corsHeaders = {

@@ -257,6 +257,7 @@ export default function ServiceUpdatePage() {
         throw docErr;
       }
 
+      let emailProblem: string | null = null;
       try {
         const invokeResult = await invokeSupabaseEdgeFunction('send-service-update-notification', {
           subject: 'עדכון טיפול',
@@ -271,20 +272,32 @@ export default function ServiceUpdatePage() {
         });
         if (invokeResult.error) {
           console.error('[send-service-update-notification] invoke error', invokeResult.error);
-        }
-        const payload = invokeResult.data as { error?: string } | null;
-        if (payload?.error) {
-          console.error('[send-service-update-notification] function body error', payload.error);
+          emailProblem = `${invokeResult.error.message} — בדקו RESEND_API_KEY ב-Supabase (Edge Functions → Secrets) ושהפונקציה send-service-update-notification פרוסה.`;
+        } else {
+          const payload = invokeResult.data as { error?: string; success?: boolean } | null;
+          if (payload?.error) {
+            console.error('[send-service-update-notification] function body error', payload.error);
+            emailProblem = String(payload.error).slice(0, 280);
+          } else if (!payload || payload.success !== true) {
+            emailProblem = 'תשובה לא צפויה מהשרת (לא אושרה שליחת מייל).';
+          }
         }
       } catch (notifyErr) {
         console.error('[send-service-update-notification] threw', notifyErr);
+        emailProblem = notifyErr instanceof Error ? notifyErr.message : 'שליחת מייל נכשלה';
       }
 
       queryClient.invalidateQueries({ queryKey: ['vehicle', resolvedVehicle.id] });
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['vehicle-documents', resolvedVehicle.id] });
 
-      toast({ title: 'הנתונים נשמרו והעדכון נשלח במייל בהצלחה' });
+      toast({
+        title: emailProblem ? 'הנתונים נשמרו; יש בעיה במייל' : 'הנתונים נשמרו והעדכון נשלח במייל',
+        description: emailProblem
+          ? `${emailProblem} | הטיפול והמסמך נשמרו במערכת.`
+          : 'הרכב עודכן ונשלחה הודעה לתיבת הניטור.',
+        variant: emailProblem ? 'destructive' : 'default',
+      });
       navigate(`/vehicles/${resolvedVehicle.id}`);
     } catch (err: unknown) {
       console.error('[ServiceUpdatePage] submit failed', err);
