@@ -62,7 +62,6 @@ export default function TeamManagementPage() {
   const invitationRows = invitations ?? [];
   const viewerEmail = (profile?.email ?? '').trim().toLowerCase();
   const isRoeiAdmin = viewerEmail === 'malachiroei@gmail.com';
-  const isRavid = viewerEmail === 'ravidmalachi@gmail.com';
   const memberRows = useMemo(() => {
     // Never show super-admin row to non-super-admin viewers.
     if (isSuperAdminTeamView) return memberRowsAll;
@@ -122,20 +121,22 @@ export default function TeamManagementPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-4xl mx-auto p-6 space-y-6" dir="rtl">
-        <div className="flex items-center gap-4">
-          <Link to="/">
-            <Button variant="ghost" size="icon" className="rounded-full">
-              <ArrowRight className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">ניהול צוות</h1>
-            <p className="text-muted-foreground text-sm">
-              {isSuperAdminTeamView ? 'כל הארגונים — תצוגת סופר־אדמין' : 'חברי הארגון ופיצ׳רים אישיים'}
-            </p>
+      <div className="max-w-4xl mx-auto px-3 py-4 sm:p-6 space-y-4 sm:space-y-6" dir="rtl">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+          <div className="flex items-center gap-3">
+            <Link to="/">
+              <Button variant="ghost" size="icon" className="rounded-full shrink-0">
+                <ArrowRight className="h-5 w-5" />
+              </Button>
+            </Link>
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-2xl font-bold text-foreground">ניהול צוות</h1>
+              <p className="text-muted-foreground text-xs sm:text-sm">
+                {isSuperAdminTeamView ? 'כל הארגונים — תצוגת סופר־אדמין' : 'חברי הארגון ופיצ׳רים אישיים'}
+              </p>
+            </div>
           </div>
-          <div className="ms-auto flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:ms-auto">
             {canManageGlobalFeatures ? (
               <Dialog open={globalFeaturesOpen} onOpenChange={setGlobalFeaturesOpen}>
                 <DialogTrigger asChild>
@@ -147,7 +148,7 @@ export default function TeamManagementPage() {
                     ניהול פיצ'רים גלובליים
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-5xl" dir="rtl">
+                <DialogContent className="w-[min(100vw-1rem,56rem)] max-h-[min(100dvh-1rem,90vh)] overflow-y-auto" dir="rtl">
                   <DialogHeader>
                     <DialogTitle>ניהול פיצ'רים גלובליים</DialogTitle>
                   </DialogHeader>
@@ -186,7 +187,8 @@ export default function TeamManagementPage() {
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
               </div>
             ) : (
-              <Table className="table-fixed">
+              <div className="overflow-x-auto -mx-1 px-1 touch-pan-x">
+              <Table className="min-w-[640px] w-full">
                 <TableHeader>
                   <TableRow>
                     {showSensitiveColumns ? (
@@ -286,6 +288,7 @@ export default function TeamManagementPage() {
                   )}
                 </TableBody>
               </Table>
+              </div>
             )}
           </CardContent>
         </Card>

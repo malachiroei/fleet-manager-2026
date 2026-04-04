@@ -11,6 +11,7 @@ import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { QA_FORMS_NESTED_KEYS, QA_FORMS_PARENT_KEY, registryEntryForKey } from '@/lib/featureFlagRegistry';
 import { useAuth } from '@/hooks/useAuth';
+import { cn } from '@/lib/utils';
 
 const NESTED_UNDER_QA_SET = new Set<string>(QA_FORMS_NESTED_KEYS);
 
@@ -293,16 +294,19 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent dir="rtl" className="sm:max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>ניהול פיצ׳רים (משתמש)</DialogTitle>
-          <DialogDescription>
+      <DialogContent
+        dir="rtl"
+        className="flex w-[min(100vw-1rem,42rem)] max-h-[min(100dvh-1rem,92vh)] flex-col gap-3 overflow-hidden p-4 sm:max-w-3xl sm:p-6"
+      >
+        <DialogHeader className="shrink-0 space-y-1 text-right sm:text-right">
+          <DialogTitle className="text-base sm:text-lg">ניהול פיצ׳רים (משתמש)</DialogTitle>
+          <DialogDescription className="text-xs sm:text-sm">
             Override לפיצ׳רים גלובליים עבור: <strong>{userLabel ?? userId ?? '—'}</strong>. כיבוי «טפסים» משבית בפועל את
             טופס המסירה וההחזרה.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
+        <div className="flex min-h-0 flex-1 flex-col space-y-3 overflow-hidden">
           {!canEditSubjectOverrides ? (
             <div className="rounded-md border border-border p-3 text-sm text-muted-foreground">
               אין הרשאה לשנות Overrides עבור משתמש זה (מותר רק באותו ארגון, וללא גישה למשתמש סופר־אדמין).
@@ -326,16 +330,77 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
           )}
 
           {(!isFlagsLoading && !isFlagsError) && (
-            <div className="rounded-md border border-border overflow-x-auto max-h-[60vh]">
-              <Table>
+            <>
+              <div className="flex max-h-[min(52dvh,480px)] flex-col gap-2 overflow-y-auto overflow-x-hidden overscroll-contain pr-0.5 md:hidden">
+                {tableRows.map(({ flag, nestedUnderQa }) => {
+                  const reg = registryEntryForKey(flag.feature_key);
+                  const displayName = reg?.display_name_he || flag.display_name_he?.trim() || flag.feature_key;
+                  const desc = reg?.description || flag.description?.trim() || `שליטה על תצוגת ${displayName}`;
+                  const effectiveUi = effectiveEnabledForUi(flag, nestedUnderQa);
+                  const stored = storedToggleValue(flag);
+                  const isSaving = savingKey === flag.feature_key;
+                  const switchDisabled = isSaving || (nestedUnderQa && qaFormsEffective !== true);
+                  return (
+                    <div
+                      key={`${flag.id}-m-${nestedUnderQa ? 'n' : 'r'}`}
+                      className={cn(
+                        'rounded-lg border p-3 shadow-sm',
+                        nestedUnderQa ? 'border-cyan-500/30 bg-slate-500/5' : effectiveUi ? 'border-emerald-500/20 bg-emerald-500/5' : 'bg-muted/20',
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {nestedUnderQa ? (
+                              <span className="text-cyan-400/90 text-sm" aria-hidden>
+                                └
+                              </span>
+                            ) : null}
+                            <span className="font-medium text-sm leading-snug">{displayName}</span>
+                            <span
+                              className={
+                                effectiveUi
+                                  ? 'inline-flex rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-200'
+                                  : 'inline-flex rounded-full border border-red-400/40 bg-red-500/15 px-2 py-0.5 text-[10px] font-semibold text-red-200'
+                              }
+                            >
+                              {effectiveUi
+                                ? 'פעיל'
+                                : nestedUnderQa && qaFormsEffective !== true
+                                  ? 'מושבת (הורה)'
+                                  : 'מושבת'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground leading-snug">{desc}</p>
+                          <code className="block text-[10px] text-muted-foreground/90" dir="ltr">
+                            {flag.feature_key}
+                          </code>
+                        </div>
+                        <div className="flex min-h-[48px] min-w-[48px] shrink-0 items-center justify-center touch-manipulation">
+                          <Switch
+                            checked={stored}
+                            disabled={switchDisabled || !canEditSubjectOverrides}
+                            onCheckedChange={(v) => void handleToggle(flag.feature_key, v)}
+                            aria-label={`override עבור ${displayName}`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="hidden min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border md:flex">
+                <div className="min-h-0 flex-1 overflow-auto overscroll-contain">
+                  <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="min-w-[140px]">שם הפיצ׳ר</TableHead>
-                    <TableHead className="min-w-[200px]">תיאור</TableHead>
-                    <TableHead className="min-w-[120px] text-muted-foreground font-mono text-xs">
+                    <TableHead className="min-w-[120px] lg:min-w-[140px]">שם הפיצ׳ר</TableHead>
+                    <TableHead className="min-w-[160px] lg:min-w-[200px]">תיאור</TableHead>
+                    <TableHead className="min-w-[100px] text-muted-foreground font-mono text-xs lg:min-w-[120px]">
                       מפתח
                     </TableHead>
-                    <TableHead className="w-[120px] text-center">פעיל למשתמש</TableHead>
+                    <TableHead className="w-[100px] text-center lg:w-[120px]">פעיל למשתמש</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -409,6 +474,7 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
                               checked={stored}
                               disabled={switchDisabled || !canEditSubjectOverrides}
                               onCheckedChange={(v) => void handleToggle(flag.feature_key, v)}
+                              className="touch-manipulation"
                               aria-label={`override עבור ${displayName}`}
                             />
                           </div>
@@ -428,8 +494,8 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
           )}
         </div>
 
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="shrink-0 border-t border-border/60 pt-3 sm:border-0 sm:pt-0">
+          <Button type="button" variant="outline" className="min-h-11 w-full touch-manipulation sm:min-h-9 sm:w-auto" onClick={() => onOpenChange(false)}>
             סגור
           </Button>
         </DialogFooter>

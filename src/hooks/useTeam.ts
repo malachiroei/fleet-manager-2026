@@ -67,26 +67,15 @@ export function useTeamMembers(orgId: string | null | undefined, options?: UseTe
         if (subjectIsSystemAdmin) {
           // System admins can see full org team, including unmanaged (NULL) rows.
         } else if (subjectManagerUserId) {
-          // Manager sees only directly managed users; never self.
-          q = q.eq('managed_by_user_id', subjectManagerUserId).neq('id', subjectManagerUserId);
+          // ניהול צוות: כל חברי הארגון פחות המשתמש הנוכחי (תואם כותרת «חברי הארגון»).
+          // סינון managed_by_user_id בלבד הסתיר חברים עם parent_admin_id / ללא שדה מנהל.
+          q = q.neq('id', subjectManagerUserId);
         } else {
           return [];
         }
       }
       const { data, error } = await q;
       if (error) {
-        // Backward-compatible fallback for DBs that still use parent_admin_id only.
-        if (!loadAllOrgs && subjectManagerUserId && error.message?.includes('managed_by_user_id')) {
-          let fallback = supabase.from('profiles').select('*').order('full_name', { ascending: true });
-          if (orgId) fallback = fallback.eq('org_id', orgId);
-          fallback = fallback.eq('parent_admin_id', subjectManagerUserId).neq('id', subjectManagerUserId);
-          const fallbackRes = await fallback;
-          if (fallbackRes.error) {
-            console.error('Supabase Error (useTeamMembers fallback):', fallbackRes.error);
-            return [];
-          }
-          return (fallbackRes.data ?? []) as Profile[];
-        }
         console.error('Supabase Error (useTeamMembers):', error);
         return [];
       }
