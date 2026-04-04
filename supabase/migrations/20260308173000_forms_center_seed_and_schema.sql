@@ -13,7 +13,10 @@ BEGIN
   WHERE btrim(category) IN ('מסמכי אישור', 'מסמכי אישורים');
 
   UPDATE public.org_documents SET category = 'בטיחות' WHERE lower(btrim(category)) = 'safety';
-  UPDATE public.org_documents SET category = 'תפעול' WHERE lower(btrim(category)) IN ('general', 'operations');
+  -- English keys from prod (distinct categories export: compliance, maintenance, safety, …)
+  UPDATE public.org_documents
+  SET category = 'תפעול'
+  WHERE lower(btrim(category)) IN ('general', 'operations', 'maintenance', 'compliance');
 
   UPDATE public.org_documents
   SET category = 'תפעול'
