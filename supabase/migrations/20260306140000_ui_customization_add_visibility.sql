@@ -15,10 +15,10 @@ UPDATE public.ui_customization SET group_name = 'הגדרות'         WHERE key
 UPDATE public.ui_customization SET group_name = 'שמות ישויות'   WHERE key LIKE 'entity.%';
 UPDATE public.ui_customization SET group_name = 'כפתורי פעולה'  WHERE key LIKE 'action.%';
 
--- Ensure nav.home exists (may have been missing from original seed)
-INSERT INTO public.ui_customization (key, default_label, group_name) VALUES
-  ('nav.home', 'בית', 'ניווט ראשי')
-ON CONFLICT (key) DO UPDATE SET group_name = EXCLUDED.group_name;
+-- Ensure nav.home exists (may have been missing from original seed); no ON CONFLICT — prod may lack UNIQUE(key)
+INSERT INTO public.ui_customization (key, default_label, group_name)
+SELECT 'nav.home', 'בית', 'ניווט ראשי'
+WHERE NOT EXISTS (SELECT 1 FROM public.ui_customization u WHERE u.key = 'nav.home');
 
 -- Ensure all other rows have a fallback group
 UPDATE public.ui_customization SET group_name = 'כללי' WHERE group_name = '';
