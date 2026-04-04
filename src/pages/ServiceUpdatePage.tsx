@@ -230,6 +230,7 @@ export default function ServiceUpdatePage() {
 
       // Persist a service log entry (email trigger depends on this succeeding).
       const { error: serviceLogError } = await supabase.from('vehicle_service_logs' as any).insert({
+        vehicle_id: resolvedVehicle.id,
         plate_number: resolvedVehicle.plate_number,
         service_type: 'service_update',
         odometer_reading: mileageNum,
