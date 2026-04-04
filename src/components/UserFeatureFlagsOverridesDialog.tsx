@@ -484,7 +484,9 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
                   })}
                 </TableBody>
               </Table>
-            </div>
+                </div>
+              </div>
+            </>
           )}
 
           {(isFlagsError || isOverridesError) && (
