@@ -272,7 +272,17 @@ export default function ServiceUpdatePage() {
         });
         if (invokeResult.error) {
           console.error('[send-service-update-notification] invoke error', invokeResult.error);
-          emailProblem = `${invokeResult.error.message} — בדקו RESEND_API_KEY ב-Supabase (Edge Functions → Secrets) ושהפונקציה send-service-update-notification פרוסה.`;
+          const msg = invokeResult.error.message ?? String(invokeResult.error);
+          const low = msg.toLowerCase();
+          const likelyNoDeployOrCors =
+            low.includes('failed to send') ||
+            low.includes('edge function') ||
+            low.includes('cors') ||
+            low.includes('preflight') ||
+            low.includes('networkerror');
+          emailProblem = likelyNoDeployOrCors
+            ? `${msg} — לרוב הפונקציה send-service-update-notification לא פרוסה בפרויקט Supabase של האתר, או תשובת OPTIONS לא תקינה. פרוסו: supabase functions deploy send-service-update-notification (או דרך Dashboard → Edge Functions). אחרי שהקריאה מגיעה לשרת — בדקו RESEND_API_KEY ב-Secrets.`
+            : `${msg} — בדקו RESEND_API_KEY ב-Supabase (Edge Functions → Secrets) ושהפונקציה פרוסה.`;
         } else {
           const payload = invokeResult.data as { error?: string; success?: boolean } | null;
           if (payload?.error) {
