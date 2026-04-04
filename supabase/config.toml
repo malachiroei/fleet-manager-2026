@@ -9,3 +9,6 @@ verify_jwt = false
 
 [functions.send-service-update-notification]
 verify_jwt = false
+
+[functions.send-handover-notification]
+verify_jwt = false
