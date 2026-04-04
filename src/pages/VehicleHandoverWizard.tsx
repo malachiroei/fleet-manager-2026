@@ -21,6 +21,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { orgDocumentTemplateBody } from '@/lib/orgDocumentTemplate';
+import { isOrgDocumentUsableForHandoverList, orgDocumentHandoverLabel } from '@/lib/orgDocumentHandoverFilter';
 import { HANDOVER_ACCESSORY_CEILINGS, formatCeilingPrice } from '@/lib/accessoryCeilings';
 import { cloneEmptyDamageReport, hasAnyDamage, summarizeDamageReport, type VehicleDamageReport } from '@/lib/vehicleDamage';
 // Badge no longer needed — replaced with plain span
@@ -1606,9 +1607,9 @@ function renderStepContent({
   );
 }
 
-/** DB may return null title for bad rows — never call .includes on raw doc.title */
+/** DB may return null/whitespace title — trim לפני השוואות ותצוגה */
 function safeDocTitle(doc: { title?: string | null }): string {
-  return String(doc?.title ?? '');
+  return String(doc?.title ?? '').trim();
 }
 
 function getStepKindForDoc(doc: DeliveryFormDoc): WizardStepKind {
@@ -1778,17 +1779,18 @@ export default function VehicleHandoverWizard() {
   const [recentlyToggledFormId, setRecentlyToggledFormId] = useState<string | null>(null);
   const [recentlyToggledAdded, setRecentlyToggledAdded] = useState(false);
 
-  // All active forms (for backward compatibility); hide rows with no display title
+  // טפסים עם כותרת + תוכן (קובץ/סכמה/תיאור) — בלי שורות ריקות מ־DB
   const availableDeliveryForms = useMemo(
-    () =>
-      (orgDocuments ?? []).filter((doc) => doc.is_active && String(doc.title ?? '').trim().length > 0),
+    () => (orgDocuments ?? []).filter((doc) => isOrgDocumentUsableForHandoverList(doc)),
     [orgDocuments],
   );
 
-
   // All forms except 'טופס קבלת רכב' for the picker
   const formsPickerForms = useMemo(
-    () => availableDeliveryForms.filter((doc) => safeDocTitle(doc) !== 'טופס קבלת רכב'),
+    () =>
+      availableDeliveryForms.filter(
+        (doc) => !orgDocumentHandoverLabel(doc).includes('טופס קבלת רכב'),
+      ),
     [availableDeliveryForms],
   );
   const selectedFormsInitializedRef = useRef(false);
@@ -1837,10 +1839,14 @@ export default function VehicleHandoverWizard() {
   }, [availableDeliveryForms, selectedDeliveryFormIds]);
 
   const receptionFormDoc = useMemo(() => {
-    const inSelection = selectedDeliveryForms.find((doc) => safeDocTitle(doc).includes('טופס קבלת רכב'));
+    const inSelection = selectedDeliveryForms.find((doc) =>
+      orgDocumentHandoverLabel(doc).includes('טופס קבלת רכב'),
+    );
     if (inSelection) return inSelection;
     return (
-      availableDeliveryForms.find((doc) => safeDocTitle(doc).includes('טופס קבלת רכב')) ?? null
+      availableDeliveryForms.find((doc) =>
+        orgDocumentHandoverLabel(doc).includes('טופס קבלת רכב'),
+      ) ?? null
     );
   }, [selectedDeliveryForms, availableDeliveryForms]);
 
@@ -2038,11 +2044,16 @@ export default function VehicleHandoverWizard() {
   const wizardSteps = useMemo<WizardStep[]>(() => {
     const steps: WizardStep[] = [...BASE_STEPS];
     const dynamicSteps = selectedDeliveryFormIds
-      .map((id) => availableDeliveryForms.find((f) => f.id === id && safeDocTitle(f) !== 'טופס קבלת רכב'))
+      .map((id) =>
+        availableDeliveryForms.find(
+          (f) =>
+            f.id === id && !orgDocumentHandoverLabel(f).includes('טופס קבלת רכב'),
+        ),
+      )
       .filter(Boolean)
       .map((doc) => ({
         icon: FileText,
-        label: (doc as DeliveryFormDoc).title,
+        label: orgDocumentHandoverLabel(doc as DeliveryFormDoc),
         kind: getStepKindForDoc(doc as DeliveryFormDoc),
         docId: (doc as DeliveryFormDoc).id,
       }));
@@ -2506,7 +2517,9 @@ export default function VehicleHandoverWizard() {
                           setTimeout(() => setRecentlyToggledFormId((prev) => (prev === doc.id ? null : prev)), 900);
                         }}
                       />
-                      <span className={selected ? 'text-emerald-100' : 'text-cyan-50'}>{doc.title}</span>
+                      <span className={selected ? 'text-emerald-100' : 'text-cyan-50'}>
+                        {orgDocumentHandoverLabel(doc)}
+                      </span>
                       {wasJustToggled && (
                         <span className={`text-xs font-semibold ${recentlyToggledAdded ? 'text-emerald-300' : 'text-amber-300'}`}>
                           {recentlyToggledAdded ? 'נוסף' : 'הוסר'}

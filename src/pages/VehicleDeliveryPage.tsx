@@ -37,6 +37,7 @@ import {
   hasAnyDamage,
   summarizeDamageReport,
 } from '@/lib/vehicleDamage';
+import { isOrgDocumentUsableForHandoverList, orgDocumentHandoverLabel } from '@/lib/orgDocumentHandoverFilter';
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -520,7 +521,7 @@ export default function VehicleDeliveryPage() {
                       checked={selectedDeliveryFormIds.includes(form.id)}
                       onCheckedChange={(checked) => toggleDeliveryForm(form.id, checked === true)}
                     />
-                    <span>{form.title}</span>
+                    <span>{orgDocumentHandoverLabel(form)}</span>
                   </label>
                 ))
               )}
