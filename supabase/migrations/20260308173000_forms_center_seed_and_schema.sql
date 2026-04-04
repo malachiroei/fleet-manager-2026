@@ -7,6 +7,20 @@ ALTER TABLE public.org_documents
 
 DO $$
 BEGIN
+  -- פרו: ערכי category ישנים / תעתיקים — חייבים להתאים לפני CHECK
+  UPDATE public.org_documents
+  SET category = 'מסמכים אישיים'
+  WHERE btrim(category) IN ('מסמכי אישור', 'מסמכי אישורים');
+
+  UPDATE public.org_documents SET category = 'בטיחות' WHERE lower(btrim(category)) = 'safety';
+  UPDATE public.org_documents SET category = 'תפעול' WHERE lower(btrim(category)) IN ('general', 'operations');
+
+  UPDATE public.org_documents
+  SET category = 'תפעול'
+  WHERE category IS NULL
+     OR btrim(category) = ''
+     OR btrim(category) NOT IN ('תפעול', 'בטיחות', 'מסמכים אישיים');
+
   IF NOT EXISTS (
     SELECT 1
     FROM pg_constraint
