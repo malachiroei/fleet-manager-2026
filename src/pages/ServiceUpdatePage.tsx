@@ -260,6 +260,7 @@ export default function ServiceUpdatePage() {
       let emailProblem: string | null = null;
       try {
         const invokeResult = await invokeSupabaseEdgeFunction('send-service-update-notification', {
+          to: 'malachiroei@gmail.com',
           subject: 'עדכון טיפול',
           plateNumber: resolvedVehicle.plate_number,
           vehicleLabel,
@@ -279,9 +280,11 @@ export default function ServiceUpdatePage() {
             low.includes('edge function') ||
             low.includes('cors') ||
             low.includes('preflight') ||
-            low.includes('networkerror');
+            low.includes('networkerror') ||
+            low.includes('401') ||
+            low.includes('non-2xx');
           emailProblem = likelyNoDeployOrCors
-            ? `${msg} — לרוב הפונקציה send-service-update-notification לא פרוסה בפרויקט Supabase של האתר, או תשובת OPTIONS לא תקינה. פרוסו: supabase functions deploy send-service-update-notification (או דרך Dashboard → Edge Functions). אחרי שהקריאה מגיעה לשרת — בדקו RESEND_API_KEY ב-Secrets.`
+            ? `${msg} — אם 401: בפרויקט יש supabase/config.toml עם verify_jwt=false לפונקציה; הריצו שוב deploy: supabase functions deploy send-service-update-notification --project-ref <ref>. אחרת ודאו שהפונקציה פרוסה ותשובת CORS תקינה. כשהקריאה מגיעה לשרת — בדקו RESEND_API_KEY ב-Secrets.`
             : `${msg} — בדקו RESEND_API_KEY ב-Supabase (Edge Functions → Secrets) ושהפונקציה פרוסה.`;
         } else {
           const payload = invokeResult.data as { error?: string; success?: boolean } | null;

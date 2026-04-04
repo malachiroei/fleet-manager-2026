@@ -1,1 +1,11 @@
+# project_id — סטייג'ינג מקומי; בפרוד משתמשים ב־--project-ref בפקודת deploy.
 project_id = "hojopkvnajvexnwolyeu"
+
+# פונקציות Resend נקראות מהדפדפן. אם verify_jwt=true (ברירת מחדל בשער), מתקבל 401
+# למרות Bearer תקין בחלק מהפרויקטים/גרסאות. שתי ההתראות מיושרות ל־false — כמו פריסה יציבה של מייל ק״מ.
+# סיכון מוגבל: השליחה מוגבלת לכתובות מהקוד + דורשת RESEND_API_KEY בשרת.
+[functions.send-mileage-notification]
+verify_jwt = false
+
+[functions.send-service-update-notification]
+verify_jwt = false

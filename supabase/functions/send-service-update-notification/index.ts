@@ -13,6 +13,8 @@ const corsHeaders: Record<string, string> = {
 };
 
 export interface ServiceUpdateNotificationBody {
+  /** אופציונלי — תואם send-mileage-notification (ברירת מחדל malachiroei@gmail.com) */
+  to?: string;
   subject: string;
   plateNumber: string;
   vehicleLabel: string;
@@ -39,7 +41,8 @@ serve(async (req) => {
 
   try {
     const resendApiKey = Deno.env.get('RESEND_API_KEY');
-    const fromEmail = Deno.env.get('NOTIFY_FROM_EMAIL') || 'onboarding@resend.dev';
+    const fromEmail =
+      Deno.env.get('NOTIFY_FROM_EMAIL') || 'Fleet Manager Pro <invites@fleet-manager-pro.com>';
 
     if (!resendApiKey) {
       return new Response(
@@ -50,7 +53,9 @@ serve(async (req) => {
 
     const body = (await req.json()) as ServiceUpdateNotificationBody;
     const subject = body.subject?.trim() || 'עדכון טיפול';
-    const to = 'malachiroei@gmail.com';
+    const to =
+      (body.to && String(body.to).includes('@') ? String(body.to).trim() : '') ||
+      'malachiroei@gmail.com';
 
     const kmStr = (n: number | null | undefined) =>
       n != null && Number.isFinite(n) ? `${Number(n).toLocaleString('he-IL')} ק"מ` : '—';
