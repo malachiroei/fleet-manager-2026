@@ -119,6 +119,10 @@ GRANT EXECUTE ON FUNCTION public.user_may_access_vehicle_handover_row(uuid, uuid
 DROP POLICY IF EXISTS "vehicle_handovers_select_same_org" ON public.vehicle_handovers;
 DROP POLICY IF EXISTS "vehicle_handovers_insert_org_participants" ON public.vehicle_handovers;
 DROP POLICY IF EXISTS "vehicle_handovers_update_org_admins" ON public.vehicle_handovers;
+-- אידמפוטנטיות: הרצה חוזרת של המיגרציה / סקריפט ידני
+DROP POLICY IF EXISTS "vehicle_handovers_select_access" ON public.vehicle_handovers;
+DROP POLICY IF EXISTS "vehicle_handovers_insert_handover_access" ON public.vehicle_handovers;
+DROP POLICY IF EXISTS "vehicle_handovers_update_handover_access" ON public.vehicle_handovers;
 
 CREATE POLICY "vehicle_handovers_select_access"
   ON public.vehicle_handovers FOR SELECT
