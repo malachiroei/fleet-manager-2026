@@ -860,6 +860,26 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      create_vehicle_handover: {
+        Args: {
+          p_assignment_mode: string
+          p_created_by: string | null
+          p_driver_id: string | null
+          p_fuel_level: string
+          p_handover_date: string
+          p_handover_type: string
+          p_notes: string | null
+          p_odometer_reading: number
+          p_org_id: string | null
+          p_photo_back_url: string | null
+          p_photo_front_url: string | null
+          p_photo_left_url: string | null
+          p_photo_right_url: string | null
+          p_signature_url: string | null
+          p_vehicle_id: string
+        }
+        Returns: Database["public"]["Tables"]["vehicle_handovers"]["Row"]
+      }
       calculate_compliance_status: {
         Args: { expiry_date: string }
         Returns: Database["public"]["Enums"]["compliance_status"]

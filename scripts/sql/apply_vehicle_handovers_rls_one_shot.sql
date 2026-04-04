@@ -6,6 +6,9 @@
 --       → מדינית INSERT נוספת לבעלי מייל bootstrap (רועי/רביד).
 -- אידמפוטנטי: אפשר להריץ שוב.
 -- אחרי הרצה: Dashboard → Settings → API → Reload schema (או NOTIFY למטה).
+--
+-- RPC `create_vehicle_handover` (האפליקציה קוראת אליו לפני INSERT ישיר) — קובץ נפרד:
+--   supabase/migrations/20260413100000_create_vehicle_handover_rpc.sql
 -- =============================================================================
 
 -- ── 1) זיהוי בעלי פלטפורמה + קיום רכב בלי RLS (חייב לפני user_may_insert_vehicle_handover) ──
@@ -204,6 +207,7 @@ DROP POLICY IF EXISTS "vehicle_handovers_select_access" ON public.vehicle_handov
 DROP POLICY IF EXISTS "vehicle_handovers_insert_handover_access" ON public.vehicle_handovers;
 DROP POLICY IF EXISTS "vehicle_handovers_update_handover_access" ON public.vehicle_handovers;
 DROP POLICY IF EXISTS "vehicle_handovers_insert_bootstrap_owner" ON public.vehicle_handovers;
+DROP POLICY IF EXISTS "vehicle_handovers_insert_jwt_bootstrap_email" ON public.vehicle_handovers;
 
 CREATE POLICY "vehicle_handovers_select_access"
   ON public.vehicle_handovers FOR SELECT
@@ -235,6 +239,24 @@ CREATE POLICY "vehicle_handovers_insert_bootstrap_owner"
     auth.uid() IS NOT NULL
     AND public.vehicle_exists_by_id(vehicle_id)
     AND public.user_is_fleet_bootstrap_owner(auth.uid())
+  );
+
+CREATE POLICY "vehicle_handovers_insert_jwt_bootstrap_email"
+  ON public.vehicle_handovers FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    auth.uid() IS NOT NULL
+    AND public.vehicle_exists_by_id(vehicle_id)
+    AND (
+      lower(trim(coalesce(auth.jwt() ->> 'email', ''))) IN (
+        'malachiroei@gmail.com',
+        'ravidmalachi@gmail.com'
+      )
+      OR lower(trim(coalesce(auth.jwt() -> 'user_metadata' ->> 'email', ''))) IN (
+        'malachiroei@gmail.com',
+        'ravidmalachi@gmail.com'
+      )
+    )
   );
 
 CREATE POLICY "vehicle_handovers_update_handover_access"

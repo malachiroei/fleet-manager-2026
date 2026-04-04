@@ -2343,7 +2343,7 @@ export default function VehicleHandoverWizard() {
       if (emailErr instanceof Error && emailErr.stack) {
         console.error('[Wizard] Email stack:', emailErr.stack);
       }
-      toast.success('המסמכים נשמרו. שליחת המייל נכשלה.');
+      toast.error(`המסמכים נשמרו, אך שליחת המייל נכשלה: ${message}`);
     }
 
     // ── Step 5: Persist to DB (failures here do NOT block navigation) ─────────
