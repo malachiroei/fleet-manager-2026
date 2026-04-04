@@ -45,9 +45,9 @@ import type { Profile } from '@/types/fleet';
 export default function TeamManagementPage() {
   const { profile, activeOrgId, hasPermission, isAdmin, isManager } = useAuth();
   const { viewAsProfile } = useViewAs();
-  const { effectiveUserId } = useImpersonationFleetScope();
+  const { effectiveUserId, effectiveOrgId } = useImpersonationFleetScope();
   const queryClient = useQueryClient();
-  const orgId = activeOrgId ?? null;
+  const orgId = effectiveOrgId ?? activeOrgId ?? null;
   const isSuperAdminTeamView = isRoeySuperAdminProfile(profile);
   const [globalFeaturesOpen, setGlobalFeaturesOpen] = useState(false);
   const subjectIsSystemAdmin = (viewAsProfile?.is_system_admin ?? profile?.is_system_admin) === true;

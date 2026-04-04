@@ -11,6 +11,7 @@ import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { QA_FORMS_NESTED_KEYS, QA_FORMS_PARENT_KEY, registryEntryForKey } from '@/lib/featureFlagRegistry';
 import { useAuth } from '@/hooks/useAuth';
+import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
 import { cn } from '@/lib/utils';
 
 const NESTED_UNDER_QA_SET = new Set<string>(QA_FORMS_NESTED_KEYS);
@@ -74,9 +75,10 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [optimisticOverrides, setOptimisticOverrides] = useState<Record<string, boolean>>({});
   const { user, profile, activeOrgId, hasPermission, isAdmin, isManager } = useAuth();
+  const { effectiveOrgId } = useImpersonationFleetScope();
   const viewerEmail = (profile?.email ?? user?.email ?? '').trim().toLowerCase();
   const isRoeiAdmin = viewerEmail === 'malachiroei@gmail.com';
-  const viewerOrgId = (activeOrgId ?? profile?.org_id ?? null) as string | null;
+  const viewerOrgId = (effectiveOrgId ?? activeOrgId ?? profile?.org_id ?? null) as string | null;
   const viewerHasManageTeam = isRoeiAdmin || hasPermission('manage_team') || isAdmin || isManager;
 
   const { data: featureFlags = [] as FeatureFlagRow[], isLoading: isFlagsLoading, isError: isFlagsError } = useQuery({

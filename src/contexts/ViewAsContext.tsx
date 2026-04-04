@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, ReactNode } fr
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import type { Profile } from '@/types/fleet';
-import { RAVID_MANAGER_EMAIL } from '@/lib/fleetBootstrapEmails';
+import { RAVID_MANAGER_EMAIL, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
 import { RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 
 interface ViewAsContextValue {
@@ -17,7 +17,7 @@ const ViewAsContext = createContext<ViewAsContextValue | undefined>(undefined);
 
 export function ViewAsProvider({ children }: { children: ReactNode }) {
   const [viewAsEmail, setViewAsEmail] = useState<string | null>(null);
-  const { activeOrgId } = useAuth();
+  const { activeOrgId, profile, user } = useAuth();
   const [viewAsProfile, setViewAsProfile] = useState<Profile | null>(null);
   const [viewAsLoading, setViewAsLoading] = useState(false);
 
@@ -34,22 +34,31 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
 
       setViewAsLoading(true);
       try {
-        // First try active org (if present), then fallback to global email lookup.
-        // This prevents "orange bar active but profile null" when org context is out of sync.
+        const viewerNorm = resolveSessionEmail(profile, user);
+        const orgTryOrder: string[] = [];
+        if (viewerNorm === RAVID_MANAGER_EMAIL) {
+          orgTryOrder.push(RAVID_FLEET_ORG_ID);
+        }
+        if (activeOrgId && !orgTryOrder.includes(activeOrgId)) {
+          orgTryOrder.push(activeOrgId);
+        }
+
         let row: Profile | null = null;
         let error: { message: string } | null = null;
 
-        if (activeOrgId) {
+        for (const oid of orgTryOrder) {
           const scoped = await supabase
             .from('profiles')
             .select('*')
-            .eq('org_id', activeOrgId)
+            .eq('org_id', oid)
             .ilike('email', normalizedEmail)
             .maybeSingle();
           if (scoped.error) {
             error = { message: scoped.error.message };
-          } else {
-            row = (scoped.data as Profile | null) ?? null;
+          } else if (scoped.data) {
+            row = scoped.data as Profile;
+            error = null;
+            break;
           }
         }
 
@@ -106,7 +115,7 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [normalizedEmail, activeOrgId]);
+  }, [normalizedEmail, activeOrgId, profile?.email, user?.email]);
 
   const contextValue = useMemo(
     () => ({ viewAsEmail, setViewAsEmail, viewAsProfile, viewAsLoading }),

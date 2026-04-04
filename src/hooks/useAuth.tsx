@@ -3,7 +3,8 @@ import { User, Session, type AuthChangeEvent } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import type { AppRole, Profile } from '@/types/fleet';
 import { hasPermission as checkPermission, type PermissionKey } from '@/lib/permissions';
-import { isFleetBootstrapOwnerEmail, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
+import { isFleetBootstrapOwnerEmail, RAVID_MANAGER_EMAIL, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
+import { FALLBACK_MAIN_FLEET_ORG_ID, RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 import { clearFleetProUpdateModalSuppressFlag } from '@/lib/pwaUpdateModalBridge';
 
 const ACTIVE_ORG_STORAGE_KEY = 'fleet-manager-active-org';
@@ -392,8 +393,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!user) return;
     if (profile === null) return;
     if (activeOrgInitializedRef.current) return;
-    const profileOrgId = profile.org_id?.trim() || null;
-    if (memberOrganizations.length === 0 && !profileOrgId) return;
+    const rawProfileOrgId = profile.org_id?.trim() || null;
+    const sessionEmailForOrg = resolveSessionEmail(profile, user);
+    const profileOrgIdForActive =
+      sessionEmailForOrg === RAVID_MANAGER_EMAIL &&
+      (!rawProfileOrgId || rawProfileOrgId === FALLBACK_MAIN_FLEET_ORG_ID)
+        ? RAVID_FLEET_ORG_ID
+        : rawProfileOrgId;
+    if (memberOrganizations.length === 0 && !profileOrgIdForActive) return;
 
     activeOrgInitializedRef.current = true;
     let stored: string | null = null;
@@ -404,20 +411,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const orgKnown = (id: string | null | undefined) =>
       Boolean(id) && memberOrganizations.some((o) => o.id === id);
+    const wrongMainStoredForRavid =
+      sessionEmailForOrg === RAVID_MANAGER_EMAIL && stored === FALLBACK_MAIN_FLEET_ORG_ID;
     const validStored =
-      stored && (orgKnown(stored) || stored === profileOrgId);
-    if (validStored) {
-      setActiveOrgIdState(stored);
+      !wrongMainStoredForRavid &&
+      Boolean(stored) &&
+      (orgKnown(stored) || stored === rawProfileOrgId || stored === profileOrgIdForActive);
+    if (validStored && stored) {
+      setActiveOrgId(stored);
       return;
     }
-    if (profileOrgId) {
-      setActiveOrgIdState(profileOrgId);
+    if (profileOrgIdForActive) {
+      setActiveOrgId(profileOrgIdForActive);
       return;
     }
     if (memberOrganizations.length > 0) {
-      setActiveOrgIdState(memberOrganizations[0]?.id ?? null);
+      setActiveOrgId(memberOrganizations[0]?.id ?? null);
     }
-  }, [user, profile, memberOrganizations, profile?.org_id]);
+  }, [user, profile, memberOrganizations, profile?.org_id, setActiveOrgId]);
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });

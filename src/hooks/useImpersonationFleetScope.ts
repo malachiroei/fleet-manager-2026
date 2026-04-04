@@ -33,12 +33,15 @@ export function useImpersonationFleetScope() {
   const viewAsProfilePending = Boolean(viewAsEmail?.trim()) && !impersonatedUserId;
 
   const viewAsNorm = (viewAsEmail ?? '').trim().toLowerCase();
+  const sessionNorm = resolveSessionEmail(profile, user);
   /**
-   * תצוגה כרביד: תמיד ארגון הצי של רביד — לא viewAsProfile.org_id שעלול להישאר «הצי הראשי» ב-DB.
-   * אחרת: activeOrgId (מחובר ישירות או אחרי handleViewAs) ואז פרופיל המחליף.
+   * רביד מחובר (או תצוגה כרביד): תמיד ארגון הצי של רביד — גם כש־profiles.org_id בפרו עדיין הצי הראשי של רועי.
+   * אחרת: activeOrgId ואז פרופיל המחליף.
    */
   const orgFromContext = (
-    (viewAsNorm === RAVID_MANAGER_EMAIL ? RAVID_FLEET_ORG_ID : null) ??
+    (sessionNorm === RAVID_MANAGER_EMAIL || viewAsNorm === RAVID_MANAGER_EMAIL
+      ? RAVID_FLEET_ORG_ID
+      : null) ??
     activeOrgId ??
     viewAsProfile?.org_id ??
     null
