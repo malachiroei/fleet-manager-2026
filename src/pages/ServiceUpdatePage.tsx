@@ -238,22 +238,22 @@ export default function ServiceUpdatePage() {
       } as any);
       if (serviceLogError) throw serviceLogError;
 
-      try {
-        await supabase.from('vehicle_documents').insert({
-          vehicle_id: resolvedVehicle.id,
-          title: `עדכון טיפול ${serviceDate} — ${mileageNum.toLocaleString('he-IL')} ק"מ`,
-          file_url: photoUrl,
-          document_type: 'service_update',
-          metadata: {
-            service_date: serviceDate,
-            next_service_date: nextServiceDate,
-            mileage: mileageNum,
-            next_maintenance_km: nextServiceKm,
-            user_id: user.id,
-          },
-        } as any);
-      } catch (docErr) {
+      const { error: docErr } = await supabase.from('vehicle_documents').insert({
+        vehicle_id: resolvedVehicle.id,
+        title: `עדכון טיפול ${serviceDate} — ${mileageNum.toLocaleString('he-IL')} ק"מ`,
+        file_url: photoUrl,
+        document_type: 'service_update',
+        metadata: {
+          service_date: serviceDate,
+          next_service_date: nextServiceDate,
+          mileage: mileageNum,
+          next_maintenance_km: nextServiceKm,
+          user_id: user.id,
+        },
+      } as any);
+      if (docErr) {
         console.error('[ServiceUpdatePage] vehicle_documents insert', docErr);
+        throw docErr;
       }
 
       try {

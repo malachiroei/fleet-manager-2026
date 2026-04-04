@@ -184,11 +184,17 @@ export function useUpdateVehicle() {
         .from('vehicles')
         .update(updates)
         .eq('id', id)
-        .select()
-        .single();
+        .select();
 
       if (error) throw error;
-      return data;
+      const rows = Array.isArray(data) ? data : [];
+      const row = rows[0] ?? null;
+      if (!row) {
+        throw new Error(
+          'אין הרשאת עדכון לרכב זה או הרכב לא נמצא (בדוק הרשאות במסד)',
+        );
+      }
+      return row;
     },
     onSuccess: (data) => {
       // עדכון מיידי של מסך הסקירה בלי להמתין ל-refetch
@@ -234,11 +240,14 @@ export function useUpdateOdometer() {
         .from('vehicles')
         .update({ current_odometer: odometer })
         .eq('id', id)
-        .select()
-        .single();
+        .select();
 
       if (error) throw error;
-      return data;
+      const row = Array.isArray(data) ? data[0] : null;
+      if (!row) {
+        throw new Error('אין הרשאת עדכון מונה או הרכב לא נמצא');
+      }
+      return row;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
