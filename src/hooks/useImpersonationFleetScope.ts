@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useViewAs } from '@/contexts/ViewAsContext';
 import { isFleetBootstrapOwnerEmail, resolveSessionEmail, RAVID_MANAGER_EMAIL } from '@/lib/fleetBootstrapEmails';
 import { FALLBACK_MAIN_FLEET_ORG_ID, RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
+import { profileUsesStrictFleetManagedSlice, resolveFleetManagedByQueryMode } from '@/lib/fleetManagerScope';
 
 /**
  * הקשר לרשימות צי: org (כולל View As), נהג בלבד כשמוחלפים משתמש עם רק תפקיד נהג,
@@ -27,7 +28,7 @@ export function useImpersonationFleetScope() {
   const viewAsBannerActive = Boolean(viewAsEmail?.trim());
   /**
    * בין לחיצת View-As לבין טעינת viewAsProfile — effectiveUserId עדיין של המנהל המחובר.
-   * אם מפעילים applyFleetManagerSlice עם UUID של רועי על org של רביד, מתקבל 0 שורות ואז
+   * אם מפעילים סינון managed_by עם UUID של רועי על org של רביד, מתקבל 0 שורות ואז
    * fallback של הדשבורד (מנהל ראשי) מציג את כל הצי הגלובלי — נראה כמו «רואים את רועי».
    */
   const viewAsProfilePending = Boolean(viewAsEmail?.trim()) && !impersonatedUserId;
@@ -121,14 +122,66 @@ export function useImpersonationFleetScope() {
     return rolesIncludeFleetElevated(rolesQuery.data ?? []);
   }, [isImpersonating, rolesQuery.data, rolesQuery.isFetched]);
 
+  /** מנהל צי/אדמין/בעלים — לפי תפקידי המחובר + פרופיל (לא תלוי ב־View As) */
+  const viewerSessionElevated = useMemo(
+    () =>
+      viewerIsFleetElevated ||
+      profile?.is_system_admin === true ||
+      isFleetBootstrapOwnerEmail(sessionEmail),
+    [viewerIsFleetElevated, profile?.is_system_admin, sessionEmail],
+  );
+
   const fleetListSubjectIsElevated = isImpersonating ? impersonatedFleetElevated : viewerIsFleetElevated;
 
-  /** Per-manager lists within org for admins/managers; viewers keep org-wide lists (NULL managed_by pool). */
-  const applyFleetManagerSlice =
-    !viewAsProfilePending &&
-    fleetManagerListUserId != null &&
-    !isDriverContextOnly &&
-    fleetListSubjectIsElevated;
+  /** פרופיל הנושא לסינון היררכיה (מחובר / תצוגה כמשתמש). */
+  const fleetHierarchyProfile = isImpersonating ? viewAsProfile : profile;
+  /** מדווח למנהל (צוות) — סינון strict לפי managed_by_user_id, גם כשאין תפקיד fleet_manager. */
+  const profileHierarchyStrict = profileUsesStrictFleetManagedSlice(fleetHierarchyProfile);
+
+  const fleetManagedByQueryMode = useMemo(
+    () =>
+      resolveFleetManagedByQueryMode({
+        viewAsProfilePending,
+        isDriverContextOnly,
+        fleetManagerListUserId,
+        profileHierarchyStrict,
+        fleetListSubjectIsElevated,
+      }),
+    [
+      viewAsProfilePending,
+      isDriverContextOnly,
+      fleetManagerListUserId,
+      profileHierarchyStrict,
+      fleetListSubjectIsElevated,
+    ],
+  );
+
+  /**
+   * דף ניהול צוות: `managed_by_user_id` של מי מציגים כפיפים.
+   * - מנהל מחובר + תצוגה כנהג במחליף → UUID של המנהל (לא של הנהג).
+   * - מנהל מחובר רגיל → UUID שלו.
+   * - סופר־אדמין בתצוגה כמנהל צי אחר → UUID של המוחלף (צוות שלו).
+   * - משתמש לא־מורם → UUID שלו (בדרך כלל לא יגיעו ל־/team).
+   */
+  const teamManagementManagedByUserId = useMemo(() => {
+    if (!viewerSessionElevated) {
+      return user?.id ?? null;
+    }
+    if (isDriverContextOnly && user?.id) {
+      return user.id;
+    }
+    if (isImpersonating && impersonatedFleetElevated) {
+      return effectiveUserId;
+    }
+    return user?.id ?? null;
+  }, [
+    viewerSessionElevated,
+    isDriverContextOnly,
+    isImpersonating,
+    impersonatedFleetElevated,
+    user?.id,
+    effectiveUserId,
+  ]);
 
   return {
     effectiveOrgId,
@@ -138,7 +191,8 @@ export function useImpersonationFleetScope() {
     isDriverContextOnly,
     scopedDriverId,
     fleetListReady,
-    applyFleetManagerSlice,
     fleetManagerListUserId,
+    fleetManagedByQueryMode,
+    teamManagementManagedByUserId,
   };
 }

@@ -7,7 +7,6 @@ import { useDashboardStats, useComplianceAlerts } from '@/hooks/useDashboard';
 import { useFeatureFlags } from '@/hooks/useFeatureFlags';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useAuth } from '@/hooks/useAuth';
-import { usePermissions } from '@/hooks/usePermissions';
 import { useViewAs } from '@/contexts/ViewAsContext';
 import type { PermissionKey } from '@/lib/permissions';
 import { Button } from '@/components/ui/button';
@@ -169,7 +168,6 @@ export default function Dashboard() {
   const { user, profile, hasPermission, isAdmin, isManager, isDriver, roles: userRoles, loading, activeOrgId } = useAuth();
   const { viewAsEmail } = useViewAs();
   const { isPending: flagsPending } = useFeatureFlags();
-  const { canAccessUi } = usePermissions();
   const showDashboardTreatmentCard = false;
   const showDashboardTestCard = false;
   const showMaintenanceFormCard = false;
@@ -330,17 +328,21 @@ export default function Dashboard() {
 
   const canReportMileage = forceMileageForMalachiroei || canReportMileageFromPermissions;
 
-  const visibleStatusCards = useMemo(() => {
-    return statusCardConfig.filter((card) =>
-      canAccessUi({ permission: card.permission, featureKey: card.featureFlagKey }),
-    );
-  }, [canAccessUi]);
+  /** עדכון מונה מהיר בדשבורד — נהגים לרוב בלי מפתח mileage_update מפורש בפרופיל */
+  const showMileageQuickOpen =
+    hasPermission('mileage_update') ||
+    hasPermission('report_mileage') ||
+    (isDriver && !isAdmin && !isManager);
 
+  /** כרטיסי ליבה (רכבים / נהגים / התראות / חליפי) — לפי הרשאת תפקיד בלבד; לא מסתירים בגלל דגלי dashboard_* */
+  const visibleStatusCards = useMemo(() => {
+    return statusCardConfig.filter((card) => card.permission && hasPermission(card.permission));
+  }, [hasPermission]);
+
+  /** פעולות מהירות — לפי הרשאה בלבד; דגלי qa_* לא אמורים לרוקן את השורה למשתמשים מורשים */
   const visibleQuickLinksByFlags = useMemo(() => {
-    return baseQuickLinks.filter((a) => {
-      return canAccessUi({ permission: a.permission, featureKey: a.featureFlagKey });
-    });
-  }, [baseQuickLinks, canAccessUi]);
+    return baseQuickLinks.filter((a) => !a.permission || hasPermission(a.permission));
+  }, [baseQuickLinks, hasPermission]);
 
   const quickLinks = visibleQuickLinksByFlags.filter((a) => {
     if (a.href === '/report-mileage') return canReportMileage;
@@ -549,7 +551,7 @@ export default function Dashboard() {
                 )
               ) : null}
 
-              {hasPermission('mileage_update') && (
+              {showMileageQuickOpen && (
                 <Card className="h-full border-dashed touch-manipulation min-h-[48px] cursor-pointer" style={{ touchAction: 'manipulation' }}>
                   <CardContent className="p-4 flex items-center gap-3">
                     <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
@@ -702,7 +704,7 @@ export default function Dashboard() {
                 )
               ) : null}
 
-              {hasPermission('mileage_update') && (
+              {showMileageQuickOpen && (
                 <Card className="h-full border-dashed touch-manipulation min-h-[48px] cursor-pointer" style={{ touchAction: 'manipulation' }}>
                   <CardContent className="p-4 h-full flex items-center gap-3">
                     <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">

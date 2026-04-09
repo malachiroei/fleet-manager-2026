@@ -14,8 +14,8 @@ export function useDrivers() {
     isDriverContextOnly,
     impersonatedUserId,
     fleetListReady,
-    applyFleetManagerSlice,
     fleetManagerListUserId,
+    fleetManagedByQueryMode,
   } = useImpersonationFleetScope();
 
   const orgId = effectiveOrgId;
@@ -27,8 +27,8 @@ export function useDrivers() {
       isImpersonating,
       isDriverContextOnly,
       impersonatedUserId,
-      applyFleetManagerSlice,
       fleetManagerListUserId,
+      fleetManagedByQueryMode,
     ],
     enabled: fleetListReady && orgId != null,
     queryFn: async () => {
@@ -36,8 +36,10 @@ export function useDrivers() {
       let base = supabase.from('drivers').select('*').eq('org_id', orgId);
       if (isDriverContextOnly && impersonatedUserId) {
         base = base.eq('user_id', impersonatedUserId);
-      } else if (applyFleetManagerSlice && fleetManagerListUserId) {
-        base = base.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
+      } else if (fleetManagedByQueryMode === 'own_only' && fleetManagerListUserId) {
+        base = base.eq('managed_by_user_id', fleetManagerListUserId);
+      } else if (fleetManagedByQueryMode === 'org_pool_or_own' && fleetManagerListUserId) {
+        base = base.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId, false));
       }
       const { data, error } = await base.order('full_name');
 
@@ -48,8 +50,10 @@ export function useDrivers() {
           .eq('org_id', orgId);
         if (isDriverContextOnly && impersonatedUserId) {
           fallbackQ = fallbackQ.eq('user_id', impersonatedUserId);
-        } else if (applyFleetManagerSlice && fleetManagerListUserId) {
-          fallbackQ = fallbackQ.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
+        } else if (fleetManagedByQueryMode === 'own_only' && fleetManagerListUserId) {
+          fallbackQ = fallbackQ.eq('managed_by_user_id', fleetManagerListUserId);
+        } else if (fleetManagedByQueryMode === 'org_pool_or_own' && fleetManagerListUserId) {
+          fallbackQ = fallbackQ.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId, false));
         }
         const fallback = await fallbackQ.order('full_name');
         if (fallback.error) {

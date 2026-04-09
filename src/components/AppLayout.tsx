@@ -1,6 +1,6 @@
 import { type ElementType, type MouseEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { useVehicleSpecDirty } from '@/contexts/VehicleSpecDirtyContext';
+import { isVehicleDeliveryRoute, useVehicleSpecDirty } from '@/contexts/VehicleSpecDirtyContext';
 import { useViewAs } from '@/contexts/ViewAsContext';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks/useAuth';
@@ -66,6 +66,9 @@ function augmentSwitcherMembers(
     activeOrgId: string | null;
     mainFleetOrgId: string | null;
     profileOrgId: string | null | undefined;
+    /** לא להציג את המנהל הישיר ברשימת «תצוגה כחבר צוות» — הוא מעליך בהיררכיה, לא תחתיך */
+    profileManagedByUserId?: string | null;
+    profileParentAdminId?: string | null;
   },
 ): TeamMemberSummary[] {
   const self = opts.selfEmail.toLowerCase();
@@ -76,6 +79,15 @@ function augmentSwitcherMembers(
       m.email.toLowerCase() !== MAIN_ADMIN_SWITCHER_EMAIL,
   );
   visible = visible.filter((m) => (m.full_name || '').trim() !== 'רביד צי רכבים');
+
+  const managerIds = new Set(
+    [opts.profileManagedByUserId, opts.profileParentAdminId]
+      .map((x) => (x ?? '').trim())
+      .filter(Boolean),
+  );
+  if (managerIds.size > 0) {
+    visible = visible.filter((m) => !managerIds.has(m.id));
+  }
 
   if (opts.isMainAdmin) {
     const allow = new Set([RAVID_MANAGER_EMAIL]);
@@ -135,6 +147,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     isDriver,
     hasPermission,
   } = useAuth();
+  /** נהג/viewer בלי תפקיד מנהל — כפתורי ניהול זהב, מנעול org, תפריט מצומצם לנהג רועי */
   const isDriverOnlyHeader = Boolean(isDriver && !isManager && !isAdmin);
   /** כולל bootstrap / is_system_admin כש־user_roles ריק בפרו */
   const isElevatedHeader =
@@ -260,12 +273,12 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   /** Gold header buttons (Roei Admin + Ravid Manager). */
   const canAccessGoldenManagementLinks = !isDriverOnlyHeader && (canManageOrgUi || canManageTeamUi);
-  const isDriverRoei = email === ROEI_DRIVER_EMAIL;
   const isRavid = email === RAVID_MANAGER_EMAIL;
+  /** תצוגה כמשתמש אחר — רק למנהלים/מי שאינו «נהג בלבד»; נהגים לא אמורים להפעיל View-As */
+  const canInitiateViewAs = !isDriverOnlyHeader || isMainAdmin || isRavid;
 
-  /** כולל נהג רועי בתצוגה כרביד — אחרת אין באנר יציאה והמנעול על org שלו נלחם ב-View-As. */
-  const viewAsBannerVisible =
-    Boolean(viewAsEmail) && (isMainAdmin || isRavid || isDriverRoei);
+  /** באנר View-As — לא מוצג לנהג בלבד (גם מניעת הבזק לפני ניקוי ב-ViewAsProvider) */
+  const viewAsBannerVisible = Boolean(viewAsEmail?.trim()) && canInitiateViewAs;
   /** באנר staging מיני — גובה ~h-6 */
   const headerStickyTopClass = showFleetEnvironmentBanner
     ? viewAsBannerVisible
@@ -298,15 +311,14 @@ export function AppLayout({ children }: AppLayoutProps) {
     }
   }, [isMainAdmin, viewAsEmail, activeOrgId, setActiveOrgId, mainFleetOrgId]);
 
-  // Ensure Roei (driver-only) is always locked to his org and cannot switch orgs
+  // נהג ללא תפקיד מנהל — נעילה ל-org של הפרופיל (לא החלפת צי)
   useEffect(() => {
-    if (!isDriverRoei) return;
-    if (viewAsEmail?.trim()) return; // View-As (למשל כרביד) — org נקבע במקום אחר; אחרת לולאה אינסופית
+    if (!isDriverOnlyHeader) return;
     const targetOrgId = profile?.org_id as string | null | undefined;
     if (targetOrgId && activeOrgId !== targetOrgId) {
       setActiveOrgId(targetOrgId);
     }
-  }, [isDriverRoei, viewAsEmail, profile?.org_id, activeOrgId, setActiveOrgId]);
+  }, [isDriverOnlyHeader, profile?.org_id, activeOrgId, setActiveOrgId]);
 
   // Ensure Ravid is locked to his org and cannot switch orgs
   useEffect(() => {
@@ -339,7 +351,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       setActiveOrgId(mainOrgId);
     } else if (isRavid && profile?.org_id?.trim()) {
       setActiveOrgId(profile.org_id.trim());
-    } else if (isDriverRoei && profile?.org_id?.trim()) {
+    } else if (isDriverOnlyHeader && profile?.org_id?.trim()) {
       setActiveOrgId(profile.org_id.trim());
     } else {
       setActiveOrgId(mainOrgId);
@@ -358,11 +370,12 @@ export function AppLayout({ children }: AppLayoutProps) {
     }
 
     window.location.assign(`${window.location.origin}/`);
-  }, [setViewAsEmail, isMainAdmin, isRavid, isDriverRoei, profile?.org_id, setActiveOrgId]);
+  }, [setViewAsEmail, isMainAdmin, isRavid, isDriverOnlyHeader, profile?.org_id, setActiveOrgId]);
 
   /** תצוגה כחבר צוות: לרביד תמיד מעבירים ל-VIEW_AS_RAVID_ORG_ID (לא org של המנהל המחובר). */
   const handleViewAs = useCallback(
     (member: Pick<TeamMemberSummary, 'email'> & Partial<Pick<TeamMemberSummary, 'org_id'>>) => {
+      if (!canInitiateViewAs) return;
       const trimmed = (member.email ?? '').trim();
       setViewAsEmail(trimmed || null);
       if (trimmed.toLowerCase() === RAVID_MANAGER_EMAIL) {
@@ -372,7 +385,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       const oid = member.org_id != null ? String(member.org_id).trim() : '';
       if (oid) setActiveOrgId(oid);
     },
-    [setViewAsEmail, setActiveOrgId],
+    [canInitiateViewAs, setViewAsEmail, setActiveOrgId],
   );
 
   const handleLogout = () => {
@@ -422,6 +435,8 @@ export function AppLayout({ children }: AppLayoutProps) {
       activeOrgId,
       mainFleetOrgId,
       profileOrgId: profile?.org_id,
+      profileManagedByUserId: profile?.managed_by_user_id,
+      profileParentAdminId: profile?.parent_admin_id,
     });
 
   return (
@@ -477,7 +492,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             </div>
           )}
 
-          {mobileMembers.length > 0 && (
+          {canInitiateViewAs && mobileMembers.length > 0 && (
             <div className="py-1 border-t border-border mt-1">
               <div className="px-3 pb-1 text-[11px] font-semibold text-muted-foreground">
                 תצוגה כחבר צוות
@@ -565,39 +580,6 @@ export function AppLayout({ children }: AppLayoutProps) {
   };
 
   const OrgSwitcher = () => {
-    /** נהג רועי: אין רשימת ארגונים — רק מעבר לתצוגת מנהל (רביד) */
-    if (isDriverRoei) {
-      return (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1.5 border-cyan-400/20 bg-cyan-500/10 px-2.5 text-xs font-medium text-cyan-100 hover:bg-cyan-500/20 hover:text-cyan-100"
-            >
-              <Building className="h-3.5 w-3.5" />
-              <span className="hidden md:inline max-w-[140px] truncate">חשבונות מקושרים</span>
-              <ChevronDown className="h-3.5 w-3.5 opacity-70" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align={isRtl ? 'start' : 'end'} className="min-w-[220px]">
-            <DropdownMenuItem disabled className="text-[11px] font-semibold opacity-80">
-              תצוגה כמנהל
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              className="text-xs cursor-pointer"
-              onClick={() => handleViewAs({ email: RAVID_MANAGER_EMAIL })}
-            >
-              <div className="flex flex-col">
-                <span className="font-medium truncate">רביד (מנהל צי)</span>
-                <span className="text-[11px] text-muted-foreground truncate">{RAVID_MANAGER_EMAIL}</span>
-              </div>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      );
-    }
-
     // אם אין ארגונים משויכים בכלל, נסתיר רק למשתמשים רגילים – אבל לא למנהל הראשי ולא לרביד
     if (memberOrganizations.length === 0 && !isMainAdmin && !isRavid) return null;
     // For the org list at the top: for main admin, prefer only the primary org "רביד צי רכבים"
@@ -612,6 +594,8 @@ export function AppLayout({ children }: AppLayoutProps) {
       activeOrgId,
       mainFleetOrgId,
       profileOrgId: profile?.org_id,
+      profileManagedByUserId: profile?.managed_by_user_id,
+      profileParentAdminId: profile?.parent_admin_id,
     });
     return (
       <DropdownMenu>
@@ -657,37 +641,39 @@ export function AppLayout({ children }: AppLayoutProps) {
               </DropdownMenuRadioItem>
             ))}
           </DropdownMenuRadioGroup>
-          {visibleMembers.length > 0 ? (
-            <>
-              <DropdownMenuItem disabled className="mt-2 text-[11px] font-semibold opacity-80">
-                תצוגה כחבר צוות
-              </DropdownMenuItem>
-              {visibleMembers.map((member) => (
-                <DropdownMenuItem
-                  key={member.id}
-                  className="text-xs cursor-pointer"
-                  onClick={() => handleViewAs(member)}
-                >
-                  <div className="flex flex-col">
-                    <span className="font-medium truncate">
-                      {member.full_name || member.email || 'חבר צוות'}
-                    </span>
-                    {member.email && (
-                      <span className="text-[11px] text-muted-foreground truncate">{member.email}</span>
-                    )}
-                  </div>
+          {canInitiateViewAs ? (
+            visibleMembers.length > 0 ? (
+              <>
+                <DropdownMenuItem disabled className="mt-2 text-[11px] font-semibold opacity-80">
+                  תצוגה כחבר צוות
                 </DropdownMenuItem>
-              ))}
-            </>
-          ) : teamMembers.length > 0 ? (
-            <DropdownMenuItem disabled className="mt-2 text-[11px] opacity-70">
-              אין חברי צוות נוספים לארגון זה
-            </DropdownMenuItem>
-          ) : (
-            <DropdownMenuItem disabled className="mt-2 text-[11px] opacity-70">
-              אין חברי צוות לארגון זה
-            </DropdownMenuItem>
-          )}
+                {visibleMembers.map((member) => (
+                  <DropdownMenuItem
+                    key={member.id}
+                    className="text-xs cursor-pointer"
+                    onClick={() => handleViewAs(member)}
+                  >
+                    <div className="flex flex-col">
+                      <span className="font-medium truncate">
+                        {member.full_name || member.email || 'חבר צוות'}
+                      </span>
+                      {member.email && (
+                        <span className="text-[11px] text-muted-foreground truncate">{member.email}</span>
+                      )}
+                    </div>
+                  </DropdownMenuItem>
+                ))}
+              </>
+            ) : teamMembers.length > 0 ? (
+              <DropdownMenuItem disabled className="mt-2 text-[11px] opacity-70">
+                אין חברי צוות נוספים לארגון זה
+              </DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem disabled className="mt-2 text-[11px] opacity-70">
+                אין חברי צוות לארגון זה
+              </DropdownMenuItem>
+            )
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
     );
@@ -864,7 +850,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     } catch {
       /* ignore */
     }
-    if (shouldUseHardNavigationToHome()) {
+    if (isVehicleDeliveryRoute(location.pathname) || shouldUseHardNavigationToHome()) {
       window.location.assign(`${window.location.origin}/`);
       return;
     }
@@ -1041,16 +1027,18 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   const BackButton = () => {
     const handleBack = () => {
-      // ניווט "אחורה" לנתיב האחרון ששמור בקונטקסט, עם טעינה מלאה כדי למנוע תקיעות
+      if (viewAsEmail) {
+        exitViewAsToDashboard();
+        return;
+      }
+      const here = `${location.pathname}${location.search}`;
       const last = getLastPath();
-      const targetPath =
-        last && last !== `${location.pathname}${location.search}` ? last : '/';
-      const fullUrl = targetPath.startsWith('http')
-        ? targetPath
-        : `${window.location.origin}${
-            targetPath.startsWith('/') ? '' : '/'
-          }${targetPath}`;
-      window.location.assign(fullUrl);
+      const target = last && last !== here ? last : '/';
+      if (isVehicleDeliveryRoute(location.pathname)) {
+        tryNavigate(target);
+        return;
+      }
+      void navigate(target);
     };
 
     return (
@@ -1123,7 +1111,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       )}
       <header
         className={cn(
-          'sticky z-40 border-b border-white/10 bg-[#0d1b2e] min-h-0 md:h-auto md:border-gray-800',
+          'sticky z-[100] border-b border-white/10 bg-[#0d1b2e] min-h-0 md:h-auto md:border-gray-800',
           headerStickyTopClass
         )}
       >

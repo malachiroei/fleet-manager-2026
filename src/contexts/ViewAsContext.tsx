@@ -17,11 +17,19 @@ const ViewAsContext = createContext<ViewAsContextValue | undefined>(undefined);
 
 export function ViewAsProvider({ children }: { children: ReactNode }) {
   const [viewAsEmail, setViewAsEmail] = useState<string | null>(null);
-  const { activeOrgId } = useAuth();
+  const { activeOrgId, isDriver, isAdmin, isManager } = useAuth();
+  /** נהג/עובד בלי תפקיד מנהל — אסור להשאיר תצוגת-מנהל (View-As) פעילה */
+  const isDriverOnlySession = Boolean(isDriver && !isManager && !isAdmin);
   const [viewAsProfile, setViewAsProfile] = useState<Profile | null>(null);
   const [viewAsLoading, setViewAsLoading] = useState(false);
 
   const normalizedEmail = useMemo(() => (viewAsEmail ?? '').trim().toLowerCase(), [viewAsEmail]);
+
+  useEffect(() => {
+    if (!isDriverOnlySession) return;
+    if (!viewAsEmail?.trim()) return;
+    setViewAsEmail(null);
+  }, [isDriverOnlySession, viewAsEmail, setViewAsEmail]);
 
   useEffect(() => {
     let cancelled = false;

@@ -39,8 +39,8 @@ export function useActiveDriverVehicleAssignments() {
     isDriverContextOnly,
     scopedDriverId,
     fleetListReady,
-    applyFleetManagerSlice,
     fleetManagerListUserId,
+    fleetManagedByQueryMode,
   } = useImpersonationFleetScope();
 
   return useQuery({
@@ -49,8 +49,8 @@ export function useActiveDriverVehicleAssignments() {
       effectiveOrgId,
       isDriverContextOnly,
       scopedDriverId,
-      applyFleetManagerSlice,
       fleetManagerListUserId,
+      fleetManagedByQueryMode,
     ],
     enabled: fleetListReady && effectiveOrgId != null,
     queryFn: async () => {
@@ -59,8 +59,10 @@ export function useActiveDriverVehicleAssignments() {
       let vehiclesQuery = supabase.from('vehicles').select('id').eq('org_id', orgId);
       if (isDriverContextOnly && scopedDriverId) {
         vehiclesQuery = vehiclesQuery.eq('assigned_driver_id', scopedDriverId);
-      } else if (applyFleetManagerSlice && fleetManagerListUserId) {
-        vehiclesQuery = vehiclesQuery.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
+      } else if (fleetManagedByQueryMode === 'own_only' && fleetManagerListUserId) {
+        vehiclesQuery = vehiclesQuery.eq('managed_by_user_id', fleetManagerListUserId);
+      } else if (fleetManagedByQueryMode === 'org_pool_or_own' && fleetManagerListUserId) {
+        vehiclesQuery = vehiclesQuery.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId, false));
       }
       const { data: vehicleIds, error: vehiclesError } = await vehiclesQuery;
       if (vehiclesError) throw vehiclesError;
@@ -89,8 +91,8 @@ export function useVehicles() {
     fleetListReady,
     isDriverContextOnly,
     scopedDriverId,
-    applyFleetManagerSlice,
     fleetManagerListUserId,
+    fleetManagedByQueryMode,
   } = useImpersonationFleetScope();
 
   return useQuery({
@@ -99,8 +101,8 @@ export function useVehicles() {
       effectiveOrgId,
       isDriverContextOnly,
       scopedDriverId,
-      applyFleetManagerSlice,
       fleetManagerListUserId,
+      fleetManagedByQueryMode,
     ],
     enabled: fleetListReady && effectiveOrgId != null,
     queryFn: async () => {
@@ -112,8 +114,10 @@ export function useVehicles() {
         .order('plate_number');
       if (isDriverContextOnly && scopedDriverId) {
         q = q.eq('assigned_driver_id', scopedDriverId);
-      } else if (applyFleetManagerSlice && fleetManagerListUserId) {
-        q = q.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
+      } else if (fleetManagedByQueryMode === 'own_only' && fleetManagerListUserId) {
+        q = q.eq('managed_by_user_id', fleetManagerListUserId);
+      } else if (fleetManagedByQueryMode === 'org_pool_or_own' && fleetManagerListUserId) {
+        q = q.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId, false));
       }
       const { data, error } = await q;
       if (error) throw error;

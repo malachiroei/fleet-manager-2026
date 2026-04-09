@@ -38,14 +38,15 @@ import { ArrowRight, Flag, Loader2, Mail, UserPlus, Users } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import type { Profile } from '@/types/fleet';
+import { isFleetBootstrapOwnerEmail, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
 
 /**
  * Team management: list members and pending invitations. Invite via SimpleInviteModal only.
  */
 export default function TeamManagementPage() {
-  const { profile, activeOrgId, hasPermission, isAdmin, isManager } = useAuth();
+  const { profile, user, activeOrgId, isAdmin, isManager, isDriver } = useAuth();
   const { viewAsProfile } = useViewAs();
-  const { effectiveUserId } = useImpersonationFleetScope();
+  const { teamManagementManagedByUserId } = useImpersonationFleetScope();
   const queryClient = useQueryClient();
   const orgId = activeOrgId ?? null;
   const isSuperAdminTeamView = isRoeySuperAdminProfile(profile);
@@ -53,7 +54,7 @@ export default function TeamManagementPage() {
   const subjectIsSystemAdmin = (viewAsProfile?.is_system_admin ?? profile?.is_system_admin) === true;
   const { data: members, isLoading, isFetching: membersFetching } = useTeamMembers(orgId, {
     loadAllOrgs: isSuperAdminTeamView,
-    subjectManagerUserId: effectiveUserId,
+    subjectManagerUserId: teamManagementManagedByUserId,
     subjectIsSystemAdmin,
   });
   const { data: invitations, isLoading: invitationsLoading, isFetching: invitationsFetching } =
@@ -61,8 +62,15 @@ export default function TeamManagementPage() {
   const memberRowsAll = members ?? [];
   const invitationRows = invitations ?? [];
   const viewerEmail = (profile?.email ?? '').trim().toLowerCase();
+  const sessionEmail = resolveSessionEmail(profile, user);
   const isRoeiAdmin = viewerEmail === 'malachiroei@gmail.com';
-  const isRavid = viewerEmail === 'ravidmalachi@gmail.com';
+  /** נהג/עובד בלי תפקיד מורם — לא מסך ניהול צוות (hasPermission('manage_team') יכול להיות true בגלל permissions ריק) */
+  const isDriverOnlyNoElevatedRole =
+    isDriver &&
+    !isAdmin &&
+    !isManager &&
+    profile?.is_system_admin !== true &&
+    !isFleetBootstrapOwnerEmail(sessionEmail);
   const memberRows = useMemo(() => {
     // Never show super-admin row to non-super-admin viewers.
     if (isSuperAdminTeamView) return memberRowsAll;
@@ -98,9 +106,26 @@ export default function TeamManagementPage() {
   const showSensitiveColumns = isSuperAdminTeamView;
   const tableColCount = showSensitiveColumns ? 5 : 4;
 
-  // Strict privacy: team page is only for admins/managers (or explicit manage_team permission).
-  const canManageTeam = isAdmin || isManager || hasPermission('manage_team') || isSuperAdminTeamView;
-  const canManageGlobalFeatures = isRoeiAdmin || hasPermission('manage_team') || isAdmin || isManager;
+  const sessionElevated =
+    isAdmin ||
+    isManager ||
+    profile?.is_system_admin === true ||
+    isFleetBootstrapOwnerEmail(sessionEmail);
+
+  const permsObj = profile?.permissions as Record<string, unknown> | null | undefined;
+  const hasExplicitManageTeamInProfile =
+    permsObj &&
+    typeof permsObj === 'object' &&
+    Object.keys(permsObj).length > 0 &&
+    permsObj.manage_team === true;
+
+  const canManageTeam =
+    isSuperAdminTeamView ||
+    (!isDriverOnlyNoElevatedRole &&
+      (sessionElevated || hasExplicitManageTeamInProfile));
+
+  const canManageGlobalFeatures =
+    isRoeiAdmin || sessionElevated;
 
   if (!canManageTeam) {
     return <Navigate to="/" replace />;
@@ -215,7 +240,7 @@ export default function TeamManagementPage() {
                         const canOpenFeatureOverrides =
                           isRoeiAdmin ||
                           (memberEmail && memberEmail === viewerEmail) ||
-                          (isRavid && memberEmail === 'roeima21@gmail.com');
+                          canManageTeam;
                         return (
                           <TableRow key={m.id ?? `m-${mi}`}>
                             {showSensitiveColumns ? (

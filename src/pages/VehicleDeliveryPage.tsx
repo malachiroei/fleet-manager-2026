@@ -6,7 +6,7 @@ import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import {
   useVehicleSpecDirty,
   DIRTY_SOURCE_VEHICLE_DELIVERY,
-  VEHICLE_DELIVERY_PATH,
+  isVehicleDeliveryRoute,
 } from '@/contexts/VehicleSpecDirtyContext';
 import { useVehicles, fetchActiveDriverAssignments } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
@@ -139,9 +139,7 @@ export default function VehicleDeliveryPage() {
 
   // ניקוי כפוי כשהנתיב כבר לא דף מסירה (הגנה כפולה עם ה-Provider)
   useEffect(() => {
-    const onDelivery =
-      location.pathname === VEHICLE_DELIVERY_PATH ||
-      location.pathname.startsWith(`${VEHICLE_DELIVERY_PATH}/`);
+    const onDelivery = isVehicleDeliveryRoute(location.pathname);
     if (!onDelivery) {
       setDirty(DIRTY_SOURCE_VEHICLE_DELIVERY, false);
     }
@@ -459,7 +457,7 @@ export default function VehicleDeliveryPage() {
                   <SelectTrigger className={fieldClass}>
                     <SelectValue placeholder="בחר רכב מהרשימה" />
                   </SelectTrigger>
-                  <SelectContent className="z-[100000] max-h-72 bg-card border border-border shadow-xl">
+                  <SelectContent className="max-h-72 bg-card border border-border shadow-xl">
                     {vehicles?.map(v => (
                       <SelectItem key={v.id} value={v.id} className="py-2 leading-snug">
                         {v.manufacturer} {v.model} ({v.plate_number})
@@ -475,7 +473,7 @@ export default function VehicleDeliveryPage() {
                   <SelectTrigger className={fieldClass}>
                     <SelectValue placeholder="בחר נהג מהרשימה" />
                   </SelectTrigger>
-                  <SelectContent className="z-[100000] max-h-72 bg-card border border-border shadow-xl">
+                  <SelectContent className="max-h-72 bg-card border border-border shadow-xl">
                     {drivers?.map(d => (
                       <SelectItem key={d.id} value={d.id} className="py-2 leading-snug">
                         {d.full_name}

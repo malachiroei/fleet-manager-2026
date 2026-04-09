@@ -315,7 +315,7 @@ export default function VehicleReturnPage() {
                   <SelectTrigger className={fieldClass}>
                     <SelectValue placeholder="בחר רכב מהרשימה" />
                   </SelectTrigger>
-                  <SelectContent className="z-[100000] max-h-72 bg-card border border-border shadow-xl">
+                  <SelectContent className="max-h-72 bg-card border border-border shadow-xl">
                     {vehicleOptions.map(v => (
                       <SelectItem key={v.id} value={v.id} className="py-2 leading-snug">
                         {v.manufacturer} {v.model} ({v.plate_number})
@@ -347,7 +347,7 @@ export default function VehicleReturnPage() {
                   <SelectTrigger className={fieldClass}>
                     <SelectValue placeholder="בחר נהג מהרשימה" />
                   </SelectTrigger>
-                  <SelectContent className="z-[100000] max-h-72 bg-card border border-border shadow-xl">
+                  <SelectContent className="max-h-72 bg-card border border-border shadow-xl">
                     {drivers?.map(d => (
                       <SelectItem key={d.id} value={d.id} className="py-2 leading-snug">
                         {d.full_name}

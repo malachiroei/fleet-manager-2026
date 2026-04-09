@@ -45,6 +45,16 @@ export const ALLOWED_FEATURE_GROUPS: {
 ];
 
 const ALLOWED_SET = new Set<string>(ALLOWED_FEATURE_KEYS);
+const FULL_ALLOWED_FEATURE_SET = new Set<string>(ALLOWED_FEATURE_KEYS);
+
+function explicitHasAllAllowedFeatures(explicit: AllowedFeatureKey[]): boolean {
+  if (explicit.length < FULL_ALLOWED_FEATURE_SET.size) return false;
+  const s = new Set(explicit);
+  for (const k of FULL_ALLOWED_FEATURE_SET) {
+    if (!s.has(k)) return false;
+  }
+  return true;
+}
 
 /** מנהל-על לבדיקות PermissionGuard — תמיד גישה מלאה (פרודקשן). */
 export const SUPER_ADMIN_PERMISSION_EMAIL = 'malachiroei@gmail.com';
@@ -76,7 +86,7 @@ export function isSuperAdminPermissionBypass(profile: Profile | null | undefined
 
 /**
  * מחזיר מערך מסונן של מפתחות תקפים, או null אם אין מערך JSONB תקין.
- * [] אחרי סינון = מערך ריק מפורש (חסום ב-PermissionGuard).
+ * מערך ריק אחרי סינון — ב־accessAllowedByPermissionGuard מתייחסים כמו «לא הוגדר».
  */
 export function normalizeAllowedFeaturesFromProfile(raw: unknown): AllowedFeatureKey[] | null {
   if (raw == null) return null;
@@ -113,12 +123,55 @@ export const PERMISSION_REQUIRED_FEATURES: Partial<Record<PermissionKey, Allowed
   admin_access: ['USER_MANAGEMENT'],
 };
 
+export type AccessPermissionGuardOptions = {
+  /**
+   * מנהל צי / אדמין / בעלים מזוהה — לא מיישמים את מגבלת allowed_features (מיועד לנהגים עם רשימת JSONB).
+   */
+  bypassAllowedFeaturesSlice?: boolean;
+};
+
 /**
- * PermissionGuard: ברירת מחדל מחמירה.
- * - סופר־אדמין (אימייל / מזהה env) → תמיד true.
- * - אחרת: בודקים ש־allowed_features (JSONB) הוא מערך שמכיל את כל המפתחות הנדרשים למסלול.
- * - allowed_features חסר / לא מערך / ריק / ללא המפתחות הנדרשים → false.
- * - permission שלא ממופה ב-PERMISSION_REQUIRED_FEATURES → false.
+ * אותה לוגיקה כמו PermissionGuard — לשימוש ב־usePermissions וכו'.
+ */
+export function accessAllowedByPermissionGuard(
+  profile: Profile | null | undefined,
+  permission: PermissionKey,
+  hasPermission: (p: PermissionKey) => boolean,
+  opts?: AccessPermissionGuardOptions,
+): boolean {
+  if (isSuperAdminPermissionBypass(profile)) return true;
+
+  if (
+    hasPermission('handover') &&
+    (permission === 'replacement_car' || permission === 'vehicle_delivery')
+  ) {
+    return true;
+  }
+
+  if (!hasPermission(permission)) return false;
+
+  if (opts?.bypassAllowedFeaturesSlice) return true;
+
+  const required = PERMISSION_REQUIRED_FEATURES[permission];
+  if (!required?.length) return false;
+
+  const explicit = normalizeAllowedFeaturesFromProfile(profile?.allowed_features);
+  /** לא הוגדר מערך בפרופיל — נשענים על hasPermission בלבד */
+  if (explicit === null) return true;
+  /**
+   * מערך ריק או שלא נשארו מפתחות תקפים אחרי סינון — מתייחסים כמו «לא הוגדר» (מונע חסימה שגויה
+   * אחרי מיגרציות / שמירת UI ריקה).
+   */
+  if (explicit.length === 0) return true;
+  /** נבחרו כל הפיצ'רים במסך הניהול — גישה מלאה לכל המסלולים הממופים */
+  if (explicitHasAllAllowedFeatures(explicit)) return true;
+
+  return required.every((k) => explicit.includes(k));
+}
+
+/**
+ * @deprecated השתמש ב־accessAllowedByPermissionGuard עם hasPermission — פונקציה זו לא תואמת את השער
+ * (מחזירה false כש־allowed_features חסר, בעוד השער מאפשר במקרה הזה).
  */
 export function canAccessRouteWithAllowedFeatures(profile: Profile | null, permission: PermissionKey): boolean {
   if (isSuperAdminPermissionBypass(profile)) return true;

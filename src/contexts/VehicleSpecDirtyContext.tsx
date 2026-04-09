@@ -30,7 +30,8 @@ export const DIRTY_SOURCE_VEHICLE_DELIVERY = 'vehicle_delivery';
 /** נתיב דף מסירה — לניקוי כפוי כשעוזבים */
 export const VEHICLE_DELIVERY_PATH = '/handover/delivery';
 
-function pathnameIsVehicleDelivery(pathname: string) {
+/** דף טופס מסירת רכב (כולל `?mode=replacement`) — ניווט SPA ממנו עלול להישאר מדסנכרן; עדיף `location.assign` */
+export function isVehicleDeliveryRoute(pathname: string): boolean {
   return pathname === VEHICLE_DELIVERY_PATH || pathname.startsWith(`${VEHICLE_DELIVERY_PATH}/`);
 }
 
@@ -88,7 +89,7 @@ export function VehicleSpecDirtyProvider({ children }: { children: ReactNode }) 
   // ניקוי כפוי כשהנתיב כבר לא דף מסירה — רק ב-useEffect (לא בזמן render)
   useEffect(() => {
     const pathname = location.pathname;
-    if (!pathnameIsVehicleDelivery(pathname)) {
+    if (!isVehicleDeliveryRoute(pathname)) {
       if (
         sourcesRef.current[DIRTY_SOURCE_VEHICLE_DELIVERY] ||
         sourcesRef.current[DIRTY_SOURCE_HANDOVER_WIZARD] ||
@@ -129,7 +130,19 @@ export function VehicleSpecDirtyProvider({ children }: { children: ReactNode }) 
   const isDirty = Object.keys(sourcesRef.current).length > 0;
 
   const tryNavigate = useCallback((to: string) => {
+    const resolveAssignTarget = (t: string) =>
+      t.startsWith('http://') || t.startsWith('https://')
+        ? t
+        : t.startsWith('/')
+          ? `${window.location.origin}${t}`
+          : `${window.location.origin}/${t}`;
+
     if (Object.keys(sourcesRef.current).length === 0) {
+      // גם בלי dirty — מדף המסירה navigate() לפעמים לא מעדכן DOM/URL כראוי (אותה תקלה כמו אחרי flushSync)
+      if (isVehicleDeliveryRoute(location.pathname)) {
+        window.location.assign(resolveAssignTarget(to));
+        return;
+      }
       navigate(to);
       return;
     }
@@ -149,14 +162,8 @@ export function VehicleSpecDirtyProvider({ children }: { children: ReactNode }) 
     setVersion((v) => v + 1);
     // navigate() אחרי flushSync עלול להשאיר את ה-URL בדפדפן מעודכן בעוד ש-React Router
     // והדOM נשארים על דף המסירה (דסינכרון). ניווט מלא מכריח טעינה נכונה של היעד.
-    const target =
-      to.startsWith('http://') || to.startsWith('https://')
-        ? to
-        : to.startsWith('/')
-          ? `${window.location.origin}${to}`
-          : `${window.location.origin}/${to}`;
-    window.location.assign(target);
-  }, [navigate, setDirty]);
+    window.location.assign(resolveAssignTarget(to));
+  }, [navigate, setDirty, location.pathname]);
 
   const getIsDirty = useCallback(() => Object.keys(sourcesRef.current).length > 0, []);
 
