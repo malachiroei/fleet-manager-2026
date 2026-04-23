@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Camera, ImageIcon, Loader2, Trash2, Wrench } from 'lucide-react';
+import { Camera, ImageIcon, Loader2, Trash2, Wrench } from 'lucide-react';
 
 import { supabase } from '@/integrations/supabase/client';
 import { invokeSupabaseEdgeFunction } from '@/lib/supabase/invokeEdgeFunction';
@@ -334,11 +334,6 @@ export default function ServiceUpdatePage() {
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
           <div className="flex items-center gap-3">
-            <Link to="/vehicles">
-              <Button variant="ghost" size="icon" type="button">
-                <ArrowRight className="h-5 w-5" />
-              </Button>
-            </Link>
             <h1 className="font-bold text-xl">עדכון טיפול</h1>
           </div>
         </div>

@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -34,7 +33,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { ArrowRight, Flag, Loader2, Mail, UserPlus, Users } from 'lucide-react';
+import { Flag, Loader2, Mail, UserPlus, Users } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import type { Profile } from '@/types/fleet';
@@ -124,11 +123,6 @@ export default function TeamManagementPage() {
       <div className="max-w-4xl mx-auto px-3 py-4 sm:p-6 space-y-4 sm:space-y-6" dir="rtl">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
           <div className="flex items-center gap-3">
-            <Link to="/">
-              <Button variant="ghost" size="icon" className="rounded-full shrink-0">
-                <ArrowRight className="h-5 w-5" />
-              </Button>
-            </Link>
             <div className="min-w-0">
               <h1 className="text-xl sm:text-2xl font-bold text-foreground">ניהול צוות</h1>
               <p className="text-muted-foreground text-xs sm:text-sm">

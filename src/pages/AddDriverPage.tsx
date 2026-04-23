@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
-  ArrowRight,
   Loader2,
   User,
   CreditCard,
@@ -245,11 +244,6 @@ export default function AddDriverPage() {
       <main className="container py-4 pb-24 space-y-6">
         <div className="rounded-2xl border border-border bg-card/90 px-4 py-3 sm:px-5 sm:py-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <Link to="/drivers">
-              <Button variant="ghost" size="icon">
-                <ArrowRight className="h-5 w-5" />
-              </Button>
-            </Link>
             <div>
               <h1 className="font-bold text-lg sm:text-xl">הוספת נהג חדש</h1>
               <p className="text-xs text-muted-foreground hidden sm:block">

@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowRight, Loader2, User, CreditCard, Briefcase, ShieldCheck } from 'lucide-react';
+import { Loader2, User, CreditCard, Briefcase, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatSupabaseError } from '@/lib/supabaseError';
 import {
@@ -83,11 +83,6 @@ export default function DriverSectionEditPage() {
       <div className="min-h-screen bg-[#020617] text-white">
         <header className="sticky top-0 z-10 border-b border-border bg-card">
           <div className="container flex items-center gap-3 py-4">
-            <Link to="/drivers">
-              <Button variant="ghost" size="icon">
-                <ArrowRight className="h-5 w-5" />
-              </Button>
-            </Link>
             <h1 className="text-xl font-bold">שגיאה בטעינת הנהג</h1>
           </div>
         </header>
@@ -106,11 +101,6 @@ export default function DriverSectionEditPage() {
       <div className="min-h-screen bg-[#020617] text-white">
         <header className="border-b border-border bg-card">
           <div className="container flex items-center gap-3 py-4">
-            <Link to="/drivers">
-              <Button variant="ghost" size="icon">
-                <ArrowRight className="h-5 w-5" />
-              </Button>
-            </Link>
             <h1 className="text-xl font-bold">סקשן לא נמצא</h1>
           </div>
         </header>
@@ -214,18 +204,6 @@ export default function DriverSectionEditPage() {
               </Button>
             </div>
             <div className="min-w-0 flex-1 text-center sm:text-right">
-              <div className="mb-2 flex items-center justify-center gap-2 sm:justify-start">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    type="button"
-                    title="חזרה לרשימת נהגים"
-                    className="shrink-0"
-                    onClick={() => tryNavigate(`/drivers?highlightDriver=${driver.id}`)}
-                  >
-                  <ArrowRight className="h-5 w-5" />
-                </Button>
-              </div>
               <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-500/70">נהג</p>
               <h1 className="mt-1 text-2xl font-bold tracking-tight text-cyan-100 sm:text-3xl">{title}</h1>
               <p className="mt-2 text-base font-medium text-slate-200 sm:text-lg">{driver.full_name}</p>

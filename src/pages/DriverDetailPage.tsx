@@ -8,7 +8,7 @@ import { useActiveDriverVehicleAssignments } from '@/hooks/useVehicles';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowRight, User, Car, FolderOpen } from 'lucide-react';
+import { User, Car, FolderOpen } from 'lucide-react';
 import type { DriverSectionId } from '@/lib/driverFieldMap';
 import { DRIVER_SECTION_QUERY_PARAM } from '@/lib/driverFieldMap';
 
@@ -30,11 +30,6 @@ export default function DriverDetailPage() {
         <header className="sticky top-0 z-10 border-b border-border bg-card">
           <div className="container py-4">
             <div className="flex items-center gap-3">
-              <Link to="/drivers">
-                <Button variant="ghost" size="icon">
-                  <ArrowRight className="h-5 w-5" />
-                </Button>
-              </Link>
               <Skeleton className="h-6 w-48" />
             </div>
           </div>
@@ -53,11 +48,6 @@ export default function DriverDetailPage() {
         <header className="border-b border-border bg-card">
           <div className="container py-4">
             <div className="flex items-center gap-3">
-              <Link to="/drivers">
-                <Button variant="ghost" size="icon">
-                  <ArrowRight className="h-5 w-5" />
-                </Button>
-              </Link>
               <h1 className="text-xl font-bold">שגיאה בטעינת הנהג</h1>
             </div>
           </div>
@@ -87,11 +77,6 @@ export default function DriverDetailPage() {
         <header className="border-b border-border bg-card">
           <div className="container py-4">
             <div className="flex items-center gap-3">
-              <Link to="/drivers">
-                <Button variant="ghost" size="icon">
-                  <ArrowRight className="h-5 w-5" />
-                </Button>
-              </Link>
               <h1 className="text-xl font-bold">נהג לא נמצא</h1>
             </div>
           </div>
@@ -123,11 +108,6 @@ export default function DriverDetailPage() {
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-3">
-                <Link to="/drivers">
-                  <Button variant="ghost" size="icon">
-                    <ArrowRight className="h-5 w-5" />
-                  </Button>
-                </Link>
                 <div>
                   <h1 className="text-xl font-bold text-foreground">{driver.full_name}</h1>
                   <p className="text-sm text-muted-foreground">ת.ז. {driver.id_number}</p>

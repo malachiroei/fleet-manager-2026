@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, ArrowUpDown, Car, Search, Truck, RotateCcw, Filter } from 'lucide-react';
+import { ArrowUpDown, Car, Search, Truck, RotateCcw, Filter } from 'lucide-react';
 import { useHandoverHistory } from '@/hooks/useHandovers';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -75,11 +75,6 @@ export default function TransfersPage() {
     <div className="min-h-screen p-4 sm:p-6 space-y-5 sm:space-y-6" dir="rtl">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <Link to="/vehicles">
-          <Button variant="ghost" size="icon" className="rounded-xl">
-            <ArrowRight className="h-5 w-5" />
-          </Button>
-        </Link>
         <div>
           <h1 className="text-2xl font-bold text-foreground">העברות רכבים</h1>
           <p className="text-sm text-muted-foreground">כל מסירות והחזרות הרכבים במערכת</p>

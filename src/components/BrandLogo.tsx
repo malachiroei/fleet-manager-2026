@@ -1,11 +1,9 @@
 /**
- * Brand logo (Supabase Storage public bucket: logos).
- * Centralized so header/auth screens use the same asset.
+ * Brand logo — same source as build-time favicon/PWA icons (`public/car.png` via generate-app-icon.mjs).
+ * Keeps tab icon, install icon, header and login visually aligned.
  */
-import { fleetPublicStorageObjectUrl } from '@/lib/supabase/fleetPublicStorageUrl';
-
 export function getBrandLogoUrl(): string {
-  return fleetPublicStorageObjectUrl('logos/logo.jpg');
+  return '/car.png';
 }
 
 const wrapBase =

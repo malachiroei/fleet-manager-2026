@@ -2401,25 +2401,6 @@ export default function VehicleHandoverWizard() {
       {/* Top bar */}
       <header className="sticky top-0 z-20 bg-[#0d1b2e]/95 backdrop-blur-sm border-b border-white/10">
         <div className="container py-3 flex items-center gap-3">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="text-white/70 hover:text-white"
-            title="חזרה"
-            aria-label="חזרה"
-            onClick={() => {
-              setDirty(DIRTY_SOURCE_HANDOVER_WIZARD, false);
-              const fallback = vehicleId ? `/vehicles/${vehicleId}` : '/vehicles';
-              if (typeof window !== 'undefined' && window.history.length > 1) {
-                navigate(-1);
-              } else {
-                navigate(fallback);
-              }
-            }}
-          >
-            <ArrowRight className="h-5 w-5" />
-          </Button>
           <div>
             <h1 className="font-bold text-lg leading-tight">{handoverType === 'return' ? 'אשף החזרת רכב' : 'אשף מסירת רכב'}</h1>
             <p className="text-xs text-cyan-400/70">{vehicleLabel}</p>

@@ -24,7 +24,7 @@ import SignaturePad, { SignaturePadRef } from '@/components/SignaturePad';
 import FuelLevelSelector from '@/components/FuelLevelSelector';
 import PhotoUpload from '@/components/PhotoUpload';
 import VehicleDamage3DSelector from '@/components/VehicleDamage3DSelector';
-import { ArrowRight, Loader2, RotateCcw, Camera, AlertTriangle } from 'lucide-react';
+import { Loader2, RotateCcw, Camera, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   cloneEmptyDamageReport,

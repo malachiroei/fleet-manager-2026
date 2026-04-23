@@ -1,5 +1,4 @@
 import React, { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -12,7 +11,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import {
-  ArrowRight, Building2, FileText, Heart, Loader2, Save,
+  Building2, FileText, Heart, Loader2, Save,
   Upload, ExternalLink, Trash2, Plus, Pencil, FileCheck, Tag,
   Download, RotateCcw, RefreshCw,
 } from 'lucide-react';
@@ -772,9 +771,6 @@ export default function OrgSettingsPage() {
 
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-4">
-          <Link to={isRoeyMainAdmin ? '/admin/settings' : '/'}>
-            <Button variant="ghost" size="icon" className="rounded-full"><ArrowRight className="h-5 w-5" /></Button>
-          </Link>
           <div>
             <h1 className="text-2xl font-bold text-foreground">הגדרות ארגון</h1>
             <p className="text-muted-foreground text-sm">ניהול פרטי חברה, תבניות PDF, שמות מותאמים ומסמכים נוספים</p>

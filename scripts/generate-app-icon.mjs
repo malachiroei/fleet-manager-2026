@@ -5,20 +5,47 @@ import sharp from 'sharp';
 
 /**
  * Build-time asset generator for Vercel/PWA:
- * - public/og-image.png (used by index.html)
- * - public/app-icon-192.png + public/app-icon-512.png + public/site.webmanifest (used by vercel.json)
+ * - public/og-image.png (favicon + og/twitter cards in index.html)
+ * - public/app-icon-192.png + public/app-icon-512.png + public/site.webmanifest
  *
- * The original source images in this repo can have garbled filenames, so we:
- * - pick the first JPG from `public/` as the source
- * - fall back to placeholders if none exist
+ * Source: explicit brand car in `public/` (same visual as login/header via car asset).
+ * Do not rely on "first JPG" — there is often none, which produced solid blue squares.
  */
+const OUTPUT_NAMES = new Set(
+  ['og-image.png', 'app-icon-192.png', 'app-icon-512.png', 'android-chrome-192x192.png', 'android-chrome-512x512.png', 'apple-touch-icon.png'].map(
+    (n) => n.toLowerCase()
+  )
+);
+
+async function resolveSourcePath(publicDir, files) {
+  const byLower = new Map(files.map((f) => [f.toLowerCase(), f]));
+  const prefer = ['car.png', 'carnew.png'];
+  for (const name of prefer) {
+    const actual = byLower.get(name.toLowerCase());
+    if (!actual) continue;
+    const p = path.join(publicDir, actual);
+    try {
+      await fs.access(p);
+      return p;
+    } catch {
+      // continue
+    }
+  }
+  const jpgs = files.filter((f) => /\.jpe?g$/i.test(f));
+  if (jpgs.length) return path.join(publicDir, [...jpgs].sort()[0]);
+  const pngs = files.filter(
+    (f) => f.toLowerCase().endsWith('.png') && !OUTPUT_NAMES.has(f.toLowerCase())
+  );
+  if (pngs.length) return path.join(publicDir, [...pngs].sort()[0]);
+  return null;
+}
+
 async function main() {
   const rootDir = process.cwd();
   const publicDir = path.join(rootDir, 'public');
 
   const files = await fs.readdir(publicDir).catch(() => []);
-  const jpgFiles = files.filter((f) => f.toLowerCase().endsWith('.jpg') || f.toLowerCase().endsWith('.jpeg'));
-  const sourcePath = jpgFiles.length ? path.join(publicDir, jpgFiles[0]) : null;
+  const sourcePath = await resolveSourcePath(publicDir, files);
 
   const themeColor = '#1e40af';
 
@@ -29,9 +56,9 @@ async function main() {
 
   // Ensure outputs are always created so the build can’t fail on missing assets.
   if (sourcePath) {
-    await sharp(sourcePath).resize(1200, 630, { fit: 'cover' }).png().toFile(outOg);
-    await sharp(sourcePath).resize(192, 192, { fit: 'cover' }).png().toFile(out192);
-    await sharp(sourcePath).resize(512, 512, { fit: 'cover' }).png().toFile(out512);
+    await sharp(sourcePath).resize(1200, 630, { fit: 'cover', position: 'centre' }).png().toFile(outOg);
+    await sharp(sourcePath).resize(192, 192, { fit: 'cover', position: 'centre' }).png().toFile(out192);
+    await sharp(sourcePath).resize(512, 512, { fit: 'cover', position: 'centre' }).png().toFile(out512);
   } else {
     await sharp({
       create: { width: 1200, height: 630, channels: 4, background: themeColor },

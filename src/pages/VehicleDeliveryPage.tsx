@@ -31,7 +31,7 @@ import SignaturePad, { SignaturePadRef } from '@/components/SignaturePad';
 import FuelLevelSelector from '@/components/FuelLevelSelector';
 import PhotoUpload from '@/components/PhotoUpload';
 import VehicleDamage3DSelector from '@/components/VehicleDamage3DSelector';
-import { ArrowRight, ArrowLeft, Loader2, Truck, Camera } from 'lucide-react';
+import { ArrowLeft, Loader2, Truck, Camera } from 'lucide-react';
 import {
   cloneEmptyDamageReport,
   hasAnyDamage,

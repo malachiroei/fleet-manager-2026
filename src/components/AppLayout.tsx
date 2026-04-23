@@ -850,7 +850,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       window.location.assign(`${window.location.origin}/`);
       return;
     }
-    void navigate('/');
+    tryNavigate('/');
   };
 
   /** מובייל: שורה ייעודית — בית עדין, ניהול בזהב */
@@ -1023,11 +1023,10 @@ export function AppLayout({ children }: AppLayoutProps) {
       const here = `${location.pathname}${location.search}`;
       const last = getLastPath();
       if (last && last !== here) {
-        void navigate(last);
+        tryNavigate(last);
         return;
       }
-      // אין last (למשל טאב חדש) — חזרה למסך ראשי במקום assign מלא שעלול להרגיש כמו "ללא תגובה"
-      void navigate('/');
+      tryNavigate('/');
     };
 
     return (

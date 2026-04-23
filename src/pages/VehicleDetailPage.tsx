@@ -17,7 +17,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { 
-  ArrowRight, 
   Car,
   Calendar,
   Gauge,
@@ -367,11 +366,6 @@ export default function VehicleDetailPage() {
         <header className="bg-card border-b border-border sticky top-0 z-10">
           <div className="container py-4">
             <div className="flex items-center gap-3">
-              <Link to="/vehicles">
-                <Button variant="ghost" size="icon">
-                  <ArrowRight className="h-5 w-5" />
-                </Button>
-              </Link>
               <Skeleton className="h-6 w-48" />
             </div>
           </div>
@@ -391,11 +385,6 @@ export default function VehicleDetailPage() {
         <header className="bg-card border-b border-border sticky top-0 z-10">
           <div className="container py-4">
             <div className="flex items-center gap-3">
-              <Link to="/vehicles">
-                <Button variant="ghost" size="icon">
-                  <ArrowRight className="h-5 w-5" />
-                </Button>
-              </Link>
               <h1 className="font-bold text-xl">שגיאה בטעינת הרכב</h1>
             </div>
           </div>
@@ -425,11 +414,6 @@ export default function VehicleDetailPage() {
         <header className="bg-card border-b border-border sticky top-0 z-10">
           <div className="container py-4">
             <div className="flex items-center gap-3">
-              <Link to="/vehicles">
-                <Button variant="ghost" size="icon">
-                  <ArrowRight className="h-5 w-5" />
-                </Button>
-              </Link>
               <h1 className="font-bold text-xl">רכב לא נמצא</h1>
             </div>
           </div>
@@ -674,14 +658,6 @@ export default function VehicleDetailPage() {
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
           <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => confirmLeaveIfDirty('/vehicles')}
-              aria-label="חזור לרשימת רכבים"
-            >
-              <ArrowRight className="h-5 w-5" />
-            </Button>
             <div>
               <h1 className="font-bold text-xl">{vehicle.manufacturer} {vehicle.model}</h1>
               <p className="text-sm text-muted-foreground">{vehicle.plate_number}</p>

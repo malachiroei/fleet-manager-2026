@@ -1,8 +1,7 @@
 import type { ChangeEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
- import { Link } from 'react-router-dom';
- import { Button } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
  import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -18,7 +17,6 @@ import { FunctionsHttpError } from '@supabase/supabase-js';
 import PricingDataUploader from '@/components/PricingDataUploader';
 import FleetDataImporter from '@/components/FleetDataImporter';
 import {
-  ArrowRight,
   Download,
   Loader2,
   Mail,
@@ -845,11 +843,6 @@ export default function AdminSettingsPage() {
        <header className="bg-card border-b border-border sticky top-0 z-10">
          <div className="container py-4">
            <div className="flex items-center gap-3">
-             <Link to="/">
-               <Button variant="ghost" size="icon">
-                 <ArrowRight className="h-5 w-5" />
-               </Button>
-             </Link>
              <div className="flex items-center gap-2">
                <Settings className="h-5 w-5" />
                <h1 className="font-bold text-xl">הגדרות מנהל</h1>

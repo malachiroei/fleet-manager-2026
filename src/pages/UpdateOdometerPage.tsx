@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useVehicles, useUpdateOdometer } from '@/hooks/useVehicles';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowRight, Loader2, Gauge, Car } from 'lucide-react';
+import { Loader2, Gauge, Car } from 'lucide-react';
 
 export default function UpdateOdometerPage() {
   const navigate = useNavigate();
@@ -37,11 +37,6 @@ export default function UpdateOdometerPage() {
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
           <div className="flex items-center gap-3">
-            <Link to="/">
-              <Button variant="ghost" size="icon">
-                <ArrowRight className="h-5 w-5" />
-              </Button>
-            </Link>
             <h1 className="font-bold text-xl">עדכון קילומטראז׳</h1>
           </div>
         </div>

@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { ArrowRight, Loader2, Car, FileText, Shield, Upload, Settings, Building, Gauge, DollarSign } from 'lucide-react';
+import { Loader2, Car, FileText, Shield, Upload, Settings, Building, Gauge, DollarSign } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function AddVehiclePage() {
@@ -116,11 +116,6 @@ export default function AddVehiclePage() {
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
           <div className="flex items-center gap-3">
-            <Link to="/vehicles">
-              <Button variant="ghost" size="icon">
-                <ArrowRight className="h-5 w-5" />
-              </Button>
-            </Link>
             <h1 className="font-bold text-xl">הוספת רכב חדש</h1>
           </div>
         </div>

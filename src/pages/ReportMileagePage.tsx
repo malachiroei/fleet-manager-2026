@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, Camera, Gauge, ImageIcon, Loader2, Wrench } from 'lucide-react';
+import { Camera, Gauge, ImageIcon, Loader2, Wrench } from 'lucide-react';
 
 import { supabase } from '@/integrations/supabase/client';
 import { invokeSupabaseEdgeFunction } from '@/lib/supabase/invokeEdgeFunction';
@@ -411,14 +411,7 @@ export default function ReportMileagePage() {
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
           <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <Link to="/">
-                <Button variant="ghost" size="icon">
-                  <ArrowRight className="h-5 w-5" />
-                </Button>
-              </Link>
-              <h1 className="font-bold text-xl">דיווח קילומטראז׳</h1>
-            </div>
+            <h1 className="font-bold text-xl">דיווח קילומטראז׳</h1>
             <Link to="/vehicles/service-update">
               <Button type="button" variant="outline" className="h-10 gap-2">
                 <Wrench className="h-4 w-4 shrink-0" />

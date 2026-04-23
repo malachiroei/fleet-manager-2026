@@ -1,10 +1,8 @@
-import { Link } from 'react-router-dom';
 import { useComplianceAlerts } from '@/hooks/useDashboard';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowRight, AlertTriangle, Car, User, CheckCircle } from 'lucide-react';
+import { AlertTriangle, Car, User, CheckCircle } from 'lucide-react';
 import type { ComplianceStatus } from '@/types/fleet';
 
 function StatusBadge({ status }: { status: ComplianceStatus }) {
@@ -29,11 +27,6 @@ export default function CompliancePage() {
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
           <div className="flex items-center gap-3">
-            <Link to="/">
-              <Button variant="ghost" size="icon">
-                <ArrowRight className="h-5 w-5" />
-              </Button>
-            </Link>
             <h1 className="font-bold text-xl">מרכז ציות ותקינות</h1>
           </div>
         </div>

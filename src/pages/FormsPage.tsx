@@ -769,17 +769,9 @@ ${STANDARD_INPUT_FOOTER_TEXT}
       return [];
     }
 
-    return mapped.filter((form) => {
-      const d = Boolean(form.include_in_delivery);
-      const r = Boolean(form.include_in_return);
-      if (!d && !r) return true;
-      if (d && !r) return canAccessFeature('form_delivery');
-      if (r && !d) return canAccessFeature('form_return');
-      return (
-        (d && canAccessFeature('form_delivery')) ||
-        (r && canAccessFeature('form_return'))
-      );
-    });
+    // מרכז הטפסים = ספרייה מלאה (כל השורות הפעילות ב-org_documents). סינון לפי form_delivery/form_return
+    // הסתיר טפסים למשתמשים גם כשהטפסים לא קשורים רק לאשף — אשף המסירה מסנן לבד ב-VehicleHandoverWizard.
+    return mapped;
   }, [forms, featureFlags, featureFlagsError, featureFlagsPending, canAccessFeature]);
 
   const folderOptions = useMemo(() => {
@@ -787,8 +779,8 @@ ${STANDARD_INPUT_FOOTER_TEXT}
       .map((form) => form.category)
       .filter((value): value is FormsCategory => Boolean(value && String(value).trim()));
 
-    const merged = Array.from(new Set([...customFolders, ...fromForms]));
-    return merged.length > 0 ? merged : [...DEFAULT_FORM_FOLDERS];
+    // תמיד להציג את שלוש התיקיות הסטנדרטיות + תיקיות מותאמות + כל קטגוריה שמופיעה בטפסים
+    return Array.from(new Set([...DEFAULT_FORM_FOLDERS, ...customFolders, ...fromForms]));
   }, [formsWithCategory, customFolders]);
 
   const filteredForms = useMemo(() => {

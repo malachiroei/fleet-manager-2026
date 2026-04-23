@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ArrowRight, Loader2, User, CreditCard, Briefcase, ShieldCheck, FileText, Upload, Heart } from 'lucide-react';
+import { Loader2, User, CreditCard, Briefcase, ShieldCheck, FileText, Upload, Heart } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatSupabaseError } from '@/lib/supabaseError';
 
@@ -55,9 +55,6 @@ export default function EditDriverPage() {
       <div className="min-h-screen bg-[#020617] text-white">
         <header className="bg-card border-b border-border sticky top-0 z-10">
           <div className="container py-4"><div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" type="button" onClick={() => tryNavigate('/drivers')} title="חזרה">
-              <ArrowRight className="h-5 w-5" />
-            </Button>
             <Skeleton className="h-6 w-48" />
           </div></div>
         </header>
@@ -73,9 +70,6 @@ export default function EditDriverPage() {
       <div className="min-h-screen bg-[#020617] text-white">
         <header className="bg-card border-b border-border sticky top-0 z-10">
           <div className="container py-4"><div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" type="button" onClick={() => tryNavigate('/drivers')} title="חזרה">
-              <ArrowRight className="h-5 w-5" />
-            </Button>
             <h1 className="font-bold text-xl">נהג לא נמצא</h1>
           </div></div>
         </header>
@@ -148,9 +142,6 @@ export default function EditDriverPage() {
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" type="button" onClick={() => tryNavigate('/drivers')} title="חזרה">
-              <ArrowRight className="h-5 w-5" />
-            </Button>
             <h1 className="font-bold text-xl">עריכת נהג - {driver.full_name}</h1>
           </div>
         </div>
