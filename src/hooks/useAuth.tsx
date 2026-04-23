@@ -116,25 +116,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     profileRef.current = profile;
   }, [profile]);
 
-  useEffect(() => {
-    if (!user?.id) return;
-    const uid = user.id;
-    const channel = supabase
-      .channel(`profile-hard-sync-${uid}`)
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${uid}` },
-        () => {
-          clearFleetProUpdateModalSuppressFlag();
-          void fetchProfileRef.current(uid);
-        }
-      )
-      .subscribe();
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [user?.id]);
-
   const fetchUserRoles = useCallback(async (userId: string) => {
     // Roles are defined globally in `user_roles`.
     const { data, error } = await (supabase as any)
