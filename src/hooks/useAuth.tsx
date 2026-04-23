@@ -10,6 +10,19 @@ import { clearFleetProUpdateModalSuppressFlag } from '@/lib/pwaUpdateModalBridge
 
 const ACTIVE_ORG_STORAGE_KEY = 'fleet-manager-active-org';
 
+/** ארגון פעיל לפי `profiles` + חריג לרביד (זהה לאתחול `activeOrgId`). */
+function resolveProfileOrgIdForActiveSession(profile: Profile | null, user: User | null): string | null {
+  const rawProfileOrgId = profile?.org_id?.trim() || null;
+  const sessionEmailForOrg = resolveSessionEmail(profile, user);
+  if (
+    sessionEmailForOrg === RAVID_MANAGER_EMAIL &&
+    (!rawProfileOrgId || rawProfileOrgId === FALLBACK_MAIN_FLEET_ORG_ID)
+  ) {
+    return RAVID_FLEET_ORG_ID;
+  }
+  return rawProfileOrgId;
+}
+
 /** מונע טעינת פרופיל כפולה ב־React Strict Mode (אפקט ×2) לאותו משתמש. */
 let authBootstrapLastUserId: string | null = null;
 
@@ -274,6 +287,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setMemberOrganizations((orgs as { id: string; name: string }[]).sort((a, b) => (a.name || '').localeCompare(b.name || '')));
   }, []);
 
+  const fetchMemberOrganizationsRef = useRef(fetchMemberOrganizations);
+  fetchMemberOrganizationsRef.current = fetchMemberOrganizations;
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const uid = user.id;
+    const channel = supabase
+      .channel(`profile-hard-sync-${uid}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${uid}` },
+        () => {
+          clearFleetProUpdateModalSuppressFlag();
+          void (async () => {
+            await fetchProfileRef.current(uid);
+            await fetchMemberOrganizationsRef.current(uid);
+          })();
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
+
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event: AuthChangeEvent, session) => {
@@ -356,8 +394,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [fetchUserRoles, fetchMemberOrganizations]);
 
   const refreshProfile = useCallback(async () => {
-    if (user?.id) await fetchProfile(user.id);
-  }, [user?.id, fetchProfile]);
+    if (!user?.id) return;
+    await fetchProfile(user.id);
+    await fetchMemberOrganizations(user.id);
+  }, [user?.id, fetchProfile, fetchMemberOrganizations]);
 
   useEffect(() => {
     if (!user?.email || inviteCheckDoneRef.current) return;
@@ -415,11 +455,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (activeOrgInitializedRef.current) return;
     const rawProfileOrgId = profile.org_id?.trim() || null;
     const sessionEmailForOrg = resolveSessionEmail(profile, user);
-    const profileOrgIdForActive =
-      sessionEmailForOrg === RAVID_MANAGER_EMAIL &&
-      (!rawProfileOrgId || rawProfileOrgId === FALLBACK_MAIN_FLEET_ORG_ID)
-        ? RAVID_FLEET_ORG_ID
-        : rawProfileOrgId;
+    const profileOrgIdForActive = resolveProfileOrgIdForActiveSession(profile, user);
     if (memberOrganizations.length === 0 && !profileOrgIdForActive) return;
 
     activeOrgInitializedRef.current = true;
@@ -449,6 +485,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setActiveOrgId(memberOrganizations[0]?.id ?? null);
     }
   }, [user, profile, memberOrganizations, profile?.org_id, setActiveOrgId]);
+
+  /**
+   * אחרי שינוי `org_members` / `profiles.org_id` בשרת — הרשימה בזיכרון מתעדכנת אבל `activeOrgId` עלול
+   * להישאר על ארגון שהמשתמש כבר לא חבר בו (localStorage + רשימה ישנה לפני Realtime).
+   */
+  useEffect(() => {
+    if (!user) return;
+    if (!activeOrgId) return;
+    if (memberOrganizations.length === 0) return;
+    const known = memberOrganizations.some((o) => o.id === activeOrgId);
+    if (known) return;
+    const preferredId = resolveProfileOrgIdForActiveSession(profile, user);
+    const preferred =
+      preferredId && memberOrganizations.some((o) => o.id === preferredId)
+        ? preferredId
+        : memberOrganizations[0]?.id ?? null;
+    if (preferred && preferred !== activeOrgId) {
+      setActiveOrgId(preferred);
+    }
+  }, [user, profile, activeOrgId, memberOrganizations, setActiveOrgId]);
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
