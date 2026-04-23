@@ -66,7 +66,12 @@ export function useFeatureFlags() {
             );
             data = [];
           } else {
-            throw ffRes.error;
+            /** 400 / סכמה / רשת — לא לזרוק: אחרת placeholderData לא מספיק ו־Dashboard נשאר ריק */
+            console.warn('[FeatureFlags] feature_flags query failed — using open defaults', {
+              code: (ffRes.error as { code?: string }).code,
+              hint: String((ffRes.error as { message?: string }).message ?? '').slice(0, 160),
+            });
+            data = [];
           }
         }
 

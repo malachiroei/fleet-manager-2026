@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { canAccessRouteWithAllowedFeatures } from '@/lib/allowedFeatures';
+import { canAccessRouteWithAllowedFeatures, isSuperAdminPermissionBypass } from '@/lib/allowedFeatures';
+import { isFleetBootstrapOwnerEmail, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
 import type { PermissionKey } from '@/lib/permissions';
 
 interface PermissionGuardProps {
@@ -9,18 +10,34 @@ interface PermissionGuardProps {
 }
 
 /**
- * ברירת מחדל מחמירה: תוכן חסום אלא אם ב-profiles.allowed_features מופיעים המפתחות הנדרשים (JSONB).
- * חריג: סופר־אדמין (malachiroei@gmail.com או VITE_FLEET_SUPER_ADMIN_USER_IDS) — תמיד מורשה.
- * אין גישה → null.
+ * גישה למסלול:
+ * - סופר־אדמין / בעל פלטפורמה (bootstrap) / `is_system_admin` בפרופיל → תמיד.
+ * - אחרת: קודם `hasPermission` (מנהלים, JSON permissions / מערך, ברירות מחדל).
+ * - ואז `canAccessRouteWithAllowedFeatures` (מניפסט `allowed_features` + חריגים כמו דיווח קילומטראז׳).
+ *
+ * סדר זה מונע מסך שחור כש־`allowed_features` ריק אבל יש הרשאות קלאסיות, ומותיר את מניפסט ה-UI
+ * כשהוא מוגדר ומדויק.
  */
 export function PermissionGuard({ permission, children }: PermissionGuardProps) {
-  const { profile } = useAuth();
+  const { profile, user, hasPermission } = useAuth();
 
-  const allowed = canAccessRouteWithAllowedFeatures(profile, permission);
-
-  if (!allowed) {
-    return null;
+  if (isSuperAdminPermissionBypass(profile)) {
+    return <>{children}</>;
+  }
+  if (profile?.is_system_admin === true) {
+    return <>{children}</>;
+  }
+  const sessionEmail = resolveSessionEmail(profile, user);
+  if (isFleetBootstrapOwnerEmail(sessionEmail)) {
+    return <>{children}</>;
   }
 
-  return <>{children}</>;
+  if (hasPermission(permission)) {
+    return <>{children}</>;
+  }
+  if (canAccessRouteWithAllowedFeatures(profile, permission)) {
+    return <>{children}</>;
+  }
+
+  return null;
 }

@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useMemo, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import type { Profile } from '@/types/fleet';
@@ -18,10 +19,26 @@ const ViewAsContext = createContext<ViewAsContextValue | undefined>(undefined);
 export function ViewAsProvider({ children }: { children: ReactNode }) {
   const [viewAsEmail, setViewAsEmail] = useState<string | null>(null);
   const { activeOrgId, profile, user } = useAuth();
+  const queryClient = useQueryClient();
   const [viewAsProfile, setViewAsProfile] = useState<Profile | null>(null);
   const [viewAsLoading, setViewAsLoading] = useState(false);
+  const viewAsEmailInitRef = useRef(false);
+  const prevNormalizedViewAsRef = useRef<string | null>(null);
 
   const normalizedEmail = useMemo(() => (viewAsEmail ?? '').trim().toLowerCase(), [viewAsEmail]);
+
+  /** מעבר View-As — ניקוי מטמון React Query כדי שלא יישארו נתוני משתמש קודם / org קודם */
+  useEffect(() => {
+    const next = normalizedEmail || null;
+    if (!viewAsEmailInitRef.current) {
+      viewAsEmailInitRef.current = true;
+      prevNormalizedViewAsRef.current = next;
+      return;
+    }
+    if (prevNormalizedViewAsRef.current === next) return;
+    prevNormalizedViewAsRef.current = next;
+    queryClient.clear();
+  }, [normalizedEmail, queryClient]);
 
   useEffect(() => {
     let cancelled = false;

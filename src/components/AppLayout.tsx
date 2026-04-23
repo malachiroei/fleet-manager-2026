@@ -250,12 +250,10 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   /** Gold header buttons (Roei Admin + Ravid Manager). */
   const canAccessGoldenManagementLinks = !isDriverOnlyHeader && (canManageOrgUi || canManageTeamUi);
-  const isDriverRoei = email === ROEI_DRIVER_EMAIL;
   const isRavid = email === RAVID_MANAGER_EMAIL;
 
-  /** כולל נהג רועי בתצוגה כרביד — אחרת אין באנר יציאה והמנעול על org שלו נלחם ב-View-As. */
-  const viewAsBannerVisible =
-    Boolean(viewAsEmail) && (isMainAdmin || isRavid || isDriverRoei);
+  /** כל מי שבתצוגת משתמש צריך באנר יציאה (לא רק מנהלים מוגדרים מראש). */
+  const viewAsBannerVisible = Boolean(viewAsEmail?.trim());
   const mainFleetOrgId = useMemo(() => {
     const explicitMainFleet = memberOrganizations.find((o) => o.id === FALLBACK_MAIN_FLEET_ORG_ID);
     if (explicitMainFleet) return explicitMainFleet.id;
@@ -279,16 +277,6 @@ export function AppLayout({ children }: AppLayoutProps) {
       setActiveOrgId(mainFleetOrgId);
     }
   }, [isMainAdmin, viewAsEmail, activeOrgId, setActiveOrgId, mainFleetOrgId]);
-
-  // Ensure Roei (driver-only) is always locked to his org and cannot switch orgs
-  useEffect(() => {
-    if (!isDriverRoei) return;
-    if (viewAsEmail?.trim()) return; // View-As (למשל כרביד) — org נקבע במקום אחר; אחרת לולאה אינסופית
-    const targetOrgId = profile?.org_id as string | null | undefined;
-    if (targetOrgId && activeOrgId !== targetOrgId) {
-      setActiveOrgId(targetOrgId);
-    }
-  }, [isDriverRoei, viewAsEmail, profile?.org_id, activeOrgId, setActiveOrgId]);
 
   // Ensure Ravid is locked to his org and cannot switch orgs
   useEffect(() => {
@@ -319,12 +307,9 @@ export function AppLayout({ children }: AppLayoutProps) {
     const mainOrgId = FALLBACK_MAIN_FLEET_ORG_ID;
     if (isMainAdmin) {
       setActiveOrgId(mainOrgId);
-    } else if (isRavid && profile?.org_id?.trim()) {
-      setActiveOrgId(profile.org_id.trim());
-    } else if (isDriverRoei && profile?.org_id?.trim()) {
-      setActiveOrgId(profile.org_id.trim());
     } else {
-      setActiveOrgId(mainOrgId);
+      const back = profile?.org_id?.trim() || memberOrganizations[0]?.id?.trim() || null;
+      setActiveOrgId(back ?? mainOrgId);
     }
 
     try {
@@ -340,7 +325,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     }
 
     window.location.assign(`${window.location.origin}/`);
-  }, [setViewAsEmail, isMainAdmin, isRavid, isDriverRoei, profile?.org_id, setActiveOrgId]);
+  }, [setViewAsEmail, isMainAdmin, profile?.org_id, memberOrganizations, setActiveOrgId]);
 
   /** תצוגה כחבר צוות: לרביד תמיד מעבירים ל-VIEW_AS_RAVID_ORG_ID (לא org של המנהל המחובר). */
   const handleViewAs = useCallback(
@@ -547,39 +532,6 @@ export function AppLayout({ children }: AppLayoutProps) {
   };
 
   const OrgSwitcher = () => {
-    /** נהג רועי: אין רשימת ארגונים — רק מעבר לתצוגת מנהל (רביד) */
-    if (isDriverRoei) {
-      return (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1.5 border-cyan-400/20 bg-cyan-500/10 px-2.5 text-xs font-medium text-cyan-100 hover:bg-cyan-500/20 hover:text-cyan-100"
-            >
-              <Building className="h-3.5 w-3.5" />
-              <span className="hidden md:inline max-w-[140px] truncate">חשבונות מקושרים</span>
-              <ChevronDown className="h-3.5 w-3.5 opacity-70" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align={isRtl ? 'start' : 'end'} className="min-w-[220px]">
-            <DropdownMenuItem disabled className="text-[11px] font-semibold opacity-80">
-              תצוגה כמנהל
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              className="text-xs cursor-pointer"
-              onClick={() => handleViewAs({ email: RAVID_MANAGER_EMAIL })}
-            >
-              <div className="flex flex-col">
-                <span className="font-medium truncate">רביד (מנהל צי)</span>
-                <span className="text-[11px] text-muted-foreground truncate">{RAVID_MANAGER_EMAIL}</span>
-              </div>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      );
-    }
-
     // אם אין ארגונים משויכים בכלל, נסתיר רק למשתמשים רגילים – אבל לא למנהל הראשי ולא לרביד
     if (memberOrganizations.length === 0 && !isMainAdmin && !isRavid) return null;
     // For the org list at the top: for main admin, prefer only the primary org "רביד צי רכבים"

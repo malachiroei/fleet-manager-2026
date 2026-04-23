@@ -7,16 +7,6 @@ export interface OrganizationWithUserCount extends Organization {
   user_count: number;
 }
 
-function isMissingColumnPostgrestError(err: unknown): boolean {
-  const code = String((err as { code?: string })?.code ?? '');
-  const msg = String((err as { message?: string })?.message ?? '');
-  return (
-    code === '42703' ||
-    /column|does not exist|schema cache|Could not find the/i.test(msg) ||
-    /PGRST204/i.test(msg)
-  );
-}
-
 export function useOrganization(orgId?: string | null) {
   return useQuery({
     queryKey: ['organization', orgId ?? null],
@@ -32,23 +22,10 @@ export function useOrganization(orgId?: string | null) {
       const id = orgId.trim();
       if (!isLikelyUuid(id)) return null;
 
-      // בקשה אחת עם email כשהעמודה קיימת; אחרת נפילה ל־id,name בלבד (ללא בקשת select('email') נפרדת שמייצרת 400 כפול)
-      const full = await supabase.from('organizations').select('id, name, email').eq('id', id).maybeSingle();
-      if (!full.error) {
-        const d = full.data as { id: string; name: string; email?: string | null } | null;
-        if (!d) return null;
-        return {
-          id: d.id,
-          name: d.name,
-          email: typeof d.email === 'string' ? d.email : null,
-        };
-      }
-
-      if (!isMissingColumnPostgrestError(full.error)) throw full.error;
-
-      const slim = await supabase.from('organizations').select('id, name').eq('id', id).maybeSingle();
-      if (slim.error) throw slim.error;
-      const row = slim.data as { id: string; name: string } | null;
+      // רק id,name — select עם email על סכמות בלי העמודה מחזיר 400 ושובר את כל AppLayout (שם ארגון בכותרת).
+      const { data, error } = await supabase.from('organizations').select('id, name').eq('id', id).maybeSingle();
+      if (error) throw error;
+      const row = data as { id: string; name: string } | null;
       return row ? { ...row, email: null } : null;
     },
   });
@@ -86,7 +63,7 @@ export function useUpdateOrganization() {
         .from('organizations')
         .update(updates)
         .eq('id', id)
-        .select('id, name, email')
+        .select('id, name')
         .maybeSingle();
 
       if (error) throw error;
