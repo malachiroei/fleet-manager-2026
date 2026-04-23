@@ -56,19 +56,29 @@ export function useTeamMembers(orgId: string | null | undefined, options?: UseTe
       orgId ?? 'none',
       subjectManagerUserId ?? 'none',
       subjectIsSystemAdmin ? 'sys-admin' : 'regular',
+      'scope-org-or-direct-reports',
     ],
     enabled,
     queryFn: async (): Promise<Profile[]> => {
       let q = supabase.from('profiles').select('*').order('full_name', { ascending: true });
       if (!loadAllOrgs && orgId) {
-        q = q.eq('org_id', orgId);
+        /**
+         * חברי ארגון + דיווחים ישירים (`parent_admin_id` / RLS `profiles_select_managed_by_me`)
+         * גם כש־`org_id` שלהם ארגון נפרד (צי משנה תחת אותו מנהל).
+         */
+        if (subjectManagerUserId) {
+          q = q.or(
+            `org_id.eq.${orgId},parent_admin_id.eq.${subjectManagerUserId},managed_by_user_id.eq.${subjectManagerUserId}`,
+          );
+        } else {
+          q = q.eq('org_id', orgId);
+        }
       }
       if (!loadAllOrgs) {
         if (subjectIsSystemAdmin) {
           // System admins can see full org team, including unmanaged (NULL) rows.
         } else if (subjectManagerUserId) {
           // ניהול צוות: כל חברי הארגון פחות המשתמש הנוכחי (תואם כותרת «חברי הארגון»).
-          // סינון managed_by_user_id בלבד הסתיר חברים עם parent_admin_id / ללא שדה מנהל.
           q = q.neq('id', subjectManagerUserId);
         } else {
           return [];
