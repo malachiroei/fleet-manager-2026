@@ -102,6 +102,10 @@ const OVERRIDES: Record<string, PublishInventoryHuman> = {
     title: 'דיווח קילומטראז׳',
     description: 'שליחת דיווח מרחק/דלק וכו׳.',
   },
+  'pages/ServiceUpdatePage.tsx': {
+    title: 'עדכון טיפול',
+    description: 'רישום טיפול, חישוב טיפול הבא, חשבונית ומייל.',
+  },
   'pages/ReportsPage.tsx': {
     title: 'דוחות',
     description: 'צפייה והפקת דוחות.',

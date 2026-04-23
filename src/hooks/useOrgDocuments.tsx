@@ -34,6 +34,18 @@ export interface OrgDocument {
 
 const QUERY_KEY = ['org-documents'] as const;
 
+/** מפתח שאילתת מסמכי ארגון (כולל לא פעילים) — לייצוא סנאפשוט / ריענון מפורש */
+export const ORG_DOCUMENTS_ADMIN_QUERY_KEY = [...QUERY_KEY, 'admin'] as const;
+
+export async function fetchOrgDocumentsAdmin(): Promise<OrgDocument[]> {
+  const { data, error } = await (supabase as any)
+    .from('org_documents')
+    .select('*')
+    .order('sort_order', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as OrgDocument[];
+}
+
 const ORG_DOCS_PERMISSION_REGISTRY_KEY = [...QUERY_KEY, 'permission-registry'] as const;
 
 /**
@@ -76,15 +88,8 @@ export function useOrgDocuments() {
 /** All docs including inactive (for admin panel) */
 export function useOrgDocumentsAdmin() {
   return useQuery<OrgDocument[]>({
-    queryKey: [...QUERY_KEY, 'admin'],
-    queryFn: async () => {
-      const { data, error } = await (supabase as any)
-        .from('org_documents')
-        .select('*')
-        .order('sort_order', { ascending: true });
-      if (error) throw error;
-      return (data ?? []) as OrgDocument[];
-    },
+    queryKey: ORG_DOCUMENTS_ADMIN_QUERY_KEY,
+    queryFn: fetchOrgDocumentsAdmin,
   });
 }
 

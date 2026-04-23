@@ -125,6 +125,7 @@ function vehicleToSpecForm(v: Vehicle): SpecFormState {
     average_fuel_consumption: n(v.average_fuel_consumption),
     last_service_date: d(v.last_service_date),
     last_service_km: n(v.last_service_km),
+    service_interval_km: n(v.service_interval_km),
     last_tire_change_date: d(v.last_tire_change_date),
     next_tire_change_date: d(v.next_tire_change_date),
     license_image_url: v.license_image_url ?? '',
@@ -150,6 +151,7 @@ const SPEC_LABELS: Record<string, string> = {
   average_fuel_consumption: 'צריכת דלק ממוצעת (ל׳/100 ק״מ)',
   last_service_date: 'תאריך טיפול אחרון',
   last_service_km: 'ק״מ טיפול אחרון',
+  service_interval_km: 'מרווח טיפול מומלץ (ק״מ, יצרן)',
   last_tire_change_date: 'תאריך החלפת צמיגים אחרון',
   next_tire_change_date: 'תאריך החלפת צמיגים הבא',
   license_image_url: 'תמונת רישיון',
@@ -246,7 +248,7 @@ function HandoverHistoryList({ handovers }: { handovers: any[] }) {
 export default function VehicleDetailPage() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
-  const { data: vehicle, isLoading } = useVehicle(id || '');
+  const { data: vehicle, isLoading, isError, error, refetch } = useVehicle(id || '');
   const { data: activeAssignments } = useActiveDriverVehicleAssignments();
   const currentAssignedDriverId = (activeAssignments ?? []).find((assignment) => assignment.vehicle_id === vehicle?.id)?.driver_id ?? '';
   const { data: assignedDriver } = useDriver(currentAssignedDriverId || '');
@@ -382,6 +384,41 @@ export default function VehicleDetailPage() {
     );
   }
 
+  if (isError) {
+    const msg = error instanceof Error ? error.message : String(error ?? 'שגיאה');
+    return (
+      <div className="min-h-screen bg-[#020617] text-white">
+        <header className="bg-card border-b border-border sticky top-0 z-10">
+          <div className="container py-4">
+            <div className="flex items-center gap-3">
+              <Link to="/vehicles">
+                <Button variant="ghost" size="icon">
+                  <ArrowRight className="h-5 w-5" />
+                </Button>
+              </Link>
+              <h1 className="font-bold text-xl">שגיאה בטעינת הרכב</h1>
+            </div>
+          </div>
+        </header>
+        <main className="container py-6">
+          <Card>
+            <CardContent className="p-4 sm:p-8 space-y-4 text-center">
+              <p className="text-destructive text-sm">{msg}</p>
+              <Button type="button" onClick={() => void refetch()}>
+                נסה שוב
+              </Button>
+              <Link to="/vehicles">
+                <Button variant="outline" className="ml-2">
+                  חזור לרשימה
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    );
+  }
+
   if (!vehicle) {
     return (
       <div className="min-h-screen bg-[#020617] text-white">
@@ -481,6 +518,10 @@ export default function VehicleDetailPage() {
     if (norm(specForm.last_service_km) !== norm(init.last_service_km)) {
       const n = parseInt(specForm.last_service_km, 10);
       payload.last_service_km = Number.isNaN(n) ? null : n;
+    }
+    if (norm(specForm.service_interval_km) !== norm(init.service_interval_km)) {
+      const n = parseInt(specForm.service_interval_km, 10);
+      payload.service_interval_km = Number.isNaN(n) ? null : n;
     }
     setIfChanged('last_tire_change_date', dateOrNull('last_tire_change_date'));
     setIfChanged('next_tire_change_date', dateOrNull('next_tire_change_date'));
@@ -746,6 +787,22 @@ export default function VehicleDetailPage() {
                     : 'תאריך עדכון לא זמין'}
                   {displayOdometer > odoFromOdometer && odoFromLastService > 0 ? ' · כולל תחזוקה' : ''}
                 </p>
+                <div className="mt-3 space-y-1.5 border-t border-white/10 pt-3">
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="text-muted-foreground">תאריך טיפול אחרון</span>
+                    <span className="font-mono tabular-nums text-slate-200" dir="ltr">
+                      {fmtDriverDate(vehicle.last_service_date)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="text-muted-foreground">ק״מ טיפול אחרון</span>
+                    <span className="font-mono tabular-nums text-slate-200" dir="ltr">
+                      {vehicle.last_service_km != null
+                        ? `${vehicle.last_service_km.toLocaleString()} ק״מ`
+                        : MISSING_DATA}
+                    </span>
+                  </div>
+                </div>
               </div>
               <div className="flex flex-col justify-between rounded-xl border border-white/10 bg-slate-900/60 px-4 py-4">
                 <div className="flex items-center gap-2 text-muted-foreground">
@@ -774,6 +831,11 @@ export default function VehicleDetailPage() {
                 <p className="mt-1 font-mono text-sm tabular-nums text-slate-300" dir="ltr">
                   {vehicle.next_maintenance_km != null ? `${vehicle.next_maintenance_km.toLocaleString()} ק״מ` : MISSING_DATA}
                 </p>
+                {vehicle.service_interval_km != null && (
+                  <p className="mt-2 text-xs text-muted-foreground" dir="ltr">
+                    מרווח מומלץ: {vehicle.service_interval_km.toLocaleString()} ק״מ
+                  </p>
+                )}
               </div>
             </div>
 
@@ -796,6 +858,7 @@ export default function VehicleDetailPage() {
                       ['average_fuel_consumption', 'צריכת דלק ממוצעת (ל׳/100 ק״מ)', 'text'],
                       ['last_service_date', 'תאריך טיפול אחרון', 'date'],
                       ['last_service_km', 'ק״מ טיפול אחרון', 'text'],
+                      ['service_interval_km', 'מרווח טיפול מומלץ (ק״מ, יצרן)', 'text'],
                       ['last_tire_change_date', 'תאריך החלפת צמיגים אחרון', 'date'],
                       ['next_tire_change_date', 'תאריך החלפת צמיגים הבא', 'date'],
                     ] as const

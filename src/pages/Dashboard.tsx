@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useDashboardStats, useComplianceAlerts } from '@/hooks/useDashboard';
-import { isFeatureEnabled, useFeatureFlags } from '@/hooks/useFeatureFlags';
+import { useFeatureFlags } from '@/hooks/useFeatureFlags';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useAuth } from '@/hooks/useAuth';
+import { usePermissions } from '@/hooks/usePermissions';
 import { useViewAs } from '@/contexts/ViewAsContext';
 import type { PermissionKey } from '@/lib/permissions';
 import { Button } from '@/components/ui/button';
@@ -167,29 +168,30 @@ export default function Dashboard() {
   const isMobile = useIsMobile();
   const { user, profile, hasPermission, isAdmin, isManager, isDriver, roles: userRoles, loading, activeOrgId } = useAuth();
   const { viewAsEmail } = useViewAs();
-  const { data: featureFlags, isPending: featureFlagsPending, isError: featureFlagsError } = useFeatureFlags();
-  /** Feature flags are source-of-truth for dashboard card visibility. */
-  const canEvaluateFeatureFlags = !featureFlagsPending && !featureFlagsError && featureFlags !== undefined;
+  const { isPending: flagsPending } = useFeatureFlags();
+  const { canAccessUi } = usePermissions();
   const showDashboardTreatmentCard = false;
   const showDashboardTestCard = false;
   const showMaintenanceFormCard = false;
   const totalAlerts = (alerts?.filter(a => a.status === 'expired' || a.status === 'warning').length) ?? 0;
   const isStatsLoading = isLoading || !stats;
+  const isInitialUiLoading = loading || flagsPending;
 
-  console.log('Current Active Org ID:', activeOrgId);
-
+  const scopeRefreshKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!activeOrgId && !viewAsEmail) return;
-    queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
-    queryClient.invalidateQueries({ queryKey: ['compliance-alerts'] });
-    queryClient.invalidateQueries({ queryKey: ['vehicles'] });
-    queryClient.invalidateQueries({ queryKey: ['drivers'] });
-    queryClient.invalidateQueries({ queryKey: ['feature-flags'] });
+    if (!activeOrgId && !viewAsEmail?.trim()) return;
+    const key = `${activeOrgId ?? ''}|${(viewAsEmail ?? '').trim()}`;
+    if (scopeRefreshKeyRef.current === key) return;
+    scopeRefreshKeyRef.current = key;
+    void queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+    void queryClient.invalidateQueries({ queryKey: ['compliance-alerts'] });
+    void queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+    void queryClient.invalidateQueries({ queryKey: ['drivers'] });
+    void queryClient.invalidateQueries({ queryKey: ['feature-flags'] });
   }, [activeOrgId, viewAsEmail, queryClient]);
 
   const email = user?.email || '';
   const isMainAdmin = email.toLowerCase() === 'malachiroei@gmail.com';
-  const isSystemAdmin = ['malachiroei@gmail.com', 'ravidmalachi@gmail.com'].includes(email);
   const isOwner = isMainAdmin;
   const effectiveIsAdmin = isOwner || isAdmin;
   const { data: pendingUsersCount = 0 } = useQuery({
@@ -213,19 +215,6 @@ export default function Dashboard() {
     },
   });
 
-  console.log('Dashboard userRole', {
-    userRoles: userRoles ?? [],
-    userRole: userRoles?.join(', ') ?? '(none)',
-    email: email || '(no email)',
-    viewAsEmail,
-    isSystemAdmin,
-    isAdmin,
-    effectiveIsAdmin,
-    isManager,
-    isDriver,
-    loadingAuth: loading,
-  });
-
   // Base quick actions; filtering happens afterwards
   const baseQuickLinks: {
     title: string;
@@ -243,6 +232,13 @@ export default function Dashboard() {
       icon: Gauge,
       permission: 'report_mileage',
       featureFlagKey: 'qa_report_mileage',
+    },
+    {
+      title: 'עדכון טיפול',
+      href: '/vehicles/service-update',
+      icon: Wrench,
+      permission: 'vehicles',
+      featureFlagKey: 'qa_service_update',
     },
     {
       title: t('navigation.procedure6Complaints'),
@@ -294,12 +290,27 @@ export default function Dashboard() {
       featureFlagKey: 'qa_vehicle_delivery',
     },
     {
+      title: 'רכב חליפי',
+      href: '/handover/replacement',
+      icon: Repeat,
+      permission: 'replacement_car',
+      featureFlagKey: 'qa_replacement_car',
+    },
+    {
       title: 'ניהול צוות',
       href: '/team',
       icon: UserCog,
       permission: 'manage_team',
       featureFlagKey: 'qa_team',
       showPendingBadge: true,
+    },
+    {
+      title: 'ניהול משתמשים',
+      href: '/admin/users',
+      icon: Users,
+      adminOnly: true,
+      permission: 'admin_access',
+      featureFlagKey: 'qa_users',
     },
   ];
 
@@ -308,6 +319,8 @@ export default function Dashboard() {
   // - Permissions may be stored as an array or an object map.
   const forceMileageForMalachiroei =
     (profile?.email ?? user?.email ?? '').trim().toLowerCase() === 'malachiroei@gmail.com';
+  const isRoeiAdmin = forceMileageForMalachiroei;
+  const canManageTeamUi = isMainAdmin || hasPermission('manage_team') || isAdmin || isManager;
 
   const canReportMileageFromPermissions = Array.isArray(profile?.permissions)
     ? profile.permissions
@@ -318,20 +331,20 @@ export default function Dashboard() {
   const canReportMileage = forceMileageForMalachiroei || canReportMileageFromPermissions;
 
   const visibleStatusCards = useMemo(() => {
-    if (!canEvaluateFeatureFlags) return statusCardConfig;
-    return statusCardConfig.filter((card) => isFeatureEnabled(featureFlags, card.featureFlagKey));
-  }, [canEvaluateFeatureFlags, featureFlags]);
+    return statusCardConfig.filter((card) =>
+      canAccessUi({ permission: card.permission, featureKey: card.featureFlagKey }),
+    );
+  }, [canAccessUi]);
 
   const visibleQuickLinksByFlags = useMemo(() => {
-    if (!canEvaluateFeatureFlags) return baseQuickLinks;
     return baseQuickLinks.filter((a) => {
-      if (!a.featureFlagKey) return true;
-      return isFeatureEnabled(featureFlags, a.featureFlagKey);
+      return canAccessUi({ permission: a.permission, featureKey: a.featureFlagKey });
     });
-  }, [canEvaluateFeatureFlags, featureFlags, baseQuickLinks]);
+  }, [baseQuickLinks, canAccessUi]);
 
   const quickLinks = visibleQuickLinksByFlags.filter((a) => {
     if (a.href === '/report-mileage') return canReportMileage;
+    if (a.href === '/team') return canManageTeamUi;
     if (a.adminOnly && !isMainAdmin) return false;
     return true;
   });
@@ -422,6 +435,13 @@ export default function Dashboard() {
           <section className="space-y-3 pb-4">
             <h2 className="text-base font-semibold text-foreground">{t('dashboard.quickActions')}</h2>
             <div className="grid grid-cols-1 gap-3">
+              {isInitialUiLoading ? (
+                <>
+                  {[1, 2, 3, 4].map((i) => (
+                    <Skeleton key={i} className="h-14 w-full rounded-xl" />
+                  ))}
+                </>
+              ) : null}
               {showDashboardTreatmentCard ? (
                 <Card
                   role="button"
@@ -494,7 +514,7 @@ export default function Dashboard() {
                   </Card>
                 </Link>
               ) : null}
-              {quickLinks.map((action, idx) =>
+              {!isInitialUiLoading ? quickLinks.map((action, idx) =>
                 action.disabled ? (
                   <Card key={`${action.title}-${idx}`} className="h-full cursor-not-allowed opacity-55 touch-manipulation min-h-[48px]">
                     <CardContent className="p-4 flex items-center gap-3">
@@ -527,7 +547,7 @@ export default function Dashboard() {
                     </Card>
                   </Link>
                 )
-              )}
+              ) : null}
 
               {hasPermission('mileage_update') && (
                 <Card className="h-full border-dashed touch-manipulation min-h-[48px] cursor-pointer" style={{ touchAction: 'manipulation' }}>
@@ -557,6 +577,13 @@ export default function Dashboard() {
           <section className="space-y-3">
             <h2 className="text-lg font-semibold text-foreground">{t('dashboard.quickActions')}</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+              {isInitialUiLoading ? (
+                <>
+                  {[1, 2, 3, 4].map((i) => (
+                    <Skeleton key={i} className="h-[48px] w-full rounded-xl" />
+                  ))}
+                </>
+              ) : null}
               {showDashboardTreatmentCard ? (
                 <Card
                   role="button"
@@ -635,7 +662,7 @@ export default function Dashboard() {
                   </Card>
                 </Link>
               ) : null}
-              {quickLinks.map((action, idx) =>
+              {!isInitialUiLoading ? quickLinks.map((action, idx) =>
                 action.disabled ? (
                   <Card key={`${action.title}-${idx}`} className="h-full cursor-not-allowed opacity-55 touch-manipulation">
                     <CardContent className="p-4 flex items-center gap-3">
@@ -673,7 +700,7 @@ export default function Dashboard() {
                     </Card>
                   </Link>
                 )
-              )}
+              ) : null}
 
               {hasPermission('mileage_update') && (
                 <Card className="h-full border-dashed touch-manipulation min-h-[48px] cursor-pointer" style={{ touchAction: 'manipulation' }}>

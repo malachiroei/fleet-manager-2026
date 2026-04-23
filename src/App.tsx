@@ -39,6 +39,7 @@ import FormsPage from "./pages/FormsPage";
 import VehicleHandoverWizard from './pages/VehicleHandoverWizard';
 import TransfersPage from './pages/TransfersPage';
 import ReportMileagePage from "./pages/ReportMileagePage";
+import ServiceUpdatePage from "./pages/ServiceUpdatePage";
 import { ThemeProvider } from '@/hooks/useTheme';
 import { ViewAsProvider } from '@/contexts/ViewAsContext';
 import Footer from "@/components/layout/Footer";
@@ -119,6 +120,7 @@ function AppRoutes() {
       <Route path="/vehicles" element={<ProtectedRoute><PermissionGuard permission="vehicles"><VehicleListPage /></PermissionGuard></ProtectedRoute>} />
       <Route path="/vehicles/add" element={<ProtectedRoute><PermissionGuard permission="vehicles"><AddVehiclePage /></PermissionGuard></ProtectedRoute>} />
       <Route path="/vehicles/odometer" element={<ProtectedRoute><PermissionGuard permission="vehicles"><UpdateOdometerPage /></PermissionGuard></ProtectedRoute>} />
+      <Route path="/vehicles/service-update" element={<ProtectedRoute><PermissionGuard permission="vehicles"><ServiceUpdatePage /></PermissionGuard></ProtectedRoute>} />
       <Route path="/vehicles/:id" element={<ProtectedRoute><PermissionGuard permission="vehicles"><VehicleDetailPage /></PermissionGuard></ProtectedRoute>} />
       <Route path="/vehicles/:id/edit" element={<ProtectedRoute><PermissionGuard permission="vehicles"><EditVehiclePage /></PermissionGuard></ProtectedRoute>} />
       <Route path="/drivers" element={<ProtectedRoute><PermissionGuard permission="drivers"><DriverListPage /></PermissionGuard></ProtectedRoute>} />

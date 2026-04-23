@@ -5,6 +5,7 @@ import { toast } from '@/hooks/use-toast';
 import { formatSupabaseError } from '@/lib/supabaseError';
 import { useAuth } from '@/hooks/useAuth';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
+import { fleetManagerVisibilityOrFilter } from '@/lib/fleetManagerScope';
 
 export function useDrivers() {
   const {
@@ -32,18 +33,11 @@ export function useDrivers() {
     enabled: fleetListReady && orgId != null,
     queryFn: async () => {
       if (orgId == null) return [] as DriverSummary[];
-      console.log(
-        '[Debug Scope] applyFleetManagerSlice:',
-        applyFleetManagerSlice,
-        'Target ID:',
-        fleetManagerListUserId
-      );
-
       let base = supabase.from('drivers').select('*').eq('org_id', orgId);
       if (isDriverContextOnly && impersonatedUserId) {
         base = base.eq('user_id', impersonatedUserId);
       } else if (applyFleetManagerSlice && fleetManagerListUserId) {
-        base = base.eq('managed_by_user_id', fleetManagerListUserId);
+        base = base.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
       }
       const { data, error } = await base.order('full_name');
 
@@ -55,7 +49,7 @@ export function useDrivers() {
         if (isDriverContextOnly && impersonatedUserId) {
           fallbackQ = fallbackQ.eq('user_id', impersonatedUserId);
         } else if (applyFleetManagerSlice && fleetManagerListUserId) {
-          fallbackQ = fallbackQ.eq('managed_by_user_id', fleetManagerListUserId);
+          fallbackQ = fallbackQ.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
         }
         const fallback = await fallbackQ.order('full_name');
         if (fallback.error) {
@@ -96,24 +90,21 @@ function mapRowToDriverSummary(row: Record<string, unknown>): DriverSummary {
 }
 
 export function useDriver(id: string) {
-  const {
-    effectiveOrgId,
-    fleetListReady,
-    applyFleetManagerSlice,
-    fleetManagerListUserId,
-  } = useImpersonationFleetScope();
+  const { effectiveOrgId, fleetListReady } = useImpersonationFleetScope();
   const orgId = effectiveOrgId;
 
   return useQuery({
-    queryKey: ['driver', id, orgId, applyFleetManagerSlice, fleetManagerListUserId],
+    queryKey: ['driver', id, orgId],
     enabled: !!id && orgId != null && fleetListReady,
     queryFn: async () => {
       if (orgId == null) return null;
-      let q = supabase.from('drivers').select('*').eq('id', id).eq('org_id', orgId);
-      if (applyFleetManagerSlice && fleetManagerListUserId) {
-        q = q.eq('managed_by_user_id', fleetManagerListUserId);
-      }
-      const { data, error } = await q.maybeSingle();
+      // בלי .or(managed_by…) כאן — שילוב עם .eq('id') שובר PostgREST (400). הרשאות: RLS + org_id.
+      const { data, error } = await supabase
+        .from('drivers')
+        .select('*')
+        .eq('id', id)
+        .eq('org_id', orgId)
+        .maybeSingle();
       if (error) throw error;
       return data as Driver | null;
     },

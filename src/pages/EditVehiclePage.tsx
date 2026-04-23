@@ -120,6 +120,19 @@ export default function EditVehiclePage() {
         insurance_expiry: formData.get('insurance_expiry') as string,
         next_maintenance_km: formData.get('next_maintenance_km') ? parseInt(formData.get('next_maintenance_km') as string) : null,
         next_maintenance_date: formData.get('next_maintenance_date') as string || null,
+        last_service_date: (formData.get('last_service_date') as string)?.trim() || null,
+        last_service_km: (() => {
+          const v = (formData.get('last_service_km') as string)?.trim();
+          if (!v) return null;
+          const n = parseInt(v, 10);
+          return Number.isNaN(n) ? null : n;
+        })(),
+        service_interval_km: (() => {
+          const v = (formData.get('service_interval_km') as string)?.trim();
+          if (!v) return null;
+          const n = parseInt(v, 10);
+          return Number.isNaN(n) ? null : n;
+        })(),
         ownership_type: formData.get('ownership_type') as string || null,
         leasing_company_name: formData.get('leasing_company_name') as string || null,
         pickup_date: formData.get('pickup_date') as string || null,
@@ -253,6 +266,9 @@ export default function EditVehiclePage() {
                 <div><Label htmlFor="insurance_expiry">תוקף ביטוח *</Label><Input id="insurance_expiry" name="insurance_expiry" type="date" defaultValue={vehicle.insurance_expiry} required /></div>
                 <div><Label htmlFor="next_maintenance_km">ק"מ לטיפול הבא</Label><Input id="next_maintenance_km" name="next_maintenance_km" type="number" defaultValue={vehicle.next_maintenance_km || ''} dir="ltr" /></div>
                 <div><Label htmlFor="next_maintenance_date">תאריך טיפול הבא</Label><Input id="next_maintenance_date" name="next_maintenance_date" type="date" defaultValue={vehicle.next_maintenance_date || ''} /></div>
+                <div><Label htmlFor="last_service_date">תאריך טיפול אחרון</Label><Input id="last_service_date" name="last_service_date" type="date" defaultValue={vehicle.last_service_date?.slice(0, 10) || ''} /></div>
+                <div><Label htmlFor="last_service_km">ק״מ טיפול אחרון</Label><Input id="last_service_km" name="last_service_km" type="number" defaultValue={vehicle.last_service_km ?? ''} dir="ltr" placeholder="למשל 45000" /></div>
+                <div><Label htmlFor="service_interval_km">מרווח טיפול מומלץ (ק״מ, יצרן)</Label><Input id="service_interval_km" name="service_interval_km" type="number" defaultValue={vehicle.service_interval_km ?? ''} dir="ltr" placeholder="למשל 15000" /></div>
               </div>
             </CardContent>
           </Card>

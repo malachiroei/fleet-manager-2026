@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { getSupabaseAnonKey, getSupabasePublishableKey, getSupabaseUrl } from '@/integrations/supabase/publicEnv';
 import type { VehicleHandover } from '@/types/fleet';
 import { useAuth } from '@/hooks/useAuth';
+import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import hebrewFontUrl from '@/assets/fonts/NotoSansHebrew.ttf?url';
@@ -1078,12 +1079,12 @@ export function buildHandoverRecordUrl(vehicleId: string, handoverId: string) {
 }
 
 export function useHandovers(vehicleId?: string) {
-  const { activeOrgId } = useAuth();
-  const orgId = activeOrgId ?? null;
+  const { effectiveOrgId, fleetListReady } = useImpersonationFleetScope();
+  const orgId = effectiveOrgId ?? null;
 
   return useQuery({
     queryKey: ['handovers', vehicleId, orgId],
-    enabled: orgId != null,
+    enabled: fleetListReady && orgId != null,
     queryFn: async () => {
       if (orgId == null) return [] as VehicleHandover[];
       let query = supabase
@@ -1101,11 +1102,50 @@ export function useHandovers(vehicleId?: string) {
   });
 }
 
+function isCreateVehicleHandoverRpcMissingError(error: { message?: string; details?: string } | null): boolean {
+  if (!error) return false;
+  const msg = `${error.message ?? ''} ${error.details ?? ''}`.toLowerCase();
+  return (
+    msg.includes('could not find the function') ||
+    msg.includes('function public.create_vehicle_handover') ||
+    msg.includes('does not exist') ||
+    msg.includes('schema cache')
+  );
+}
+
 export function useCreateHandover() {
   const queryClient = useQueryClient();
   
   return useMutation({
     mutationFn: async (handover: Omit<VehicleHandover, 'id' | 'created_at' | 'vehicle' | 'driver'>) => {
+      const h = handover as any;
+
+      const { data: rpcData, error: rpcError } = await supabase.rpc('create_vehicle_handover', {
+        p_org_id: h.org_id ?? null,
+        p_vehicle_id: h.vehicle_id,
+        p_driver_id: h.driver_id,
+        p_handover_type: h.handover_type,
+        p_assignment_mode: h.assignment_mode ?? 'permanent',
+        p_handover_date: h.handover_date,
+        p_odometer_reading: h.odometer_reading,
+        p_fuel_level: String(h.fuel_level),
+        p_photo_front_url: h.photo_front_url,
+        p_photo_back_url: h.photo_back_url,
+        p_photo_right_url: h.photo_right_url,
+        p_photo_left_url: h.photo_left_url,
+        p_signature_url: h.signature_url,
+        p_notes: h.notes,
+        p_created_by: h.created_by,
+      });
+
+      if (!rpcError && rpcData) {
+        return rpcData as VehicleHandover;
+      }
+
+      if (rpcError && !isCreateVehicleHandoverRpcMissingError(rpcError)) {
+        throw rpcError;
+      }
+
       const { data, error } = await supabase
         .from('vehicle_handovers')
         .insert(handover as any)
@@ -1146,12 +1186,12 @@ export function useCreateHandover() {
 }
 
 export function useHandoverHistory() {
-  const { activeOrgId } = useAuth();
-  const orgId = activeOrgId ?? null;
+  const { effectiveOrgId, fleetListReady } = useImpersonationFleetScope();
+  const orgId = effectiveOrgId ?? null;
 
   return useQuery({
     queryKey: ['handover-history', orgId],
-    enabled: orgId != null,
+    enabled: fleetListReady && orgId != null,
     staleTime: 1000 * 60 * 5,
     queryFn: async () => {
       if (orgId == null) return [] as HandoverHistoryItem[];
@@ -1570,9 +1610,28 @@ export async function sendHandoverNotificationEmail(input: SendHandoverEmailInpu
     },
   };
 
-  const { error, data } = await supabase.functions.invoke('send-handover-notification', { body });
+  const anonKey = getSupabaseAnonKey() || getSupabasePublishableKey();
+  // JWT משתמש שפג תוקף גורם ל-401 בשער Functions (נראה בקונסול) גם כשה-fallback עם anon
+  // מצליח — refresh לפני הקריאה כדי שהבקשה הראשונה לא תיכשל סתם.
+  try {
+    await supabase.auth.refreshSession();
+  } catch {
+    // ignore — נשתמש ב-anon למטה
+  }
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData?.session?.access_token ?? '';
+  const bearer = (accessToken || anonKey || '').trim();
 
-  if (!error && !(data as any)?.error) {
+  const { error, data } = await supabase.functions.invoke('send-handover-notification', {
+    body,
+    headers: {
+      ...(anonKey ? { apikey: anonKey } : {}),
+      Authorization: `Bearer ${bearer}`,
+    },
+  });
+
+  const payload = data as { error?: string; success?: boolean } | null;
+  if (!error && !payload?.error && (payload == null || payload.success !== false)) {
     return;
   }
 

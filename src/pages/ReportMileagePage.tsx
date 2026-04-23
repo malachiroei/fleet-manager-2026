@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, Camera, Gauge, Loader2 } from 'lucide-react';
+import { ArrowRight, Camera, Gauge, ImageIcon, Loader2, Wrench } from 'lucide-react';
 
 import { supabase } from '@/integrations/supabase/client';
+import { invokeSupabaseEdgeFunction } from '@/lib/supabase/invokeEdgeFunction';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useVehicles } from '@/hooks/useVehicles';
@@ -13,14 +14,84 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { WebcamCapture } from '@/components/WebcamCapture';
+import { useMobilePhotoIngest } from '@/hooks/useMobilePhotoIngest';
+import { isAndroidUserAgent, shouldAttachDirectCameraCapture } from '@/lib/mobilePhotoIngest';
 
 const STORAGE_BUCKET = 'mileage-reports';
+
+/** Survives in-tab reloads (e.g. Android camera recycling the tab) */
+const MILEAGE_REPORT_SESSION = {
+  vehicleId: 'mileage_report_vehicle_id',
+  odometer: 'mileage_report_odometer',
+  vehicleSearch: 'mileage_report_vehicle_search',
+  cameraPending: 'mileage_report_camera_pending',
+} as const;
+
+function clearMileageReportSessionDraft() {
+  try {
+    sessionStorage.removeItem(MILEAGE_REPORT_SESSION.vehicleId);
+    sessionStorage.removeItem(MILEAGE_REPORT_SESSION.odometer);
+    sessionStorage.removeItem(MILEAGE_REPORT_SESSION.vehicleSearch);
+    sessionStorage.removeItem(MILEAGE_REPORT_SESSION.cameraPending);
+  } catch {
+    // private mode / quota
+  }
+}
 
 function sanitizeFileExt(name: string): string {
   const idx = name.lastIndexOf('.');
   if (idx === -1) return 'jpg';
   const ext = name.slice(idx + 1).toLowerCase().replace(/[^a-z0-9]/g, '');
   return ext || 'jpg';
+}
+
+function sanitizeStorageSegment(seg: string): string {
+  return String(seg || '').replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+function canonicalPublicUrlForPath(objectPath: string): string {
+  const path = String(objectPath || '').trim();
+  if (!path) return '';
+  const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+  return String(data?.publicUrl ?? '').trim();
+}
+
+function logMileageLogsInsertError(insertError: {
+  message?: string;
+  code?: string;
+  details?: string;
+  hint?: string;
+}) {
+  console.error('[ReportMileagePage] mileage_logs insert failed (RLS/schema/network)', {
+    message: insertError?.message,
+    code: insertError?.code,
+    details: insertError?.details,
+    hint: insertError?.hint,
+  });
+}
+
+/** Prod drift: old RPC/trigger used column `odometer`; table column is `odometer_value`. */
+function describeMileageSchemaMismatch(raw: string | undefined): string | null {
+  const t = (raw ?? '').toLowerCase();
+  if (t.includes('odometer') && t.includes('does not exist') && t.includes('mileage_logs')) {
+    return 'במסד הפרו הפונקציה submit_mileage_report (או טריגר) מפנה לעמודה odometer — בטבלה השם הנכון הוא odometer_value. הריצו את המיגרציה האחרונה (20260408100000) ב-Supabase.';
+  }
+  return null;
+}
+
+/** PostgREST 403 / PG 42501: role authenticated ללא EXECUTE על ה-RPC. */
+function describeMileageRpcForbidden(msg?: string, code?: string): string | null {
+  const blob = `${msg ?? ''} ${code ?? ''}`.toLowerCase();
+  if (
+    blob.includes('forbidden') ||
+    blob.includes('403') ||
+    blob.includes('42501') ||
+    blob.includes('permission denied')
+  ) {
+    return 'השרת דחה את submit_mileage_report (Forbidden / חסר הרשאה). בפרו: הריצו GRANT EXECUTE ON FUNCTION public.submit_mileage_report(uuid, numeric, text) TO authenticated; ורעננו schema ב-API (או NOTIFY pgrst). ודאו שמחוברים כמשתמש רשום.';
+  }
+  return null;
 }
 
 export default function ReportMileagePage() {
@@ -34,7 +105,6 @@ export default function ReportMileagePage() {
     const email =
       (profile?.email ?? user?.email ?? '').trim().toLowerCase();
 
-    // Master override for staging unblock.
     const isMaster = email === 'malachiroei@gmail.com';
 
     const allowed = isMaster || (
@@ -54,11 +124,78 @@ export default function ReportMileagePage() {
   const [vehicleSearch, setVehicleSearch] = useState('');
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
   const [odometer, setOdometer] = useState('');
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [sessionHydrated, setSessionHydrated] = useState(false);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const fallbackFileInputRef = useRef<HTMLInputElement>(null);
+  const [webcamOpen, setWebcamOpen] = useState(false);
+  /** Remount WebcamCapture on each open — matches a fresh instance per delivery photo slot (clean streamBootId + Android prime). */
+  const [webcamMountKey, setWebcamMountKey] = useState(0);
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const {
+    photoFile,
+    photoPreviewUrl,
+    previewMountKey,
+    isMaterializing,
+    startPhotoIngest,
+  } = useMobilePhotoIngest({
+    logLabel: '[ReportMileagePage]',
+    onIngestBeginWithFile: () => {
+      try {
+        sessionStorage.removeItem(MILEAGE_REPORT_SESSION.cameraPending);
+      } catch {
+        // ignore
+      }
+    },
+  });
+
+  /** Restore draft + detect tab recycle after camera (session flag survives reload). */
+  useEffect(() => {
+    if (loading) return;
+
+    try {
+      const vid = sessionStorage.getItem(MILEAGE_REPORT_SESSION.vehicleId);
+      const odo = sessionStorage.getItem(MILEAGE_REPORT_SESSION.odometer);
+      const vsearch = sessionStorage.getItem(MILEAGE_REPORT_SESSION.vehicleSearch);
+
+      if (vid) setSelectedVehicleId(vid);
+      if (odo !== null) setOdometer(odo);
+      if (vsearch !== null) setVehicleSearch(vsearch);
+
+      if (sessionStorage.getItem(MILEAGE_REPORT_SESSION.cameraPending) === '1') {
+        sessionStorage.removeItem(MILEAGE_REPORT_SESSION.cameraPending);
+        toast({
+          title: 'טעינה מחדש אחרי צילום',
+          description:
+            'נראה שהדפדפן התרענן בזמן הצילום. אם התמונה לא מופיעה, נסה לבחור אותה מהגלריה',
+        });
+      }
+    } catch {
+      // ignore
+    } finally {
+      setSessionHydrated(true);
+    }
+  }, [loading]);
+
+  /** Persist vehicle + mileage as the user types (before camera / reload). */
+  useEffect(() => {
+    if (loading || !sessionHydrated) return;
+    try {
+      if (selectedVehicleId) {
+        sessionStorage.setItem(MILEAGE_REPORT_SESSION.vehicleId, selectedVehicleId);
+      } else {
+        sessionStorage.removeItem(MILEAGE_REPORT_SESSION.vehicleId);
+      }
+      sessionStorage.setItem(MILEAGE_REPORT_SESSION.odometer, odometer);
+      if (vehicleSearch.trim()) {
+        sessionStorage.setItem(MILEAGE_REPORT_SESSION.vehicleSearch, vehicleSearch);
+      } else {
+        sessionStorage.removeItem(MILEAGE_REPORT_SESSION.vehicleSearch);
+      }
+    } catch {
+      // ignore
+    }
+  }, [loading, sessionHydrated, selectedVehicleId, odometer, vehicleSearch]);
 
   const filteredVehicles = useMemo(() => {
     const q = vehicleSearch.trim().toLowerCase();
@@ -76,23 +213,16 @@ export default function ReportMileagePage() {
     [vehicles, selectedVehicleId]
   );
 
-  useEffect(() => {
-    if (!photoFile) {
-      if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
-      setPhotoPreviewUrl(null);
-      return;
-    }
-    const next = URL.createObjectURL(photoFile);
-    setPhotoPreviewUrl(next);
-    return () => URL.revokeObjectURL(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [photoFile]);
-
-  const pickPhoto = () => {
-    fileInputRef.current?.click();
+  const handleFile = (e: ChangeEvent<HTMLInputElement>) => {
+    startPhotoIngest(e.target.files?.[0] ?? null, e.target);
   };
 
-  const submit = async (e: React.FormEvent) => {
+  /** WebcamCapture already materializes to an in-memory File; ingest runs materialize again for a stable ArrayBuffer + updates `photoFile`. */
+  const handleWebcamCapturedFile = (captured: File) => {
+    startPhotoIngest(captured, null);
+  };
+
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!user) return;
     if (!selectedVehicle) {
@@ -113,70 +243,101 @@ export default function ReportMileagePage() {
       });
       return;
     }
+
     if (!photoFile) {
       toast({ title: 'נא לצרף תמונה של לוח השעונים', variant: 'destructive' });
+      return;
+    }
+    if (isMaterializing) {
+      toast({ title: 'מעבדים את התמונה…', description: 'המתן רגע לפני השליחה.', variant: 'destructive' });
       return;
     }
 
     setSubmitting(true);
     try {
       const ext = sanitizeFileExt(photoFile.name);
-      const id = (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
-      const path = `${selectedVehicle.id}/${id}.${ext}`;
+      const safeUserId = sanitizeStorageSegment(user.id);
+      const rawId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const safeId = sanitizeStorageSegment(rawId);
+      const objectPath = `tmp/${safeUserId}/${safeId}.${sanitizeStorageSegment(ext)}`;
 
-      console.log('Step 1: Uploading photo...', {
-        bucket: STORAGE_BUCKET,
-        objectPath: path,
-        fileName: photoFile.name,
-      });
-
+      const contentType = photoFile.type || 'image/jpeg';
       const { error: uploadError } = await supabase.storage
         .from(STORAGE_BUCKET)
-        .upload(path, photoFile, { upsert: false, contentType: photoFile.type || undefined });
+        .upload(objectPath, photoFile, { upsert: true, contentType });
+
       if (uploadError) {
         console.error('[ReportMileagePage] storage upload failed', uploadError);
-        throw uploadError;
-      }
-
-      const { data: urlData, error: urlError } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
-      if (urlError) {
-        console.error('[ReportMileagePage] getPublicUrl failed', urlError);
-        throw urlError;
-      }
-      const photoUrl = urlData?.publicUrl;
-      if (!photoUrl) {
-        console.error('[ReportMileagePage] missing photoUrl from getPublicUrl', {
-          bucket: STORAGE_BUCKET,
-          objectPath: path,
-          urlData,
+        toast({
+          title: 'העלאת התמונה נכשלה',
+          description: uploadError.message || 'נסו שוב',
+          variant: 'destructive',
         });
-        throw new Error('Missing photoUrl from getPublicUrl');
+        return;
       }
 
-      console.log('Step 2: Photo URL:', photoUrl);
+      const photoUrl = canonicalPublicUrlForPath(objectPath);
+      if (!photoUrl) {
+        toast({ title: 'העלאת התמונה נכשלה', description: 'נסו שוב', variant: 'destructive' });
+        return;
+      }
 
-      const payload: Record<string, unknown> = {
+      const { data: rpcRaw, error: rpcTransportError } = await (supabase as any).rpc('submit_mileage_report', {
         vehicle_id: selectedVehicle.id,
         odometer_value: odometerValue,
         photo_url: photoUrl,
-        user_id: user.id,
-      };
+      });
 
-      console.log('Step 3: Inserting to mileage_logs...', payload);
-
-      const { error: insertError } = await supabase.from('mileage_logs').insert(payload as any);
-      if (insertError) {
-        console.error('[ReportMileagePage] mileage_logs insert failed', insertError);
-        console.error('[ReportMileagePage] mileage_logs insert payload', payload);
-        throw insertError;
+      if (rpcTransportError) {
+        logMileageLogsInsertError({
+          message: rpcTransportError.message,
+          code: rpcTransportError.code,
+          details: (rpcTransportError as any).details,
+          hint: (rpcTransportError as any).hint,
+        });
+        const schemaHint = describeMileageSchemaMismatch(rpcTransportError.message);
+        const forbiddenHint = describeMileageRpcForbidden(
+          rpcTransportError.message,
+          rpcTransportError.code,
+        );
+        toast({
+          title: 'שגיאה בשמירת הדיווח (מסד נתונים)',
+          description:
+            schemaHint ||
+            forbiddenHint ||
+            rpcTransportError.message ||
+            'ודאו שמיגרציית submit_mileage_report הורצה בפרויקט Supabase (20260406100000).',
+          variant: 'destructive',
+        });
+        return;
       }
 
-      // Create a "Documents" history record (matches the Vehicle Detail "מסמכים" tab).
-      // Note: vehicle_documents is used by VehicleDetailPage to render doc.title + doc.created_at.
+      const rpcResult = rpcRaw as { ok?: boolean; error?: string; detail?: string; log_id?: string } | null;
+      if (!rpcResult?.ok) {
+        const errKey = rpcResult?.error ?? 'unknown';
+        console.error('[ReportMileagePage] submit_mileage_report rejected', rpcResult);
+        const fallbackDetail =
+          errKey === 'vehicle_forbidden'
+            ? 'אין הרשאה לרכב זה — בדקו org_id / שיוך נהג.'
+            : errKey === 'no_report_permission'
+              ? 'אין הרשאת דיווח קילומטראז׳ בפרופיל.'
+              : `${errKey}${rpcResult?.detail ? ` — ${rpcResult.detail}` : ''}`;
+        const schemaHint =
+          describeMileageSchemaMismatch(rpcResult?.detail) ?? describeMileageSchemaMismatch(fallbackDetail);
+        const forbiddenHint =
+          describeMileageRpcForbidden(rpcResult?.detail) ?? describeMileageRpcForbidden(fallbackDetail);
+        toast({
+          title: 'שגיאה בשמירת הדיווח (מסד נתונים)',
+          description: schemaHint || forbiddenHint || fallbackDetail,
+          variant: 'destructive',
+        });
+        return;
+      }
+
       try {
         const title = `עדכון ק"מ - ${odometerValue.toLocaleString('he-IL')} ק"מ`;
 
-        const { error: vehicleDocError } = await supabase.from('vehicle_documents').insert({
+        const { error: vehicleDocError } = await supabase.from('vehicle_documents' as any).insert({
           vehicle_id: selectedVehicle.id,
           title,
           file_url: photoUrl,
@@ -192,91 +353,52 @@ export default function ReportMileagePage() {
           console.error('[ReportMileagePage] vehicle_documents insert failed', vehicleDocError);
         }
       } catch (vehicleDocErr) {
-        // Non-fatal: mileage is already saved; we don't want to block the user flow.
         console.error('[ReportMileagePage] vehicle_documents insert threw', vehicleDocErr);
       }
 
-      // Keep UI in sync: update the vehicle odometer immediately.
-      // NOTE: Multi-tenancy: we include `org_id` in the where-clause.
       const orgId = selectedVehicle.org_id ?? profile?.org_id ?? activeOrgId ?? null;
-      if (!orgId) {
-        console.error('[ReportMileagePage] missing orgId for vehicles odometer update', {
-          vehicleId: selectedVehicle.id,
-          selectedVehicleOrgId: selectedVehicle.org_id,
-          profileOrgId: profile?.org_id,
-          activeOrgId,
-        });
-      }
 
-      const { error: updateError } = await supabase
-        .from('vehicles')
-        .update({ current_odometer: odometerValue })
-        .eq('id', selectedVehicle.id)
-        .eq('org_id', orgId as string);
-
-      if (updateError) {
-        console.error('Failed to update vehicle odometer:', updateError);
-      }
-
-      // Send notification email (direct invoke; DB trigger not required)
+      let emailProblem: string | null = null;
       try {
-        console.log('Step 4: Invoking Edge Function...');
-        const payload = {
+        const notifyRes = await invokeSupabaseEdgeFunction('send-mileage-notification', {
           to: 'malachiroei@gmail.com',
           subject: `עדכון קילומטראז' - ${selectedVehicle.plate_number}`,
           odometerReading: odometerValue,
           reportUrl: photoUrl,
-        };
-
-        console.log('[send-mileage-notification] storage target', {
-          bucket: STORAGE_BUCKET,
-          objectPath: path,
-          photoUrl,
         });
-
-        console.log('[send-mileage-notification] invoking', {
-          function: 'send-mileage-notification',
-          payload,
-        });
-
-        const sessionRes = await supabase.auth.getSession();
-        const token = sessionRes.data.session?.access_token;
-
-        console.log('[send-mileage-notification] auth token present?', Boolean(token));
-
-        const invokeResult = await supabase.functions.invoke('send-mileage-notification', {
-          headers: {
-            Authorization: `Bearer ${token ?? ''}`,
-          },
-          body: payload,
-        });
-
-        // In Supabase JS, invoke often returns `{ data, error }` without throwing.
-        const maybeError = (invokeResult as any)?.error;
-        if (maybeError) {
-          console.error('[send-mileage-notification] invoke returned error', maybeError);
-          console.error('[send-mileage-notification] invokeResult raw', invokeResult);
+        if (notifyRes.error) {
+          console.error('[send-mileage-notification] invoke error', notifyRes.error);
+          emailProblem = `${notifyRes.error.message} — בדקו RESEND_API_KEY ב-Supabase (Edge Functions → Secrets) ופריסת הפונקציה.`;
         } else {
-          console.log('[send-mileage-notification] invoke success', (invokeResult as any)?.data ?? invokeResult);
+          const payload = notifyRes.data as { error?: string } | null;
+          if (payload?.error) {
+            console.error('[send-mileage-notification] function body error', payload.error);
+            emailProblem = String(payload.error).slice(0, 280);
+          }
         }
       } catch (notifyErr) {
-        // Non-fatal: mileage is already saved
         console.error('[send-mileage-notification] threw:', notifyErr);
+        emailProblem = notifyErr instanceof Error ? notifyErr.message : 'שליחת מייל נכשלה';
       }
 
-      // Invalidate vehicle queries so Vehicle Detail "מד אוץ" card refreshes.
-      // useVehicle/useVehicles query keys include `orgId`, so invalidate with the exact prefix.
       queryClient.invalidateQueries({ queryKey: ['vehicle', selectedVehicle.id, orgId] });
       queryClient.invalidateQueries({ queryKey: ['vehicles', orgId] });
       queryClient.invalidateQueries({ queryKey: ['vehicle-documents', selectedVehicle.id] });
 
-      toast({ title: 'דיווח קילומטראז׳ נשלח בהצלחה' });
-      navigate('/');
-    } catch (err: any) {
+      toast({
+        title: emailProblem ? 'הדיווח נשמר; יש בעיה במייל' : 'הדיווח נשמר והרכב עודכן',
+        description: emailProblem
+          ? `${emailProblem} | קילומטראז׳ ${odometerValue.toLocaleString('he-IL')} ק״מ במערכת.`
+          : `קילומטראז׳ ${odometerValue.toLocaleString('he-IL')} ק״מ. מעבירים לדף הבית…`,
+        variant: emailProblem ? 'destructive' : 'default',
+      });
+      navigate('/', { replace: true });
+    } catch (err: unknown) {
       console.error('[ReportMileagePage] submit failed', err);
+      const msg = err instanceof Error ? err.message : 'נסו שוב';
       toast({
         title: 'שגיאה בשליחת הדיווח',
-        description: err?.message ?? 'נסו שוב',
+        description: msg,
         variant: 'destructive',
       });
     } finally {
@@ -288,13 +410,21 @@ export default function ReportMileagePage() {
     <div className="min-h-screen bg-[#020617] text-white">
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
-          <div className="flex items-center gap-3">
-            <Link to="/">
-              <Button variant="ghost" size="icon">
-                <ArrowRight className="h-5 w-5" />
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <Link to="/">
+                <Button variant="ghost" size="icon">
+                  <ArrowRight className="h-5 w-5" />
+                </Button>
+              </Link>
+              <h1 className="font-bold text-xl">דיווח קילומטראז׳</h1>
+            </div>
+            <Link to="/vehicles/service-update">
+              <Button type="button" variant="outline" className="h-10 gap-2">
+                <Wrench className="h-4 w-4 shrink-0" />
+                עדכון טיפול
               </Button>
             </Link>
-            <h1 className="font-bold text-xl">דיווח קילומטראז׳</h1>
           </div>
         </div>
       </header>
@@ -371,36 +501,120 @@ export default function ReportMileagePage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>תמונה של לוח השעונים</Label>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0] ?? null;
-                      setPhotoFile(f);
-                    }}
-                  />
-                  <Button type="button" variant="outline" className="w-full h-12 gap-2" onClick={pickPhoto}>
-                    <Camera className="h-4 w-4" />
-                    {photoFile ? 'החלף תמונה' : 'צלם תמונה'}
-                  </Button>
-                  {photoPreviewUrl && (
-                    <div className="overflow-hidden rounded-xl border border-border">
+                  <span className="text-sm font-medium leading-none">תמונה של לוח השעונים</span>
+                  {isAndroidUserAgent() ? (
+                    <>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
+                        <Button
+                          type="button"
+                          className="h-12 flex-1 gap-2 text-base"
+                          disabled={submitting || isMaterializing}
+                          onClick={() => {
+                            setWebcamMountKey((k) => k + 1);
+                            setWebcamOpen(true);
+                          }}
+                        >
+                          <Camera className="h-4 w-4 shrink-0" />
+                          צלם מהמצלמה
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-12 flex-1 gap-2 text-base"
+                          disabled={submitting || isMaterializing}
+                          onClick={() => galleryInputRef.current?.click()}
+                        >
+                          <ImageIcon className="h-4 w-4 shrink-0" />
+                          בחר מהגלריה
+                        </Button>
+                      </div>
+                      <input
+                        ref={galleryInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={submitting || isMaterializing}
+                        onChange={handleFile}
+                        aria-hidden
+                      />
+                      <button
+                        type="button"
+                        className="text-xs text-muted-foreground underline decoration-muted-foreground/60 underline-offset-2 hover:text-foreground"
+                        disabled={submitting || isMaterializing}
+                        onClick={() => fallbackFileInputRef.current?.click()}
+                      >
+                        או בחר קובץ (חלון המערכת)
+                      </button>
+                      <input
+                        ref={fallbackFileInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={submitting || isMaterializing}
+                        onChange={handleFile}
+                        aria-hidden
+                      />
+                      <p className="text-xs text-muted-foreground leading-snug">
+                        צילום מהמצלמה נשאר בתוך הדפדפן (מומלץ אם צילום דרך האפליקציה נכשל). מהגלריה או מהמערכת — אם
+                        מופיעה מצלמת מערכת, זה עדיין אפשרי כאן כגיבוי.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <label
+                        htmlFor="mileage_photo"
+                        className="flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium text-foreground shadow-sm ring-offset-background hover:bg-accent hover:text-accent-foreground has-[:disabled]:pointer-events-none has-[:disabled]:opacity-50"
+                        onPointerDownCapture={() => {
+                          try {
+                            sessionStorage.setItem(MILEAGE_REPORT_SESSION.cameraPending, '1');
+                          } catch {
+                            // ignore
+                          }
+                        }}
+                      >
+                        <input
+                          id="mileage_photo"
+                          name="mileage_photo"
+                          type="file"
+                          accept="image/*"
+                          {...(shouldAttachDirectCameraCapture()
+                            ? ({ capture: 'environment' } as const)
+                            : {})}
+                          className="hidden"
+                          disabled={submitting || isMaterializing}
+                          onChange={handleFile}
+                        />
+                        <Camera className="h-4 w-4 shrink-0" />
+                        {photoFile ? 'החלף תמונה' : 'צלם או בחר תמונה'}
+                      </label>
+                      <p className="text-xs text-muted-foreground leading-snug">
+                        במחשב: בוחרים תמונה או מקור מצלמה דרך חלון הקבצים של המערכת (אם מופיע). אחרי בחירה אמורה
+                        להופיע תצוגה מקדימה.
+                      </p>
+                    </>
+                  )}
+                  {photoPreviewUrl ? (
+                    <div className="aspect-video w-full overflow-hidden rounded-xl border border-border">
                       <img
+                        key={previewMountKey}
                         src={photoPreviewUrl}
-                        alt="תצוגה מקדימה"
-                        className="w-full h-56 object-cover bg-black"
+                        alt=""
+                        decoding="async"
+                        className="h-full w-full object-cover"
                       />
                     </div>
-                  )}
+                  ) : null}
                 </div>
 
                 <div className="flex gap-3">
-                  <Button type="submit" className="flex-1 h-12 text-base" disabled={submitting}>
-                    {submitting && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
+                  <Button
+                    type="submit"
+                    className="flex-1 h-12 text-base"
+                    disabled={submitting || isMaterializing || !photoFile}
+                  >
+                    {(submitting || isMaterializing) && (
+                      <Loader2 className="ml-2 h-4 w-4 animate-spin" />
+                    )}
                     שלח דיווח
                   </Button>
                   <Button
@@ -418,7 +632,14 @@ export default function ReportMileagePage() {
           </CardContent>
         </Card>
       </main>
+
+      <WebcamCapture
+        key={webcamMountKey}
+        open={webcamOpen}
+        onOpenChange={setWebcamOpen}
+        onCapture={handleWebcamCapturedFile}
+        disabled={submitting || isMaterializing}
+      />
     </div>
   );
 }
-

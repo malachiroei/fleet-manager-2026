@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
-import { useOrgSettings } from '@/hooks/useOrgSettings';
 import {
   useTeamMembers,
   useOrgInvitations,
@@ -25,6 +24,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { SimpleInviteModal } from '@/components/SimpleInviteModal';
 import { UserFeatureFlagsOverridesDialog } from '@/components/UserFeatureFlagsOverridesDialog';
+import { GlobalFeatureFlagsAdminPanel } from '@/components/GlobalFeatureFlagsAdminPanel';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import {
   Table,
   TableBody,
@@ -33,7 +34,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { ArrowRight, Loader2, Mail, Upload, UserPlus, Users } from 'lucide-react';
+import { ArrowRight, Flag, Loader2, Mail, UserPlus, Users } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import type { Profile } from '@/types/fleet';
@@ -44,15 +45,11 @@ import type { Profile } from '@/types/fleet';
 export default function TeamManagementPage() {
   const { profile, activeOrgId, hasPermission, isAdmin, isManager } = useAuth();
   const { viewAsProfile } = useViewAs();
-  const { effectiveUserId } = useImpersonationFleetScope();
-  const manifestUi = EMPTY_FLEET_MANIFEST_UI_GATES;
+  const { effectiveUserId, effectiveOrgId } = useImpersonationFleetScope();
   const queryClient = useQueryClient();
-  const orgId = activeOrgId ?? null;
-  const settingsOrgId = orgId ?? profile?.org_id ?? null;
-  const { data: orgSettingsRow } = useOrgSettings(settingsOrgId, { enabledOnlyWithOrgId: true });
+  const orgId = effectiveOrgId ?? activeOrgId ?? null;
   const isSuperAdminTeamView = isRoeySuperAdminProfile(profile);
-  const showPushToPro = isSuperAdminTeamView;
-  const [pushBusy, setPushBusy] = useState(false);
+  const [globalFeaturesOpen, setGlobalFeaturesOpen] = useState(false);
   const subjectIsSystemAdmin = (viewAsProfile?.is_system_admin ?? profile?.is_system_admin) === true;
   const { data: members, isLoading, isFetching: membersFetching } = useTeamMembers(orgId, {
     loadAllOrgs: isSuperAdminTeamView,
@@ -61,8 +58,15 @@ export default function TeamManagementPage() {
   });
   const { data: invitations, isLoading: invitationsLoading, isFetching: invitationsFetching } =
     useOrgInvitations(orgId);
-  const memberRows = members ?? [];
+  const memberRowsAll = members ?? [];
   const invitationRows = invitations ?? [];
+  const viewerEmail = (profile?.email ?? '').trim().toLowerCase();
+  const isRoeiAdmin = viewerEmail === 'malachiroei@gmail.com';
+  const memberRows = useMemo(() => {
+    // Never show super-admin row to non-super-admin viewers.
+    if (isSuperAdminTeamView) return memberRowsAll;
+    return memberRowsAll.filter((m) => (m.email ?? '').trim().toLowerCase() !== 'malachiroei@gmail.com');
+  }, [isSuperAdminTeamView, memberRowsAll]);
 
   /** מיילים שכבר יש להם שורה ב-profiles — לא מציגים אותם כהזמנה פתוחה */
   const registeredEmails = useMemo(() => {
@@ -93,7 +97,9 @@ export default function TeamManagementPage() {
   const showSensitiveColumns = isSuperAdminTeamView;
   const tableColCount = showSensitiveColumns ? 5 : 4;
 
-  const canManageTeam = isAdmin || isManager || hasPermission('manage_team') || Boolean(activeOrgId ?? profile?.org_id);
+  // Strict privacy: team page is only for admins/managers (or explicit manage_team permission).
+  const canManageTeam = isAdmin || isManager || hasPermission('manage_team') || isSuperAdminTeamView;
+  const canManageGlobalFeatures = isRoeiAdmin || hasPermission('manage_team') || isAdmin || isManager;
 
   if (!canManageTeam) {
     return <Navigate to="/" replace />;
@@ -113,85 +119,47 @@ export default function TeamManagementPage() {
 
   const inviteModalOrgId = orgId ?? profile?.org_id ?? '';
 
-  const handlePushReleaseSnapshot = async () => {
-    const snapshotOrgId = orgId ?? profile?.org_id ?? null;
-    if (!snapshotOrgId) {
-      toast.error('בחר ארגון פעיל (מתפריט הארגון) לפני דחיפת סנאפשוט.');
-      return;
-    }
-    setPushBusy(true);
-    try {
-      const snapshot = buildReleaseSnapshotPayload({
-        orgId: snapshotOrgId,
-        orgSettings: orgSettingsRow ?? null,
-        manifestUi,
-        defaultPermissions: getDefaultPermissions(),
-        previousBundledVersion: getBundledReleaseSnapshot().version,
-      });
-      downloadReleaseSnapshotJson(snapshot);
-      toast.info('הקובץ ירד, כעת העלה אותו ל-Git כדי לעדכן את הפרו');
-
-      const sessionRes = await supabase.auth.getSession();
-      const bearer = sessionRes.data.session?.access_token ?? getSupabaseAnonKey();
-      const { data, error } = await supabase.functions.invoke('push-release-snapshot', {
-        headers: { Authorization: `Bearer ${bearer}` },
-        body: { snapshot },
-      });
-      const ok = !error && data && typeof data === 'object' && (data as { ok?: boolean }).ok === true;
-      if (ok) {
-        toast.success('בנוסף: נדחף לריפו הטסט ב-GitHub (לא פרודקשן; פרסום גרסה בלבד מעדכן את הפרו).');
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'דחיפה נכשלה');
-    } finally {
-      setPushBusy(false);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-4xl mx-auto p-6 space-y-6" dir="rtl">
-        <div className="flex items-center gap-4">
-          <Link to="/">
-            <Button variant="ghost" size="icon" className="rounded-full">
-              <ArrowRight className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">ניהול צוות</h1>
-            <p className="text-muted-foreground text-sm">
-              {isSuperAdminTeamView ? 'כל הארגונים — תצוגת סופר־אדמין' : 'חברי הארגון ופיצ׳רים אישיים'}
-            </p>
+      <div className="max-w-4xl mx-auto px-3 py-4 sm:p-6 space-y-4 sm:space-y-6" dir="rtl">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+          <div className="flex items-center gap-3">
+            <Link to="/">
+              <Button variant="ghost" size="icon" className="rounded-full shrink-0">
+                <ArrowRight className="h-5 w-5" />
+              </Button>
+            </Link>
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-2xl font-bold text-foreground">ניהול צוות</h1>
+              <p className="text-muted-foreground text-xs sm:text-sm">
+                {isSuperAdminTeamView ? 'כל הארגונים — תצוגת סופר־אדמין' : 'חברי הארגון ופיצ׳רים אישיים'}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 sm:ms-auto">
+            {canManageGlobalFeatures ? (
+              <Dialog open={globalFeaturesOpen} onOpenChange={setGlobalFeaturesOpen}>
+                <DialogTrigger asChild>
+                  <Button
+                    type="button"
+                    className="h-9 gap-2 border-2 border-[gold] bg-amber-500/25 px-4 text-amber-50 shadow-[0_0_18px_rgba(251,191,36,0.45)] hover:bg-amber-500/40 hover:text-white hover:border-[#ffd700]"
+                  >
+                    <Flag className="h-4 w-4" />
+                    ניהול פיצ'רים גלובליים
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="w-[min(100vw-1rem,56rem)] max-h-[min(100dvh-1rem,90vh)] overflow-y-auto" dir="rtl">
+                  <DialogHeader>
+                    <DialogTitle>ניהול פיצ'רים גלובליים</DialogTitle>
+                  </DialogHeader>
+                  <div className="max-h-[75vh] overflow-auto pr-1">
+                    <GlobalFeatureFlagsAdminPanel />
+                  </div>
+                </DialogContent>
+              </Dialog>
+            ) : null}
           </div>
         </div>
-
-        {showPushToPro ? (
-          <Card className="border-primary/30 bg-primary/5">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Upload className="h-5 w-5" />
-                גשר עדכונים לפרודקשן (Git)
-              </CardTitle>
-              <CardDescription>
-                יוצר קובץ <code className="text-xs">release_snapshot.json</code> מהגדרות הארגון הנוכחי, פיצ׳רי UI
-                מהמניפסט, ומבנה הרשאות ברירת מחדל — מוריד את הקובץ ומנסה לדחוף ל-GitHub דרך Edge Function
-                (דורש סודות GITHUB_TOKEN + GITHUB_REPO).
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button
-                type="button"
-                variant="default"
-                disabled={pushBusy || !(orgId ?? profile?.org_id)}
-                onClick={() => void handlePushReleaseSnapshot()}
-                className="gap-2"
-              >
-                {pushBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                דחוף עדכונים לפרו
-              </Button>
-            </CardContent>
-          </Card>
-        ) : null}
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -219,19 +187,20 @@ export default function TeamManagementPage() {
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
               </div>
             ) : (
-              <Table>
+              <div className="overflow-x-auto -mx-1 px-1 touch-pan-x">
+              <Table className="min-w-[640px] w-full">
                 <TableHeader>
                   <TableRow>
                     {showSensitiveColumns ? (
-                      <TableHead className="min-w-[132px] align-bottom">
+                      <TableHead className="w-[150px] align-middle">
                         <span className="block text-sm font-medium">מזהה ארגון</span>
                         <span className="block font-mono text-[10px] font-normal text-muted-foreground">Org ID</span>
                       </TableHead>
                     ) : null}
-                    <TableHead>שם</TableHead>
-                    <TableHead>אימייל</TableHead>
-                    <TableHead className="min-w-[200px]">פיצ׳רים</TableHead>
-                    <TableHead className="text-center">סטטוס</TableHead>
+                    <TableHead className="w-[190px] align-middle">שם</TableHead>
+                    <TableHead className="w-[240px] align-middle">אימייל</TableHead>
+                    <TableHead className="w-[260px] align-middle">פיצ׳רים</TableHead>
+                    <TableHead className="w-[140px] text-center align-middle">סטטוס</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -244,33 +213,44 @@ export default function TeamManagementPage() {
                   ) : (
                     <>
                       {memberRows.map((m, mi) => {
+                        const memberEmail = (m.email ?? '').trim().toLowerCase();
+                        const canOpenFeatureOverrides =
+                          isRoeiAdmin ||
+                          (memberEmail && memberEmail === viewerEmail) ||
+                          (isRavid && memberEmail === 'roeima21@gmail.com');
                         return (
                           <TableRow key={m.id ?? `m-${mi}`}>
                             {showSensitiveColumns ? (
-                              <TableCell className="font-mono text-[10px] text-muted-foreground max-w-[140px] truncate">
+                              <TableCell className="w-[150px] font-mono text-[10px] text-muted-foreground truncate align-middle">
                                 {m.org_id ?? '—'}
                               </TableCell>
                             ) : null}
-                            <TableCell className="font-medium">{m.full_name || '—'}</TableCell>
-                            <TableCell className="text-muted-foreground">{m.email || '—'}</TableCell>
-                            <TableCell className="text-xs align-top">
-                              <p className="text-muted-foreground leading-snug mb-2">
+                            <TableCell className="w-[190px] font-medium align-middle">
+                              <span className="truncate block">{m.full_name || '—'}</span>
+                            </TableCell>
+                            <TableCell className="w-[240px] text-muted-foreground align-middle" dir="ltr">
+                              <span className="truncate block">{m.email || '—'}</span>
+                            </TableCell>
+                            <TableCell className="w-[260px] text-xs align-middle">
+                              <p className="text-muted-foreground leading-snug mb-2 max-w-[360px]">
                                 Overrides לפיצ׳רים גלובליים (למשתמש זה בלבד).
                               </p>
                               <Button
                                 type="button"
                                 size="sm"
                                 variant="outline"
-                                className="h-7 text-[11px]"
+                                className="h-8 text-[12px]"
+                                disabled={!canOpenFeatureOverrides}
                                 onClick={() => {
+                                  if (!canOpenFeatureOverrides) return;
                                   setFeatureOverridesMember(m);
                                   setFeatureOverridesDialogOpen(true);
                                 }}
                               >
-                                ניהול פיצ׳רים (משתמש)
+                                ניהול פיצ'רים
                               </Button>
                             </TableCell>
-                            <TableCell className="text-center text-xs">
+                            <TableCell className="w-[140px] text-center text-xs align-middle">
                               {m?.status === 'pending_approval' ? (
                                 <div className="flex flex-col items-center justify-center gap-2">
                                   <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
@@ -304,52 +284,67 @@ export default function TeamManagementPage() {
                           </TableRow>
                         );
                       })}
-                      <TableRow className="border-t-2 border-border bg-muted/40 hover:bg-muted/40 pointer-events-none">
-                        <TableCell colSpan={tableColCount} className="py-3 text-sm font-semibold text-foreground">
-                          הזמנות פתוחות ({invitationRowsVisible.length})
-                          {invitationRows.length !== invitationRowsVisible.length ? (
-                            <span className="block text-xs font-normal text-muted-foreground">
-                              הוסרו {invitationRows.length - invitationRowsVisible.length} הזמנות שכבר רשומות
-                              ב-profiles
-                            </span>
-                          ) : null}
-                        </TableCell>
-                      </TableRow>
-                      {invitationRowsVisible.map((inv, idx) => (
-                        <TableRow key={inv.id ?? `inv-${idx}`} className="bg-muted/30">
-                          {showSensitiveColumns ? (
-                            <TableCell className="font-mono text-[10px] text-muted-foreground max-w-[140px] truncate">
-                              {inv.org_id ?? '—'}
-                            </TableCell>
-                          ) : null}
-                          <TableCell className="font-medium">המתנה להצטרפות</TableCell>
-                          <TableCell className="text-muted-foreground flex items-center gap-1" dir="ltr">
-                            <Mail className="h-3.5 w-3.5 shrink-0" />
-                            <span className="truncate">{inv.email ?? '—'}</span>
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">— (אחרי הצטרפות)</TableCell>
-                          <TableCell className="text-center text-xs">
-                            <div className="flex flex-col items-center gap-1">
-                              <span className="inline-flex items-center justify-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
-                                הזמנה פתוחה
-                              </span>
-                              {showSensitiveColumns && inv?.role != null && String(inv.role).trim() !== '' ? (
-                                <span className="text-[10px] text-muted-foreground">role: {String(inv.role)}</span>
-                              ) : null}
-                              {showSensitiveColumns && inv?.status != null && String(inv.status).trim() !== '' ? (
-                                <span className="text-[10px] text-muted-foreground">status: {String(inv.status)}</span>
-                              ) : null}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
                     </>
                   )}
                 </TableBody>
               </Table>
+              </div>
             )}
           </CardContent>
         </Card>
+
+        {/* Pending approvals / invitations (admin/team only). */}
+        {canManageTeam ? (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Mail className="h-5 w-5" />
+                הרשמות ממתינות / הזמנות פתוחות
+              </CardTitle>
+              <CardDescription>
+                {invitationRowsVisible.length} הזמנות פתוחות בארגון
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {invitationRowsVisible.length === 0 ? (
+                <p className="text-sm text-muted-foreground">אין הזמנות פתוחות.</p>
+              ) : (
+                <div className="rounded-md border border-border overflow-x-auto">
+                  <Table className="table-fixed">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[260px] align-middle">אימייל</TableHead>
+                        <TableHead className="w-[180px] align-middle">סטטוס</TableHead>
+                        <TableHead className="align-middle">פרטים</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {invitationRowsVisible.map((inv, idx) => (
+                        <TableRow key={inv.id ?? `inv-${idx}`}>
+                          <TableCell className="w-[260px] text-muted-foreground align-middle" dir="ltr">
+                            <span className="truncate block">{inv.email ?? '—'}</span>
+                          </TableCell>
+                          <TableCell className="w-[180px] align-middle">
+                            <span className="inline-flex items-center justify-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                              {inv.status ? String(inv.status) : 'pending'}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground align-middle">
+                            {showSensitiveColumns && inv.org_id ? (
+                              <span className="font-mono text-[10px]">org: {String(inv.org_id)}</span>
+                            ) : (
+                              <span>—</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ) : null}
       </div>
 
       <SimpleInviteModal

@@ -1,11 +1,18 @@
--- Create enum for user roles
-CREATE TYPE public.app_role AS ENUM ('admin', 'fleet_manager', 'viewer', 'driver');
+-- Create enum for user roles (idempotent: prod may already have these types)
+DO $$ BEGIN
+  CREATE TYPE public.app_role AS ENUM ('admin', 'fleet_manager', 'viewer', 'driver');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
--- Create enum for compliance status
-CREATE TYPE public.compliance_status AS ENUM ('valid', 'warning', 'expired');
+DO $$ BEGIN
+  CREATE TYPE public.compliance_status AS ENUM ('valid', 'warning', 'expired');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Create user_roles table for role management
-CREATE TABLE public.user_roles (
+CREATE TABLE IF NOT EXISTS public.user_roles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
     role app_role NOT NULL DEFAULT 'viewer',
@@ -14,7 +21,7 @@ CREATE TABLE public.user_roles (
 );
 
 -- Create profiles table
-CREATE TABLE public.profiles (
+CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL UNIQUE,
     full_name TEXT NOT NULL,
@@ -25,7 +32,7 @@ CREATE TABLE public.profiles (
 );
 
 -- Create vehicles table
-CREATE TABLE public.vehicles (
+CREATE TABLE IF NOT EXISTS public.vehicles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     plate_number TEXT NOT NULL UNIQUE,
     manufacturer TEXT NOT NULL,
@@ -44,7 +51,7 @@ CREATE TABLE public.vehicles (
 );
 
 -- Create drivers table
-CREATE TABLE public.drivers (
+CREATE TABLE IF NOT EXISTS public.drivers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     full_name TEXT NOT NULL,
@@ -63,7 +70,7 @@ CREATE TABLE public.drivers (
 );
 
 -- Create maintenance_logs table
-CREATE TABLE public.maintenance_logs (
+CREATE TABLE IF NOT EXISTS public.maintenance_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     vehicle_id UUID REFERENCES public.vehicles(id) ON DELETE CASCADE NOT NULL,
     service_date DATE NOT NULL,
@@ -78,7 +85,7 @@ CREATE TABLE public.maintenance_logs (
 );
 
 -- Create vehicle_handovers table (for substitution/rental)
-CREATE TABLE public.vehicle_handovers (
+CREATE TABLE IF NOT EXISTS public.vehicle_handovers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     vehicle_id UUID REFERENCES public.vehicles(id) ON DELETE CASCADE NOT NULL,
     driver_id UUID REFERENCES public.drivers(id) ON DELETE SET NULL,
@@ -97,7 +104,7 @@ CREATE TABLE public.vehicle_handovers (
 );
 
 -- Create compliance_alerts table for tracking alerts
-CREATE TABLE public.compliance_alerts (
+CREATE TABLE IF NOT EXISTS public.compliance_alerts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     entity_type TEXT NOT NULL CHECK (entity_type IN ('vehicle', 'driver')),
     entity_id UUID NOT NULL,
@@ -165,6 +172,27 @@ AS $$
         AND user_id = _user_id
     )
 $$;
+
+-- Replace policies if re-applying on existing DB
+DROP POLICY IF EXISTS "Users can view their own roles" ON public.user_roles;
+DROP POLICY IF EXISTS "Admins can manage all roles" ON public.user_roles;
+DROP POLICY IF EXISTS "Users can view their own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users can update their own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Managers can view all profiles" ON public.profiles;
+DROP POLICY IF EXISTS "Users can insert their own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Authenticated users can view vehicles" ON public.vehicles;
+DROP POLICY IF EXISTS "Managers can manage vehicles" ON public.vehicles;
+DROP POLICY IF EXISTS "Managers can view all drivers" ON public.drivers;
+DROP POLICY IF EXISTS "Drivers can view own record" ON public.drivers;
+DROP POLICY IF EXISTS "Managers can manage drivers" ON public.drivers;
+DROP POLICY IF EXISTS "Drivers can update own non-sensitive fields" ON public.drivers;
+DROP POLICY IF EXISTS "Authenticated users can view maintenance logs" ON public.maintenance_logs;
+DROP POLICY IF EXISTS "Managers can manage maintenance logs" ON public.maintenance_logs;
+DROP POLICY IF EXISTS "Authenticated users can view handovers" ON public.vehicle_handovers;
+DROP POLICY IF EXISTS "Managers can manage handovers" ON public.vehicle_handovers;
+DROP POLICY IF EXISTS "Drivers can create handovers" ON public.vehicle_handovers;
+DROP POLICY IF EXISTS "Managers can view alerts" ON public.compliance_alerts;
+DROP POLICY IF EXISTS "Managers can manage alerts" ON public.compliance_alerts;
 
 -- RLS Policies for user_roles
 CREATE POLICY "Users can view their own roles"
@@ -266,6 +294,8 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS sync_vehicle_odometer ON public.maintenance_logs;
+
 -- Create trigger for odometer sync
 CREATE TRIGGER sync_vehicle_odometer
     AFTER INSERT ON public.maintenance_logs
@@ -299,6 +329,10 @@ BEGIN
     RETURN NEW;
 END;
 $$;
+
+DROP TRIGGER IF EXISTS update_profiles_updated_at ON public.profiles;
+DROP TRIGGER IF EXISTS update_vehicles_updated_at ON public.vehicles;
+DROP TRIGGER IF EXISTS update_drivers_updated_at ON public.drivers;
 
 -- Create triggers for updated_at
 CREATE TRIGGER update_profiles_updated_at
@@ -334,6 +368,8 @@ BEGIN
     RETURN NEW;
 END;
 $$;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 
 -- Create trigger for new user signup
 CREATE TRIGGER on_auth_user_created

@@ -36,6 +36,24 @@ VALUES
     ('handover-photos', 'handover-photos', false)
 ON CONFLICT (id) DO NOTHING;
 
+-- Idempotent on existing prod (policies may already exist on storage.objects)
+DROP POLICY IF EXISTS "Managers can view vehicle documents" ON storage.objects;
+DROP POLICY IF EXISTS "Managers can upload vehicle documents" ON storage.objects;
+DROP POLICY IF EXISTS "Managers can update vehicle documents" ON storage.objects;
+DROP POLICY IF EXISTS "Managers can delete vehicle documents" ON storage.objects;
+DROP POLICY IF EXISTS "Managers can view driver documents" ON storage.objects;
+DROP POLICY IF EXISTS "Managers can upload driver documents" ON storage.objects;
+DROP POLICY IF EXISTS "Managers can update driver documents" ON storage.objects;
+DROP POLICY IF EXISTS "Managers can delete driver documents" ON storage.objects;
+DROP POLICY IF EXISTS "Authenticated users can view maintenance docs" ON storage.objects;
+DROP POLICY IF EXISTS "Managers can upload maintenance docs" ON storage.objects;
+DROP POLICY IF EXISTS "Managers can update maintenance docs" ON storage.objects;
+DROP POLICY IF EXISTS "Managers can delete maintenance docs" ON storage.objects;
+DROP POLICY IF EXISTS "Authenticated users can view handover photos" ON storage.objects;
+DROP POLICY IF EXISTS "Managers and drivers can upload handover photos" ON storage.objects;
+DROP POLICY IF EXISTS "Managers can update handover photos" ON storage.objects;
+DROP POLICY IF EXISTS "Managers can delete handover photos" ON storage.objects;
+
 -- RLS Policies for vehicle-documents bucket
 CREATE POLICY "Managers can view vehicle documents"
 ON storage.objects FOR SELECT

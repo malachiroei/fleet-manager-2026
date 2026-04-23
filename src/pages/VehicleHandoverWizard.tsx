@@ -6,8 +6,9 @@ import {
 } from '@/contexts/VehicleSpecDirtyContext';
 import { useVehicles } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
+import type { Driver } from '@/types/fleet';
 import { useCreateHandover, sendHandoverNotificationEmail, generateReceptionPDF, generateProcedurePDF, generateHealthDeclarationPDF, generateGenericFormPDF } from '@/hooks/useHandovers';
-import { parsePolicyClauses, parseHealthItems } from '@/hooks/useOrgSettings';
+import { parsePolicyClauses, parseHealthItems, useOrgSettings } from '@/hooks/useOrgSettings';
 import { useOrgDocuments } from '@/hooks/useOrgDocuments';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -19,6 +20,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
+import { orgDocumentTemplateBody } from '@/lib/orgDocumentTemplate';
+import { isOrgDocumentUsableForHandoverList, orgDocumentHandoverLabel } from '@/lib/orgDocumentHandoverFilter';
 import { HANDOVER_ACCESSORY_CEILINGS, formatCeilingPrice } from '@/lib/accessoryCeilings';
 import { cloneEmptyDamageReport, hasAnyDamage, summarizeDamageReport, type VehicleDamageReport } from '@/lib/vehicleDamage';
 // Badge no longer needed — replaced with plain span
@@ -95,9 +98,18 @@ interface VehicleHandoverWizardLocationState {
   reportUrl?: string;
 }
 
+const EMPTY_WIZARD_LOCATION_STATE: VehicleHandoverWizardLocationState = Object.freeze({});
+
 const idNumberRegex = /^\d{9}$/;
 const phoneRegex = /^0\d{8,9}$/;
 const ignitionCodeRegex = /^\d{4,6}$/;
+
+function orgDocSchemaStringField(schema: unknown, key: string): string {
+  if (!schema || typeof schema !== 'object') return '';
+  const raw = (schema as Record<string, unknown>)[key];
+  if (raw === undefined || raw === null) return '';
+  return typeof raw === 'string' ? raw : String(raw);
+}
 
 function extractCommitmentSection(text?: string): string[] {
   if (!text?.trim()) {
@@ -157,7 +169,7 @@ function parseAccessoriesFromTemplate(text?: string): AccessoryItem[] {
     const candidate = line
       .replace(/^\[[^\]]*]\s*/, '')
       .replace(/^[-•]\s*/, '')
-      .replace(/^\d+[).\-]\s*/, '')
+      .replace(/^\d+[).-]\s*/, '')
       .trim();
     if (!candidate) return;
     if (
@@ -177,7 +189,7 @@ function parseAccessoriesFromTemplate(text?: string): AccessoryItem[] {
 
     const match = candidate.match(/^(.*?)(?:\s*\(([^)]*)\))?$/);
     if (!match) return;
-    let name = (match[1] ?? '').trim().replace(/\s*-\s*תקרה[:：]?.*$/i, '').trim();
+    const name = (match[1] ?? '').trim().replace(/\s*-\s*תקרה[:：]?.*$/i, '').trim();
     if (!name) return;
     const priceRaw = (match[2] ?? '').trim();
     const ceilingMatch = candidate.match(/תקרה[:：]?\s*([\d,.\s]+(?:₪|ש["״]?ח)?)/i);
@@ -211,7 +223,7 @@ function parseProcedureClausesFromTemplateFallback(text?: string): ProcedureClau
   const clauses = lines
     .map((line, index) => ({
       id: index + 1,
-      text: line.replace(/^\d+[).\-]?\s*/, '').trim(),
+      text: line.replace(/^\d+[).-]?\s*/, '').trim(),
     }))
     .filter((item) => item.text.length > 0);
   return clauses;
@@ -234,7 +246,7 @@ function parseHealthItemsFromTemplateFallback(text?: string): HealthDeclaration[
   return lines
     .map((textLine, index) => ({
       id: `health_fallback_${index + 1}`,
-      text: textLine.replace(/^\d+[).\-]?\s*/, '').trim(),
+      text: textLine.replace(/^\d+[).-]?\s*/, '').trim(),
       checked: false,
     }))
     .filter((item) => item.text.length > 0);
@@ -1231,18 +1243,19 @@ function renderStepContent({
     );
   }
 
-  const builtinTemplateKey = String((doc.json_schema as any)?.builtin_template_key ?? '');
+  const builtinTemplateKey = orgDocSchemaStringField(doc.json_schema, 'builtin_template_key');
+  const docTitle = safeDocTitle(doc);
   const isPracticalDrivingTestForm =
-    builtinTemplateKey === 'system-practical-driving-test' || doc.title.includes('מבחן מעשי בנהיגה');
+    builtinTemplateKey === 'system-practical-driving-test' || docTitle.includes('מבחן מעשי בנהיגה');
   const isTrafficLiabilityForm =
     builtinTemplateKey === 'system-traffic-liability-annex' ||
-    (doc.title.includes('אחריות אישית') && doc.title.includes('עבירות תנועה'));
+    (docTitle.includes('אחריות אישית') && docTitle.includes('עבירות תנועה'));
   const isUpgradeForm =
-    builtinTemplateKey === 'system-upgrade-request' || doc.title.includes('שדרוג');
+    builtinTemplateKey === 'system-upgrade-request' || docTitle.includes('שדרוג');
   const isReturnForm =
-    builtinTemplateKey === 'system-return-form' || doc.title.includes('החזרת רכב');
+    builtinTemplateKey === 'system-return-form' || docTitle.includes('החזרת רכב');
   const isReplacementUsageForm =
-    builtinTemplateKey === 'system-replacement-usage' || doc.title.includes('שימוש ברכב חלופי');
+    builtinTemplateKey === 'system-replacement-usage' || docTitle.includes('שימוש ברכב חלופי');
   const now = new Date();
   const defaultDateIso = now.toISOString().slice(0, 10);
   const defaultTimeIso = now.toTimeString().slice(0, 5);
@@ -1450,7 +1463,7 @@ function renderStepContent({
         ) : isTrafficLiabilityForm ? (
           <div className="space-y-4">
             <div className="space-y-2 text-sm text-slate-700 leading-6">
-              {String((doc.json_schema as any)?.template_content ?? doc.description ?? '')
+              {orgDocumentTemplateBody(doc.json_schema, doc.description)
                 .split('\n')
                 .map((line) => line.trim())
                 .filter(Boolean)
@@ -1484,7 +1497,7 @@ function renderStepContent({
         ) : isUpgradeForm ? (
           <div className="space-y-4">
             <div className="space-y-2 text-sm text-slate-700 leading-6">
-              {String((doc.json_schema as any)?.template_content ?? doc.description ?? '')
+              {orgDocumentTemplateBody(doc.json_schema, doc.description)
                 .split('\n')
                 .map((line) => line.trim())
                 .filter(Boolean)
@@ -1510,7 +1523,7 @@ function renderStepContent({
         ) : isReturnForm ? (
           <div className="space-y-4">
             <div className="space-y-2 text-sm text-slate-700 leading-6">
-              {String((doc.json_schema as any)?.template_content ?? doc.description ?? '')
+              {orgDocumentTemplateBody(doc.json_schema, doc.description)
                 .split('\n')
                 .map((line) => line.trim())
                 .filter(Boolean)
@@ -1547,7 +1560,7 @@ function renderStepContent({
           </div>
         ) : isReplacementUsageForm ? (
           <div className="space-y-2 text-sm text-slate-700 leading-6">
-            {String((doc.json_schema as any)?.template_content ?? doc.description ?? '')
+            {orgDocumentTemplateBody(doc.json_schema, doc.description)
               .split('\n')
               .map((line) => line.trim())
               .filter(Boolean)
@@ -1557,7 +1570,7 @@ function renderStepContent({
           </div>
         ) : (
           <div className="space-y-2 text-sm text-slate-700 leading-6">
-            {String((doc.json_schema as any)?.template_content ?? doc.description ?? '')
+            {orgDocumentTemplateBody(doc.json_schema, doc.description)
               .split('\n')
               .map((line) => line.trim())
               .filter(Boolean)
@@ -1594,11 +1607,17 @@ function renderStepContent({
   );
 }
 
+/** DB may return null/whitespace title — trim לפני השוואות ותצוגה */
+function safeDocTitle(doc: { title?: string | null }): string {
+  return String(doc?.title ?? '').trim();
+}
+
 function getStepKindForDoc(doc: DeliveryFormDoc): WizardStepKind {
-  const builtinKey = String((doc.json_schema as any)?.builtin_template_key ?? '').trim();
+  const builtinKey = orgDocSchemaStringField(doc.json_schema, 'builtin_template_key').trim();
+  const title = safeDocTitle(doc);
   if (doc.template_name === 'health' || builtinKey === 'system-health-statement') return 'health';
   if (doc.template_name === 'procedure' || builtinKey === 'system-vehicle-policy') return 'procedure';
-  if (doc.template_name === 'license' || doc.title.includes('רישיון')) return 'license';
+  if (doc.template_name === 'license' || title.includes('רישיון')) return 'license';
   return 'generic';
 }
 
@@ -1612,10 +1631,18 @@ export default function VehicleHandoverWizard() {
   const [searchParams] = useSearchParams();
   const { data: vehicles } = useVehicles();
   const { data: drivers  } = useDrivers();
-  const { user } = useAuth();
+  const { user, activeOrgId, profile } = useAuth();
+  const handoverSettingsOrgId = activeOrgId ?? profile?.org_id ?? null;
+  const { data: orgUiSettings } = useOrgSettings(handoverSettingsOrgId);
   const { data: orgDocuments } = useOrgDocuments();
 
-  const routerState = (location.state ?? {}) as VehicleHandoverWizardLocationState;
+  const routerState = useMemo((): VehicleHandoverWizardLocationState => {
+    const s = location.state;
+    if (s && typeof s === 'object' && !Array.isArray(s)) {
+      return s as VehicleHandoverWizardLocationState;
+    }
+    return EMPTY_WIZARD_LOCATION_STATE;
+  }, [location.state]);
   const stateVehicleId = routerState.vehicleId?.trim() ?? '';
   const stateDriverId = routerState.driverId?.trim() ?? '';
   const stateReportUrl = routerState.reportUrl?.trim() ?? '';
@@ -1679,7 +1706,10 @@ export default function VehicleHandoverWizard() {
 
   const vehicle = vehicles?.find(v => v.id === vehicleId);
   const driver  = drivers?.find(d => d.id === driverId);
-  const driverExt = (driver ?? {}) as any;
+  const driverExt: Pick<Driver, 'employee_number' | 'address'> = {
+    employee_number: driver?.employee_number ?? null,
+    address: driver?.address ?? null,
+  };
 
   const vehicleLabel = vehicle
     ? `${vehicle.manufacturer} ${vehicle.model} (${vehicle.plate_number})`
@@ -1749,18 +1779,18 @@ export default function VehicleHandoverWizard() {
   const [recentlyToggledFormId, setRecentlyToggledFormId] = useState<string | null>(null);
   const [recentlyToggledAdded, setRecentlyToggledAdded] = useState(false);
 
-  // All active forms (for backward compatibility)
+  // טפסים עם כותרת + תוכן (קובץ/סכמה/תיאור) — בלי שורות ריקות מ־DB
   const availableDeliveryForms = useMemo(
-    () => (orgDocuments ?? []).filter((doc) => doc.is_active),
+    () => (orgDocuments ?? []).filter((doc) => isOrgDocumentUsableForHandoverList(doc)),
     [orgDocuments],
   );
 
-
   // All forms except 'טופס קבלת רכב' for the picker
   const formsPickerForms = useMemo(
-    () => availableDeliveryForms.filter(
-      (doc) => doc.title !== 'טופס קבלת רכב'
-    ),
+    () =>
+      availableDeliveryForms.filter(
+        (doc) => !orgDocumentHandoverLabel(doc).includes('טופס קבלת רכב'),
+      ),
     [availableDeliveryForms],
   );
   const selectedFormsInitializedRef = useRef(false);
@@ -1809,41 +1839,67 @@ export default function VehicleHandoverWizard() {
   }, [availableDeliveryForms, selectedDeliveryFormIds]);
 
   const receptionFormDoc = useMemo(() => {
-    const inSelection = selectedDeliveryForms.find((doc) => doc.title.includes('טופס קבלת רכב'));
+    const inSelection = selectedDeliveryForms.find((doc) =>
+      orgDocumentHandoverLabel(doc).includes('טופס קבלת רכב'),
+    );
     if (inSelection) return inSelection;
-    return availableDeliveryForms.find((doc) => doc.title.includes('טופס קבלת רכב')) ?? null;
+    return (
+      availableDeliveryForms.find((doc) =>
+        orgDocumentHandoverLabel(doc).includes('טופס קבלת רכב'),
+      ) ?? null
+    );
   }, [selectedDeliveryForms, availableDeliveryForms]);
 
-  const receptionDeclarationText =
-    String((receptionFormDoc?.json_schema as any)?.template_content ?? '').trim() ||
-    String(receptionFormDoc?.description ?? '').trim() ||
-    '';
+  const receptionDeclarationText = orgDocumentTemplateBody(
+    receptionFormDoc?.json_schema,
+    receptionFormDoc?.description,
+  ).trim();
 
   const procedureFormDoc = useMemo(
     () =>
       availableDeliveryForms.find(
-        (doc) => doc.template_name === 'procedure' || doc.title.includes('נוהל'),
+        (doc) => doc.template_name === 'procedure' || safeDocTitle(doc).includes('נוהל'),
       ) ?? null,
     [availableDeliveryForms],
   );
   const healthFormDoc = useMemo(
     () =>
       availableDeliveryForms.find(
-        (doc) => doc.template_name === 'health' || doc.title.includes('בריאות'),
+        (doc) => doc.template_name === 'health' || safeDocTitle(doc).includes('בריאות'),
       ) ?? null,
     [availableDeliveryForms],
   );
 
-  const procedureTemplateText = useMemo(
-    () =>
-      String((procedureFormDoc?.json_schema as any)?.template_content ?? procedureFormDoc?.description ?? '').trim(),
+  const docProcedureText = useMemo(
+    () => orgDocumentTemplateBody(procedureFormDoc?.json_schema, procedureFormDoc?.description).trim(),
     [procedureFormDoc],
   );
-  const healthTemplateText = useMemo(
-    () =>
-      String((healthFormDoc?.json_schema as any)?.template_content ?? healthFormDoc?.description ?? '').trim(),
+  const docHealthText = useMemo(
+    () => orgDocumentTemplateBody(healthFormDoc?.json_schema, healthFormDoc?.description).trim(),
     [healthFormDoc],
   );
+  const orgPolicyText = useMemo(
+    () => String(orgUiSettings?.vehicle_policy_text ?? '').trim(),
+    [orgUiSettings?.vehicle_policy_text],
+  );
+  const orgHealthText = useMemo(
+    () => String(orgUiSettings?.health_statement_text ?? '').trim(),
+    [orgUiSettings?.health_statement_text],
+  );
+
+  const procedureTemplateText = useMemo(
+    () => docProcedureText || orgPolicyText,
+    [docProcedureText, orgPolicyText],
+  );
+  const healthTemplateText = useMemo(
+    () => docHealthText || orgHealthText,
+    [docHealthText, orgHealthText],
+  );
+
+  const showOrgSettingsEmptyTextsWarning = useMemo(() => {
+    const rowExists = Boolean(orgUiSettings?.id);
+    return rowExists && !orgPolicyText && !orgHealthText;
+  }, [orgUiSettings?.id, orgPolicyText, orgHealthText]);
 
   const parsedClauses = useMemo(() => parsePolicyClauses(procedureTemplateText), [procedureTemplateText]);
   const fallbackProcedureClauses = useMemo(
@@ -1988,11 +2044,16 @@ export default function VehicleHandoverWizard() {
   const wizardSteps = useMemo<WizardStep[]>(() => {
     const steps: WizardStep[] = [...BASE_STEPS];
     const dynamicSteps = selectedDeliveryFormIds
-      .map((id) => availableDeliveryForms.find((f) => f.id === id && f.title !== 'טופס קבלת רכב'))
+      .map((id) =>
+        availableDeliveryForms.find(
+          (f) =>
+            f.id === id && !orgDocumentHandoverLabel(f).includes('טופס קבלת רכב'),
+        ),
+      )
       .filter(Boolean)
       .map((doc) => ({
         icon: FileText,
-        label: (doc as DeliveryFormDoc).title,
+        label: orgDocumentHandoverLabel(doc as DeliveryFormDoc),
         kind: getStepKindForDoc(doc as DeliveryFormDoc),
         docId: (doc as DeliveryFormDoc).id,
       }));
@@ -2025,17 +2086,11 @@ export default function VehicleHandoverWizard() {
     currentStepDef,
     genericSigOkByDocId,
     healthItems,
-    licenseBack,
-    licenseExpiry,
-    fuelLevel,
-    licenseNumber,
     manualFieldsValid,
-    odometerReading,
     procedureRead,
     sig1OK,
     sig2OK,
     sig3OK,
-    skipLicenseStep,
   ]);
 
   const hasLicenseStep = useMemo(() => wizardSteps.some((wizardStep) => wizardStep.kind === 'license'), [wizardSteps]);
@@ -2096,7 +2151,9 @@ export default function VehicleHandoverWizard() {
 
     // ── Step 1: Generate PDFs (each failure is isolated) ──────────────────────
     console.log('[Wizard] handleFinish start', { vehicleId, driverId, handoverId, reportUrl });
-    const ts     = Date.now();
+    // Unique storage path at submit time (not render)
+    // eslint-disable-next-line react-hooks/purity -- event handler: folder name must be unique per completion
+    const ts = Date.now();
     const folder = `documents/${vehicleId || 'unknown'}/${ts}`;
 
     const deliveryPdfBase = {
@@ -2148,7 +2205,7 @@ export default function VehicleHandoverWizard() {
     if (genericSelectedDocs.length > 0) {
       const genericResults = await Promise.all(
         genericSelectedDocs.map(async (doc) => {
-          const templateText = String((doc.json_schema as any)?.template_content ?? doc.description ?? '').trim();
+          const templateText = orgDocumentTemplateBody(doc.json_schema, doc.description).trim();
           if (!templateText) return { docId: doc.id, url: null as string | null };
           const practicalUi = practicalTestUiByDocId[doc.id];
           const trafficUi = trafficLiabilityUiByDocId[doc.id];
@@ -2156,7 +2213,7 @@ export default function VehicleHandoverWizard() {
           const returnUi = returnFormUiByDocId[doc.id];
           const genericBlob = await generateGenericFormPDF({
             title: doc.title,
-            builtinTemplateKey: String((doc.json_schema as any)?.builtin_template_key ?? ''),
+            builtinTemplateKey: orgDocSchemaStringField(doc.json_schema, 'builtin_template_key'),
             vehicleLabel,
             driverName,
             date: today,
@@ -2286,7 +2343,7 @@ export default function VehicleHandoverWizard() {
       if (emailErr instanceof Error && emailErr.stack) {
         console.error('[Wizard] Email stack:', emailErr.stack);
       }
-      toast.success('המסמכים נשמרו. שליחת המייל נכשלה.');
+      toast.error(`המסמכים נשמרו, אך שליחת המייל נכשלה: ${message}`);
     }
 
     // ── Step 5: Persist to DB (failures here do NOT block navigation) ─────────
@@ -2378,6 +2435,19 @@ export default function VehicleHandoverWizard() {
       <main className="container py-6 pb-32 max-w-3xl mx-auto">
         <ProgressBar current={step} steps={wizardSteps} />
 
+        {showOrgSettingsEmptyTextsWarning && (
+          <div
+            className="mb-4 flex gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-100"
+            role="alert"
+          >
+            <AlertTriangle className="h-5 w-5 shrink-0 text-amber-400" aria-hidden />
+            <p className="leading-snug">
+              קיימת רשומת הגדרות ארגון, אך טקסט נוהל הרכב והצהרת הבריאות ריקים. האשף נפתח עם תוכן ברירת מחדל.
+              מומלץ למלא את הטקסטים ב&quot;הגדרות ארגון&quot; או לסנכרן מסמכי מערכת ממרכז הטפסים.
+            </p>
+          </div>
+        )}
+
         {/* כפתור הוספת טפסים כ-FAB draggable */}
         <div
           style={{ position: 'fixed', bottom: 100, left: 40, zIndex: 1000, cursor: 'grab' }}
@@ -2447,7 +2517,9 @@ export default function VehicleHandoverWizard() {
                           setTimeout(() => setRecentlyToggledFormId((prev) => (prev === doc.id ? null : prev)), 900);
                         }}
                       />
-                      <span className={selected ? 'text-emerald-100' : 'text-cyan-50'}>{doc.title}</span>
+                      <span className={selected ? 'text-emerald-100' : 'text-cyan-50'}>
+                        {orgDocumentHandoverLabel(doc)}
+                      </span>
                       {wasJustToggled && (
                         <span className={`text-xs font-semibold ${recentlyToggledAdded ? 'text-emerald-300' : 'text-amber-300'}`}>
                           {recentlyToggledAdded ? 'נוסף' : 'הוסר'}

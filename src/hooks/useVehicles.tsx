@@ -4,6 +4,7 @@ import type { Vehicle } from '@/types/fleet';
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
+import { fleetManagerVisibilityOrFilter } from '@/lib/fleetManagerScope';
 
 export interface ActiveDriverVehicleAssignment {
   id: string;
@@ -59,7 +60,7 @@ export function useActiveDriverVehicleAssignments() {
       if (isDriverContextOnly && scopedDriverId) {
         vehiclesQuery = vehiclesQuery.eq('assigned_driver_id', scopedDriverId);
       } else if (applyFleetManagerSlice && fleetManagerListUserId) {
-        vehiclesQuery = vehiclesQuery.eq('managed_by_user_id', fleetManagerListUserId);
+        vehiclesQuery = vehiclesQuery.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
       }
       const { data: vehicleIds, error: vehiclesError } = await vehiclesQuery;
       if (vehiclesError) throw vehiclesError;
@@ -104,12 +105,6 @@ export function useVehicles() {
     enabled: fleetListReady && effectiveOrgId != null,
     queryFn: async () => {
       if (effectiveOrgId == null) return [] as Vehicle[];
-      console.log(
-        '[Debug Scope] applyFleetManagerSlice:',
-        applyFleetManagerSlice,
-        'Target ID:',
-        fleetManagerListUserId
-      );
       let q = supabase
         .from('vehicles')
         .select('*')
@@ -118,7 +113,7 @@ export function useVehicles() {
       if (isDriverContextOnly && scopedDriverId) {
         q = q.eq('assigned_driver_id', scopedDriverId);
       } else if (applyFleetManagerSlice && fleetManagerListUserId) {
-        q = q.eq('managed_by_user_id', fleetManagerListUserId);
+        q = q.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
       }
       const { data, error } = await q;
       if (error) throw error;
@@ -128,28 +123,21 @@ export function useVehicles() {
 }
 
 export function useVehicle(id: string) {
-  const {
-    effectiveOrgId,
-    applyFleetManagerSlice,
-    fleetManagerListUserId,
-  } = useImpersonationFleetScope();
-  const orgId = effectiveOrgId ?? undefined;
+  const { effectiveOrgId, fleetListReady } = useImpersonationFleetScope();
+  const orgId = effectiveOrgId ?? null;
 
   return useQuery({
-    queryKey: ['vehicle', id, orgId, applyFleetManagerSlice, fleetManagerListUserId],
+    queryKey: ['vehicle', id, orgId],
     queryFn: async () => {
       let query = supabase.from('vehicles').select('*').eq('id', id);
       if (orgId != null) {
         query = query.eq('org_id', orgId);
-        if (applyFleetManagerSlice && fleetManagerListUserId) {
-          query = query.eq('managed_by_user_id', fleetManagerListUserId);
-        }
       }
       const { data, error } = await query.maybeSingle();
       if (error) throw error;
       return data as Vehicle | null;
     },
-    enabled: !!id,
+    enabled: Boolean(id && fleetListReady && orgId != null),
   });
 }
 
@@ -196,11 +184,17 @@ export function useUpdateVehicle() {
         .from('vehicles')
         .update(updates)
         .eq('id', id)
-        .select()
-        .single();
+        .select();
 
       if (error) throw error;
-      return data;
+      const rows = Array.isArray(data) ? data : [];
+      const row = rows[0] ?? null;
+      if (!row) {
+        throw new Error(
+          'אין הרשאת עדכון לרכב זה או הרכב לא נמצא (בדוק הרשאות במסד)',
+        );
+      }
+      return row;
     },
     onSuccess: (data) => {
       // עדכון מיידי של מסך הסקירה בלי להמתין ל-refetch
@@ -246,11 +240,14 @@ export function useUpdateOdometer() {
         .from('vehicles')
         .update({ current_odometer: odometer })
         .eq('id', id)
-        .select()
-        .single();
+        .select();
 
       if (error) throw error;
-      return data;
+      const row = Array.isArray(data) ? data[0] : null;
+      if (!row) {
+        throw new Error('אין הרשאת עדכון מונה או הרכב לא נמצא');
+      }
+      return row;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });

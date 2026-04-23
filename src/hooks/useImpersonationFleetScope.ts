@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useViewAs } from '@/contexts/ViewAsContext';
+import { isFleetBootstrapOwnerEmail, resolveSessionEmail, RAVID_MANAGER_EMAIL } from '@/lib/fleetBootstrapEmails';
+import { FALLBACK_MAIN_FLEET_ORG_ID, RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 
 /**
  * הקשר לרשימות צי: org (כולל View As), נהג בלבד כשמוחלפים משתמש עם רק תפקיד נהג,
@@ -14,17 +16,52 @@ function rolesIncludeFleetElevated(roles: string[]): boolean {
 }
 
 export function useImpersonationFleetScope() {
-  const { user, activeOrgId, roles: loggedInRoles } = useAuth();
+  const { user, profile, activeOrgId, roles: loggedInRoles } = useAuth();
+  const sessionEmail = resolveSessionEmail(profile, user);
   const { viewAsEmail, viewAsProfile } = useViewAs();
 
   const impersonatedUserId = (viewAsProfile?.id ?? viewAsProfile?.user_id ?? null) as string | null;
-  const isImpersonating = Boolean(viewAsEmail && impersonatedUserId);
-  const effectiveOrgId = (viewAsProfile?.org_id ?? activeOrgId ?? null) as string | null;
+  /** פרופיל נטען — טעינת תפקידי נהג/מנהל לפי המשתמש המוחלף */
+  const isImpersonating = Boolean(viewAsEmail?.trim() && impersonatedUserId);
+  /** באנר תצוגה כ… פעיל (גם אם profiles עדיין לא נפתר בגלל RLS) */
+  const viewAsBannerActive = Boolean(viewAsEmail?.trim());
+  /**
+   * בין לחיצת View-As לבין טעינת viewAsProfile — effectiveUserId עדיין של המנהל המחובר.
+   * אם מפעילים applyFleetManagerSlice עם UUID של רועי על org של רביד, מתקבל 0 שורות ואז
+   * fallback של הדשבורד (מנהל ראשי) מציג את כל הצי הגלובלי — נראה כמו «רואים את רועי».
+   */
+  const viewAsProfilePending = Boolean(viewAsEmail?.trim()) && !impersonatedUserId;
+
+  const viewAsNorm = (viewAsEmail ?? '').trim().toLowerCase();
+  const sessionNorm = resolveSessionEmail(profile, user);
+  /**
+   * רביד מחובר (או תצוגה כרביד): תמיד ארגון הצי של רביד — גם כש־profiles.org_id בפרו עדיין הצי הראשי של רועי.
+   * אחרת: activeOrgId ואז פרופיל המחליף.
+   */
+  const orgFromContext = (
+    (sessionNorm === RAVID_MANAGER_EMAIL || viewAsNorm === RAVID_MANAGER_EMAIL
+      ? RAVID_FLEET_ORG_ID
+      : null) ??
+    activeOrgId ??
+    viewAsProfile?.org_id ??
+    null
+  ) as string | null;
+  /** בלי org בפרופיל/מחליף — בעלי bootstrap נופלים לצי הראשי הידוע (אותו UUID כמו במחליף) */
+  const effectiveOrgId =
+    orgFromContext ??
+    (isFleetBootstrapOwnerEmail(sessionEmail) ? FALLBACK_MAIN_FLEET_ORG_ID : null);
+
   const effectiveUserId = (impersonatedUserId ?? user?.id ?? null) as string | null;
+
+  /** בעלי צי ידועים: בלי impersonation מלא (או בלי באנר) — אפשר מסלול בלי org ב-query enable */
+  const bootstrapOwnerMayLackOrg =
+    isFleetBootstrapOwnerEmail(sessionEmail) && !isImpersonating && !viewAsBannerActive;
 
   const rolesQuery = useQuery({
     queryKey: ['view-as-target-roles', effectiveUserId, isImpersonating],
     enabled: Boolean(isImpersonating && effectiveUserId),
+    retry: false,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('user_roles')
@@ -49,6 +86,8 @@ export function useImpersonationFleetScope() {
   const driverRowQuery = useQuery({
     queryKey: ['view-as-scoped-driver', effectiveOrgId, impersonatedUserId, isDriverContextOnly],
     enabled: Boolean(isDriverContextOnly && effectiveOrgId && impersonatedUserId),
+    retry: false,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('drivers')
@@ -67,7 +106,7 @@ export function useImpersonationFleetScope() {
   const driverScopePending = Boolean(isDriverContextOnly && driverRowQuery.isLoading);
 
   const fleetListReady =
-    effectiveOrgId != null &&
+    (effectiveOrgId != null || bootstrapOwnerMayLackOrg) &&
     !scopePending &&
     (!isImpersonating || rolesQuery.isFetched) &&
     (!isDriverContextOnly || !driverScopePending);
@@ -89,24 +128,10 @@ export function useImpersonationFleetScope() {
 
   /** Per-manager lists within org for admins/managers; viewers keep org-wide lists (NULL managed_by pool). */
   const applyFleetManagerSlice =
+    !viewAsProfilePending &&
     fleetManagerListUserId != null &&
     !isDriverContextOnly &&
     fleetListSubjectIsElevated;
-
-  console.log(
-    '[Debug Scope Hook] isImpersonating:',
-    isImpersonating,
-    'viewAsEmail:',
-    viewAsEmail,
-    'effectiveUserId:',
-    effectiveUserId,
-    'impersonatedUserId:',
-    impersonatedUserId,
-    'applyFleetManagerSlice:',
-    applyFleetManagerSlice,
-    'fleetManagerListUserId:',
-    fleetManagerListUserId
-  );
 
   return {
     effectiveOrgId,

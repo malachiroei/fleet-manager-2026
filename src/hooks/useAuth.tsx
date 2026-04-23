@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef, createContext, useContext, useCallback, ReactNode } from 'react';
-import { User, Session } from '@supabase/supabase-js';
+import { User, Session, type AuthChangeEvent } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import type { AppRole, Profile } from '@/types/fleet';
 import { hasPermission as checkPermission, type PermissionKey } from '@/lib/permissions';
+import { isFleetBootstrapOwnerEmail, RAVID_MANAGER_EMAIL, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
+import { FALLBACK_MAIN_FLEET_ORG_ID, RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 import { clearFleetProUpdateModalSuppressFlag } from '@/lib/pwaUpdateModalBridge';
 
 const ACTIVE_ORG_STORAGE_KEY = 'fleet-manager-active-org';
@@ -162,18 +164,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     };
 
-    const res = await supabase
-      .from('profiles')
-      .select(PROFILE_SELECT_STAR)
-      .eq('id', userId)
-      .single();
+    let res:
+      | {
+          data: Profile | null;
+          error: { message?: string; code?: string } | null;
+        }
+      | null = null;
+    try {
+      const queryRes = await supabase
+        .from('profiles')
+        .select(PROFILE_SELECT_STAR)
+        .eq('id', userId)
+        .single();
+      res = {
+        data: (queryRes?.data as Profile | null) ?? null,
+        error: (queryRes?.error as { message?: string; code?: string } | null) ?? null,
+      };
+    } catch (e) {
+      const err = e as { message?: string; code?: string } | null;
+      res = {
+        data: null,
+        error: {
+          message: err?.message ?? 'Unexpected profile fetch failure',
+          code: err?.code,
+        },
+      };
+    }
 
-    if (!res.error && res.data) {
+    if (!res?.error && res?.data) {
       applyPersonalRow(res.data as Profile);
       return;
     }
 
-    const err = res.error;
+    const err = res?.error;
     const msg = err?.message ?? '';
     const code = err?.code ?? '';
     const noRow =
@@ -182,7 +205,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (noRow) {
       const { data: authData } = await supabase.auth.getUser();
       const email =
-        authData.user?.id === userId ? (authData.user.email ?? null) : null;
+        authData?.user?.id === userId ? (authData.user.email ?? null) : null;
       console.warn('[Auth] no profiles row for auth uid — using placeholder until row exists', { userId });
       applyPersonalRow(buildPersonalProfilePlaceholder(userId, email, 'no_profile_row'));
       return;
@@ -195,7 +218,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const { data: authData } = await supabase.auth.getUser();
     const email =
-      authData.user?.id === userId ? (authData.user.email ?? null) : null;
+      authData?.user?.id === userId ? (authData.user.email ?? null) : null;
     applyPersonalRow(buildPersonalProfilePlaceholder(userId, email, 'profile_fetch_error'));
   }, []);
 
@@ -203,10 +226,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   fetchProfileRef.current = fetchProfile;
 
   const fetchMemberOrganizations = useCallback(async (userId: string, fallbackOrgId?: string | null) => {
-    const { data: rows, error: memError } = await (supabase as any)
-      .from('org_members')
-      .select('org_id')
-      .eq('user_id', userId);
+    let rows: Array<{ org_id: string }> | null = null;
+    let memError: { message?: string } | null = null;
+    try {
+      const res = await (supabase as any)
+        .from('org_members')
+        .select('org_id')
+        .eq('user_id', userId);
+      rows = (res?.data as Array<{ org_id: string }> | null) ?? null;
+      memError = (res?.error as { message?: string } | null) ?? null;
+    } catch (e) {
+      memError = e as { message?: string } | null;
+    }
     let orgIds = memError || !rows?.length ? [] : rows.map((r: { org_id: string }) => r.org_id);
     if (orgIds.length === 0 && fallbackOrgId) {
       orgIds = [fallbackOrgId];
@@ -215,10 +246,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setMemberOrganizations([]);
       return;
     }
-    const { data: orgs, error: orgError } = await supabase
-      .from('organizations')
-      .select('id, name')
-      .in('id', orgIds);
+    let orgs: Array<{ id: string; name: string }> | null = null;
+    let orgError: { message?: string } | null = null;
+    try {
+      const orgRes = await supabase
+        .from('organizations')
+        .select('id, name')
+        .in('id', orgIds);
+      orgs = (orgRes?.data as Array<{ id: string; name: string }> | null) ?? null;
+      orgError = (orgRes?.error as { message?: string } | null) ?? null;
+    } catch (e) {
+      orgError = e as { message?: string } | null;
+    }
     if (orgError || !orgs?.length) {
       setMemberOrganizations([]);
       return;
@@ -228,38 +267,70 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+      (event: AuthChangeEvent, session) => {
         setSession(session);
         setUser(session?.user ?? null);
 
-        if (session?.user) {
-          setTimeout(() => {
-            void fetchUserRoles(session.user.id);
-            void fetchProfileRef.current(session.user.id);
-            void fetchMemberOrganizations(session.user.id);
-          }, 0);
-        } else {
+        if (!session?.user) {
           setRoles([]);
           setProfile(null);
           setMemberOrganizations([]);
           setActiveOrgIdState(null);
           activeOrgInitializedRef.current = false;
+          setLoading(false);
+          return;
         }
-        setLoading(false);
+
+        // Token refresh often fires when the app returns from the camera / file picker.
+        // Toggling global `loading` here unmounts `ProtectedRoute` content and wipes in-memory form state.
+        if (event === 'TOKEN_REFRESHED') {
+          return;
+        }
+
+        // User metadata updates: refresh in the background without the full-screen auth gate.
+        if (event === 'USER_UPDATED') {
+          void (async () => {
+            await Promise.allSettled([
+              fetchUserRoles(session.user.id),
+              fetchProfileRef.current(session.user.id),
+              fetchMemberOrganizations(session.user.id),
+            ]);
+          })();
+          return;
+        }
+
+        setLoading(true);
+        setTimeout(() => {
+          void (async () => {
+            await Promise.allSettled([
+              fetchUserRoles(session.user.id),
+              fetchProfileRef.current(session.user.id),
+              fetchMemberOrganizations(session.user.id),
+            ]);
+            setLoading(false);
+          })();
+        }, 0);
       }
     );
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
+    void (async () => {
+      try {
+        const sessionRes = await supabase.auth.getSession();
+        const session = sessionRes?.data?.session ?? null;
+        setSession(session);
+        setUser(session?.user ?? null);
 
-      if (session?.user) {
-        void fetchUserRoles(session.user.id);
-        void fetchProfileRef.current(session.user.id);
-        void fetchMemberOrganizations(session.user.id);
+        if (session?.user) {
+          await Promise.allSettled([
+            fetchUserRoles(session.user.id),
+            fetchProfileRef.current(session.user.id),
+            fetchMemberOrganizations(session.user.id),
+          ]);
+        }
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
-    });
+    })();
 
     return () => subscription.unsubscribe();
   }, [fetchUserRoles, fetchMemberOrganizations]);
@@ -322,8 +393,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!user) return;
     if (profile === null) return;
     if (activeOrgInitializedRef.current) return;
-    const profileOrgId = profile.org_id?.trim() || null;
-    if (memberOrganizations.length === 0 && !profileOrgId) return;
+    const rawProfileOrgId = profile.org_id?.trim() || null;
+    const sessionEmailForOrg = resolveSessionEmail(profile, user);
+    const profileOrgIdForActive =
+      sessionEmailForOrg === RAVID_MANAGER_EMAIL &&
+      (!rawProfileOrgId || rawProfileOrgId === FALLBACK_MAIN_FLEET_ORG_ID)
+        ? RAVID_FLEET_ORG_ID
+        : rawProfileOrgId;
+    if (memberOrganizations.length === 0 && !profileOrgIdForActive) return;
 
     activeOrgInitializedRef.current = true;
     let stored: string | null = null;
@@ -334,20 +411,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const orgKnown = (id: string | null | undefined) =>
       Boolean(id) && memberOrganizations.some((o) => o.id === id);
+    const wrongMainStoredForRavid =
+      sessionEmailForOrg === RAVID_MANAGER_EMAIL && stored === FALLBACK_MAIN_FLEET_ORG_ID;
     const validStored =
-      stored && (orgKnown(stored) || stored === profileOrgId);
-    if (validStored) {
-      setActiveOrgIdState(stored);
+      !wrongMainStoredForRavid &&
+      Boolean(stored) &&
+      (orgKnown(stored) || stored === rawProfileOrgId || stored === profileOrgIdForActive);
+    if (validStored && stored) {
+      setActiveOrgId(stored);
       return;
     }
-    if (profileOrgId) {
-      setActiveOrgIdState(profileOrgId);
+    if (profileOrgIdForActive) {
+      setActiveOrgId(profileOrgIdForActive);
       return;
     }
     if (memberOrganizations.length > 0) {
-      setActiveOrgIdState(memberOrganizations[0]?.id ?? null);
+      setActiveOrgId(memberOrganizations[0]?.id ?? null);
     }
-  }, [user, profile, memberOrganizations, profile?.org_id]);
+  }, [user, profile, memberOrganizations, profile?.org_id, setActiveOrgId]);
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -423,22 +504,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return lower === 'driver' || lower === 'employee' || lower === 'viewer';
   });
 
+  /** כש־user_roles ריק בפרו (RLS / העתקה), עדיין לא לנעול UI למנהל מערכת או בעלים ידוע. */
+  const sessionEmailResolved = resolveSessionEmail(profile, user);
+  const isAdminEffective =
+    isAdmin || profile?.is_system_admin === true || isFleetBootstrapOwnerEmail(sessionEmailResolved);
+  const isManagerEffective = isManager || isAdminEffective;
+
   const hasPermission = useCallback(
     (permission: PermissionKey) => {
       // Primary: use profile permissions (may be partially populated).
-      const allowed = checkPermission(profile, permission, { isAdmin, isManager });
+      const allowed = checkPermission(profile, permission, {
+        isAdmin: isAdminEffective,
+        isManager: isManagerEffective,
+      });
       if (allowed) return true;
 
       // Fallback for common driver scenario: allow "handover" when role is driver/viewer/employee
       // but the profile.permissions JSON doesn't include the key.
-      if (!isAdmin && !isManager && permission === 'handover') {
+      if (!isAdminEffective && !isManagerEffective && permission === 'handover') {
         const roleLowerSet = roles.map((r) => roleLower(r));
         if (roleLowerSet.some((r) => r === 'driver' || r === 'employee' || r === 'viewer')) return true;
       }
 
       return false;
     },
-    [profile, isAdmin, isManager, roles]
+    [profile, isAdminEffective, isManagerEffective, roles, sessionEmailResolved]
   );
 
   return (
@@ -472,3 +562,4 @@ export function useAuth() {
   }
   return context;
 }
+

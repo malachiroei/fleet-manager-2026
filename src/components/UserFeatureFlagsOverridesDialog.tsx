@@ -9,16 +9,21 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { QA_FORMS_NESTED_KEYS, QA_FORMS_PARENT_KEY } from '@/lib/featureFlagRegistry';
+import { QA_FORMS_NESTED_KEYS, QA_FORMS_PARENT_KEY, registryEntryForKey } from '@/lib/featureFlagRegistry';
+import { useAuth } from '@/hooks/useAuth';
+import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
+import { cn } from '@/lib/utils';
 
 const NESTED_UNDER_QA_SET = new Set<string>(QA_FORMS_NESTED_KEYS);
 
 function flagMatchesQuery(flag: FeatureFlagRow, q: string): boolean {
   const needle = q.trim().toLowerCase();
   if (!needle) return true;
-  const name = flag.display_name_he?.trim() || flag.feature_key;
-  const desc = flag.description?.trim() || '';
-  return `${flag.feature_key} ${name} ${desc}`.toLowerCase().includes(needle);
+  const reg = registryEntryForKey(flag.feature_key);
+  const name = reg?.display_name_he || flag.display_name_he?.trim() || flag.feature_key;
+  const desc = reg?.description || flag.description?.trim() || '';
+  const uiMapping = reg?.ui_mapping || '';
+  return `${flag.feature_key} ${name} ${desc} ${uiMapping}`.toLowerCase().includes(needle);
 }
 
 type Props = {
@@ -43,6 +48,8 @@ type OverrideRow = {
 
 type SubjectProfileLite = {
   id: string;
+  org_id: string | null;
+  email: string | null;
   permissions: Record<string, boolean> | null;
 };
 
@@ -56,6 +63,7 @@ const FEATURE_PERMISSION_DEFAULTS: Record<string, string | null> = {
   qa_parking_reports: 'reports',
   qa_vehicle_delivery: 'vehicle_delivery',
   qa_report_mileage: 'report_mileage',
+  qa_service_update: 'vehicles',
   qa_forms: 'forms',
   qa_accidents: 'compliance',
   qa_admin_settings: 'admin_access',
@@ -66,6 +74,12 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
   const [search, setSearch] = useState('');
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [optimisticOverrides, setOptimisticOverrides] = useState<Record<string, boolean>>({});
+  const { user, profile, activeOrgId, hasPermission, isAdmin, isManager } = useAuth();
+  const { effectiveOrgId } = useImpersonationFleetScope();
+  const viewerEmail = (profile?.email ?? user?.email ?? '').trim().toLowerCase();
+  const isRoeiAdmin = viewerEmail === 'malachiroei@gmail.com';
+  const viewerOrgId = (effectiveOrgId ?? activeOrgId ?? profile?.org_id ?? null) as string | null;
+  const viewerHasManageTeam = isRoeiAdmin || hasPermission('manage_team') || isAdmin || isManager;
 
   const { data: featureFlags = [] as FeatureFlagRow[], isLoading: isFlagsLoading, isError: isFlagsError } = useQuery({
     queryKey: ['feature-flags-user-overrides-list'],
@@ -76,22 +90,19 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
         .select('id, feature_key, display_name_he, description, is_enabled_globally')
         .order('feature_key', { ascending: true });
       if (error) throw error;
-      return (data ?? []) as FeatureFlagRow[];
-    },
-    staleTime: 60_000,
-  });
-
-  const { data: overrideRows = [] as OverrideRow[], isLoading: isOverridesLoading, isError: isOverridesError } = useQuery({
-    queryKey: ['user-feature-overrides', userId],
-    enabled: open && typeof userId === 'string' && userId.length > 0,
-    queryFn: async () => {
-      console.log('[FeatureOverrides] loading overrides for user_id', userId);
-      const { data, error } = await (supabase as any)
-        .from('user_feature_overrides')
-        .select('feature_key, is_enabled')
-        .eq('user_id', userId);
-      if (error) throw error;
-      return (data ?? []) as OverrideRow[];
+      // Defensive: DB should have unique feature_key, but UI must not show duplicates.
+      const seen = new Set<string>();
+      const out: FeatureFlagRow[] = [];
+      for (const row of (data ?? []) as FeatureFlagRow[]) {
+        const key = String(row.feature_key ?? '').trim();
+        if (!key) continue;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        // Show only UI-exposed flags (registry entry exists).
+        if (!registryEntryForKey(key)) continue;
+        out.push(row);
+      }
+      return out;
     },
     staleTime: 60_000,
   });
@@ -102,11 +113,34 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
     queryFn: async (): Promise<SubjectProfileLite | null> => {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, permissions')
+        .select('id, org_id, email, permissions')
         .eq('id', userId as string)
         .maybeSingle();
       if (error) throw error;
       return (data ?? null) as SubjectProfileLite | null;
+    },
+    staleTime: 60_000,
+  });
+
+  const subjectEmail = (subjectProfile?.email ?? userLabel ?? '').trim().toLowerCase();
+  const isSubjectRoei = subjectEmail === 'malachiroei@gmail.com';
+  const sameOrg = Boolean(viewerOrgId && subjectProfile?.org_id && viewerOrgId === subjectProfile.org_id);
+  const canEditSubjectOverrides = Boolean(
+    typeof userId === 'string' &&
+      userId.length > 0 &&
+      (isRoeiAdmin || (viewerHasManageTeam && sameOrg && !isSubjectRoei)),
+  );
+
+  const { data: overrideRows = [] as OverrideRow[], isLoading: isOverridesLoading, isError: isOverridesError } = useQuery({
+    queryKey: ['user-feature-overrides', userId],
+    enabled: open && canEditSubjectOverrides,
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from('user_feature_overrides')
+        .select('feature_key, is_enabled')
+        .eq('user_id', userId);
+      if (error) throw error;
+      return (data ?? []) as OverrideRow[];
     },
     staleTime: 60_000,
   });
@@ -120,6 +154,7 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
     }
     return m;
   }, [overrideRows]);
+  const featureFlagsVisibleToViewer = featureFlags;
 
   const effectiveOverrideMap = useMemo(() => {
     const m = new Map(overrideMap);
@@ -138,8 +173,8 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
   };
 
   const flagsWithoutNestedDuplicates = useMemo(
-    () => featureFlags.filter((f) => !NESTED_UNDER_QA_SET.has(f.feature_key)),
-    [featureFlags],
+    () => featureFlagsVisibleToViewer.filter((f) => !NESTED_UNDER_QA_SET.has(f.feature_key)),
+    [featureFlagsVisibleToViewer],
   );
 
   const filteredRootFlags = useMemo(() => {
@@ -156,7 +191,7 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
   }, [flagsWithoutNestedDuplicates, featureFlags, search]);
 
   const tableRows = useMemo(() => {
-    const byKey = new Map(featureFlags.map((f) => [f.feature_key, f]));
+    const byKey = new Map(featureFlagsVisibleToViewer.map((f) => [f.feature_key, f]));
     const sorted = [...filteredRootFlags].sort((a, b) => a.feature_key.localeCompare(b.feature_key));
     const out: { flag: FeatureFlagRow; nestedUnderQa: boolean }[] = [];
     for (const flag of sorted) {
@@ -169,10 +204,10 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
       }
     }
     return out;
-  }, [filteredRootFlags, featureFlags]);
+  }, [filteredRootFlags, featureFlagsVisibleToViewer]);
 
   const mergedEffective = (featureKey: string) => {
-    const flag = featureFlags.find((f) => f.feature_key === featureKey);
+    const flag = featureFlagsVisibleToViewer.find((f) => f.feature_key === featureKey);
     if (!flag) return false;
     if (effectiveOverrideMap.has(featureKey)) return effectiveOverrideMap.get(featureKey) as boolean;
     const permissionDefault = permissionDefaultForFlag(featureKey);
@@ -222,6 +257,16 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
         throw new Error('Override save did not return rows (possible RLS rejection).');
       }
 
+      // Instant UX: update resolved feature-flags cache for this subject user
+      // so gated UI disappears/appears immediately in view-as mode.
+      queryClient.setQueryData<Record<string, boolean> | undefined>(
+        ['feature-flags', userId],
+        (prev) => ({
+          ...(prev ?? {}),
+          [featureKey]: nextEnabled,
+        }),
+      );
+
       await queryClient.invalidateQueries({ queryKey: ['user-feature-overrides', userId] });
       await queryClient.invalidateQueries({ queryKey: ['user-feature-overrides'] });
       await queryClient.invalidateQueries({ queryKey: ['feature-flags'] });
@@ -251,16 +296,24 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent dir="rtl" className="sm:max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>ניהול פיצ׳רים (משתמש)</DialogTitle>
-          <DialogDescription>
+      <DialogContent
+        dir="rtl"
+        className="flex w-[min(100vw-1rem,42rem)] max-h-[min(100dvh-1rem,92vh)] flex-col gap-3 overflow-hidden p-4 sm:max-w-3xl sm:p-6"
+      >
+        <DialogHeader className="shrink-0 space-y-1 text-right sm:text-right">
+          <DialogTitle className="text-base sm:text-lg">ניהול פיצ׳רים (משתמש)</DialogTitle>
+          <DialogDescription className="text-xs sm:text-sm">
             Override לפיצ׳רים גלובליים עבור: <strong>{userLabel ?? userId ?? '—'}</strong>. כיבוי «טפסים» משבית בפועל את
             טופס המסירה וההחזרה.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
+        <div className="flex min-h-0 flex-1 flex-col space-y-3 overflow-hidden">
+          {!canEditSubjectOverrides ? (
+            <div className="rounded-md border border-border p-3 text-sm text-muted-foreground">
+              אין הרשאה לשנות Overrides עבור משתמש זה (מותר רק באותו ארגון, וללא גישה למשתמש סופר־אדמין).
+            </div>
+          ) : null}
           <div className="space-y-2">
             <Label htmlFor="feature-override-search">חיפוש</Label>
             <Input
@@ -279,22 +332,85 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
           )}
 
           {(!isFlagsLoading && !isFlagsError) && (
-            <div className="rounded-md border border-border overflow-x-auto max-h-[60vh]">
-              <Table>
+            <>
+              <div className="flex max-h-[min(52dvh,480px)] flex-col gap-2 overflow-y-auto overflow-x-hidden overscroll-contain pr-0.5 md:hidden">
+                {tableRows.map(({ flag, nestedUnderQa }) => {
+                  const reg = registryEntryForKey(flag.feature_key);
+                  const displayName = reg?.display_name_he || flag.display_name_he?.trim() || flag.feature_key;
+                  const desc = reg?.description || flag.description?.trim() || `שליטה על תצוגת ${displayName}`;
+                  const effectiveUi = effectiveEnabledForUi(flag, nestedUnderQa);
+                  const stored = storedToggleValue(flag);
+                  const isSaving = savingKey === flag.feature_key;
+                  const switchDisabled = isSaving || (nestedUnderQa && qaFormsEffective !== true);
+                  return (
+                    <div
+                      key={`${flag.id}-m-${nestedUnderQa ? 'n' : 'r'}`}
+                      className={cn(
+                        'rounded-lg border p-3 shadow-sm',
+                        nestedUnderQa ? 'border-cyan-500/30 bg-slate-500/5' : effectiveUi ? 'border-emerald-500/20 bg-emerald-500/5' : 'bg-muted/20',
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {nestedUnderQa ? (
+                              <span className="text-cyan-400/90 text-sm" aria-hidden>
+                                └
+                              </span>
+                            ) : null}
+                            <span className="font-medium text-sm leading-snug">{displayName}</span>
+                            <span
+                              className={
+                                effectiveUi
+                                  ? 'inline-flex rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-200'
+                                  : 'inline-flex rounded-full border border-red-400/40 bg-red-500/15 px-2 py-0.5 text-[10px] font-semibold text-red-200'
+                              }
+                            >
+                              {effectiveUi
+                                ? 'פעיל'
+                                : nestedUnderQa && qaFormsEffective !== true
+                                  ? 'מושבת (הורה)'
+                                  : 'מושבת'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground leading-snug">{desc}</p>
+                          <code className="block text-[10px] text-muted-foreground/90" dir="ltr">
+                            {flag.feature_key}
+                          </code>
+                        </div>
+                        <div className="flex min-h-[48px] min-w-[48px] shrink-0 items-center justify-center touch-manipulation">
+                          <Switch
+                            checked={stored}
+                            disabled={switchDisabled || !canEditSubjectOverrides}
+                            onCheckedChange={(v) => void handleToggle(flag.feature_key, v)}
+                            aria-label={`override עבור ${displayName}`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="hidden min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border md:flex">
+                <div className="min-h-0 flex-1 overflow-auto overscroll-contain">
+                  <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="min-w-[140px]">שם הפיצ׳ר</TableHead>
-                    <TableHead className="min-w-[200px]">תיאור</TableHead>
-                    <TableHead className="min-w-[120px] text-muted-foreground font-mono text-xs">
+                    <TableHead className="min-w-[120px] lg:min-w-[140px]">שם הפיצ׳ר</TableHead>
+                    <TableHead className="min-w-[160px] lg:min-w-[200px]">תיאור</TableHead>
+                    <TableHead className="min-w-[100px] text-muted-foreground font-mono text-xs lg:min-w-[120px]">
                       מפתח
                     </TableHead>
-                    <TableHead className="w-[120px] text-center">פעיל למשתמש</TableHead>
+                    <TableHead className="w-[100px] text-center lg:w-[120px]">פעיל למשתמש</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {tableRows.map(({ flag, nestedUnderQa }) => {
-                    const displayName = flag.display_name_he?.trim() || flag.feature_key;
-                    const desc = flag.description?.trim() || `שליטה על תצוגת ${displayName}`;
+                    const reg = registryEntryForKey(flag.feature_key);
+                    const displayName = reg?.display_name_he || flag.display_name_he?.trim() || flag.feature_key;
+                    const desc = reg?.description || flag.description?.trim() || `שליטה על תצוגת ${displayName}`;
+                    const uiMapping = reg?.ui_mapping ?? '';
                     const mergedOn = mergedEffective(flag.feature_key);
                     const effectiveUi = effectiveEnabledForUi(flag, nestedUnderQa);
                     const stored = storedToggleValue(flag);
@@ -338,6 +454,11 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground align-top max-w-md">
                           {desc}
+                          {uiMapping ? (
+                            <p className="mt-1 text-xs text-cyan-200/80">
+                              מיפוי UI: {uiMapping}
+                            </p>
+                          ) : null}
                           {nestedUnderQa && qaFormsEffective !== true ? (
                             <p className="mt-1 text-xs text-amber-200/90">
                               כבוי בפועל כל עוד «טפסים» (פעולות מהירות) מושבת.
@@ -353,8 +474,9 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
                           <div className="flex justify-center">
                             <Switch
                               checked={stored}
-                              disabled={switchDisabled}
+                              disabled={switchDisabled || !canEditSubjectOverrides}
                               onCheckedChange={(v) => void handleToggle(flag.feature_key, v)}
+                              className="touch-manipulation"
                               aria-label={`override עבור ${displayName}`}
                             />
                           </div>
@@ -364,7 +486,9 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
                   })}
                 </TableBody>
               </Table>
-            </div>
+                </div>
+              </div>
+            </>
           )}
 
           {(isFlagsError || isOverridesError) && (
@@ -374,8 +498,8 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
           )}
         </div>
 
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="shrink-0 border-t border-border/60 pt-3 sm:border-0 sm:pt-0">
+          <Button type="button" variant="outline" className="min-h-11 w-full touch-manipulation sm:min-h-9 sm:w-auto" onClick={() => onOpenChange(false)}>
             סגור
           </Button>
         </DialogFooter>

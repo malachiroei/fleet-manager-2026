@@ -6,6 +6,7 @@ import { jsPDF } from 'jspdf';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useFeatureFlags } from '@/hooks/useFeatureFlags';
+import { usePermissions } from '@/hooks/usePermissions';
 import { OrgDocument, useOrgDocuments, useOrgDocumentsAdmin, useCreateOrgDocument, useUpdateOrgDocument } from '@/hooks/useOrgDocuments';
 import { useOrgSettings } from '@/hooks/useOrgSettings';
 import { useDrivers } from '@/hooks/useDrivers';
@@ -105,8 +106,7 @@ export default function FormsPage() {
   const { user, isManager } = useAuth();
   const { data: featureFlags, isPending: featureFlagsPending, isError: featureFlagsError } =
     useFeatureFlags();
-  const applyFeatureFlagFilters =
-    !featureFlagsPending && !featureFlagsError && featureFlags !== undefined;
+  const { canAccessFeature } = usePermissions();
   const { data: orgSettings } = useOrgSettings();
   const [searchParams] = useSearchParams();
   const { data: drivers } = useDrivers();
@@ -759,9 +759,13 @@ ${STANDARD_INPUT_FOOTER_TEXT}
         DEFAULT_FORM_FOLDERS[0],
     }));
 
-    if (!applyFeatureFlagFilters) return mapped;
+    // Strict gating: if feature flags are not yet resolved, hide gated forms
+    // to avoid showing disabled UI in view-as mode.
+    if (!featureFlags || featureFlagsPending || featureFlagsError) {
+      return [];
+    }
 
-    if (featureFlags?.['qa_forms'] !== true) {
+    if (!canAccessFeature('qa_forms')) {
       return [];
     }
 
@@ -769,14 +773,14 @@ ${STANDARD_INPUT_FOOTER_TEXT}
       const d = Boolean(form.include_in_delivery);
       const r = Boolean(form.include_in_return);
       if (!d && !r) return true;
-      if (d && !r) return featureFlags?.['form_delivery'] === true;
-      if (r && !d) return featureFlags?.['form_return'] === true;
+      if (d && !r) return canAccessFeature('form_delivery');
+      if (r && !d) return canAccessFeature('form_return');
       return (
-        (d && featureFlags?.['form_delivery'] === true) ||
-        (r && featureFlags?.['form_return'] === true)
+        (d && canAccessFeature('form_delivery')) ||
+        (r && canAccessFeature('form_return'))
       );
     });
-  }, [forms, featureFlags, applyFeatureFlagFilters]);
+  }, [forms, featureFlags, featureFlagsError, featureFlagsPending, canAccessFeature]);
 
   const folderOptions = useMemo(() => {
     const fromForms = formsWithCategory

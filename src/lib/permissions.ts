@@ -52,8 +52,9 @@ export function hasPermission(
   permission: PermissionKey,
   roles?: { isAdmin: boolean; isManager: boolean }
 ): boolean {
-  if (!profile) return false;
+  /** לפני בדיקת profile — כדי שלא יינעל UI כש־profile עדיין נטען אבל כבר יש isAdmin מה־bootstrap */
   if (roles?.isAdmin || roles?.isManager) return true;
+  if (!profile) return false;
   const perms = profile.permissions as ProfilePermissions | null | undefined;
   if (perms && typeof perms === 'object' && Object.keys(perms).length > 0) {
     if (typeof perms[permission] === 'boolean') return perms[permission] === true;

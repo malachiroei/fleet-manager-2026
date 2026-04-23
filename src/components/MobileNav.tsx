@@ -57,11 +57,14 @@ export function MobileNav() {
               <Link
                 to="/"
                 onClick={(e) => {
-                  if (isDirty) {
-                    e.preventDefault();
-                    tryNavigate('/');
-                  }
+                  e.preventDefault();
                   setOpen(false);
+                  try {
+                    window.dispatchEvent(new CustomEvent('app:go-home'));
+                  } catch {
+                    // ignore
+                  }
+                  window.location.assign(`${window.location.origin}/`);
                 }}
                 className="block"
               >

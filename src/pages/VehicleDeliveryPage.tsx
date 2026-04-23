@@ -37,6 +37,7 @@ import {
   hasAnyDamage,
   summarizeDamageReport,
 } from '@/lib/vehicleDamage';
+import { isOrgDocumentUsableForHandoverList, orgDocumentHandoverLabel } from '@/lib/orgDocumentHandoverFilter';
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -149,6 +150,30 @@ export default function VehicleDeliveryPage() {
 
   useEffect(() => {
     return () => setDirty(DIRTY_SOURCE_VEHICLE_DELIVERY, false);
+  }, [setDirty]);
+
+  useEffect(() => {
+    const onGoHome = () => {
+      flushSync(() => {
+        setDirty(DIRTY_SOURCE_VEHICLE_DELIVERY, false);
+      });
+      setSelectedVehicle('');
+      setSelectedDriver('');
+      setOdometer('');
+      setFuelLevel(4);
+      setNotes('');
+      setHasSignature(false);
+      setReplacementApprovalChecked(false);
+      setHasReplacementApprovalSignature(false);
+      setDamageReport(cloneEmptyDamageReport());
+      setSelectedDeliveryFormIds([]);
+      setPhotoFront(null);
+      setPhotoBack(null);
+      setPhotoRight(null);
+      setPhotoLeft(null);
+    };
+    window.addEventListener('app:go-home', onGoHome as EventListener);
+    return () => window.removeEventListener('app:go-home', onGoHome as EventListener);
   }, [setDirty]);
 
   const exitDelivery = useCallback(
@@ -496,7 +521,7 @@ export default function VehicleDeliveryPage() {
                       checked={selectedDeliveryFormIds.includes(form.id)}
                       onCheckedChange={(checked) => toggleDeliveryForm(form.id, checked === true)}
                     />
-                    <span>{form.title}</span>
+                    <span>{orgDocumentHandoverLabel(form)}</span>
                   </label>
                 ))
               )}
@@ -523,10 +548,10 @@ export default function VehicleDeliveryPage() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="חזית" onPhotoCapture={setPhotoFront} /></div>
-                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="אחור" onPhotoCapture={setPhotoBack} /></div>
-                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="צד ימין" onPhotoCapture={setPhotoRight} /></div>
-                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="צד שמאל" onPhotoCapture={setPhotoLeft} /></div>
+                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="חזית" onPhotoCapture={setPhotoFront} disabled={isSubmitting} /></div>
+                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="אחור" onPhotoCapture={setPhotoBack} disabled={isSubmitting} /></div>
+                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="צד ימין" onPhotoCapture={setPhotoRight} disabled={isSubmitting} /></div>
+                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="צד שמאל" onPhotoCapture={setPhotoLeft} disabled={isSubmitting} /></div>
               </div>
             </CardContent>
           </Card>

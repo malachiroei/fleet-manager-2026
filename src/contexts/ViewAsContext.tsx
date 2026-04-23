@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useMemo, useState, ReactNode } fr
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import type { Profile } from '@/types/fleet';
+import { RAVID_MANAGER_EMAIL, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
+import { RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 
 interface ViewAsContextValue {
   viewAsEmail: string | null;
@@ -15,7 +17,7 @@ const ViewAsContext = createContext<ViewAsContextValue | undefined>(undefined);
 
 export function ViewAsProvider({ children }: { children: ReactNode }) {
   const [viewAsEmail, setViewAsEmail] = useState<string | null>(null);
-  const { activeOrgId } = useAuth();
+  const { activeOrgId, profile, user } = useAuth();
   const [viewAsProfile, setViewAsProfile] = useState<Profile | null>(null);
   const [viewAsLoading, setViewAsLoading] = useState(false);
 
@@ -32,22 +34,31 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
 
       setViewAsLoading(true);
       try {
-        // First try active org (if present), then fallback to global email lookup.
-        // This prevents "orange bar active but profile null" when org context is out of sync.
+        const viewerNorm = resolveSessionEmail(profile, user);
+        const orgTryOrder: string[] = [];
+        if (viewerNorm === RAVID_MANAGER_EMAIL) {
+          orgTryOrder.push(RAVID_FLEET_ORG_ID);
+        }
+        if (activeOrgId && !orgTryOrder.includes(activeOrgId)) {
+          orgTryOrder.push(activeOrgId);
+        }
+
         let row: Profile | null = null;
         let error: { message: string } | null = null;
 
-        if (activeOrgId) {
+        for (const oid of orgTryOrder) {
           const scoped = await supabase
             .from('profiles')
             .select('*')
-            .eq('org_id', activeOrgId)
+            .eq('org_id', oid)
             .ilike('email', normalizedEmail)
             .maybeSingle();
           if (scoped.error) {
             error = { message: scoped.error.message };
-          } else {
-            row = (scoped.data as Profile | null) ?? null;
+          } else if (scoped.data) {
+            row = scoped.data as Profile;
+            error = null;
+            break;
           }
         }
 
@@ -65,10 +76,16 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
               (p) => (p.email ?? '').trim().toLowerCase() === normalizedEmail
             );
             const pool = exact.length > 0 ? exact : matches;
-            const preferred =
+            let preferred =
               (activeOrgId ? pool.find((p) => p.org_id === activeOrgId) : null) ??
               pool[0] ??
               null;
+            if (
+              normalizedEmail === RAVID_MANAGER_EMAIL &&
+              pool.some((p) => p.org_id === RAVID_FLEET_ORG_ID)
+            ) {
+              preferred = pool.find((p) => p.org_id === RAVID_FLEET_ORG_ID) ?? preferred;
+            }
             row = preferred;
           }
         }
@@ -90,13 +107,6 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
           ...row,
           user_id: row.user_id ?? row.id,
         };
-        console.log('[ViewAs] resolved profile', {
-          email: normalizedEmail,
-          activeOrgId,
-          resolvedId: resolvedProfile.id,
-          resolvedUserId: resolvedProfile.user_id,
-          resolvedOrgId: resolvedProfile.org_id,
-        });
         setViewAsProfile(resolvedProfile);
       } finally {
         if (!cancelled) setViewAsLoading(false);
@@ -105,10 +115,15 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [normalizedEmail, activeOrgId]);
+  }, [normalizedEmail, activeOrgId, profile?.email, user?.email]);
+
+  const contextValue = useMemo(
+    () => ({ viewAsEmail, setViewAsEmail, viewAsProfile, viewAsLoading }),
+    [viewAsEmail, setViewAsEmail, viewAsProfile, viewAsLoading],
+  );
 
   return (
-    <ViewAsContext.Provider value={{ viewAsEmail, setViewAsEmail, viewAsProfile, viewAsLoading }}>
+    <ViewAsContext.Provider value={contextValue}>
       {children}
     </ViewAsContext.Provider>
   );

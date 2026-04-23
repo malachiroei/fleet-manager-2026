@@ -15,7 +15,7 @@ import { DRIVER_SECTION_QUERY_PARAM } from '@/lib/driverFieldMap';
 export default function DriverDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
-  const { data: driver, isLoading } = useDriver(id || '');
+  const { data: driver, isLoading, isError, error, refetch } = useDriver(id || '');
   const { data: activeAssignments } = useActiveDriverVehicleAssignments();
 
   const sectionParam = searchParams.get(DRIVER_SECTION_QUERY_PARAM) as DriverSectionId | null;
@@ -41,6 +41,41 @@ export default function DriverDetailPage() {
         </header>
         <main className="container py-6">
           <Skeleton className="h-40 w-full" />
+        </main>
+      </div>
+    );
+  }
+
+  if (isError) {
+    const msg = error instanceof Error ? error.message : String(error ?? 'שגיאה');
+    return (
+      <div className="min-h-screen bg-[#020617] text-white">
+        <header className="border-b border-border bg-card">
+          <div className="container py-4">
+            <div className="flex items-center gap-3">
+              <Link to="/drivers">
+                <Button variant="ghost" size="icon">
+                  <ArrowRight className="h-5 w-5" />
+                </Button>
+              </Link>
+              <h1 className="text-xl font-bold">שגיאה בטעינת הנהג</h1>
+            </div>
+          </div>
+        </header>
+        <main className="container py-6">
+          <Card>
+            <CardContent className="space-y-4 p-6 text-center">
+              <p className="text-destructive text-sm">{msg}</p>
+              <Button type="button" onClick={() => void refetch()}>
+                נסה שוב
+              </Button>
+              <Link to="/drivers">
+                <Button variant="outline" className="ml-2">
+                  חזור לרשימה
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
         </main>
       </div>
     );

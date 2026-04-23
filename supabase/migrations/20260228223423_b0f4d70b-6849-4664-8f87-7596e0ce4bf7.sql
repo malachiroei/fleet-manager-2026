@@ -1,5 +1,4 @@
-
-CREATE TABLE public.procedure6_complaints (
+CREATE TABLE IF NOT EXISTS public.procedure6_complaints (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   vehicle_number TEXT NOT NULL,
   report_id TEXT,
@@ -23,6 +22,9 @@ CREATE TABLE public.procedure6_complaints (
 
 ALTER TABLE public.procedure6_complaints ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Managers can manage complaints" ON public.procedure6_complaints;
+DROP POLICY IF EXISTS "Viewers can read complaints" ON public.procedure6_complaints;
+
 CREATE POLICY "Managers can manage complaints"
   ON public.procedure6_complaints
   FOR ALL
@@ -33,6 +35,8 @@ CREATE POLICY "Viewers can read complaints"
   ON public.procedure6_complaints
   FOR SELECT
   USING (auth.uid() IS NOT NULL);
+
+DROP TRIGGER IF EXISTS update_procedure6_complaints_updated_at ON public.procedure6_complaints;
 
 CREATE TRIGGER update_procedure6_complaints_updated_at
   BEFORE UPDATE ON public.procedure6_complaints

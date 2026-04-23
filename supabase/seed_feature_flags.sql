@@ -20,6 +20,7 @@ values
   ('dashboard_exception_alerts', 'התראות חריגה', 'כרטיס דשבורד — התראות ציות וחריגות', 'dashboard', true),
   ('qa_procedure6_complaints', 'תלונות נוהל 6', 'קישור מהיר — תלונות נוהל 6', 'quick_actions', true),
   ('qa_report_mileage', 'דיווח קילומטראז׳', 'קישור מהיר — דיווח ק״מ', 'quick_actions', true),
+  ('qa_service_update', 'עדכון טיפול', 'רישום טיפול, חישוב טיפול הבא ומסך עדכון טיפול ברשימת רכבים', 'quick_actions', true),
   ('qa_admin_settings', 'הגדרות מערכת', 'קישור מהיר — הגדרות מנהל', 'quick_actions', true),
   ('qa_forms', 'טפסים', 'קישור מהיר — מרכז הטפסים', 'quick_actions', true),
   ('qa_parking_reports', 'דוחות חניה', 'קישור מהיר — דוחות סריקת חניה', 'quick_actions', true),

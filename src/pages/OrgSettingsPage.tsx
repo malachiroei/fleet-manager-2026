@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,12 +7,18 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
 import {
   ArrowRight, Building2, FileText, Heart, Loader2, Save,
   Upload, ExternalLink, Trash2, Plus, Pencil, FileCheck, Tag,
   Download, RotateCcw, RefreshCw,
 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 import { getTestStaticManifestUrl, isFleetManagerProHostname } from '@/lib/versionManifest';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrganization, useUpdateOrganization } from '@/hooks/useOrganizations';
@@ -21,8 +27,29 @@ import { useUiLabels, useUpdateUiLabels, UiLabel } from '@/hooks/useUiLabels';
 import {
   useOrgDocumentsAdmin, useCreateOrgDocument,
   useUpdateOrgDocument, useDeleteOrgDocument,
+  fetchOrgDocumentsAdmin,
+  ORG_DOCUMENTS_ADMIN_QUERY_KEY,
   OrgDocument,
 } from '@/hooks/useOrgDocuments';
+import { ExportChecklistDialog } from '@/components/ExportChecklistDialog';
+import { isFleetAppStagingEnvironment } from '@/lib/fleetAppStagingEnvironment';
+import {
+  applyOrgDocumentsFromSnapshot,
+  buildOrgCrossEnvSnapshot,
+  buildOrgSettingsPatchFromSelection,
+  buildOrganizationUpdateFromSelection,
+  computeOrgCrossEnvDiffRows,
+  createDefaultOrgExportSelections,
+  docFingerprint,
+  exportSelectionHasAnyContent,
+  importSelectionTouchesDocuments,
+  importSelectionTouchesOrganizationRow,
+  importSelectionTouchesUiSettings,
+  parseOrgCrossEnvSnapshot,
+  type OrgCrossEnvSnapshotFile,
+  type OrgExportSelections,
+  type OrgReleaseDiffRow,
+} from '@/lib/orgSettingsReleaseSnapshot';
 
 // ─── PDF Template Upload slot ─────────────────────────────────────
 function PdfUploadSlot({ label, description, currentUrl, onUploaded, slot, readOnly }: {
@@ -93,13 +120,30 @@ function PdfUploadSlot({ label, description, currentUrl, onUploaded, slot, readO
 }
 
 // ─── Document row ──────────────────────────────────────────────────
+function docTitleLooksInvalid(doc: OrgDocument): boolean {
+  return !String(doc.title ?? '').trim();
+}
+
 function DocRow({ doc, onEdit, onDelete, readOnly }: {
   doc: OrgDocument; onEdit: (d: OrgDocument) => void; onDelete: (id: string) => void; readOnly?: boolean;
 }) {
+  const titleTrim = String(doc.title ?? '').trim();
+  const invalid = docTitleLooksInvalid(doc);
   return (
-    <div className="flex items-start gap-3 border border-border rounded-xl p-4">
+    <div
+      className={`flex items-start gap-3 border rounded-xl p-4 ${
+        invalid ? 'border-amber-500/50 bg-amber-500/5' : 'border-border'
+      }`}
+    >
       <div className="flex-1 min-w-0">
-        <p className="font-semibold text-foreground truncate">{doc.title}</p>
+        <p className="font-semibold text-foreground truncate">
+          {titleTrim || <span className="text-amber-700 dark:text-amber-300">(ללא כותרת)</span>}
+        </p>
+        {invalid && (
+          <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+            שורה לא תקינה — מומלץ למחוק או לערוך ולשמור כותרת.
+          </p>
+        )}
         {doc.description && <p className="text-xs text-muted-foreground mt-0.5">{doc.description}</p>}
         <div className="flex flex-wrap gap-2 mt-2">
           {doc.include_in_handover && <span className="text-xs bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20 rounded-full px-2 py-0.5">כלול באשף מסירה</span>}
@@ -178,6 +222,7 @@ const ORG_DETAILS_EDIT_CODE = '2101';
 
 // ─── Main Page ─────────────────────────────────────────────────────
 export default function OrgSettingsPage() {
+  const queryClient = useQueryClient();
   const { activeOrgId, isAdmin, isManager, isDriver, hasPermission, user, profile } = useAuth();
   const isRoeyMainAdmin =
     (profile?.email ?? user?.email ?? '').trim().toLowerCase() === 'malachiroei@gmail.com';
@@ -193,6 +238,22 @@ export default function OrgSettingsPage() {
   const [isRestoring, setIsRestoring] = useState(false);
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
   const restoreInputRef = useRef<HTMLInputElement>(null);
+  const crossEnvImportInputRef = useRef<HTMLInputElement>(null);
+
+  const isStagingForCrossEnvSync = isFleetAppStagingEnvironment();
+
+  const [syncExportModalOpen, setSyncExportModalOpen] = useState(false);
+  const [exportSelections, setExportSelections] = useState<OrgExportSelections>(() =>
+    createDefaultOrgExportSelections([]),
+  );
+  const [isExportingSnapshot, setIsExportingSnapshot] = useState(false);
+
+  const [importReviewOpen, setImportReviewOpen] = useState(false);
+  const [importRows, setImportRows] = useState<OrgReleaseDiffRow[]>([]);
+  const [importSelected, setImportSelected] = useState<Set<string>>(() => new Set());
+  const [importSnapshot, setImportSnapshot] = useState<OrgCrossEnvSnapshotFile | null>(null);
+  const [importFileBusy, setImportFileBusy] = useState(false);
+  const [applyImportBusy, setApplyImportBusy] = useState(false);
 
   // Tab 1 state — name & email from organizations; rest from organization_settings
   const [orgName, setOrgName] = useState('');
@@ -412,9 +473,15 @@ export default function OrgSettingsPage() {
         await updateDoc.mutateAsync({ id: editingDoc.id, ...data });
       } else {
         await createDoc.mutateAsync({
-          title: '', description: '', file_url: null,
-          include_in_handover: false, is_standalone: false,
-          requires_signature: true, sort_order: 0, is_active: true, ...data,
+          include_in_handover: false,
+          is_standalone: false,
+          requires_signature: true,
+          sort_order: 0,
+          is_active: true,
+          title: '',
+          description: '',
+          file_url: null,
+          ...data,
         });
       }
       setAddingDoc(false); setEditingDoc(null);
@@ -430,6 +497,274 @@ export default function OrgSettingsPage() {
     try { await deleteDoc.mutateAsync(id); toast.success('מסמך הוסר'); }
     catch { toast.error('מחיקה נכשלה'); }
   };
+
+  const [repairingDocs, setRepairingDocs] = useState(false);
+  const [hardResettingUi, setHardResettingUi] = useState(false);
+
+  /** Temporary: physical delete on org_documents (inactive + blank title). ui_settings has no is_active/title. */
+  const handleHardResetUiSettings = async () => {
+    if (readOnly) return;
+    if (
+      !confirm(
+        'לאשר מחיקה קשה? יימחקו לצמיתות מ־org_documents: כל השורות עם is_active=false, וכל השורות שכותרתן ריקה או רווחים בלבד. לא ניתן לבטל.',
+      )
+    ) {
+      return;
+    }
+    setHardResettingUi(true);
+    try {
+      const { error: delInactive } = await (supabase as any).from('org_documents').delete().eq('is_active', false);
+      if (delInactive) throw delInactive;
+      const { data: rows, error: selErr } = await (supabase as any).from('org_documents').select('id, title');
+      if (selErr) throw selErr;
+      const blankIds = (rows ?? [])
+        .filter((r: { title?: string | null }) => !String(r.title ?? '').trim())
+        .map((r: { id: string }) => r.id);
+      if (blankIds.length > 0) {
+        const { error: delBlank } = await (supabase as any).from('org_documents').delete().in('id', blankIds);
+        if (delBlank) throw delBlank;
+      }
+      await queryClient.invalidateQueries({ queryKey: ['org-documents'] });
+      await queryClient.invalidateQueries({ queryKey: ['org-settings'] });
+      toast.success('ניקוי קשה הושלם');
+    } catch (e: unknown) {
+      console.error(e);
+      toast.error(e instanceof Error ? e.message : 'ניקוי קשה נכשל');
+    } finally {
+      setHardResettingUi(false);
+    }
+  };
+
+  const handleRepairInvalidDocs = async () => {
+    if (readOnly) return;
+    const bad = (docs ?? []).filter((d) => !String(d.title ?? '').trim());
+    if (bad.length === 0) {
+      toast.info('אין מסמכים ללא כותרת למחיקה');
+      return;
+    }
+    if (!confirm(`למחוק ${bad.length} מסמכים ללא כותרת? פעולה זו אינה הפיכה מממשק המשתמש.`)) return;
+    setRepairingDocs(true);
+    try {
+      for (const d of bad) {
+        await deleteDoc.mutateAsync(d.id);
+      }
+      toast.success(`הוסרו ${bad.length} מסמכים ריקים`);
+    } catch {
+      toast.error('ניקוי נכשל');
+    } finally {
+      setRepairingDocs(false);
+    }
+  };
+
+  const sortedDocs = useMemo(() => {
+    const list = [...(docs ?? [])].filter((d) => String(d.title ?? '').trim());
+    list.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    return list;
+  }, [docs]);
+
+  const allDocsForImport = useMemo(() => docs ?? [], [docs]);
+
+  const exportFormUiSnapshot = useMemo(
+    () => ({
+      org_id_number: orgIdNumber,
+      health_statement_text: healthText,
+      vehicle_policy_text: policyText,
+      health_statement_pdf_url: healthPdfUrl,
+      vehicle_policy_pdf_url: policyPdfUrl,
+    }),
+    [orgIdNumber, healthText, policyText, healthPdfUrl, policyPdfUrl],
+  );
+
+  const activeExportDocFingerprints = useMemo(() => {
+    return (docs ?? [])
+      .filter((d) => d.is_active !== false && String(d.title ?? '').trim())
+      .map((d) => docFingerprint(d));
+  }, [docs]);
+
+  const handleSyncExportDialogChange = (open: boolean) => {
+    setSyncExportModalOpen(open);
+    if (open) {
+      setExportSelections(createDefaultOrgExportSelections(activeExportDocFingerprints));
+    }
+  };
+
+  useEffect(() => {
+    if (!syncExportModalOpen || docsLoading) return;
+    if (activeExportDocFingerprints.length === 0) return;
+    setExportSelections((prev) => {
+      if (prev.documentFingerprints.size !== 0) return prev;
+      return { ...prev, documentFingerprints: new Set(activeExportDocFingerprints) };
+    });
+  }, [syncExportModalOpen, docsLoading, activeExportDocFingerprints]);
+
+  const handleConfirmExportSnapshot = async () => {
+    if (!exportSelectionHasAnyContent(exportSelections)) {
+      toast.error('בחר לפחות פריט אחד לייצוא');
+      return;
+    }
+    if (!orgId) {
+      toast.error('אין ארגון פעיל');
+      return;
+    }
+    setIsExportingSnapshot(true);
+    try {
+      await queryClient.invalidateQueries({ queryKey: ORG_DOCUMENTS_ADMIN_QUERY_KEY });
+      const documentsFresh = await queryClient.fetchQuery({
+        queryKey: ORG_DOCUMENTS_ADMIN_QUERY_KEY,
+        queryFn: fetchOrgDocumentsAdmin,
+      });
+      const formUiSnapshot = {
+        org_id_number: orgIdNumber,
+        health_statement_text: healthText,
+        vehicle_policy_text: policyText,
+        health_statement_pdf_url: healthPdfUrl,
+        vehicle_policy_pdf_url: policyPdfUrl,
+      };
+      const snapshot = buildOrgCrossEnvSnapshot({
+        organization: organization ?? null,
+        organizationForm: {
+          name: orgName.trim(),
+          email: adminEmail.trim() ? adminEmail.trim() : null,
+          org_id_number: orgIdNumber.trim(),
+        },
+        settings: settings ?? null,
+        formUiSnapshot,
+        documents: documentsFresh,
+        selections: exportSelections,
+      });
+      downloadJsonFile('release_snapshot.json', snapshot);
+      toast.success('הקובץ הורד בהצלחה');
+      setSyncExportModalOpen(false);
+    } catch (e) {
+      console.error(e);
+      toast.error('ייצוא הסנאפשוט נכשל');
+    } finally {
+      setIsExportingSnapshot(false);
+    }
+  };
+
+  const openCrossEnvImportPicker = () => crossEnvImportInputRef.current?.click();
+
+  const handleCrossEnvImportFilePicked = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || readOnly) return;
+    if (!orgId) {
+      toast.error('אין ארגון פעיל');
+      return;
+    }
+    setImportFileBusy(true);
+    try {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(await file.text());
+      } catch {
+        toast.error('קובץ JSON לא תקין');
+        return;
+      }
+      const { snapshot, error } = parseOrgCrossEnvSnapshot(parsed);
+      if (error || !snapshot) {
+        toast.error(error ?? 'קובץ לא תקין');
+        return;
+      }
+      const rows = computeOrgCrossEnvDiffRows({
+        snapshot,
+        organization: organization ?? null,
+        settings: settings ?? null,
+        documents: allDocsForImport,
+      });
+      if (rows.length === 0) {
+        toast.info('אין הבדלים בין הקובץ להגדרות הנוכחיות');
+        return;
+      }
+      setImportSnapshot(snapshot);
+      setImportRows(rows);
+      setImportSelected(new Set(rows.filter((r) => r.defaultSelected).map((r) => r.id)));
+      setImportReviewOpen(true);
+    } catch (err) {
+      console.error(err);
+      toast.error('טעינת הקובץ נכשלה');
+    } finally {
+      setImportFileBusy(false);
+    }
+  };
+
+  const toggleImportRow = (id: string, checked: boolean) => {
+    setImportSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const toggleImportCategory = (category: OrgReleaseDiffRow['category'], checked: boolean) => {
+    const ids = importRows.filter((r) => r.category === category).map((r) => r.id);
+    setImportSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (checked) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  };
+
+  const importCategoryAllSelected = (category: OrgReleaseDiffRow['category']) => {
+    const ids = importRows.filter((r) => r.category === category).map((r) => r.id);
+    return ids.length > 0 && ids.every((id) => importSelected.has(id));
+  };
+
+  const handleApplyCrossEnvImport = async () => {
+    if (!importSnapshot || !orgId) return;
+    if (importSelected.size === 0) {
+      toast.error('סמן לפחות פריט אחד ליישום');
+      return;
+    }
+    setApplyImportBusy(true);
+    try {
+      if (importSelectionTouchesOrganizationRow(importSelected)) {
+        const orgUp = buildOrganizationUpdateFromSelection(importSnapshot, importSelected, orgId);
+        if (orgUp && (orgUp.name !== undefined || orgUp.email !== undefined)) {
+          await updateOrganization.mutateAsync(orgUp);
+        }
+      }
+      if (importSelectionTouchesUiSettings(importSelected)) {
+        const patch = buildOrgSettingsPatchFromSelection(
+          importSnapshot,
+          importSelected,
+          settings ?? null,
+          orgId,
+        );
+        await updateSettings.mutateAsync(patch);
+      }
+      if (importSelectionTouchesDocuments(importSelected)) {
+        await applyOrgDocumentsFromSnapshot({
+          supabase,
+          snapshot: importSnapshot,
+          selected: importSelected,
+          currentDocuments: allDocsForImport,
+        });
+      }
+      toast.success('העדכונים מהסטייג׳ינג יושמו בהצלחה');
+      setImportReviewOpen(false);
+      setImportRows([]);
+      setImportSnapshot(null);
+      setImportSelected(new Set());
+      await queryClient.invalidateQueries({ queryKey: ['org-settings'] });
+      await queryClient.invalidateQueries({ queryKey: ['org-documents'] });
+      await queryClient.invalidateQueries({ queryKey: ['organization', orgId] });
+      window.location.reload();
+    } catch (err) {
+      console.error(err);
+      toast.error(err instanceof Error ? err.message : 'יישום נכשל');
+    } finally {
+      setApplyImportBusy(false);
+    }
+  };
+
+  const crossEnvSyncDisabled =
+    readOnly || !orgId || orgLoading || settingsLoading || isExportingSnapshot || importFileBusy;
 
   return (
     <div className="min-h-screen bg-background">
@@ -460,6 +795,32 @@ export default function OrgSettingsPage() {
               {isCheckingUpdates ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : <RefreshCw className="h-4 w-4 ml-2" />}
               בדוק עדכונים
             </Button>
+            {!readOnly && (
+              isStagingForCrossEnvSync ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={crossEnvSyncDisabled}
+                  onClick={() => handleSyncExportDialogChange(true)}
+                  className="gap-2"
+                >
+                  העברת הגדרות לפרו
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={crossEnvSyncDisabled}
+                  onClick={openCrossEnvImportPicker}
+                  className="gap-2"
+                >
+                  {importFileBusy ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : <Upload className="h-4 w-4 ml-2" />}
+                  טען עדכונים מסטייג׳ינג
+                </Button>
+              )
+            )}
             <input
               ref={restoreInputRef}
               type="file"
@@ -470,8 +831,102 @@ export default function OrgSettingsPage() {
                 if (f) void handleRestorePicked(f);
               }}
             />
+            <input
+              ref={crossEnvImportInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={handleCrossEnvImportFilePicked}
+            />
           </div>
         </div>
+
+        <ExportChecklistDialog
+          open={syncExportModalOpen}
+          onOpenChange={handleSyncExportDialogChange}
+          documents={docs ?? []}
+          documentsLoading={docsLoading}
+          formUiSnapshot={exportFormUiSnapshot}
+          selections={exportSelections}
+          setSelections={setExportSelections}
+          onConfirmExport={handleConfirmExportSnapshot}
+          isExporting={isExportingSnapshot}
+        />
+
+        <Dialog open={importReviewOpen} onOpenChange={setImportReviewOpen}>
+          <DialogContent className="max-w-lg max-h-[90vh] flex flex-col gap-0 sm:max-w-2xl" dir="rtl">
+            <DialogHeader>
+              <DialogTitle>ייבוא עדכונים — סקירה לפני יישום</DialogTitle>
+              <DialogDescription asChild>
+                <p className="text-sm text-muted-foreground">
+                  ייושמו רק הפריטים המסומנים להלן, לארגון הנוכחי במערכת.
+                </p>
+              </DialogDescription>
+            </DialogHeader>
+            <ScrollArea className="max-h-[50vh] pr-3 -mr-1">
+              <div className="space-y-4 py-2">
+                {(['org', 'ui', 'documents'] as const).map((cat) => {
+                  const rows = importRows.filter((r) => r.category === cat);
+                  if (rows.length === 0) return null;
+                  const title =
+                    cat === 'org'
+                      ? 'פרטי ארגון'
+                      : cat === 'ui'
+                        ? 'הגדרות טפסים ותבניות'
+                        : 'מסמכים מותאמים';
+                  return (
+                    <div key={cat} className="space-y-2 border-b border-border pb-3 last:border-b-0">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id={`import-cat-${cat}`}
+                          checked={importCategoryAllSelected(cat)}
+                          onCheckedChange={(v) => toggleImportCategory(cat, v === true)}
+                        />
+                        <Label htmlFor={`import-cat-${cat}`} className="cursor-pointer text-sm font-semibold">
+                          {title}
+                        </Label>
+                      </div>
+                      <ul className="space-y-2 pr-6 list-none">
+                        {rows.map((row) => (
+                          <li key={row.id} className="flex items-start gap-2">
+                            <Checkbox
+                              id={row.id}
+                              checked={importSelected.has(row.id)}
+                              onCheckedChange={(v) => toggleImportRow(row.id, v === true)}
+                            />
+                            <Label htmlFor={row.id} className="cursor-pointer flex-1 min-w-0 leading-snug">
+                              <span className="flex flex-wrap items-center gap-2">
+                                <span>{row.label}</span>
+                                <Badge variant={row.status === 'new' ? 'default' : 'secondary'}>
+                                  {row.status === 'new' ? 'חדש' : 'שונה'}
+                                </Badge>
+                              </span>
+                            </Label>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+            <DialogFooter className="gap-2 sm:gap-0 flex-col sm:flex-row sm:justify-between">
+              <Button type="button" variant="outline" onClick={() => setImportReviewOpen(false)}>
+                ביטול
+              </Button>
+              <Button type="button" onClick={() => void handleApplyCrossEnvImport()} disabled={applyImportBusy}>
+                {applyImportBusy ? (
+                  <>
+                    <Loader2 className="h-4 w-4 ml-2 animate-spin" />
+                    מיישם…
+                  </>
+                ) : (
+                  'יישום הפריטים המסומנים'
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {(orgLoading || settingsLoading) ? (
           <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
@@ -710,9 +1165,34 @@ export default function OrgSettingsPage() {
                       <div><CardTitle>מסמכים נוספים</CardTitle><CardDescription>טפסים מותאמים — לאשף המסירה או כקישורים עצמאיים לנהג.</CardDescription></div>
                     </div>
                     {!readOnly && (
-                      <Button size="sm" className="gap-2 shrink-0" onClick={() => { setAddingDoc(true); setEditingDoc(null); }}>
-                        <Plus className="h-4 w-4" /> הוסף מסמך
-                      </Button>
+                      <div className="flex flex-wrap gap-2 shrink-0 justify-end">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="gap-2"
+                          disabled={repairingDocs || docsLoading || hardResettingUi}
+                          onClick={() => void handleRepairInvalidDocs()}
+                        >
+                          {repairingDocs ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                          ניקוי שורות ללא כותרת
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          className="gap-2"
+                          disabled={hardResettingUi || docsLoading || repairingDocs}
+                          title="מחיקה קשה ב־org_documents (שורות לא פעילות או ללא כותרת)"
+                          onClick={() => void handleHardResetUiSettings()}
+                        >
+                          {hardResettingUi ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                          Hard Reset UI Settings
+                        </Button>
+                        <Button size="sm" className="gap-2" onClick={() => { setAddingDoc(true); setEditingDoc(null); }}>
+                          <Plus className="h-4 w-4" /> הוסף מסמך
+                        </Button>
+                      </div>
                     )}
                   </div>
                 </CardHeader>
@@ -722,14 +1202,14 @@ export default function OrgSettingsPage() {
                   )}
                   {docsLoading ? (
                     <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-                  ) : (docs ?? []).length === 0 && !addingDoc ? (
+                  ) : sortedDocs.length === 0 && !addingDoc ? (
                     <div className="text-center py-10 text-muted-foreground">
                       <FileText className="h-8 w-8 mx-auto mb-2 opacity-30" />
                       <p className="text-sm">אין מסמכים נוספים עדיין</p>
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {(docs ?? []).map((doc) => (
+                      {sortedDocs.map((doc) => (
                         <React.Fragment key={doc.id}>
                           {editingDoc?.id === doc.id ? (
                             <DocForm initial={doc} onSave={handleSaveDoc} onCancel={() => setEditingDoc(null)} saving={updateDoc.isPending} />

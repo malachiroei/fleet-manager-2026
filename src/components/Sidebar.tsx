@@ -31,9 +31,13 @@ export function Sidebar() {
             to="/"
             className="block"
             onClick={(e) => {
-              if (!getIsDirty()) return;
               e.preventDefault();
-              tryNavigate('/');
+              try {
+                window.dispatchEvent(new CustomEvent('app:go-home'));
+              } catch {
+                // ignore
+              }
+              window.location.assign(`${window.location.origin}/`);
             }}
           >
             <Button
