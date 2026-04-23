@@ -4,6 +4,8 @@
  *
  * v2.7.66: ב־`fleet-manager-pro.com` — URL ייצור מ־`NEXT_PUBLIC_FLEET_PRODUCTION_SUPABASE_URL` (או fallback ל־`NEXT_PUBLIC_SUPABASE_URL`); anon מ־Vercel.
  *
+ * בחירת anon: חייב להתאים ל-ref ב-URL — אחרת Vercel עלול להשאיר מפתח מפרויקט ישן וההתחברות תחזיר «Invalid API key» (401).
+ *
  * אימות ref: `evaluateSupabaseEnvironmentGuard` ב־`@/lib/supabase/envGuard`.
  */
 
@@ -11,6 +13,68 @@ import { isFleetManagerProDotComHostname } from '@/lib/supabase/fleetSupabasePro
 
 function trimEnv(v: unknown): string {
   return typeof v === 'string' ? v.trim() : '';
+}
+
+/** ללא ייבוא מ-envGuard (מניעת מעגל תלות). */
+function projectRefFromSupabaseUrl(urlRaw: string): string | null {
+  const t = String(urlRaw ?? '').trim();
+  if (!t) return null;
+  try {
+    const host = new URL(t).hostname.toLowerCase();
+    const m = host.match(/^([a-z0-9]+)\.supabase\.co$/i);
+    return m ? m[1].toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** ה-claim `ref` ב-JWT של מפתח ה-anon — חייב להיות אותו ref כמו ב-host של Supabase. */
+function projectRefFromSupabaseAnonJwt(jwt: string): string | null {
+  const t = trimEnv(jwt);
+  const parts = t.split('.');
+  if (parts.length < 2) return null;
+  try {
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const pad = (4 - (b64.length % 4)) % 4;
+    const padded = b64 + '='.repeat(pad);
+    const json = JSON.parse(atob(padded)) as { ref?: string };
+    return typeof json.ref === 'string' ? json.ref.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * בוחר מפתח anon שמתאים ל-URL (לפי ref ב-JWT).
+ * אם אין התאמה — מחזיר ריק (עדיף מסך הגדרות מאשר 401 «Invalid API key» בשקט).
+ */
+function pickAnonKeyForSupabaseUrl(
+  supabaseUrl: string,
+  orderedPairs: ReadonlyArray<readonly [string, unknown]>,
+): { value: string; source: string | null } {
+  const urlRef = projectRefFromSupabaseUrl(supabaseUrl);
+
+  for (const [source, v] of orderedPairs) {
+    const value = trimEnv(v);
+    if (!value) continue;
+    if (!urlRef) {
+      return { value, source };
+    }
+    const keyRef = projectRefFromSupabaseAnonJwt(value);
+    if (keyRef === urlRef) {
+      return { value, source };
+    }
+  }
+
+  if (urlRef && typeof window !== 'undefined') {
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[Supabase publicEnv] No anon key matches SUPABASE_URL project ref. Update Vercel so NEXT_PUBLIC_SUPABASE_ANON_KEY / NEXT_PUBLIC_FLEET_PRODUCTION_SUPABASE_ANON_KEY belong to the same project as the URL.',
+      { urlRef },
+    );
+  }
+
+  return { value: '', source: null };
 }
 
 function firstNonEmpty(pairs: ReadonlyArray<readonly [string, unknown]>): {
@@ -56,7 +120,10 @@ function computeResolvedSupabaseViteEnv(): ResolvedSupabaseViteEnv {
   if (isFleetManagerProDotComHostname()) {
     const prodUrlRes = firstNonEmpty(PRODUCTION_URL_ENV_PAIRS);
     const urlRes = prodUrlRes.value ? prodUrlRes : firstNonEmpty(URL_ENV_PAIRS);
-    const keyRes = firstNonEmpty([...PRODUCTION_ANON_KEY_ENV_PAIRS, ...ANON_KEY_ENV_PAIRS]);
+    const keyRes = pickAnonKeyForSupabaseUrl(urlRes.value, [
+      ...PRODUCTION_ANON_KEY_ENV_PAIRS,
+      ...ANON_KEY_ENV_PAIRS,
+    ]);
     return {
       url: urlRes.value,
       anonKey: keyRes.value,
@@ -66,7 +133,7 @@ function computeResolvedSupabaseViteEnv(): ResolvedSupabaseViteEnv {
   }
 
   const urlRes = firstNonEmpty(URL_ENV_PAIRS);
-  const keyRes = firstNonEmpty(ANON_KEY_ENV_PAIRS);
+  const keyRes = pickAnonKeyForSupabaseUrl(urlRes.value, [...ANON_KEY_ENV_PAIRS]);
   return {
     url: urlRes.value,
     anonKey: keyRes.value,
