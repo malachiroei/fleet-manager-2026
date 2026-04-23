@@ -34,14 +34,17 @@ export function useImpersonationFleetScope() {
 
   const viewAsNorm = (viewAsEmail ?? '').trim().toLowerCase();
   const sessionNorm = resolveSessionEmail(profile, user);
+  const viewAsActive = Boolean((viewAsEmail ?? '').trim());
   /**
-   * רביד מחובר (או תצוגה כרביד): תמיד ארגון הצי של רביד — גם כש־profiles.org_id בפרו עדיין הצי הראשי של רועי.
-   * אחרת: activeOrgId ואז פרופיל המחליף.
+   * נעילה ל־RAVID_FLEET_ORG_ID רק כשאין תצוגה כמשתמש אחר (רביד «עצמו»), או כשהתצוגה היא כרביד.
+   * אחרת: כש־רביד בתצוגה כרועי — `sessionNorm` עדיין רביד ואסור לכפות את ארגון רביד (אחרת נשארת שורת
+   * הפרופיל של רביד בניהול צוות במקום צו המשנה).
    */
+  const forceRavidFleetOrg =
+    viewAsNorm === RAVID_MANAGER_EMAIL ||
+    (sessionNorm === RAVID_MANAGER_EMAIL && !viewAsActive);
   const orgFromContext = (
-    (sessionNorm === RAVID_MANAGER_EMAIL || viewAsNorm === RAVID_MANAGER_EMAIL
-      ? RAVID_FLEET_ORG_ID
-      : null) ??
+    (forceRavidFleetOrg ? RAVID_FLEET_ORG_ID : null) ??
     activeOrgId ??
     viewAsProfile?.org_id ??
     null
