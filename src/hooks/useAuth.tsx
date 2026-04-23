@@ -439,15 +439,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const profileOrgIdForActive = resolveProfileOrgIdForActiveSession(profile, user);
     if (memberOrganizations.length === 0 && !profileOrgIdForActive) return;
 
-    activeOrgInitializedRef.current = true;
+    const orgKnown = (id: string | null | undefined) =>
+      Boolean(id) && memberOrganizations.some((o) => o.id === id);
+    const profileInMembers =
+      Boolean(profileOrgIdForActive) &&
+      memberOrganizations.some((o) => o.id === profileOrgIdForActive);
+    const delegated = Boolean(profile.parent_admin_id?.trim());
+
     let stored: string | null = null;
     try {
       stored = localStorage.getItem(ACTIVE_ORG_STORAGE_KEY);
     } catch {
       /* ignore */
     }
-    const orgKnown = (id: string | null | undefined) =>
-      Boolean(id) && memberOrganizations.some((o) => o.id === id);
+    const storedTrim = (stored ?? '').trim();
+
+    activeOrgInitializedRef.current = true;
+
+    /** חברות יחידה — תמיד הארגון הזה (מנקה localStorage ישן / UUID של צי ראשי). */
+    if (memberOrganizations.length === 1) {
+      const onlyId = memberOrganizations[0]?.id ?? null;
+      if (onlyId) {
+        setActiveOrgId(onlyId);
+        return;
+      }
+    }
+
+    /** משתמש תחת מנהל: `profiles.org_id` הוא מקור האמת מול מפתח שמור מארגון אחר. */
+    if (delegated && profileInMembers && profileOrgIdForActive && storedTrim !== profileOrgIdForActive) {
+      setActiveOrgId(profileOrgIdForActive);
+      return;
+    }
+
+    /**
+     * לא בעלי bootstrap: אם נשמר בדפדפן «צי ראשי» אבל בפרופיל כבר ארגון אחר שהמשתמש חבר בו —
+     * לא לבחור את הצי הראשי רק כי הוא עדיין ב־org_members (למשל לפני ניקוי כפילות ב-DB).
+     */
+    if (
+      !isFleetBootstrapOwnerEmail(sessionEmailForOrg) &&
+      profileInMembers &&
+      profileOrgIdForActive &&
+      profileOrgIdForActive !== FALLBACK_MAIN_FLEET_ORG_ID &&
+      storedTrim === FALLBACK_MAIN_FLEET_ORG_ID
+    ) {
+      setActiveOrgId(profileOrgIdForActive);
+      return;
+    }
+
     const wrongMainStoredForRavid =
       sessionEmailForOrg === RAVID_MANAGER_EMAIL && stored === FALLBACK_MAIN_FLEET_ORG_ID;
     const validStored =
@@ -486,6 +524,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setActiveOrgId(preferred);
     }
   }, [user, profile, activeOrgId, memberOrganizations, setActiveOrgId]);
+
+  /** מצב שבו `activeOrgId` כבר הוגדר לצי הראשי אבל הפרופיל והחברות מצביעים על ארגון אחר (אחרי תיקון DB). */
+  useEffect(() => {
+    if (!user || !profile) return;
+    const sessionEmail = resolveSessionEmail(profile, user);
+    if (isFleetBootstrapOwnerEmail(sessionEmail)) return;
+    const pid = resolveProfileOrgIdForActiveSession(profile, user);
+    if (!pid || pid === FALLBACK_MAIN_FLEET_ORG_ID) return;
+    if (!memberOrganizations.some((o) => o.id === pid)) return;
+    if (activeOrgId !== FALLBACK_MAIN_FLEET_ORG_ID) return;
+    setActiveOrgId(pid);
+  }, [user, profile, activeOrgId, memberOrganizations, setActiveOrgId]);
+
+  /** משתמש עם חברות בארגון יחיד — תמיד לסנכרן (אחרי עדכון רשימה / View-As יוצא). */
+  useEffect(() => {
+    if (!user?.id) return;
+    if (memberOrganizations.length !== 1) return;
+    const onlyId = memberOrganizations[0]?.id;
+    if (!onlyId) return;
+    if (activeOrgId === onlyId) return;
+    if (activeOrgId === RAVID_FLEET_ORG_ID) return;
+    setActiveOrgId(onlyId);
+  }, [user?.id, memberOrganizations, activeOrgId, setActiveOrgId]);
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
