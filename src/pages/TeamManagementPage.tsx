@@ -42,7 +42,8 @@ import type { Profile } from '@/types/fleet';
  * Team management: list members and pending invitations. Invite via SimpleInviteModal only.
  */
 export default function TeamManagementPage() {
-  const { profile, activeOrgId, hasPermission, isAdmin, isManager } = useAuth();
+  const { user, profile, activeOrgId, hasPermission, isAdmin, isManager } = useAuth();
+  const isRavid = (user?.email ?? '').trim().toLowerCase() === 'ravidmalachi@gmail.com';
   const { viewAsProfile } = useViewAs();
   const { effectiveUserId, effectiveOrgId } = useImpersonationFleetScope();
   const queryClient = useQueryClient();
