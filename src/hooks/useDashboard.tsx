@@ -17,6 +17,33 @@ function chunkIds(ids: string[], size: number): string[][] {
   return out;
 }
 
+/** שורת compliance_alerts: סכימה מודרנית (entity_*) או legacy (vehicle_id / driver_id) — בלי רשימת select לעמודות שלא קיימות ב-PostgREST. */
+function normalizeComplianceAlertDbRow(raw: Record<string, unknown>): {
+  id: string;
+  entity_type: string;
+  entity_id: string;
+  alert_type: string;
+  expiry_date: string;
+  status: string;
+} | null {
+  const id = raw.id;
+  if (typeof id !== 'string') return null;
+  const alert_type = String(raw.alert_type ?? '');
+  const expiry_date = String(raw.expiry_date ?? '');
+  const status = String(raw.status ?? 'warning');
+
+  if (typeof raw.entity_type === 'string' && typeof raw.entity_id === 'string') {
+    return { id, entity_type: raw.entity_type, entity_id: raw.entity_id, alert_type, expiry_date, status };
+  }
+  if (typeof raw.vehicle_id === 'string' && raw.vehicle_id.trim()) {
+    return { id, entity_type: 'vehicle', entity_id: raw.vehicle_id, alert_type, expiry_date, status };
+  }
+  if (typeof raw.driver_id === 'string' && raw.driver_id.trim()) {
+    return { id, entity_type: 'driver', entity_id: raw.driver_id, alert_type, expiry_date, status };
+  }
+  return null;
+}
+
 interface ComplianceItem {
   id: string;
   type: 'vehicle' | 'driver';
@@ -362,15 +389,19 @@ export function useComplianceAlerts() {
       const out: ComplianceItem[] = [];
       const occupiedSlots = new Set<string>();
 
-      const { data: rows, error } = await supabase
-        .from('compliance_alerts')
-        .select('id, entity_type, entity_id, alert_type, expiry_date, status');
+      // `select('*')` — לא מציינים `entity_type` מפורשות: ב-DB ישנים לפעמים אין עמודה וה-PostgREST מחזיר 400 על select עם שדה שלא קיים.
+      const { data: rawRows, error } = await supabase.from('compliance_alerts').select('*');
 
-      if (error) {
+      if (error && import.meta.env.DEV) {
         console.warn('[useComplianceAlerts] compliance_alerts select failed — falling back to derived', error.message);
       }
 
-      const list = error ? [] : (rows ?? []);
+      const list =
+        error || !rawRows
+          ? []
+          : (rawRows as Record<string, unknown>[])
+              .map((r) => normalizeComplianceAlertDbRow(r))
+              .filter((r): r is NonNullable<typeof r> => r != null);
 
       if (list.length > 0) {
         const vehicleIds = [...new Set(list.filter((r) => r.entity_type === 'vehicle').map((r) => r.entity_id))];

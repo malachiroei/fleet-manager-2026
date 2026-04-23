@@ -50,7 +50,15 @@ import {
   FLEET_MANAGER_PRO_ORIGIN,
 } from "@/lib/testDeployUpdate";
 import { UpdateModal } from "@/components/UpdateModal";
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      /** 400 חוזר על שאילתות = עומס רשת וקיטועים; hooks יכולים לדרוס ל־retry ספציפי */
+      retry: false,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 /** נטען בדומיין הטסט: מנקה מטמון/SW/localStorage ומחזיר למקור (pro.com) */
 function ForceUpdateProHandler() {

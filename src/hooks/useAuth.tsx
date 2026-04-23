@@ -5,9 +5,13 @@ import type { AppRole, Profile } from '@/types/fleet';
 import { hasPermission as checkPermission, type PermissionKey } from '@/lib/permissions';
 import { isFleetBootstrapOwnerEmail, RAVID_MANAGER_EMAIL, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
 import { FALLBACK_MAIN_FLEET_ORG_ID, RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
+import { isLikelyUuid } from '@/lib/fleetUuid';
 import { clearFleetProUpdateModalSuppressFlag } from '@/lib/pwaUpdateModalBridge';
 
 const ACTIVE_ORG_STORAGE_KEY = 'fleet-manager-active-org';
+
+/** מונע טעינת פרופיל כפולה ב־React Strict Mode (אפקט ×2) לאותו משתמש. */
+let authBootstrapLastUserId: string | null = null;
 
 /**
  * Personal profile row: `profiles.id` = Supabase Auth `user.id` (auth.users.id).
@@ -153,15 +157,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ui_denied_features_anchor_version: row.ui_denied_features_anchor_version ?? null,
       };
       setProfile(next);
-      // eslint-disable-next-line no-console
-      console.log('[Auth] personal profile snapshot (profiles.id = auth uid)', {
-        id: next.id,
-        status: next.status,
-        email: next.email,
-        org_id: next.org_id,
-        allowed_features: next.allowed_features ?? null,
-        denied_features: next.denied_features ?? null,
-      });
+      if (import.meta.env.DEV) {
+        // eslint-disable-next-line no-console
+        console.log('[Auth] personal profile snapshot (profiles.id = auth uid)', {
+          id: next.id,
+          status: next.status,
+          email: next.email,
+          org_id: next.org_id,
+          allowed_features: next.allowed_features ?? null,
+          denied_features: next.denied_features ?? null,
+        });
+      }
     };
 
     let res:
@@ -238,8 +244,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       memError = e as { message?: string } | null;
     }
-    let orgIds = memError || !rows?.length ? [] : rows.map((r: { org_id: string }) => r.org_id);
-    if (orgIds.length === 0 && fallbackOrgId) {
+    let orgIds =
+      memError || !rows?.length
+        ? []
+        : rows.map((r: { org_id: string }) => r.org_id).filter((id) => isLikelyUuid(id));
+    if (orgIds.length === 0 && fallbackOrgId && isLikelyUuid(fallbackOrgId)) {
       orgIds = [fallbackOrgId];
     }
     if (orgIds.length === 0) {
@@ -272,6 +281,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(session?.user ?? null);
 
         if (!session?.user) {
+          authBootstrapLastUserId = null;
           setRoles([]);
           setProfile(null);
           setMemberOrganizations([]);
@@ -284,6 +294,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Token refresh often fires when the app returns from the camera / file picker.
         // Toggling global `loading` here unmounts `ProtectedRoute` content and wipes in-memory form state.
         if (event === 'TOKEN_REFRESHED') {
+          return;
+        }
+
+        // כבר רץ יחד עם getSession() — כפילות יוצרת שליפות כפולות, 400 מיותרים וקפיצות בפריסה
+        if (event === 'INITIAL_SESSION') {
           return;
         }
 
@@ -321,11 +336,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(session?.user ?? null);
 
         if (session?.user) {
-          await Promise.allSettled([
-            fetchUserRoles(session.user.id),
-            fetchProfileRef.current(session.user.id),
-            fetchMemberOrganizations(session.user.id),
-          ]);
+          if (authBootstrapLastUserId !== session.user.id) {
+            await Promise.allSettled([
+              fetchUserRoles(session.user.id),
+              fetchProfileRef.current(session.user.id),
+              fetchMemberOrganizations(session.user.id),
+            ]);
+            authBootstrapLastUserId = session.user.id;
+          }
+        } else {
+          authBootstrapLastUserId = null;
         }
       } finally {
         setLoading(false);
@@ -489,6 +509,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // ignore
     }
     await supabase.auth.signOut();
+    authBootstrapLastUserId = null;
     setRoles([]);
     setProfile(null);
     setMemberOrganizations([]);
