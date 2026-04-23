@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client'; // single auth-aware client (anon key + user JWT when signed in)
 import { isLikelyUuid } from '@/lib/fleetUuid';
 import type { Organization } from '@/types/fleet';
@@ -7,33 +7,49 @@ export interface OrganizationWithUserCount extends Organization {
   user_count: number;
 }
 
+function isMissingColumnPostgrestError(err: unknown): boolean {
+  const code = String((err as { code?: string })?.code ?? '');
+  const msg = String((err as { message?: string })?.message ?? '');
+  return (
+    code === '42703' ||
+    /column|does not exist|schema cache|Could not find the/i.test(msg) ||
+    /PGRST204/i.test(msg)
+  );
+}
+
 export function useOrganization(orgId?: string | null) {
   return useQuery({
     queryKey: ['organization', orgId ?? null],
     enabled: !!orgId && isLikelyUuid(orgId),
-    /** בקשות שנכשלות בגלל עמודות / id — לא לחזור שלוש פעמים (ברירת מחדל TanStack). */
+    /** בקשות 400 בזמן מעבר ארגון — בלי retry (ברירת מחדל גלובלית כבר false; מפורש לבהירות). */
     retry: false,
     refetchOnWindowFocus: false,
     staleTime: 60_000,
+    /** שם ארגון קודם בזמן טעינת org חדש — פחות קיטוע בכותרת / AppLayout */
+    placeholderData: keepPreviousData,
     queryFn: async (): Promise<Organization | null> => {
       if (!orgId) return null;
       const id = orgId.trim();
       if (!isLikelyUuid(id)) return null;
 
-      // תמיד `id, name` קודם — `email` חסר בחלק מה-DB גורם ל-400 על select מפורש
+      // בקשה אחת עם email כשהעמודה קיימת; אחרת נפילה ל־id,name בלבד (ללא בקשת select('email') נפרדת שמייצרת 400 כפול)
+      const full = await supabase.from('organizations').select('id, name, email').eq('id', id).maybeSingle();
+      if (!full.error) {
+        const d = full.data as { id: string; name: string; email?: string | null } | null;
+        if (!d) return null;
+        return {
+          id: d.id,
+          name: d.name,
+          email: typeof d.email === 'string' ? d.email : null,
+        };
+      }
+
+      if (!isMissingColumnPostgrestError(full.error)) throw full.error;
+
       const slim = await supabase.from('organizations').select('id, name').eq('id', id).maybeSingle();
       if (slim.error) throw slim.error;
       const row = slim.data as { id: string; name: string } | null;
-      if (!row) return null;
-
-      let email: string | null = null;
-      const emailRes = await supabase.from('organizations').select('email').eq('id', id).maybeSingle();
-      if (!emailRes.error && emailRes.data != null) {
-        const e = (emailRes.data as { email?: string | null }).email;
-        email = typeof e === 'string' ? e : null;
-      }
-
-      return { ...row, email };
+      return row ? { ...row, email: null } : null;
     },
   });
 }
