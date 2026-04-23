@@ -25,12 +25,10 @@ import { cn } from '@/lib/utils';
 import { getBrandLogoUrl } from '@/components/BrandLogo';
 import { supabase } from '@/integrations/supabase/client';
 import {
-  version as bundleVersion,
   FLEET_PRO_ACK_VERSION_STORAGE_KEY,
   FLEET_PRO_ACK_VERSION_UPDATED_EVENT,
 } from '@/constants/version';
-import { isFleetManagerProHostname, normalizeVersion } from '@/lib/versionManifest';
-import { getFleetEnvironmentBannerKind } from '@/lib/fleetAppStagingEnvironment';
+import { isFleetManagerProHostname } from '@/lib/versionManifest';
 import { isFleetBootstrapOwnerEmail, resolveSessionEmail, RAVID_MANAGER_EMAIL } from '@/lib/fleetBootstrapEmails';
 import { FALLBACK_MAIN_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 import type { TeamMemberSummary } from '@/hooks/useTeam';
@@ -160,11 +158,6 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   /** קיר קשיח ייצור: fleet-manager-pro.com + www (גרסה בכותרת וכו') */
   const isProduction = isFleetManagerProHostname();
-  /** באנר סביבה: לפי פרויקט Supabase (FLEET_*_REF) + hostname — לא רק localhost */
-  const fleetEnvBannerKind =
-    typeof window !== 'undefined' ? getFleetEnvironmentBannerKind() : 'none';
-  const showFleetEnvironmentBanner = fleetEnvBannerKind !== 'none';
-
   /**
    * ייצור: אחרי `FLEET_PRO_ACK_VERSION_UPDATED_EVENT` — אם `fleet-pro-acknowledged-version` בפועל השתנה,
    * רענון קשיח כדי לסנכרן gates / מצב React עם localStorage (פרסום, שמירת הרשאות, «עדכן עכשיו»).
@@ -193,9 +186,6 @@ export function AppLayout({ children }: AppLayoutProps) {
     window.addEventListener(FLEET_PRO_ACK_VERSION_UPDATED_EVENT, onAckEvent);
     return () => window.removeEventListener(FLEET_PRO_ACK_VERSION_UPDATED_EVENT, onAckEvent);
   }, [isProduction]);
-
-  /** מוצג בכותרת — תמיד גרסת הבנדל מ־package.json (זהה לשורת «מידע מערכת») */
-  const headerDisplayVersion = useMemo(() => normalizeVersion(bundleVersion), [bundleVersion]);
 
   // When impersonating: active org must follow the impersonated user (not the logged-in admin's org).
   // רביד: תמיד VIEW_AS_RAVID_ORG_ID — לא מסתמכים על profile.org_id שעלול להצביע על הצי הראשי.
@@ -266,14 +256,6 @@ export function AppLayout({ children }: AppLayoutProps) {
   /** כולל נהג רועי בתצוגה כרביד — אחרת אין באנר יציאה והמנעול על org שלו נלחם ב-View-As. */
   const viewAsBannerVisible =
     Boolean(viewAsEmail) && (isMainAdmin || isRavid || isDriverRoei);
-  /** באנר staging מיני — גובה ~h-6 */
-  const headerStickyTopClass = showFleetEnvironmentBanner
-    ? viewAsBannerVisible
-      ? 'top-16'
-      : 'top-6'
-    : 'top-0';
-  const viewAsStickyTopClass = showFleetEnvironmentBanner ? 'top-6' : 'top-0';
-
   const mainFleetOrgId = useMemo(() => {
     const explicitMainFleet = memberOrganizations.find((o) => o.id === FALLBACK_MAIN_FLEET_ORG_ID);
     if (explicitMainFleet) return explicitMainFleet.id;
@@ -952,9 +934,6 @@ export function AppLayout({ children }: AppLayoutProps) {
           {t('navigation.fleetManager')}
         </span>
         <span className="hidden truncate text-[10px] text-cyan-400/55 md:block">{orgName || 'הצי הראשי - רועי'}</span>
-        <span className="hidden items-baseline gap-1 text-xs font-medium text-white/65 md:flex">
-          <span className="min-w-0 truncate">גרסה v{headerDisplayVersion}</span>
-        </span>
       </div>
     </div>
   );
@@ -1067,39 +1046,11 @@ export function AppLayout({ children }: AppLayoutProps) {
   };
 
   return (
-    <div
-      className={cn(
-        'flex min-h-[100dvh] flex-col overflow-x-hidden bg-[#020617]',
-        showFleetEnvironmentBanner && 'pt-6'
-      )}
-      dir={isRtl ? 'rtl' : 'ltr'}
-    >
-      {fleetEnvBannerKind === 'staging' ? (
-        <div
-          className="fixed left-0 right-0 top-0 z-[999] flex h-6 min-h-[1.5rem] items-center justify-center border-b border-red-500/45 bg-red-600 px-2 py-0.5 text-center"
-          role="banner"
-          aria-label="סביבת טסט"
-        >
-          <span className="text-[10px] font-semibold leading-tight tracking-wide text-white sm:text-[11px]">
-            סביבת טסט · גרסת בדיקה · Staging
-          </span>
-        </div>
-      ) : fleetEnvBannerKind === 'production-local' ? (
-        <div
-          className="fixed left-0 right-0 top-0 z-[999] flex h-6 min-h-[1.5rem] items-center justify-center border-b border-emerald-600/50 bg-emerald-900/95 px-2 py-0.5 text-center"
-          role="banner"
-          aria-label="גרסת עבודה"
-        >
-          <span className="text-[10px] font-semibold leading-tight tracking-wide text-emerald-50 sm:text-[11px]">
-            גרסת עבודה · נתוני ייצור · Production DB
-          </span>
-        </div>
-      ) : null}
+    <div className="flex min-h-[100dvh] flex-col overflow-x-hidden bg-[#020617]" dir={isRtl ? 'rtl' : 'ltr'}>
       {viewAsBannerVisible && (
         <div
           className={cn(
-            'sticky z-[70] w-full bg-amber-500 text-black shadow-md pointer-events-auto',
-            viewAsStickyTopClass
+            'sticky top-0 z-[70] w-full bg-amber-500 text-black shadow-md pointer-events-auto'
           )}
         >
           <div className="mx-auto flex max-w-[1920px] items-center justify-between gap-2 px-3 py-1 text-[11px] sm:text-xs sm:px-4 pointer-events-auto">
@@ -1123,8 +1074,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       )}
       <header
         className={cn(
-          'sticky z-40 border-b border-white/10 bg-[#0d1b2e] min-h-0 md:h-auto md:border-gray-800',
-          headerStickyTopClass
+          'sticky top-0 z-40 border-b border-white/10 bg-[#0d1b2e] min-h-0 md:h-auto md:border-gray-800'
         )}
       >
         {/* דסקטופ (md+): שתי שורות — (כלים+משתמש / מותג) ואז ניווט מרכזי */}

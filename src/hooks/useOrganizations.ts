@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client'; // single auth-aware client (anon key + user JWT when signed in)
+import { isLikelyUuid } from '@/lib/fleetUuid';
 import type { Organization } from '@/types/fleet';
 
 export interface OrganizationWithUserCount extends Organization {
@@ -9,33 +10,30 @@ export interface OrganizationWithUserCount extends Organization {
 export function useOrganization(orgId?: string | null) {
   return useQuery({
     queryKey: ['organization', orgId ?? null],
-    enabled: !!orgId,
+    enabled: !!orgId && isLikelyUuid(orgId),
+    /** בקשות שנכשלות בגלל עמודות / id — לא לחזור שלוש פעמים (ברירת מחדל TanStack). */
+    retry: false,
+    refetchOnWindowFocus: false,
+    staleTime: 60_000,
     queryFn: async (): Promise<Organization | null> => {
       if (!orgId) return null;
+      const id = orgId.trim();
+      if (!isLikelyUuid(id)) return null;
 
-      // `email` — בפרו ייתכן עמודה חסרה → PostgREST 400; נופלים ל־id,name בלבד
-      const full = await supabase
-        .from('organizations')
-        .select('id, name, email')
-        .eq('id', orgId)
-        .maybeSingle();
-
-      if (!full.error) {
-        return (full.data ?? null) as Organization | null;
-      }
-
-      const msg = String((full.error as { message?: string }).message ?? '');
-      const code = String((full.error as { code?: string }).code ?? '');
-      const missingColumn =
-        code === '42703' ||
-        /column|does not exist|schema cache|Could not find the/i.test(msg);
-
-      if (!missingColumn) throw full.error;
-
-      const slim = await supabase.from('organizations').select('id, name').eq('id', orgId).maybeSingle();
+      // תמיד `id, name` קודם — `email` חסר בחלק מה-DB גורם ל-400 על select מפורש
+      const slim = await supabase.from('organizations').select('id, name').eq('id', id).maybeSingle();
       if (slim.error) throw slim.error;
       const row = slim.data as { id: string; name: string } | null;
-      return row ? { ...row, email: null } : null;
+      if (!row) return null;
+
+      let email: string | null = null;
+      const emailRes = await supabase.from('organizations').select('email').eq('id', id).maybeSingle();
+      if (!emailRes.error && emailRes.data != null) {
+        const e = (emailRes.data as { email?: string | null }).email;
+        email = typeof e === 'string' ? e : null;
+      }
+
+      return { ...row, email };
     },
   });
 }
