@@ -7,6 +7,7 @@ import { isFleetBootstrapOwnerEmail, RAVID_MANAGER_EMAIL, resolveSessionEmail } 
 import { FALLBACK_MAIN_FLEET_ORG_ID, RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 import { isLikelyUuid } from '@/lib/fleetUuid';
 import { clearFleetProUpdateModalSuppressFlag } from '@/lib/pwaUpdateModalBridge';
+import { readViewAsActiveFromSession, setViewAsActiveSession } from '@/lib/viewAsSessionBridge';
 
 const ACTIVE_ORG_STORAGE_KEY = 'fleet-manager-active-org';
 
@@ -515,6 +516,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (memberOrganizations.length === 0) return;
     const known = memberOrganizations.some((o) => o.id === activeOrgId);
     if (known) return;
+    if (readViewAsActiveFromSession()) return;
     const preferredId = resolveProfileOrgIdForActiveSession(profile, user);
     const preferred =
       preferredId && memberOrganizations.some((o) => o.id === preferredId)
@@ -607,6 +609,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     try {
       sessionStorage.removeItem('fleet-version-heartbeat');
+      setViewAsActiveSession(false);
     } catch {
       // ignore
     }

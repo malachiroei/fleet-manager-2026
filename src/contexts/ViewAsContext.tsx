@@ -6,6 +6,7 @@ import type { Profile } from '@/types/fleet';
 import { RAVID_MANAGER_EMAIL, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
 import { RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 import { invalidateFleetScopedQueries } from '@/lib/invalidateFleetQueryScope';
+import { setViewAsActiveSession } from '@/lib/viewAsSessionBridge';
 
 interface ViewAsContextValue {
   viewAsEmail: string | null;
@@ -27,6 +28,11 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
   const prevNormalizedViewAsRef = useRef<string | null>(null);
 
   const normalizedEmail = useMemo(() => (viewAsEmail ?? '').trim().toLowerCase(), [viewAsEmail]);
+
+  /** מאפשר ל־useAuth לדלג על כפיית org לפי חברות המנהל בזמן תצוגה כמשתמש אחר. */
+  useEffect(() => {
+    setViewAsActiveSession(Boolean((viewAsEmail ?? '').trim()));
+  }, [viewAsEmail]);
 
   /**
    * מעבר View-As — רענון ממוקד (לא `clear()`): `clear` גרם לכל ה-hooks לשלוף בבת אחת
