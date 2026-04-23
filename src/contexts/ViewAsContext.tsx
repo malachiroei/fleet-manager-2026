@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import type { Profile } from '@/types/fleet';
 import { RAVID_MANAGER_EMAIL, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
 import { RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
+import { invalidateFleetScopedQueries } from '@/lib/invalidateFleetQueryScope';
 
 interface ViewAsContextValue {
   viewAsEmail: string | null;
@@ -27,7 +28,10 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
 
   const normalizedEmail = useMemo(() => (viewAsEmail ?? '').trim().toLowerCase(), [viewAsEmail]);
 
-  /** מעבר View-As — ניקוי מטמון React Query כדי שלא יישארו נתוני משתמש קודם / org קודם */
+  /**
+   * מעבר View-As — רענון ממוקד (לא `clear()`): `clear` גרם לכל ה-hooks לשלוף בבת אחת
+   * ול־ERR_INSUFFICIENT_RESOURCES / ריצוד כש־activeOrgId התנגש עם אפקט «ארגון יחיד» ב-useAuth.
+   */
   useEffect(() => {
     const next = normalizedEmail || null;
     if (!viewAsEmailInitRef.current) {
@@ -37,7 +41,7 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
     }
     if (prevNormalizedViewAsRef.current === next) return;
     prevNormalizedViewAsRef.current = next;
-    queryClient.clear();
+    invalidateFleetScopedQueries(queryClient);
   }, [normalizedEmail, queryClient]);
 
   useEffect(() => {

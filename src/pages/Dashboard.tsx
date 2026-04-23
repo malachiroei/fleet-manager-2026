@@ -32,6 +32,7 @@ import {
   ClipboardList,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { invalidateFleetScopedQueries } from '@/lib/invalidateFleetQueryScope';
 import { toast } from 'sonner';
 
 const statusCardConfig: Array<{
@@ -183,11 +184,7 @@ export default function Dashboard() {
     const key = `${activeOrgId ?? ''}|${(viewAsEmail ?? '').trim()}`;
     if (scopeRefreshKeyRef.current === key) return;
     scopeRefreshKeyRef.current = key;
-    void queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
-    void queryClient.invalidateQueries({ queryKey: ['compliance-alerts'] });
-    void queryClient.invalidateQueries({ queryKey: ['vehicles'] });
-    void queryClient.invalidateQueries({ queryKey: ['drivers'] });
-    void queryClient.invalidateQueries({ queryKey: ['feature-flags'] });
+    invalidateFleetScopedQueries(queryClient);
   }, [activeOrgId, viewAsEmail, queryClient]);
 
   const email = user?.email || '';

@@ -537,7 +537,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setActiveOrgId(pid);
   }, [user, profile, activeOrgId, memberOrganizations, setActiveOrgId]);
 
-  /** משתמש עם חברות בארגון יחיד — תמיד לסנכרן (אחרי עדכון רשימה / View-As יוצא). */
+  /**
+   * משתמש עם חברות בארגון יחיד — מסנכרן localStorage / active שגוי.
+   * לא כופים כש־activeOrgId שייך לארגון שלא ברשימה (למשל תצוגה כמשתמש אחר — ארגון המוחלף).
+   */
   useEffect(() => {
     if (!user?.id) return;
     if (memberOrganizations.length !== 1) return;
@@ -545,6 +548,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!onlyId) return;
     if (activeOrgId === onlyId) return;
     if (activeOrgId === RAVID_FLEET_ORG_ID) return;
+    if (activeOrgId && !memberOrganizations.some((o) => o.id === activeOrgId)) return;
     setActiveOrgId(onlyId);
   }, [user?.id, memberOrganizations, activeOrgId, setActiveOrgId]);
 
