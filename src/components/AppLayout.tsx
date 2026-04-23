@@ -1020,23 +1020,22 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   const BackButton = () => {
     const handleBack = () => {
-      // ניווט "אחורה" לנתיב האחרון ששמור בקונטקסט, עם טעינה מלאה כדי למנוע תקיעות
+      const here = `${location.pathname}${location.search}`;
       const last = getLastPath();
-      const targetPath =
-        last && last !== `${location.pathname}${location.search}` ? last : '/';
-      const fullUrl = targetPath.startsWith('http')
-        ? targetPath
-        : `${window.location.origin}${
-            targetPath.startsWith('/') ? '' : '/'
-          }${targetPath}`;
-      window.location.assign(fullUrl);
+      if (last && last !== here) {
+        void navigate(last);
+        return;
+      }
+      // אין last (למשל טאב חדש) — חזרה למסך ראשי במקום assign מלא שעלול להרגיש כמו "ללא תגובה"
+      void navigate('/');
     };
 
     return (
       <button
         type="button"
         onClick={handleBack}
-        className="inline-flex items-center gap-1 rounded-full bg-black/40 px-3 py-1 text-xs text-white/80 hover:bg-black/60 hover:text-white transition-colors"
+        className="relative z-20 inline-flex cursor-pointer items-center gap-1 rounded-full bg-black/40 px-3 py-1 text-xs text-white/80 hover:bg-black/60 hover:text-white transition-colors touch-manipulation"
+        style={{ touchAction: 'manipulation' }}
       >
         {/* ב־RTL חץ לימין הוא חזור אחורה */}
         <ArrowRight className="h-3.5 w-3.5" />
@@ -1147,7 +1146,12 @@ export function AppLayout({ children }: AppLayoutProps) {
         ) : (
           <>
             {location.pathname !== '/' && (
-              <div className={cn('mb-4 flex', isRtl ? 'justify-start' : 'justify-end')}>
+              <div
+                className={cn(
+                  'relative z-20 mb-4 flex pointer-events-auto',
+                  isRtl ? 'justify-start' : 'justify-end'
+                )}
+              >
                 <BackButton />
               </div>
             )}

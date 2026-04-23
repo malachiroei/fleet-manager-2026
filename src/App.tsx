@@ -93,11 +93,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
     return <Navigate to="/auth" replace />;
   }
 
-  return (
-    <VehicleSpecDirtyProvider>
-      <AppLayout>{children}</AppLayout>
-    </VehicleSpecDirtyProvider>
-  );
+  return <AppLayout>{children}</AppLayout>;
 }
 
 function AuthRoute({ children }: { children: ReactNode }) {
@@ -191,15 +187,18 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <ViewAsProvider>
-            <AppErrorBoundary>
-              <div className="flex min-h-screen flex-col">
-                <div className="flex-1">
-                  <AppRoutes />
+            {/* מופע יחיד — כדי ש-getLastPath ישרוד מעבר בין Routes (אחרת כל ProtectedRoute מאפס את lastPathRef). */}
+            <VehicleSpecDirtyProvider>
+              <AppErrorBoundary>
+                <div className="flex min-h-screen flex-col">
+                  <div className="flex-1">
+                    <AppRoutes />
+                  </div>
+                  <UpdateModal />
+                  <Footer />
                 </div>
-                <UpdateModal />
-                <Footer />
-              </div>
-            </AppErrorBoundary>
+              </AppErrorBoundary>
+            </VehicleSpecDirtyProvider>
           </ViewAsProvider>
         </AuthProvider>
       </BrowserRouter>
