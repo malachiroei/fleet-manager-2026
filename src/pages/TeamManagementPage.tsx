@@ -13,6 +13,7 @@ import { useViewAs } from '@/contexts/ViewAsContext';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
 import { getDefaultPermissions } from '@/lib/permissions';
 import { isRavidManagerEmail } from '@/lib/fleetBootstrapEmails';
+import { isSuperAdminPermissionBypass } from '@/lib/allowedFeatures';
 import {
   buildReleaseSnapshotPayload,
   downloadReleaseSnapshotJson,
@@ -116,7 +117,8 @@ export default function TeamManagementPage() {
   /** הסרה: מנהל ארגון; בתצוגת סופר־אדמין — רק מלכי (לפי שורה org_id). */
   const canRemoveTeamMemberRow = canManageTeam && (isSuperAdminTeamView ? isRoeiAdmin : Boolean(orgId));
   const tableColCount = (showSensitiveColumns ? 5 : 4) + (canRemoveTeamMemberRow ? 1 : 0);
-  const canManageGlobalFeatures = isRoeiAdmin || hasPermission('manage_team') || isAdmin || isManager;
+  /** פאנל פיצ'רים גלובליים — רק מנהל-העל (לא כל אדמין ארגון) */
+  const canManageGlobalFeatures = isRoeiAdmin || isSuperAdminPermissionBypass(profile);
 
   if (!canManageTeam) {
     return <Navigate to="/" replace />;

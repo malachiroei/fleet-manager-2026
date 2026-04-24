@@ -1,7 +1,7 @@
 import { ReactNode } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { canAccessRouteWithAllowedFeatures, isSuperAdminPermissionBypass } from '@/lib/allowedFeatures';
-import { isFleetBootstrapOwnerEmail, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
+import { isPlatformSuperOwnerEmail, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
 import type { PermissionKey } from '@/lib/permissions';
 
 interface PermissionGuardProps {
@@ -28,7 +28,8 @@ export function PermissionGuard({ permission, children }: PermissionGuardProps) 
     return <>{children}</>;
   }
   const sessionEmail = resolveSessionEmail(profile, user);
-  if (isFleetBootstrapOwnerEmail(sessionEmail)) {
+  /** רק חשבון על — לא מנהלי ארגון (למשל רביד) שקיבלו בעבר את אותו bypass בטעות */
+  if (isPlatformSuperOwnerEmail(sessionEmail)) {
     return <>{children}</>;
   }
 

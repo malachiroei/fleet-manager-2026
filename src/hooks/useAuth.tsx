@@ -5,6 +5,7 @@ import type { AppRole, Profile } from '@/types/fleet';
 import { hasPermission as checkPermission, type PermissionKey } from '@/lib/permissions';
 import {
   isFleetBootstrapOwnerEmail,
+  isPlatformSuperOwnerEmail,
   isRavidManagerEmail,
   resolveSessionEmail,
   ROEIMA21_FLEET_USER_EMAIL,
@@ -499,7 +500,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
      * לא לבחור את הצי הראשי רק כי הוא עדיין ב־org_members (למשל לפני ניקוי כפילות ב-DB).
      */
     if (
-      !isFleetBootstrapOwnerEmail(sessionEmailForOrg) &&
+      !isPlatformSuperOwnerEmail(sessionEmailForOrg) &&
       profileInMembers &&
       profileOrgIdForActive &&
       profileOrgIdForActive !== FALLBACK_MAIN_FLEET_ORG_ID &&
@@ -583,7 +584,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!user || !profile) return;
     if (readViewAsActiveFromSession()) return;
     const sessionEmail = resolveSessionEmail(profile, user);
-    if (isFleetBootstrapOwnerEmail(sessionEmail)) return;
+    if (isPlatformSuperOwnerEmail(sessionEmail)) return;
     const pid = resolveProfileOrgIdForActiveSession(profile, user);
     if (!pid || pid === FALLBACK_MAIN_FLEET_ORG_ID) return;
     if (activeOrgId !== FALLBACK_MAIN_FLEET_ORG_ID) return;

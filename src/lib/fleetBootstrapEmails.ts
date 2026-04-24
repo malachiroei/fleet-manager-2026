@@ -1,5 +1,5 @@
-/** מיילים שמקבלים הרשאות מנהל מלאות גם כש־user_roles ריק (סנכרון פרו / RLS). */
-const OWNERS = ['malachiroei@gmail.com', 'ravidmalachi@gmail.com', 'ravid.malachi@gmail.com'] as const;
+/** חשבון על (מנהל פלטפורמה) — יחיד; אין לוותר עליו עם אימיילים של מנהלי ארגון. */
+export const PLATFORM_SUPER_OWNER_EMAIL = 'malachiroei@gmail.com';
 
 /** מנהל צי — תצוגה כמשתמש / ארגון נפרד מהצי הראשי */
 export const RAVID_MANAGER_EMAIL = 'ravidmalachi@gmail.com';
@@ -29,9 +29,31 @@ export function resolveSessionEmail(
   return (u ?? '').toLowerCase();
 }
 
-export function isFleetBootstrapOwnerEmail(email: string | null | undefined): boolean {
+/** true רק ל־malachiroei@gmail.com — גישה בין-ארגונית / צי ראשי / דשבורד גלובלי. */
+export function isPlatformSuperOwnerEmail(email: string | null | undefined): boolean {
   const e = String(email ?? '')
     .trim()
     .toLowerCase();
-  return (OWNERS as readonly string[]).includes(e);
+  return e === PLATFORM_SUPER_OWNER_EMAIL.toLowerCase();
+}
+
+/**
+ * מנהלי ארגון ידועים: כש־`user_roles` ריק בפרו — עדיין לטפל כ־admin בארגון שלהם,
+ * בלי לקבל את אותן הרחאות «חשבון על» (PermissionGuard, צי ראשי של מישהו אחר).
+ */
+const ORG_ADMIN_FALLBACK_EMAILS = ['ravidmalachi@gmail.com', 'ravid.malachi@gmail.com'] as const;
+
+export function isFleetOrgAdminFallbackEmail(email: string | null | undefined): boolean {
+  const e = String(email ?? '')
+    .trim()
+    .toLowerCase();
+  return (ORG_ADMIN_FALLBACK_EMAILS as readonly string[]).includes(e);
+}
+
+/**
+ * @deprecated העדיפו `isPlatformSuperOwnerEmail` / `isFleetOrgAdminFallbackEmail` לפי הקשר.
+ * איחוד ישן: «בעלי bootstrap» — כיום רק לשימור תאימות ב־useAuth (isAdminEffective).
+ */
+export function isFleetBootstrapOwnerEmail(email: string | null | undefined): boolean {
+  return isPlatformSuperOwnerEmail(email) || isFleetOrgAdminFallbackEmail(email);
 }

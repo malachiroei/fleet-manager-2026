@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useViewAs } from '@/contexts/ViewAsContext';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
-import { isFleetBootstrapOwnerEmail, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
+import { isPlatformSuperOwnerEmail, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
 import { fleetManagerVisibilityOrFilter } from '@/lib/fleetManagerScope';
 
 const COMPLIANCE_IN_CHUNK = 80;
@@ -272,12 +272,12 @@ export function useDashboardStats() {
       }
 
       const normalizedEmail = resolveSessionEmail(profile, user);
-      /** כמו useAuth — שניהם רואים fallback גלובלי כשהארגון הפעיל ריק */
-      const isFleetBootstrapOwner = isFleetBootstrapOwnerEmail(normalizedEmail);
+      /** ספירה גלובלית רק לחשבון על — לא למנהלי ארגון */
+      const isPlatformSuperOwner = isPlatformSuperOwnerEmail(normalizedEmail);
 
-      /** בלי org (פרו/RLS) — רק בעלי bootstrap: ספירה גלובלית */
+      /** בלי org (פרו/RLS) — רק חשבון על */
       if (!effectiveOrgId) {
-        if (!isFleetBootstrapOwner) {
+        if (!isPlatformSuperOwner) {
           return { totalVehicles: 0, totalDrivers: 0, alertsCount: 0, warningCount: 0, expiredCount: 0 };
         }
         const [gv, gd] = await Promise.all([
@@ -328,9 +328,9 @@ export function useDashboardStats() {
         vehiclesCount = (vRows ?? []).length;
         driversCount = (dRows ?? []).length;
 
-        // Owner fallback: אם הארגון ריק — ספירה גלובלית (לא בתצוגת משתמש / impersonation).
+        // רק חשבון על: ארגון ריק — ספירה גלובלית (לא בתצוגת משתמש / impersonation).
         if (
-          isFleetBootstrapOwner &&
+          isPlatformSuperOwner &&
           !viewAsEmail?.trim() &&
           !isImpersonating &&
           vehiclesCount === 0 &&

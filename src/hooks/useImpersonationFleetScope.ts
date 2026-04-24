@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useViewAs } from '@/contexts/ViewAsContext';
-import { isFleetBootstrapOwnerEmail, resolveSessionEmail, RAVID_MANAGER_EMAIL } from '@/lib/fleetBootstrapEmails';
+import { isPlatformSuperOwnerEmail, resolveSessionEmail, RAVID_MANAGER_EMAIL } from '@/lib/fleetBootstrapEmails';
 import { FALLBACK_MAIN_FLEET_ORG_ID, RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 
 /**
@@ -51,14 +51,13 @@ export function useImpersonationFleetScope() {
   ) as string | null;
   /** בלי org בפרופיל/מחליף — בעלי bootstrap נופלים לצי הראשי הידוע (אותו UUID כמו במחליף) */
   const effectiveOrgId =
-    orgFromContext ??
-    (isFleetBootstrapOwnerEmail(sessionEmail) ? FALLBACK_MAIN_FLEET_ORG_ID : null);
+    orgFromContext ?? (isPlatformSuperOwnerEmail(sessionEmail) ? FALLBACK_MAIN_FLEET_ORG_ID : null);
 
   const effectiveUserId = (impersonatedUserId ?? user?.id ?? null) as string | null;
 
   /** בעלי צי ידועים: בלי impersonation מלא (או בלי באנר) — אפשר מסלול בלי org ב-query enable */
   const bootstrapOwnerMayLackOrg =
-    isFleetBootstrapOwnerEmail(sessionEmail) && !isImpersonating && !viewAsBannerActive;
+    isPlatformSuperOwnerEmail(sessionEmail) && !isImpersonating && !viewAsBannerActive;
 
   const rolesQuery = useQuery({
     queryKey: ['view-as-target-roles', effectiveUserId, isImpersonating],

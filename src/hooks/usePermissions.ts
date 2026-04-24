@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { isFeatureEnabled, useFeatureFlags } from '@/hooks/useFeatureFlags';
 import type { PermissionKey } from '@/lib/permissions';
-import { isFleetBootstrapOwnerEmail, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
+import { isPlatformSuperOwnerEmail, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
 
 /**
  * Unified permissions gate for UI sections.
@@ -16,7 +16,7 @@ export function usePermissions() {
   const { user, profile, hasPermission } = useAuth();
   const { data: featureFlags } = useFeatureFlags();
   const email = resolveSessionEmail(profile, user);
-  const isSuperAdmin = isFleetBootstrapOwnerEmail(email);
+  const isSuperAdmin = isPlatformSuperOwnerEmail(email);
 
   const canAccessPermission = useCallback(
     (permission?: PermissionKey) => {

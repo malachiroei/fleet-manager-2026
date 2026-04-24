@@ -31,12 +31,14 @@ import {
 import { isFleetManagerProHostname } from '@/lib/versionManifest';
 import {
   isFleetBootstrapOwnerEmail,
+  isPlatformSuperOwnerEmail,
   isRavidManagerEmail,
   resolveSessionEmail,
   RAVID_MANAGER_EMAIL,
   ROEIMA21_FLEET_USER_EMAIL,
 } from '@/lib/fleetBootstrapEmails';
 import { FALLBACK_MAIN_FLEET_ORG_ID, RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
+import { isSuperAdminPermissionBypass } from '@/lib/allowedFeatures';
 import type { TeamMemberSummary } from '@/hooks/useTeam';
 
 /** קישור מנהל ראשי ↔ מנהל צי ↔ נהג — כש־RLS לא מחזיר את כל ה־profiles במחליף */
@@ -161,6 +163,12 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { data: teamMembers = [] } = useTeamMembersForSwitcher(activeOrgId ?? null as any);
   const { viewAsEmail, setViewAsEmail, viewAsProfile } = useViewAs();
 
+  /** בלי דליפת «צי ראשי» / ארגון מנהל-העל למשתמשים שאינם מנהל-העל */
+  const memberOrgsForSwitcher = useMemo(() => {
+    if (isSuperAdminPermissionBypass(profile)) return memberOrganizations;
+    return memberOrganizations.filter((o) => o.id !== FALLBACK_MAIN_FLEET_ORG_ID);
+  }, [memberOrganizations, profile]);
+
   /** קיר קשיח ייצור: fleet-manager-pro.com + www (גרסה בכותרת וכו') */
   const isProduction = isFleetManagerProHostname();
   /**
@@ -250,6 +258,8 @@ export function AppLayout({ children }: AppLayoutProps) {
   ]);
 
   const isMainAdmin = email === MAIN_ADMIN_SWITCHER_EMAIL;
+  /** תצוגה כחבר צוות — רק למי שמנהל צוות או למנהל-העל */
+  const canViewAsTeamMembers = isMainAdmin || hasPermission('manage_team');
   const canManageTeamUi = isMainAdmin || hasPermission('manage_team') || isOrgAdminOrManager;
   const canManageOrgUi = isMainAdmin || hasPermission('admin_access') || isOrgAdminOrManager;
 
@@ -302,9 +312,9 @@ export function AppLayout({ children }: AppLayoutProps) {
     }
   }, [isRavid, viewAsEmail, ravidLockedTargetOrgId, activeOrgId, setActiveOrgId]);
 
-  /** bootstrap בלי org בפרופיל — מסנכרן מחליף ורשימת צוות ל־UUID הצי הראשי */
+  /** bootstrap בלי org בפרופיל — רק חשבון על: UUID הצי הראשי */
   useEffect(() => {
-    if (!isFleetBootstrapOwnerEmail(resolveSessionEmail(profile, user))) return;
+    if (!isPlatformSuperOwnerEmail(resolveSessionEmail(profile, user))) return;
     if (viewAsEmail) return;
     if (activeOrgId) return;
     setActiveOrgId(mainFleetOrgId ?? FALLBACK_MAIN_FLEET_ORG_ID);
@@ -393,17 +403,19 @@ export function AppLayout({ children }: AppLayoutProps) {
     // ארגונים זמינים (כמו ב-OrgSwitcher)
     const orgItems = isMainAdmin
       ? (mainFleetOrgId ? memberOrganizations.filter((org) => org.id === mainFleetOrgId) : memberOrganizations)
-      : memberOrganizations;
+      : memberOrgsForSwitcher;
 
     // חברי צוות זמינים (אותה לוגיקה כמו OrgSwitcher)
-    const mobileMembers = augmentSwitcherMembers(teamMembers, {
-      selfEmail: email,
-      isMainAdmin,
-      isRavid,
-      activeOrgId,
-      mainFleetOrgId,
-      profileOrgId: profile?.org_id,
-    });
+    const mobileMembers = canViewAsTeamMembers
+      ? augmentSwitcherMembers(teamMembers, {
+          selfEmail: email,
+          isMainAdmin,
+          isRavid,
+          activeOrgId,
+          mainFleetOrgId,
+          profileOrgId: profile?.org_id,
+        })
+      : [];
 
   return (
       <DropdownMenu>
@@ -547,20 +559,22 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   const OrgSwitcher = () => {
     // אם אין ארגונים משויכים בכלל, נסתיר רק למשתמשים רגילים – אבל לא למנהל הראשי ולא לרביד
-    if (memberOrganizations.length === 0 && !isMainAdmin && !isRavid) return null;
+    if (memberOrgsForSwitcher.length === 0 && !isMainAdmin && !isRavid) return null;
     // For the org list at the top: for main admin, prefer only the primary org "רביד צי רכבים"
     const orgItems = isMainAdmin
       ? (mainFleetOrgId ? memberOrganizations.filter((org) => org.id === mainFleetOrgId) : memberOrganizations)
-      : memberOrganizations;
+      : memberOrgsForSwitcher;
 
-    const visibleMembers = augmentSwitcherMembers(teamMembers, {
-      selfEmail: email,
-      isMainAdmin,
-      isRavid,
-      activeOrgId,
-      mainFleetOrgId,
-      profileOrgId: profile?.org_id,
-    });
+    const visibleMembers = canViewAsTeamMembers
+      ? augmentSwitcherMembers(teamMembers, {
+          selfEmail: email,
+          isMainAdmin,
+          isRavid,
+          activeOrgId,
+          mainFleetOrgId,
+          profileOrgId: profile?.org_id,
+        })
+      : [];
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
