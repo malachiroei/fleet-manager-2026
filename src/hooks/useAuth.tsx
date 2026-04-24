@@ -527,17 +527,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user, profile, activeOrgId, memberOrganizations, setActiveOrgId]);
 
-  /** מצב שבו `activeOrgId` כבר הוגדר לצי הראשי אבל הפרופיל והחברות מצביעים על ארגון אחר (אחרי תיקון DB). */
+  /**
+   * `activeOrgId` על צי ראשי (localStorage) אבל `profiles.org_id` כבר ארגון אחר — למשל כש־RLS על org_members
+   * לא מחזיר את הארגון החדש ו־`profileInMembers` נכשל באתחול הראשי.
+   */
   useEffect(() => {
     if (!user || !profile) return;
+    if (readViewAsActiveFromSession()) return;
     const sessionEmail = resolveSessionEmail(profile, user);
     if (isFleetBootstrapOwnerEmail(sessionEmail)) return;
     const pid = resolveProfileOrgIdForActiveSession(profile, user);
     if (!pid || pid === FALLBACK_MAIN_FLEET_ORG_ID) return;
-    if (!memberOrganizations.some((o) => o.id === pid)) return;
     if (activeOrgId !== FALLBACK_MAIN_FLEET_ORG_ID) return;
     setActiveOrgId(pid);
-  }, [user, profile, activeOrgId, memberOrganizations, setActiveOrgId]);
+  }, [user, profile, activeOrgId, setActiveOrgId]);
 
   /**
    * משתמש עם חברות בארגון יחיד — מסנכרן localStorage / active שגוי.

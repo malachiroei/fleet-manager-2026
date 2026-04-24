@@ -179,12 +179,25 @@ export default function Dashboard() {
   const isInitialUiLoading = loading || flagsPending;
 
   const scopeRefreshKeyRef = useRef<string | null>(null);
+  const scopeInvalidateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!activeOrgId && !viewAsEmail?.trim()) return;
     const key = `${activeOrgId ?? ''}|${(viewAsEmail ?? '').trim()}`;
     if (scopeRefreshKeyRef.current === key) return;
     scopeRefreshKeyRef.current = key;
-    invalidateFleetScopedQueries(queryClient);
+    if (scopeInvalidateTimerRef.current != null) {
+      clearTimeout(scopeInvalidateTimerRef.current);
+    }
+    scopeInvalidateTimerRef.current = window.setTimeout(() => {
+      scopeInvalidateTimerRef.current = null;
+      invalidateFleetScopedQueries(queryClient);
+    }, 160);
+    return () => {
+      if (scopeInvalidateTimerRef.current != null) {
+        clearTimeout(scopeInvalidateTimerRef.current);
+        scopeInvalidateTimerRef.current = null;
+      }
+    };
   }, [activeOrgId, viewAsEmail, queryClient]);
 
   const email = user?.email || '';
