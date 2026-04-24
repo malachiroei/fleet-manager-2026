@@ -8,7 +8,6 @@ import {
   isPlatformSuperOwnerEmail,
   isRavidManagerEmail,
   resolveSessionEmail,
-  ROEIMA21_FLEET_USER_EMAIL,
 } from '@/lib/fleetBootstrapEmails';
 import { FALLBACK_MAIN_FLEET_ORG_ID, RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 import { isLikelyUuid } from '@/lib/fleetUuid';
@@ -464,20 +463,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const storedTrim = (stored ?? '').trim();
 
-    /**
-     * ROEIMA21: `profiles.org_id` מה-DB הוא מקור האמת — לפני localStorage ולפני ענף «ארגון יחיד»
-     * (שהיה עלול לבחור את צי הראשי אם RLS החזיר רק שורה אחת שם).
-     */
-    if (
-      sessionEmailForOrg === ROEIMA21_FLEET_USER_EMAIL &&
-      profileOrgIdForActive &&
-      isLikelyUuid(profileOrgIdForActive)
-    ) {
-      activeOrgInitializedRef.current = true;
-      setActiveOrgId(profileOrgIdForActive);
-      return;
-    }
-
     activeOrgInitializedRef.current = true;
 
     /** חברות יחידה — תמיד הארגון הזה (מנקה localStorage ישן / UUID של צי ראשי). */
@@ -529,17 +514,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user, profile, memberOrganizations, profile?.org_id, setActiveOrgId]);
 
-  /** כפייה מתמשכת ל־ROEIMA21 אחרי עדכון פרופיל (Realtime) או אם האתחול הראשון דילג. */
-  useEffect(() => {
-    if (!user || !profile) return;
-    if (readViewAsActiveFromSession()) return;
-    if (resolveSessionEmail(profile, user) !== ROEIMA21_FLEET_USER_EMAIL) return;
-    const oid = resolveProfileOrgIdForActiveSession(profile, user);
-    if (!oid || !isLikelyUuid(oid)) return;
-    if (activeOrgId === oid) return;
-    setActiveOrgId(oid);
-  }, [user, profile, profile?.org_id, activeOrgId, setActiveOrgId]);
-
   /**
    * אחרי שינוי `org_members` / `profiles.org_id` בשרת — הרשימה בזיכרון מתעדכנת אבל `activeOrgId` עלול
    * להישאר על ארגון שהמשתמש כבר לא חבר בו (localStorage + רשימה ישנה לפני Realtime).
@@ -559,18 +533,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ) {
       return;
     }
-    const sessionEmail = resolveSessionEmail(profile, user);
-    const roeimaTrustProfileOffList =
-      sessionEmail === ROEIMA21_FLEET_USER_EMAIL &&
-      preferredId &&
-      isLikelyUuid(preferredId) &&
-      !memberOrganizations.some((o) => o.id === preferredId);
     const preferred =
       preferredId && memberOrganizations.some((o) => o.id === preferredId)
         ? preferredId
-        : roeimaTrustProfileOffList
-          ? preferredId
-          : memberOrganizations[0]?.id ?? null;
+        : memberOrganizations[0]?.id ?? null;
     if (preferred && preferred !== activeOrgId) {
       setActiveOrgId(preferred);
     }

@@ -237,7 +237,7 @@ export default function TeamManagementPage() {
                         const canOpenFeatureOverrides =
                           isRoeiAdmin ||
                           (memberEmail && memberEmail === viewerEmail) ||
-                          (isRavid && memberEmail === 'roeima21@gmail.com');
+                          (isRavid && canManageTeam && !isSelf);
                         const showRemoveForRow =
                           canRemoveTeamMemberRow &&
                           !isSelf &&

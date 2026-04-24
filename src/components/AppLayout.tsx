@@ -35,7 +35,6 @@ import {
   isRavidManagerEmail,
   resolveSessionEmail,
   RAVID_MANAGER_EMAIL,
-  ROEIMA21_FLEET_USER_EMAIL,
 } from '@/lib/fleetBootstrapEmails';
 import { FALLBACK_MAIN_FLEET_ORG_ID, RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 import { isSuperAdminPermissionBypass } from '@/lib/allowedFeatures';
@@ -97,20 +96,6 @@ function augmentSwitcherMembers(
         full_name: 'רביד מלחי',
         email: RAVID_MANAGER_EMAIL,
         org_id: orgForSyntheticRavid,
-        source: 'profile',
-      },
-    ];
-  }
-
-  const orgForRoei = opts.activeOrgId ?? opts.profileOrgId ?? null;
-  if (opts.isRavid && !visible.some((m) => m.email?.toLowerCase() === ROEIMA21_FLEET_USER_EMAIL)) {
-    visible = [
-      ...visible,
-      {
-        id: 'synthetic-roeima21',
-        full_name: 'רועי (נהג)',
-        email: ROEIMA21_FLEET_USER_EMAIL,
-        org_id: orgForRoei,
         source: 'profile',
       },
     ];
@@ -258,8 +243,12 @@ export function AppLayout({ children }: AppLayoutProps) {
   ]);
 
   const isMainAdmin = email === MAIN_ADMIN_SWITCHER_EMAIL;
-  /** תצוגה כחבר צוות — רק למי שמנהל צוות או למנהל-העל */
-  const canViewAsTeamMembers = isMainAdmin || hasPermission('manage_team');
+  /**
+   * תצוגה כחבר צוות — רק מנהל-העל או מנהל צי (admin / fleet_manager) עם manage_team.
+   * לא מספיק הרשאת manage_team בלבד (מוזמנים/נהגים לא יראו עמיתים כמו roeima / malachiroei1).
+   */
+  const canViewAsTeamMembers =
+    isMainAdmin || ((isAdmin || isManager) && hasPermission('manage_team'));
   const canManageTeamUi = isMainAdmin || hasPermission('manage_team') || isOrgAdminOrManager;
   const canManageOrgUi = isMainAdmin || hasPermission('admin_access') || isOrgAdminOrManager;
 

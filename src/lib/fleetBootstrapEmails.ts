@@ -12,9 +12,6 @@ export function isRavidManagerEmail(email: string | null | undefined): boolean {
   return e === 'ravidmalachi@gmail.com' || e === 'ravid.malachi@gmail.com';
 }
 
-/** צי משנה: כפיית `activeOrgId` ל־`profiles.org_id` (מעקף localStorage / org_members חלקי). */
-export const ROEIMA21_FLEET_USER_EMAIL = 'roeima21@gmail.com';
-
 /**
  * אימייל לזיהוי הרשאות: אם `profiles.email` ריק ב-DB, נופלים ל-auth.
  * (`profile?.email ?? user?.email` לא מספיק — מחרוזת ריקה לא מפעילה את ה-??.)
