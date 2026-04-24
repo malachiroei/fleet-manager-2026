@@ -29,13 +29,17 @@ import {
   FLEET_PRO_ACK_VERSION_UPDATED_EVENT,
 } from '@/constants/version';
 import { isFleetManagerProHostname } from '@/lib/versionManifest';
-import { isFleetBootstrapOwnerEmail, resolveSessionEmail, RAVID_MANAGER_EMAIL } from '@/lib/fleetBootstrapEmails';
+import {
+  isFleetBootstrapOwnerEmail,
+  resolveSessionEmail,
+  RAVID_MANAGER_EMAIL,
+  ROEIMA21_FLEET_USER_EMAIL,
+} from '@/lib/fleetBootstrapEmails';
 import { FALLBACK_MAIN_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 import type { TeamMemberSummary } from '@/hooks/useTeam';
 
 /** קישור מנהל ראשי ↔ מנהל צי ↔ נהג — כש־RLS לא מחזיר את כל ה־profiles במחליף */
 const MAIN_ADMIN_SWITCHER_EMAIL = 'malachiroei@gmail.com';
-const ROEI_DRIVER_EMAIL = 'roeima21@gmail.com';
 
 /** ארגון רביד בתצוגה כמשתמש — נעילה מפורשת (לא תלוי ב-profile.org_id של המנהל המחובר). */
 const VIEW_AS_RAVID_ORG_ID = '2bb0f9c3-b210-4099-b0c5-de92794d5cc9' as const;
@@ -102,7 +106,7 @@ function augmentSwitcherMembers(
       {
         id: 'synthetic-roeima21',
         full_name: 'רועי (נהג)',
-        email: ROEI_DRIVER_EMAIL,
+        email: ROEIMA21_FLEET_USER_EMAIL,
         org_id: orgForRoei,
         source: 'profile',
       },

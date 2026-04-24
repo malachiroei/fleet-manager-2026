@@ -4,6 +4,9 @@ const OWNERS = ['malachiroei@gmail.com', 'ravidmalachi@gmail.com'] as const;
 /** מנהל צי — תצוגה כמשתמש / ארגון נפרד מהצי הראשי */
 export const RAVID_MANAGER_EMAIL = 'ravidmalachi@gmail.com';
 
+/** צי משנה: כפיית `activeOrgId` ל־`profiles.org_id` (מעקף localStorage / org_members חלקי). */
+export const ROEIMA21_FLEET_USER_EMAIL = 'roeima21@gmail.com';
+
 /**
  * אימייל לזיהוי הרשאות: אם `profiles.email` ריק ב-DB, נופלים ל-auth.
  * (`profile?.email ?? user?.email` לא מספיק — מחרוזת ריקה לא מפעילה את ה-??.)

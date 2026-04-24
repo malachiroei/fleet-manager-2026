@@ -3,7 +3,12 @@ import { User, Session, type AuthChangeEvent } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import type { AppRole, Profile } from '@/types/fleet';
 import { hasPermission as checkPermission, type PermissionKey } from '@/lib/permissions';
-import { isFleetBootstrapOwnerEmail, RAVID_MANAGER_EMAIL, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
+import {
+  isFleetBootstrapOwnerEmail,
+  RAVID_MANAGER_EMAIL,
+  resolveSessionEmail,
+  ROEIMA21_FLEET_USER_EMAIL,
+} from '@/lib/fleetBootstrapEmails';
 import { FALLBACK_MAIN_FLEET_ORG_ID, RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 import { isLikelyUuid } from '@/lib/fleetUuid';
 import { clearFleetProUpdateModalSuppressFlag } from '@/lib/pwaUpdateModalBridge';
@@ -455,6 +460,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const storedTrim = (stored ?? '').trim();
 
+    /**
+     * ROEIMA21: `profiles.org_id` מה-DB הוא מקור האמת — לפני localStorage ולפני ענף «ארגון יחיד»
+     * (שהיה עלול לבחור את צי הראשי אם RLS החזיר רק שורה אחת שם).
+     */
+    if (
+      sessionEmailForOrg === ROEIMA21_FLEET_USER_EMAIL &&
+      profileOrgIdForActive &&
+      isLikelyUuid(profileOrgIdForActive)
+    ) {
+      activeOrgInitializedRef.current = true;
+      setActiveOrgId(profileOrgIdForActive);
+      return;
+    }
+
     activeOrgInitializedRef.current = true;
 
     /** חברות יחידה — תמיד הארגון הזה (מנקה localStorage ישן / UUID של צי ראשי). */
@@ -505,6 +524,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setActiveOrgId(memberOrganizations[0]?.id ?? null);
     }
   }, [user, profile, memberOrganizations, profile?.org_id, setActiveOrgId]);
+
+  /** כפייה מתמשכת ל־ROEIMA21 אחרי עדכון פרופיל (Realtime) או אם האתחול הראשון דילג. */
+  useEffect(() => {
+    if (!user || !profile) return;
+    if (readViewAsActiveFromSession()) return;
+    if (resolveSessionEmail(profile, user) !== ROEIMA21_FLEET_USER_EMAIL) return;
+    const oid = resolveProfileOrgIdForActiveSession(profile, user);
+    if (!oid || !isLikelyUuid(oid)) return;
+    if (activeOrgId === oid) return;
+    setActiveOrgId(oid);
+  }, [user, profile, profile?.org_id, activeOrgId, setActiveOrgId]);
+
+  /** דיבוג תחום org ל־ROEIMA21 (גם בפרוד — עד שיוסר אחרי אימות). */
+  useEffect(() => {
+    if (!user || profile === null) return;
+    if (resolveSessionEmail(profile, user) !== ROEIMA21_FLEET_USER_EMAIL) return;
+    let stored: string | null = null;
+    try {
+      stored = localStorage.getItem(ACTIVE_ORG_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+    // eslint-disable-next-line no-console
+    console.log('[Auth][roeima21 org scope]', {
+      'Auth Profile OrgID': profile.org_id ?? null,
+      'LocalStorage OrgID': stored,
+      'Final ActiveOrgId being used': activeOrgId,
+    });
+  }, [user, profile, activeOrgId]);
 
   /**
    * אחרי שינוי `org_members` / `profiles.org_id` בשרת — הרשימה בזיכרון מתעדכנת אבל `activeOrgId` עלול
@@ -691,4 +739,3 @@ export function useAuth() {
   }
   return context;
 }
-
