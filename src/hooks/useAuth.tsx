@@ -536,24 +536,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setActiveOrgId(oid);
   }, [user, profile, profile?.org_id, activeOrgId, setActiveOrgId]);
 
-  /** דיבוג תחום org ל־ROEIMA21 (גם בפרוד — עד שיוסר אחרי אימות). */
-  useEffect(() => {
-    if (!user || profile === null) return;
-    if (resolveSessionEmail(profile, user) !== ROEIMA21_FLEET_USER_EMAIL) return;
-    let stored: string | null = null;
-    try {
-      stored = localStorage.getItem(ACTIVE_ORG_STORAGE_KEY);
-    } catch {
-      /* ignore */
-    }
-    // eslint-disable-next-line no-console
-    console.log('[Auth][roeima21 org scope]', {
-      'Auth Profile OrgID': profile.org_id ?? null,
-      'LocalStorage OrgID': stored,
-      'Final ActiveOrgId being used': activeOrgId,
-    });
-  }, [user, profile, activeOrgId]);
-
   /**
    * אחרי שינוי `org_members` / `profiles.org_id` בשרת — הרשימה בזיכרון מתעדכנת אבל `activeOrgId` עלול
    * להישאר על ארגון שהמשתמש כבר לא חבר בו (localStorage + רשימה ישנה לפני Realtime).
@@ -566,10 +548,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (known) return;
     if (readViewAsActiveFromSession()) return;
     const preferredId = resolveProfileOrgIdForActiveSession(profile, user);
+    if (
+      preferredId &&
+      activeOrgId === preferredId &&
+      !memberOrganizations.some((o) => o.id === preferredId)
+    ) {
+      return;
+    }
+    const sessionEmail = resolveSessionEmail(profile, user);
+    const roeimaTrustProfileOffList =
+      sessionEmail === ROEIMA21_FLEET_USER_EMAIL &&
+      preferredId &&
+      isLikelyUuid(preferredId) &&
+      !memberOrganizations.some((o) => o.id === preferredId);
     const preferred =
       preferredId && memberOrganizations.some((o) => o.id === preferredId)
         ? preferredId
-        : memberOrganizations[0]?.id ?? null;
+        : roeimaTrustProfileOffList
+          ? preferredId
+          : memberOrganizations[0]?.id ?? null;
     if (preferred && preferred !== activeOrgId) {
       setActiveOrgId(preferred);
     }

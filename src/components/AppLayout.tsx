@@ -31,11 +31,12 @@ import {
 import { isFleetManagerProHostname } from '@/lib/versionManifest';
 import {
   isFleetBootstrapOwnerEmail,
+  isRavidManagerEmail,
   resolveSessionEmail,
   RAVID_MANAGER_EMAIL,
   ROEIMA21_FLEET_USER_EMAIL,
 } from '@/lib/fleetBootstrapEmails';
-import { FALLBACK_MAIN_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
+import { FALLBACK_MAIN_FLEET_ORG_ID, RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 import type { TeamMemberSummary } from '@/hooks/useTeam';
 
 /** קישור מנהל ראשי ↔ מנהל צי ↔ נהג — כש־RLS לא מחזיר את כל ה־profiles במחליף */
@@ -100,7 +101,7 @@ function augmentSwitcherMembers(
   }
 
   const orgForRoei = opts.activeOrgId ?? opts.profileOrgId ?? null;
-  if (opts.isRavid && !visible.some((m) => m.email?.toLowerCase() === ROEI_DRIVER_EMAIL)) {
+  if (opts.isRavid && !visible.some((m) => m.email?.toLowerCase() === ROEIMA21_FLEET_USER_EMAIL)) {
     visible = [
       ...visible,
       {
@@ -197,7 +198,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   useEffect(() => {
     if (!viewAsEmail?.trim()) return;
     const norm = viewAsEmail.trim().toLowerCase();
-    if (norm === RAVID_MANAGER_EMAIL) {
+    if (isRavidManagerEmail(norm)) {
       if (activeOrgId !== VIEW_AS_RAVID_ORG_ID) {
         setActiveOrgId(VIEW_AS_RAVID_ORG_ID);
       }
@@ -214,7 +215,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     (async () => {
       const viewAsAuthId = viewAsProfile?.id ?? viewAsProfile?.user_id;
       if (!viewAsEmail?.trim() || !viewAsAuthId) return;
-      if (viewAsEmail.trim().toLowerCase() === RAVID_MANAGER_EMAIL) return;
+      if (isRavidManagerEmail(viewAsEmail.trim())) return;
       if (viewAsProfile?.org_id?.trim()) return;
 
       try {
@@ -254,7 +255,16 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   /** Gold header buttons (Roei Admin + Ravid Manager). */
   const canAccessGoldenManagementLinks = !isDriverOnlyHeader && (canManageOrgUi || canManageTeamUi);
-  const isRavid = email === RAVID_MANAGER_EMAIL;
+  const isRavid = isRavidManagerEmail(email);
+
+  /** נעילת org לרביד: לא raw profile.org_id אם עדיין מצביע על הצי הראשי — זה גרם לריצוד מול activeOrgId */
+  const ravidLockedTargetOrgId = useMemo(() => {
+    if (!isRavid) return null;
+    const raw = profile?.org_id?.trim() || null;
+    if (!raw) return RAVID_FLEET_ORG_ID;
+    if (raw === FALLBACK_MAIN_FLEET_ORG_ID) return RAVID_FLEET_ORG_ID;
+    return raw;
+  }, [isRavid, profile?.org_id]);
 
   /** כל מי שבתצוגת משתמש צריך באנר יציאה (לא רק מנהלים מוגדרים מראש). */
   const viewAsBannerVisible = Boolean(viewAsEmail?.trim());
@@ -286,11 +296,11 @@ export function AppLayout({ children }: AppLayoutProps) {
   useEffect(() => {
     if (!isRavid) return;
     if (viewAsEmail?.trim()) return; // בתצוגה כמשתמש אחר — אל תנעל ל-org של רביד
-    const targetOrgId = profile?.org_id as string | null | undefined;
+    const targetOrgId = ravidLockedTargetOrgId;
     if (targetOrgId && activeOrgId !== targetOrgId) {
       setActiveOrgId(targetOrgId);
     }
-  }, [isRavid, viewAsEmail, profile?.org_id, activeOrgId, setActiveOrgId]);
+  }, [isRavid, viewAsEmail, ravidLockedTargetOrgId, activeOrgId, setActiveOrgId]);
 
   /** bootstrap בלי org בפרופיל — מסנכרן מחליף ורשימת צוות ל־UUID הצי הראשי */
   useEffect(() => {

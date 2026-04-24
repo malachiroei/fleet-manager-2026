@@ -39,6 +39,85 @@ function shouldForceProductionInvite(appOrigin: string): boolean {
   );
 }
 
+/** תואם src/lib/fleetDefaultOrg.ts — לשימוש ב-fallback בלי import מ-Vite */
+const DEFAULT_MAIN_FLEET_ORG_ID = '857f2311-2ec5-41d3-8e32-dacd450a9a77';
+const DEFAULT_RAVID_FLEET_ORG_ID = '2bb0f9c3-b210-4099-b0c5-de92794d5cc9';
+
+const INVITE_OWNER_EMAILS = new Set([
+  'malachiroei@gmail.com',
+  'ravidmalachi@gmail.com',
+  'ravid.malachi@gmail.com',
+]);
+
+/**
+ * הרשאת שליחת מייל: קודם RPC ב-DB (אם קיים), אחרת בדיקת service role —
+ * כדי שלא יישארו על 403 אם המיגרציה לא רצה בפרו או profile.org_id לא מסונכרן.
+ */
+async function resolveInviterPermission(
+  admin: ReturnType<typeof createClient>,
+  uid: string,
+  orgId: string,
+  jwtEmail: string,
+): Promise<boolean> {
+  const { data: rpcOk, error: rpcErr } = await admin.rpc('inviter_may_send_org_invite_email', {
+    _viewer: uid,
+    _org_id: orgId,
+  });
+  if (!rpcErr && rpcOk === true) return true;
+  if (rpcErr) {
+    console.warn('[send-invite] RPC inviter_may_send_org_invite_email — using fallback', rpcErr.message);
+  }
+
+  const emailNorm = (jwtEmail ?? '').trim().toLowerCase();
+
+  const { data: prof, error: pErr } = await admin.from('profiles').select('org_id, email, permissions').eq('id', uid).maybeSingle();
+  if (pErr) console.warn('[send-invite] fallback profile', pErr.message);
+  const profRow = prof as { org_id?: string | null; email?: string | null; permissions?: Record<string, unknown> } | null;
+
+  const { data: om } = await admin
+    .from('org_members')
+    .select('org_id')
+    .eq('user_id', uid)
+    .eq('org_id', orgId)
+    .maybeSingle();
+
+  const profileEmail = String(profRow?.email ?? '')
+    .trim()
+    .toLowerCase();
+  const effectiveEmail = profileEmail || emailNorm;
+  const profOrg = String(profRow?.org_id ?? '').trim();
+
+  const ravidStillOnMainInDb =
+    INVITE_OWNER_EMAILS.has(effectiveEmail) &&
+    effectiveEmail !== 'malachiroei@gmail.com' &&
+    orgId === DEFAULT_RAVID_FLEET_ORG_ID &&
+    profOrg === DEFAULT_MAIN_FLEET_ORG_ID;
+
+  const inOrg =
+    profOrg === orgId || Boolean((om as { org_id?: string } | null)?.org_id) || ravidStillOnMainInDb;
+
+  if (!inOrg) {
+    console.warn('[send-invite] fallback deny: not in org', { uid, orgId, profOrg, hasOmRow: Boolean(om) });
+    return false;
+  }
+
+  const perms = profRow?.permissions;
+  const manageTeam = Boolean(
+    perms && typeof perms === 'object' && (perms as { manage_team?: boolean }).manage_team === true,
+  );
+
+  const { data: roles, error: rErr } = await admin.from('user_roles').select('role').eq('user_id', uid);
+  if (rErr) console.warn('[send-invite] fallback user_roles', rErr.message);
+  const roleList = (roles ?? []) as { role?: string }[];
+  const isDbManager = roleList.some((r) => r.role === 'admin' || r.role === 'fleet_manager');
+
+  if (manageTeam || isDbManager) return true;
+  if (INVITE_OWNER_EMAILS.has(effectiveEmail)) return true;
+
+  console.warn('[send-invite] fallback deny: role', { effectiveEmail, manageTeam, isDbManager });
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -121,18 +200,8 @@ serve(async (req) => {
     const admin = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
-    const { data: mayInvite, error: permErr } = await admin.rpc('inviter_may_send_org_invite_email', {
-      _viewer: uid,
-      _org_id: orgId,
-    });
-    if (permErr) {
-      console.error('[send-invite] permission RPC error', permErr.message);
-      return new Response(JSON.stringify({ error: 'Forbidden' }), {
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-    if (mayInvite !== true) {
+    const mayInvite = await resolveInviterPermission(admin, uid, orgId, userData?.user?.email ?? '');
+    if (!mayInvite) {
       console.warn('[send-invite] user not allowed to invite for org', { uid, orgId });
       return new Response(JSON.stringify({ error: 'Forbidden: cannot invite for this organization' }), {
         status: 403,
