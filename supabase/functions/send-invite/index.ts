@@ -121,9 +121,9 @@ serve(async (req) => {
     const admin = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
-    const { data: mayInvite, error: permErr } = await admin.rpc('viewer_may_manage_peer_profiles_in_org', {
+    const { data: mayInvite, error: permErr } = await admin.rpc('inviter_may_send_org_invite_email', {
       _viewer: uid,
-      _target_org_id: orgId,
+      _org_id: orgId,
     });
     if (permErr) {
       console.error('[send-invite] permission RPC error', permErr.message);
