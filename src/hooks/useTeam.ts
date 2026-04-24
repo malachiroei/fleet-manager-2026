@@ -261,7 +261,15 @@ export function useRemoveTeamMemberFromOrg() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ orgId, memberUserId }: { orgId: string; memberUserId: string }) => {
+    mutationFn: async ({
+      orgId,
+      memberUserId,
+      suspendAccount,
+    }: {
+      orgId: string;
+      memberUserId: string;
+      suspendAccount?: boolean;
+    }) => {
       const {
         data: { session },
       } = await supabase.auth.getSession();
@@ -269,7 +277,11 @@ export function useRemoveTeamMemberFromOrg() {
       if (!token) throw new Error('נדרשת התחברות מחדש');
 
       const { data, error } = await supabase.functions.invoke('remove-team-member', {
-        body: { org_id: orgId, member_user_id: memberUserId },
+        body: {
+          org_id: orgId,
+          member_user_id: memberUserId,
+          suspend_account: suspendAccount === true,
+        },
         headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
@@ -284,7 +296,9 @@ export function useRemoveTeamMemberFromOrg() {
       if (variables.orgId) {
         queryClient.invalidateQueries({ queryKey: ['organization', variables.orgId] });
       }
-      toast({ title: 'חבר הצוות הוסר מהארגון' });
+      toast({
+        title: variables.suspendAccount ? 'המשתמש הוסר והחשבון הושבת' : 'חבר הצוות הוסר מהארגון',
+      });
     },
     onError: (err: Error) => {
       toast({ title: 'הסרה נכשלה', description: err.message, variant: 'destructive' });

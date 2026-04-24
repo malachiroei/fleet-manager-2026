@@ -22,6 +22,7 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { getSupabaseAnonKey } from '@/integrations/supabase/publicEnv';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { SimpleInviteModal } from '@/components/SimpleInviteModal';
 import { UserFeatureFlagsOverridesDialog } from '@/components/UserFeatureFlagsOverridesDialog';
@@ -105,6 +106,7 @@ export default function TeamManagementPage() {
   const approveMember = useApproveMember();
   const removeTeamMember = useRemoveTeamMemberFromOrg();
   const [memberToRemove, setMemberToRemove] = useState<Profile | null>(null);
+  const [suspendAccountOnRemove, setSuspendAccountOnRemove] = useState(false);
 
   /** עמודת מזהה ארגון ונתונים דומים — רק לרועי (סופר־אדמין). */
   const showSensitiveColumns = isSuperAdminTeamView;
@@ -238,7 +240,7 @@ export default function TeamManagementPage() {
                           canRemoveTeamMemberRow &&
                           !isSelf &&
                           m?.status !== 'pending_approval' &&
-                          Boolean(orgId);
+                          (Boolean(orgId) || Boolean(m.org_id));
                         return (
                           <TableRow key={m.id ?? `m-${mi}`}>
                             {showSensitiveColumns ? (
@@ -272,7 +274,11 @@ export default function TeamManagementPage() {
                               </Button>
                             </TableCell>
                             <TableCell className="w-[140px] text-center text-xs align-middle">
-                              {m?.status === 'pending_approval' ? (
+                              {m?.status === 'suspended' ? (
+                                <span className="inline-flex items-center justify-center rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-900">
+                                  מושעה
+                                </span>
+                              ) : m?.status === 'pending_approval' ? (
                                 <div className="flex flex-col items-center justify-center gap-2">
                                   <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
                                     ממתין לאישור
@@ -409,17 +415,31 @@ export default function TeamManagementPage() {
       <AlertDialog
         open={memberToRemove != null}
         onOpenChange={(open) => {
-          if (!open) setMemberToRemove(null);
+          if (!open) {
+            setMemberToRemove(null);
+            setSuspendAccountOnRemove(false);
+          }
         }}
       >
         <AlertDialogContent dir="rtl" className="max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle>להסיר את חבר הצוות?</AlertDialogTitle>
-            <AlertDialogDescription className="text-start space-y-2">
+            <AlertDialogDescription className="text-start space-y-3">
               <span className="block">
                 {memberToRemove?.full_name || memberToRemove?.email || 'משתמש'} יוסר מחברות בארגון הנוכחי. אפשר
                 להזמין מחדש אחר כך.
               </span>
+              <label className="flex cursor-pointer items-start gap-2 rounded-md border border-border/80 bg-muted/30 p-3 text-sm">
+                <Checkbox
+                  checked={suspendAccountOnRemove}
+                  onCheckedChange={(v) => setSuspendAccountOnRemove(v === true)}
+                  className="mt-0.5"
+                />
+                <span className="text-foreground leading-snug">
+                  <strong>השבתת חשבון:</strong> המשתמש לא יוכל להתחבר לאפליקציה (בנוסף להסרה מהארגון). לשחרור חשבון
+                  רק מנהל מערכת (SQL / Dashboard).
+                </span>
+              </label>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2 sm:gap-0 sm:justify-start">
@@ -441,8 +461,17 @@ export default function TeamManagementPage() {
                 const uid = String(memberToRemove.user_id ?? memberToRemove.id ?? '').trim();
                 if (!uid) return;
                 removeTeamMember.mutate(
-                  { orgId: removeMutationOrgId, memberUserId: uid },
-                  { onSettled: () => setMemberToRemove(null) },
+                  {
+                    orgId: removeMutationOrgId,
+                    memberUserId: uid,
+                    suspendAccount: suspendAccountOnRemove,
+                  },
+                  {
+                    onSettled: () => {
+                      setMemberToRemove(null);
+                      setSuspendAccountOnRemove(false);
+                    },
+                  },
                 );
               }}
             >

@@ -18,9 +18,13 @@ serve(async (req) => {
   }
 
   try {
-    let body: { org_id?: string; member_user_id?: string };
+    let body: { org_id?: string; member_user_id?: string; suspend_account?: boolean };
     try {
-      body = (await req.json()) as { org_id?: string; member_user_id?: string };
+      body = (await req.json()) as {
+        org_id?: string;
+        member_user_id?: string;
+        suspend_account?: boolean;
+      };
     } catch {
       return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
         status: 400,
@@ -30,6 +34,7 @@ serve(async (req) => {
 
     const orgId = typeof body.org_id === 'string' ? body.org_id.trim() : '';
     const memberUserId = typeof body.member_user_id === 'string' ? body.member_user_id.trim() : '';
+    const suspendAccount = body.suspend_account === true;
     if (!orgId || !memberUserId) {
       return new Response(JSON.stringify({ error: 'Missing org_id or member_user_id' }), {
         status: 400,
@@ -115,16 +120,19 @@ serve(async (req) => {
 
     const { data: memberProf } = await admin
       .from('profiles')
-      .select('id, org_id, parent_admin_id, managed_by_user_id')
-      .eq('id', memberUserId)
+      .select('id, org_id, parent_admin_id, managed_by_user_id, user_id')
+      .or(`id.eq.${memberUserId},user_id.eq.${memberUserId}`)
       .maybeSingle();
 
     const mp = memberProf as {
       id?: string;
+      user_id?: string | null;
       org_id?: string | null;
       parent_admin_id?: string | null;
       managed_by_user_id?: string | null;
     } | null;
+
+    const profileRowId = (mp?.id ?? memberUserId).trim();
 
     const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (mp?.org_id === orgId) {
@@ -134,8 +142,11 @@ serve(async (req) => {
       if (mp?.parent_admin_id === callerProfileId) updates.parent_admin_id = null;
       if (mp?.managed_by_user_id === callerProfileId) updates.managed_by_user_id = null;
     }
+    if (suspendAccount) {
+      updates.status = 'suspended';
+    }
 
-    const { error: upErr } = await admin.from('profiles').update(updates).eq('id', memberUserId);
+    const { error: upErr } = await admin.from('profiles').update(updates).eq('id', profileRowId);
     if (upErr) {
       console.error('[remove-team-member] profiles update', upErr);
       return new Response(JSON.stringify({ error: upErr.message }), {

@@ -1108,6 +1108,18 @@ export function AppLayout({ children }: AppLayoutProps) {
               </p>
             </div>
           </div>
+        ) : profile?.status === 'suspended' ? (
+          <div className="flex min-h-[60vh] items-center justify-center">
+            <div className="max-w-lg w-full rounded-2xl border border-red-500/50 bg-red-950/50 px-6 py-8 text-center shadow-lg">
+              <h2 className="text-xl font-semibold text-red-100 mb-2">החשבון הושבת</h2>
+              <p className="text-sm text-red-100/85 mb-6 leading-relaxed">
+                אין גישה לאפליקציה. פנה למנהל המערכת אם לדעתך מדובר בטעות.
+              </p>
+              <Button type="button" variant="secondary" onClick={() => void signOut()}>
+                התנתקות
+              </Button>
+            </div>
+          </div>
         ) : (
           <>
             {location.pathname !== '/' && (

@@ -11,6 +11,7 @@ import {
 } from '@/lib/fleetBootstrapEmails';
 import { FALLBACK_MAIN_FLEET_ORG_ID, RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 import { isLikelyUuid } from '@/lib/fleetUuid';
+import { toast } from 'sonner';
 import { clearFleetProUpdateModalSuppressFlag } from '@/lib/pwaUpdateModalBridge';
 import { readViewAsActiveFromSession, setViewAsActiveSession } from '@/lib/viewAsSessionBridge';
 
@@ -31,6 +32,8 @@ function resolveProfileOrgIdForActiveSession(profile: Profile | null, user: User
 
 /** מונע טעינת פרופיל כפולה ב־React Strict Mode (אפקט ×2) לאותו משתמש. */
 let authBootstrapLastUserId: string | null = null;
+/** מונע לולאת התנתקות כפולה כש־profiles.status = suspended. */
+let suspendedSignOutHandledForUserId: string | null = null;
 
 /**
  * Personal profile row: `profiles.id` = Supabase Auth `user.id` (auth.users.id).
@@ -654,7 +657,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     try {
       sessionStorage.removeItem('fleet-version-heartbeat');
       setViewAsActiveSession(false);
@@ -663,12 +666,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     await supabase.auth.signOut();
     authBootstrapLastUserId = null;
+    suspendedSignOutHandledForUserId = null;
     setRoles([]);
     setProfile(null);
     setMemberOrganizations([]);
     setActiveOrgIdState(null);
     activeOrgInitializedRef.current = false;
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!user?.id) {
+      suspendedSignOutHandledForUserId = null;
+      return;
+    }
+    if (profile?.status !== 'suspended') return;
+    if (suspendedSignOutHandledForUserId === user.id) return;
+    suspendedSignOutHandledForUserId = user.id;
+    toast.error('החשבון הושבת. פנה למנהל המערכת.');
+    void signOut();
+  }, [user?.id, profile?.status, signOut]);
 
   const roleLower = (r: string) => String(r).toLowerCase();
   const isAdmin = roles.some((r) => roleLower(r) === 'admin');

@@ -1,12 +1,10 @@
 /**
  * שליחת מייל הזמנה דרך Edge Function `send-invite` (Resend בצד השרת).
  *
- * אימות ל-Edge Function:
- * 1) **קודם** `VITE_SUPABASE_SERVICE_ROLE_KEY` (מעקף 401 כשמוגדר ב־`.env.local`) — **רק מקומי/סטייג'ינג**; לא לפרסם לפרודקשן
- * 2) אחרת: JWT מהסשן (עם refresh)
- * 3) גיבוי: anon key
+ * ה-Edge Function מאמת את המזמין עם `auth.getUser(access_token)` — חייב **JWT של סשן משתמש**.
+ * אין להעביר `service_role` ב-Authorization: `getUser` לא מקבל אותו → 401.
  *
- * חובה גם header `apikey` (מפתח ה-anon של הפרויקט).
+ * חובה header `apikey` (מפתח anon/publishable של הפרויקט).
  */
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -20,14 +18,6 @@ export type SendInvitationEmailResult = { ok: true } | { ok: false; error: strin
 
 function anonKeyForFunctions(): string {
   return getSupabaseAnonKey() || getSupabasePublishableKey() || '';
-}
-
-/**
- * מפתח service role מה-ENV (Vite) — לשימוש **מקומי בלבד** כשהסשן לא מוזרק.
- * לא להגדיר במפתחות NEXT_PUBLIC_* בפרודקשן.
- */
-function serviceRoleKeyFromEnv(): string {
-  return String(import.meta.env?.VITE_SUPABASE_SERVICE_ROLE_KEY ?? '').trim();
 }
 
 function logFullErrorContext(label: string, err: unknown, extra?: Record<string, unknown>) {
@@ -90,15 +80,8 @@ function extractServerErrorMessage(
   return 'שליחת מייל ההזמנה נכשלה';
 }
 
-async function resolveAuthorizationBearer(anon: string): Promise<string> {
-  const serviceRole = serviceRoleKeyFromEnv();
-  if (serviceRole && serviceRole !== 'your_secret_key_here') {
-    console.warn(
-      '[sendInvitationEmail] Authorization = service_role מ-VITE_SUPABASE_SERVICE_ROLE_KEY — מקומי/סטייג\'ינג בלבד',
-    );
-    return serviceRole;
-  }
-
+/** JWT משתמש בלבד — תואם ל-send-invite (getUser). */
+async function resolveUserAccessToken(): Promise<string | null> {
   let {
     data: { session },
   } = await supabase.auth.getSession();
@@ -112,11 +95,7 @@ async function resolveAuthorizationBearer(anon: string): Promise<string> {
     token = session?.access_token;
   }
 
-  if (token) {
-    return token;
-  }
-
-  return anon;
+  return token?.trim() ? token : null;
 }
 
 /**
@@ -142,8 +121,12 @@ export async function sendInvitationEmail(params: {
     return { ok: false, error: msg };
   }
 
-  const authBearer = await resolveAuthorizationBearer(anon);
-  const sr = serviceRoleKeyFromEnv();
+  const authBearer = await resolveUserAccessToken();
+  if (!authBearer) {
+    const msg = 'נדרשת התחברות מחדש כדי לשלוח מייל הזמנה';
+    notifyError(msg);
+    return { ok: false, error: msg };
+  }
 
   const body = {
     org_id: orgId,
@@ -160,7 +143,7 @@ export async function sendInvitationEmail(params: {
     function: 'send-invite',
     orgId,
     emailPreview: `${email.slice(0, 2)}***@${email.split('@')[1] ?? '?'}`,
-    authKind: authBearer === anon ? 'anon' : authBearer === sr ? 'service_role_env' : 'session_jwt',
+    authKind: 'session_jwt',
   });
 
   const invokeResult = await supabase.functions.invoke('send-invite', {
