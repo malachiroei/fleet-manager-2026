@@ -256,6 +256,32 @@ export function useUpdateProfilePermissions() {
   });
 }
 
+/** מנהל צוות מסיר משתמש מארגון (RPC — ראו מיגרציה remove_team_member_from_org). */
+export function useRemoveTeamMemberFromOrg() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ orgId, memberUserId }: { orgId: string; memberUserId: string }) => {
+      const { error } = await supabase.rpc('remove_team_member_from_org', {
+        _org_id: orgId,
+        _member_user_id: memberUserId,
+      });
+      if (error) throw error;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: TEAM_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ORG_INVITATIONS_QUERY_KEY });
+      if (variables.orgId) {
+        queryClient.invalidateQueries({ queryKey: ['organization', variables.orgId] });
+      }
+      toast({ title: 'חבר הצוות הוסר מהארגון' });
+    },
+    onError: (err: Error) => {
+      toast({ title: 'הסרה נכשלה', description: err.message, variant: 'destructive' });
+    },
+  });
+}
+
 export function useApproveMember() {
   const queryClient = useQueryClient();
 

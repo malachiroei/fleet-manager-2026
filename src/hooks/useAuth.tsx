@@ -5,7 +5,7 @@ import type { AppRole, Profile } from '@/types/fleet';
 import { hasPermission as checkPermission, type PermissionKey } from '@/lib/permissions';
 import {
   isFleetBootstrapOwnerEmail,
-  RAVID_MANAGER_EMAIL,
+  isRavidManagerEmail,
   resolveSessionEmail,
   ROEIMA21_FLEET_USER_EMAIL,
 } from '@/lib/fleetBootstrapEmails';
@@ -21,7 +21,7 @@ function resolveProfileOrgIdForActiveSession(profile: Profile | null, user: User
   const rawProfileOrgId = profile?.org_id?.trim() || null;
   const sessionEmailForOrg = resolveSessionEmail(profile, user);
   if (
-    sessionEmailForOrg === RAVID_MANAGER_EMAIL &&
+    isRavidManagerEmail(sessionEmailForOrg) &&
     (!rawProfileOrgId || rawProfileOrgId === FALLBACK_MAIN_FLEET_ORG_ID)
   ) {
     return RAVID_FLEET_ORG_ID;
@@ -507,7 +507,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const wrongMainStoredForRavid =
-      sessionEmailForOrg === RAVID_MANAGER_EMAIL && stored === FALLBACK_MAIN_FLEET_ORG_ID;
+      isRavidManagerEmail(sessionEmailForOrg) && stored === FALLBACK_MAIN_FLEET_ORG_ID;
     const validStored =
       !wrongMainStoredForRavid &&
       Boolean(stored) &&

@@ -1,8 +1,16 @@
 /** מיילים שמקבלים הרשאות מנהל מלאות גם כש־user_roles ריק (סנכרון פרו / RLS). */
-const OWNERS = ['malachiroei@gmail.com', 'ravidmalachi@gmail.com'] as const;
+const OWNERS = ['malachiroei@gmail.com', 'ravidmalachi@gmail.com', 'ravid.malachi@gmail.com'] as const;
 
 /** מנהל צי — תצוגה כמשתמש / ארגון נפרד מהצי הראשי */
 export const RAVID_MANAGER_EMAIL = 'ravidmalachi@gmail.com';
+
+/** זיהוי מנהל רביד גם כשהמייל ב-Google הוא עם נקודה */
+export function isRavidManagerEmail(email: string | null | undefined): boolean {
+  const e = String(email ?? '')
+    .trim()
+    .toLowerCase();
+  return e === 'ravidmalachi@gmail.com' || e === 'ravid.malachi@gmail.com';
+}
 
 /** צי משנה: כפיית `activeOrgId` ל־`profiles.org_id` (מעקף localStorage / org_members חלקי). */
 export const ROEIMA21_FLEET_USER_EMAIL = 'roeima21@gmail.com';

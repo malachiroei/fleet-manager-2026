@@ -79,6 +79,67 @@ serve(async (req) => {
       );
     }
 
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+
+    const authHeader = req.headers.get('authorization') ?? req.headers.get('Authorization') ?? '';
+    const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i);
+    const accessToken = bearerMatch?.[1]?.trim() ?? '';
+    if (!accessToken) {
+      return new Response(JSON.stringify({ error: 'Missing Authorization' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    if (!supabaseUrl || !anonKey) {
+      return new Response(JSON.stringify({ error: 'Missing SUPABASE_URL or SUPABASE_ANON_KEY' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const authClient = createClient(supabaseUrl, anonKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const { data: userData, error: userErr } = await authClient.auth.getUser(accessToken);
+    const uid = userData?.user?.id;
+    if (userErr || !uid) {
+      console.error('[send-invite] auth.getUser failed', userErr?.message ?? userErr);
+      return new Response(JSON.stringify({ error: 'Invalid or expired session' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (!serviceRoleKey) {
+      return new Response(JSON.stringify({ error: 'Missing SUPABASE_SERVICE_ROLE_KEY' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    const admin = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const { data: mayInvite, error: permErr } = await admin.rpc('viewer_may_manage_peer_profiles_in_org', {
+      _viewer: uid,
+      _target_org_id: orgId,
+    });
+    if (permErr) {
+      console.error('[send-invite] permission RPC error', permErr.message);
+      return new Response(JSON.stringify({ error: 'Forbidden' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    if (mayInvite !== true) {
+      console.warn('[send-invite] user not allowed to invite for org', { uid, orgId });
+      return new Response(JSON.stringify({ error: 'Forbidden: cannot invite for this organization' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     console.log('[send-invite] Parsed input', {
       org_id: orgId,
       to: `${email.slice(0, 2)}***@***`,
@@ -95,25 +156,18 @@ serve(async (req) => {
       );
     }
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const appUrl = APP_URL_DEFAULT.replace(/\/$/, '');
     const forceProductionInvite = shouldForceProductionInvite(appOrigin);
     const inviteBaseUrl = forceProductionInvite ? APP_URL_DEFAULT : appUrl;
     const inviteUrl = `${inviteBaseUrl}/auth?org_id=${encodeURIComponent(orgId)}`;
 
     let organizationName = 'הארגון';
-    if (supabaseUrl && serviceRoleKey) {
-      const supabase = createClient(supabaseUrl, serviceRoleKey, {
-        auth: { autoRefreshToken: false, persistSession: false },
-      });
-      const { data: orgRow } = await supabase
-        .from('organizations')
-        .select('name')
-        .eq('id', orgId)
-        .maybeSingle();
-      organizationName = (orgRow as { name?: string } | null)?.name?.trim() || organizationName;
-    }
+    const { data: orgRow } = await admin
+      .from('organizations')
+      .select('name')
+      .eq('id', orgId)
+      .maybeSingle();
+    organizationName = (orgRow as { name?: string } | null)?.name?.trim() || organizationName;
 
     const logoUrl = supabaseUrl ? supabasePublicObjectUrl(supabaseUrl, 'logos/logo.jpg') : '';
     const html = `

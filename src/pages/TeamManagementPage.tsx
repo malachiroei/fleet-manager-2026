@@ -5,12 +5,14 @@ import {
   useTeamMembers,
   useOrgInvitations,
   useApproveMember,
+  useRemoveTeamMemberFromOrg,
   ORG_INVITATIONS_QUERY_KEY,
   isRoeySuperAdminProfile,
 } from '@/hooks/useTeam';
 import { useViewAs } from '@/contexts/ViewAsContext';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
 import { getDefaultPermissions } from '@/lib/permissions';
+import { isRavidManagerEmail } from '@/lib/fleetBootstrapEmails';
 import {
   buildReleaseSnapshotPayload,
   downloadReleaseSnapshotJson,
@@ -33,7 +35,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Flag, Loader2, Mail, UserPlus, Users } from 'lucide-react';
+import { Flag, Loader2, Mail, UserMinus, UserPlus, Users } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import type { Profile } from '@/types/fleet';
@@ -43,7 +45,7 @@ import type { Profile } from '@/types/fleet';
  */
 export default function TeamManagementPage() {
   const { user, profile, activeOrgId, hasPermission, isAdmin, isManager } = useAuth();
-  const isRavid = (user?.email ?? '').trim().toLowerCase() === 'ravidmalachi@gmail.com';
+  const isRavid = isRavidManagerEmail(user?.email ?? null);
   const { viewAsProfile } = useViewAs();
   const { effectiveUserId, effectiveOrgId } = useImpersonationFleetScope();
   const queryClient = useQueryClient();
@@ -92,13 +94,17 @@ export default function TeamManagementPage() {
   const [featureOverridesDialogOpen, setFeatureOverridesDialogOpen] = useState(false);
   const [featureOverridesMember, setFeatureOverridesMember] = useState<Profile | null>(null);
   const approveMember = useApproveMember();
+  const removeTeamMember = useRemoveTeamMemberFromOrg();
+  const [memberToRemove, setMemberToRemove] = useState<Profile | null>(null);
 
   /** עמודת מזהה ארגון ונתונים דומים — רק לרועי (סופר־אדמין). */
   const showSensitiveColumns = isSuperAdminTeamView;
-  const tableColCount = showSensitiveColumns ? 5 : 4;
 
   // Strict privacy: team page is only for admins/managers (or explicit manage_team permission).
   const canManageTeam = isAdmin || isManager || hasPermission('manage_team') || isSuperAdminTeamView;
+  /** RPC בודק viewer_may_manage — לא רלוונטי לתצוגת «כל הארגונים» של סופר־אדמין. */
+  const canRemoveTeamMemberRow = canManageTeam && !isSuperAdminTeamView && Boolean(orgId);
+  const tableColCount = (showSensitiveColumns ? 5 : 4) + (canRemoveTeamMemberRow ? 1 : 0);
   const canManageGlobalFeatures = isRoeiAdmin || hasPermission('manage_team') || isAdmin || isManager;
 
   if (!canManageTeam) {
@@ -196,6 +202,9 @@ export default function TeamManagementPage() {
                     <TableHead className="w-[240px] align-middle">אימייל</TableHead>
                     <TableHead className="w-[260px] align-middle">פיצ׳רים</TableHead>
                     <TableHead className="w-[140px] text-center align-middle">סטטוס</TableHead>
+                    {canRemoveTeamMemberRow ? (
+                      <TableHead className="w-[130px] text-center align-middle">פעולות</TableHead>
+                    ) : null}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -209,10 +218,18 @@ export default function TeamManagementPage() {
                     <>
                       {memberRows.map((m, mi) => {
                         const memberEmail = (m.email ?? '').trim().toLowerCase();
+                        const memberAuthId = String(m.user_id ?? m.id ?? '').trim();
+                        const viewerAuthId = String(profile?.user_id ?? profile?.id ?? '').trim();
+                        const isSelf = Boolean(memberAuthId) && memberAuthId === viewerAuthId;
                         const canOpenFeatureOverrides =
                           isRoeiAdmin ||
                           (memberEmail && memberEmail === viewerEmail) ||
                           (isRavid && memberEmail === 'roeima21@gmail.com');
+                        const showRemoveForRow =
+                          canRemoveTeamMemberRow &&
+                          !isSelf &&
+                          m?.status !== 'pending_approval' &&
+                          Boolean(orgId);
                         return (
                           <TableRow key={m.id ?? `m-${mi}`}>
                             {showSensitiveColumns ? (
@@ -276,6 +293,25 @@ export default function TeamManagementPage() {
                                 </div>
                               )}
                             </TableCell>
+                            {canRemoveTeamMemberRow ? (
+                              <TableCell className="w-[130px] text-center align-middle">
+                                {showRemoveForRow ? (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-8 gap-1 border-destructive/40 text-destructive hover:bg-destructive/10"
+                                    disabled={removeTeamMember.isPending}
+                                    onClick={() => setMemberToRemove(m)}
+                                  >
+                                    <UserMinus className="h-3.5 w-3.5" />
+                                    הסרה
+                                  </Button>
+                                ) : (
+                                  <span className="text-muted-foreground text-[11px]">—</span>
+                                )}
+                              </TableCell>
+                            ) : null}
                           </TableRow>
                         );
                       })}
@@ -360,6 +396,44 @@ export default function TeamManagementPage() {
         userId={featureOverridesMember?.id ?? featureOverridesMember?.user_id ?? null}
         userLabel={featureOverridesMember?.full_name ?? featureOverridesMember?.email ?? null}
       />
+
+      <AlertDialog
+        open={memberToRemove != null}
+        onOpenChange={(open) => {
+          if (!open) setMemberToRemove(null);
+        }}
+      >
+        <AlertDialogContent dir="rtl" className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>להסיר את חבר הצוות?</AlertDialogTitle>
+            <AlertDialogDescription className="text-start space-y-2">
+              <span className="block">
+                {memberToRemove?.full_name || memberToRemove?.email || 'משתמש'} יוסר מחברות בארגון הנוכחי. אפשר
+                להזמין מחדש אחר כך.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:gap-0 sm:justify-start">
+            <AlertDialogCancel type="button">ביטול</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={removeTeamMember.isPending || !orgId}
+              onClick={() => {
+                if (!memberToRemove || !orgId) return;
+                const uid = String(memberToRemove.user_id ?? memberToRemove.id ?? '').trim();
+                if (!uid) return;
+                removeTeamMember.mutate(
+                  { orgId, memberUserId: uid },
+                  { onSettled: () => setMemberToRemove(null) },
+                );
+              }}
+            >
+              {removeTeamMember.isPending ? 'מסיר…' : 'הסרה'}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

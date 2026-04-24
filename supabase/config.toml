@@ -12,3 +12,8 @@ verify_jwt = false
 
 [functions.send-handover-notification]
 verify_jwt = false
+
+# מייל הזמנות: השער הישן לא מאמת ES256 (מפתחות JWT חדשים בפרויקט) → 401 לפני שהפונקציה רצה.
+# אימות משתמש נעשה בתוך send-invite (getUser + viewer_may_manage_peer_profiles_in_org).
+[functions.send-invite]
+verify_jwt = false
