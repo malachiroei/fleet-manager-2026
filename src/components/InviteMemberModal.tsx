@@ -1,11 +1,6 @@
 import { useState, useRef, useCallback, type FormEvent } from 'react';
 import { PERMISSION_KEYS, PERMISSION_LABELS, getDefaultPermissions } from '@/lib/permissions';
 import type { ProfilePermissions } from '@/types/fleet';
-import {
-  PRODUCTION_INVITE_METADATA,
-  PRODUCTION_NEW_ORG_ADMIN_PERMISSIONS,
-  newClientOrganizationId,
-} from '@/lib/productionOrgAdminInvite';
 import { supabase } from '@/integrations/supabase/client';
 import { sendInvitationEmail } from '@/lib/sendInvitationEmail';
 import { toast } from '@/hooks/use-toast';
@@ -75,17 +70,24 @@ export function InviteMemberModal({
       onSuccessCalledRef.current = false;
 
       try {
-        const newOrgId = newClientOrganizationId();
+        const orgUuid = String(_orgId ?? '').trim();
+        if (!orgUuid) {
+          toast({
+            title: 'חסר ארגון',
+            description: 'לא ניתן לשמור הזמנה בלי מזהה ארגון.',
+            variant: 'destructive',
+          });
+          return;
+        }
         const emailNorm = inviteEmail.trim().toLowerCase();
+        const permsPayload = { ..._perms, report_mileage: true };
         const { data, error } = await (supabase as any)
           .from('org_invitations')
           .insert({
-            org_id: newOrgId,
+            org_id: orgUuid,
             email: emailNorm,
-            role: 'admin',
-            permissions: PRODUCTION_NEW_ORG_ADMIN_PERMISSIONS,
+            permissions: permsPayload,
             invited_by: invitedBy,
-            metadata: PRODUCTION_INVITE_METADATA,
           })
           .select('org_id, email')
           .single();
@@ -93,7 +95,7 @@ export function InviteMemberModal({
         if (error) throw error;
 
         const row = data as { org_id?: string; email?: string };
-        const inviteOrgId = String(row?.org_id ?? newOrgId);
+        const inviteOrgId = String(row?.org_id ?? orgUuid);
         const inviteAddr = String(row?.email ?? emailNorm);
 
         let emailSent = false;

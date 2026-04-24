@@ -1,11 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { PERMISSION_KEYS, PERMISSION_LABELS, getDefaultPermissions } from '@/lib/permissions';
 import type { ProfilePermissions } from '@/types/fleet';
-import {
-  PRODUCTION_INVITE_METADATA,
-  PRODUCTION_NEW_ORG_ADMIN_PERMISSIONS,
-  newClientOrganizationId,
-} from '@/lib/productionOrgAdminInvite';
 import { supabase } from '@/integrations/supabase/client';
 import { sendInvitationEmail } from '@/lib/sendInvitationEmail';
 import { toast } from '@/hooks/use-toast';
@@ -49,24 +44,31 @@ export function SimpleInviteModal({
     if (!trimmed) return;
     setIsPending(true);
     try {
-      const newOrgId = newClientOrganizationId();
+      const orgUuid = String(_orgId ?? '').trim();
+      if (!orgUuid) {
+        toast({
+          title: 'חסר ארגון',
+          description: 'לא ניתן לשמור הזמנה בלי מזהה ארגון. בחר ארגון פעיל או רענן את הדף.',
+          variant: 'destructive',
+        });
+        return;
+      }
       const emailNorm = trimmed.toLowerCase();
+      const permsPayload = { ...permissions, report_mileage: true };
       const { data: inserted, error } = await (supabase as any)
         .from('org_invitations')
         .insert({
-          org_id: newOrgId,
+          org_id: orgUuid,
           email: emailNorm,
-          role: 'admin',
-          permissions: PRODUCTION_NEW_ORG_ADMIN_PERMISSIONS,
+          permissions: permsPayload,
           invited_by: invitedBy,
-          metadata: PRODUCTION_INVITE_METADATA,
         })
         .select('org_id, email')
         .single();
 
       if (error) throw error;
 
-      const inviteOrgId = String((inserted as { org_id?: string })?.org_id ?? newOrgId);
+      const inviteOrgId = String((inserted as { org_id?: string })?.org_id ?? orgUuid);
       const inviteEmail = String((inserted as { email?: string })?.email ?? emailNorm);
 
       let emailSent = false;

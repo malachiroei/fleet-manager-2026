@@ -256,17 +256,27 @@ export function useUpdateProfilePermissions() {
   });
 }
 
-/** מנהל צוות מסיר משתמש מארגון (RPC — ראו מיגרציה remove_team_member_from_org). */
+/** מנהל צוות מסיר משתמש מארגון — Edge Function `remove-team-member` (לא תלוי ב-RPC ב-schema cache). */
 export function useRemoveTeamMemberFromOrg() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async ({ orgId, memberUserId }: { orgId: string; memberUserId: string }) => {
-      const { error } = await supabase.rpc('remove_team_member_from_org', {
-        _org_id: orgId,
-        _member_user_id: memberUserId,
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error('נדרשת התחברות מחדש');
+
+      const { data, error } = await supabase.functions.invoke('remove-team-member', {
+        body: { org_id: orgId, member_user_id: memberUserId },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
+      const errMsg = (data as { error?: string } | null)?.error;
+      if (errMsg && String(errMsg).trim()) {
+        throw new Error(String(errMsg));
+      }
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: TEAM_QUERY_KEY });

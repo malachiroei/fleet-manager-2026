@@ -111,8 +111,8 @@ export default function TeamManagementPage() {
 
   // Strict privacy: team page is only for admins/managers (or explicit manage_team permission).
   const canManageTeam = isAdmin || isManager || hasPermission('manage_team') || isSuperAdminTeamView;
-  /** RPC בודק viewer_may_manage — לא רלוונטי לתצוגת «כל הארגונים» של סופר־אדמין. */
-  const canRemoveTeamMemberRow = canManageTeam && !isSuperAdminTeamView && Boolean(orgId);
+  /** הסרה: מנהל ארגון; בתצוגת סופר־אדמין — רק מלכי (לפי שורה org_id). */
+  const canRemoveTeamMemberRow = canManageTeam && (isSuperAdminTeamView ? isRoeiAdmin : Boolean(orgId));
   const tableColCount = (showSensitiveColumns ? 5 : 4) + (canRemoveTeamMemberRow ? 1 : 0);
   const canManageGlobalFeatures = isRoeiAdmin || hasPermission('manage_team') || isAdmin || isManager;
 
@@ -427,13 +427,21 @@ export default function TeamManagementPage() {
             <Button
               type="button"
               variant="destructive"
-              disabled={removeTeamMember.isPending || !orgId}
+              disabled={
+                removeTeamMember.isPending ||
+                !memberToRemove ||
+                !String((isSuperAdminTeamView ? memberToRemove.org_id : orgId) ?? orgId ?? '').trim()
+              }
               onClick={() => {
-                if (!memberToRemove || !orgId) return;
+                if (!memberToRemove) return;
+                const removeMutationOrgId = String(
+                  (isSuperAdminTeamView ? memberToRemove.org_id : orgId) ?? orgId ?? '',
+                ).trim();
+                if (!removeMutationOrgId) return;
                 const uid = String(memberToRemove.user_id ?? memberToRemove.id ?? '').trim();
                 if (!uid) return;
                 removeTeamMember.mutate(
-                  { orgId, memberUserId: uid },
+                  { orgId: removeMutationOrgId, memberUserId: uid },
                   { onSettled: () => setMemberToRemove(null) },
                 );
               }}
