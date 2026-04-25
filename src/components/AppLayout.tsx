@@ -81,11 +81,6 @@ function augmentSwitcherMembers(
   );
   visible = visible.filter((m) => (m.full_name || '').trim() !== 'רביד צי רכבים');
 
-  if (opts.isMainAdmin) {
-    const allow = new Set([RAVID_MANAGER_EMAIL]);
-    visible = visible.filter((m) => m.email && allow.has(m.email.toLowerCase()));
-  }
-
   /** תמיד ארגון רביד האמיתי — לא mainFleet של רועי (אחרת View-As נשאר על הצי הראשי). */
   const orgForSyntheticRavid = VIEW_AS_RAVID_ORG_ID;
   if (opts.isMainAdmin && !visible.some((m) => m.email?.toLowerCase() === RAVID_MANAGER_EMAIL)) {
