@@ -82,6 +82,44 @@ export default function TeamManagementPage() {
     return memberRowsAll.filter((m) => (m.email ?? '').trim().toLowerCase() !== 'malachiroei@gmail.com');
   }, [isSuperAdminTeamView, memberRowsAll]);
 
+  const isMemberAdminLike = (m: Profile): boolean => {
+    const perms = (m.permissions ?? {}) as Record<string, boolean>;
+    return m.is_system_admin === true || perms.manage_team === true || perms.admin_access === true;
+  };
+
+  const orderedMemberRows = useMemo(() => {
+    if (memberRows.length <= 1) return memberRows;
+    const byId = new Map(memberRows.map((m) => [m.id, m] as const));
+    const admins = memberRows.filter((m) => isMemberAdminLike(m));
+    const users = memberRows.filter((m) => !isMemberAdminLike(m));
+    const usersByManager = new Map<string, Profile[]>();
+    const unassigned: Profile[] = [];
+
+    for (const u of users) {
+      const managerId = String(u.managed_by_user_id ?? u.parent_admin_id ?? '').trim();
+      if (!managerId || !byId.has(managerId)) {
+        unassigned.push(u);
+        continue;
+      }
+      const arr = usersByManager.get(managerId) ?? [];
+      arr.push(u);
+      usersByManager.set(managerId, arr);
+    }
+
+    const sortedAdmins = [...admins].sort((a, b) => (a.full_name || a.email || '').localeCompare(b.full_name || b.email || ''));
+    const sortedUnassigned = [...unassigned].sort((a, b) => (a.full_name || a.email || '').localeCompare(b.full_name || b.email || ''));
+    const out: Profile[] = [];
+    for (const admin of sortedAdmins) {
+      out.push(admin);
+      const children = [...(usersByManager.get(admin.id) ?? [])].sort((a, b) =>
+        (a.full_name || a.email || '').localeCompare(b.full_name || b.email || ''),
+      );
+      out.push(...children);
+    }
+    out.push(...sortedUnassigned);
+    return out;
+  }, [memberRows]);
+
   /** מיילים שכבר יש להם שורה ב-profiles — לא מציגים אותם כהזמנה פתוחה */
   const registeredEmails = useMemo(() => {
     const set = new Set<string>();
@@ -230,7 +268,7 @@ export default function TeamManagementPage() {
                     </TableRow>
                   ) : (
                     <>
-                      {memberRows.map((m, mi) => {
+                      {orderedMemberRows.map((m, mi) => {
                         const memberEmail = (m.email ?? '').trim().toLowerCase();
                         const memberAuthId = String(m.user_id ?? m.id ?? '').trim();
                         const viewerAuthId = String(profile?.user_id ?? profile?.id ?? '').trim();
@@ -253,6 +291,9 @@ export default function TeamManagementPage() {
                             ) : null}
                             <TableCell className="w-[190px] font-medium align-middle">
                               <span className="truncate block">{m.full_name || '—'}</span>
+                              <span className="block text-[11px] text-muted-foreground">
+                                {isMemberAdminLike(m) ? 'אדמין' : 'משתמש תחת אדמין'}
+                              </span>
                             </TableCell>
                             <TableCell className="w-[240px] text-muted-foreground align-middle" dir="ltr">
                               <span className="truncate block">{m.email || '—'}</span>
