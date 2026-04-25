@@ -4,6 +4,8 @@ import type { ProfilePermissions } from '@/types/fleet';
 import { supabase } from '@/integrations/supabase/client';
 import { sendInvitationEmail } from '@/lib/sendInvitationEmail';
 import { toast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/useAuth';
+import { isSuperAdminPermissionBypass } from '@/lib/allowedFeatures';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -34,9 +36,21 @@ export function SimpleInviteModal({
   invitedBy,
   onSuccess,
 }: SimpleInviteModalProps) {
+  const { profile } = useAuth();
+  const inviterIsPlatformOwner = isSuperAdminPermissionBypass(profile);
   const [email, setEmail] = useState('');
   const [permissions, setPermissions] = useState<ProfilePermissions>(getDefaultPermissions());
   const [isPending, setIsPending] = useState(false);
+
+  const inviteRole: 'admin' | 'driver' = inviterIsPlatformOwner ? 'admin' : 'driver';
+  const effectivePermissions: ProfilePermissions = inviterIsPlatformOwner
+    ? { ...permissions, manage_team: true, admin_access: true, report_mileage: true }
+    : {
+        ...permissions,
+        manage_team: false,
+        admin_access: false,
+        report_mileage: true,
+      };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -54,12 +68,13 @@ export function SimpleInviteModal({
         return;
       }
       const emailNorm = trimmed.toLowerCase();
-      const permsPayload = { ...permissions, report_mileage: true };
+      const permsPayload = effectivePermissions;
       const { data: inserted, error } = await (supabase as any)
         .from('org_invitations')
         .insert({
           org_id: orgUuid,
           email: emailNorm,
+          role: inviteRole,
           permissions: permsPayload,
           invited_by: invitedBy,
         })
@@ -157,7 +172,7 @@ export function SimpleInviteModal({
             </Button>
             <Button type="submit" disabled={isPending || !email.trim()}>
               {isPending && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
-              שמור הזמנה
+              שלח הזמנה
             </Button>
           </DialogFooter>
         </form>

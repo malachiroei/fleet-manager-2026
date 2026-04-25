@@ -196,7 +196,7 @@ export function InviteMemberModal({
             </Button>
             <Button type="submit" disabled={isPending || !email.trim()}>
               {isPending && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
-              שמור הזמנה
+              שלח הזמנה
             </Button>
           </DialogFooter>
         </form>

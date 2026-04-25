@@ -397,22 +397,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!email) return;
       const { data: invitations, error: listError } = await (supabase as any)
         .from('org_invitations')
-        .select('id, org_id, permissions')
+        .select('id, org_id, permissions, invited_by, role')
         .eq('email', email)
         .order('created_at', { ascending: false })
         .limit(1);
       if (listError || !invitations?.length) return;
-      const inv = invitations[0] as { id: string; org_id: string; permissions: unknown };
+      const inv = invitations[0] as {
+        id: string;
+        org_id: string;
+        permissions: unknown;
+        invited_by?: string | null;
+        role?: string | null;
+      };
+      const inviteRole = String(inv.role ?? '').trim().toLowerCase();
+      const resolvedRole = inviteRole === 'admin' ? 'admin' : 'driver';
+      const inviterId = String(inv.invited_by ?? '').trim() || null;
       const { error: updateError } = await supabase
         .from('profiles')
         .update({
           org_id: inv.org_id,
           permissions: inv.permissions ?? {},
+          ...(inviterId
+            ? { parent_admin_id: inviterId, managed_by_user_id: inviterId }
+            : {}),
+          status: 'active',
           updated_at: new Date().toISOString(),
         })
         .eq('id', user.id);
       if (updateError) return;
-      await (supabase as any).from('org_members').insert({ user_id: user.id, org_id: inv.org_id });
+      const { data: existingMember } = await (supabase as any)
+        .from('org_members')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('org_id', inv.org_id)
+        .maybeSingle();
+      if (!existingMember) {
+        await (supabase as any).from('org_members').insert({ user_id: user.id, org_id: inv.org_id });
+      }
+      await (supabase as any).from('user_roles').delete().eq('user_id', user.id);
+      await (supabase as any).from('user_roles').insert({ user_id: user.id, role: resolvedRole });
       setActiveOrgId(inv.org_id);
       await (supabase as any).from('org_invitations').delete().eq('id', inv.id);
       await fetchProfileRef.current(user.id);
