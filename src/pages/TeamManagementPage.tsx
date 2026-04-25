@@ -241,10 +241,34 @@ export default function TeamManagementPage() {
                     : `${memberRows.length} חברי צוות · ${invitationRowsVisible.length} הזמנות פתוחות`}
               </CardDescription>
             </div>
-            <Button onClick={() => setModalOpen(true)} className="gap-2">
-              <UserPlus className="h-4 w-4" />
-              הזמנת חבר צוות
-            </Button>
+            <div className="flex items-center gap-2">
+              {memberHierarchy.admins.length > 0 ? (
+                <>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-[12px]"
+                    onClick={() => setExpandedAdminIds(memberHierarchy.admins.map((a) => a.id))}
+                  >
+                    פתח הכל
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-[12px]"
+                    onClick={() => setExpandedAdminIds([])}
+                  >
+                    סגור הכל
+                  </Button>
+                </>
+              ) : null}
+              <Button onClick={() => setModalOpen(true)} className="gap-2">
+                <UserPlus className="h-4 w-4" />
+                הזמנת חבר צוות
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             {listLoading ? (
