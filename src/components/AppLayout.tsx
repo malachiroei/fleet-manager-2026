@@ -329,6 +329,11 @@ export function AppLayout({ children }: AppLayoutProps) {
     } catch {
       /* ignore */
     }
+    try {
+      sessionStorage.removeItem('fleet-view-as-user-id');
+    } catch {
+      /* ignore */
+    }
 
     try {
       window.dispatchEvent(new CustomEvent('app:go-home'));
@@ -341,8 +346,14 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   /** תצוגה כחבר צוות: לרביד תמיד מעבירים ל-VIEW_AS_RAVID_ORG_ID (לא org של המנהל המחובר). */
   const handleViewAs = useCallback(
-    (member: Pick<TeamMemberSummary, 'email'> & Partial<Pick<TeamMemberSummary, 'org_id'>>) => {
+    (member: Pick<TeamMemberSummary, 'id' | 'email'> & Partial<Pick<TeamMemberSummary, 'org_id'>>) => {
       const trimmed = (member.email ?? '').trim();
+      try {
+        const uid = String(member.id ?? '').trim();
+        if (uid) sessionStorage.setItem('fleet-view-as-user-id', uid);
+      } catch {
+        /* ignore */
+      }
       setViewAsEmail(trimmed || null);
       if (trimmed.toLowerCase() === RAVID_MANAGER_EMAIL) {
         setActiveOrgId(VIEW_AS_RAVID_ORG_ID);

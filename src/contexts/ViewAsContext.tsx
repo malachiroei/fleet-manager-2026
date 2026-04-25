@@ -17,6 +17,28 @@ interface ViewAsContextValue {
 }
 
 const ViewAsContext = createContext<ViewAsContextValue | undefined>(undefined);
+const VIEW_AS_USER_ID_SESSION_KEY = 'fleet-view-as-user-id';
+
+function buildViewAsProfileFallback(userId: string, email: string, orgId: string | null): Profile {
+  const now = new Date().toISOString();
+  return {
+    id: userId,
+    user_id: userId,
+    full_name: email,
+    email,
+    phone: null,
+    org_id: orgId,
+    permissions: null,
+    status: 'active',
+    created_at: now,
+    updated_at: now,
+    allowed_features: null,
+    denied_features: null,
+    ui_denied_features_anchor_version: null,
+    parent_admin_id: null,
+    managed_by_user_id: null,
+  };
+}
 
 export function ViewAsProvider({ children }: { children: ReactNode }) {
   const [viewAsEmail, setViewAsEmail] = useState<string | null>(null);
@@ -54,6 +76,11 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       if (!normalizedEmail) {
+        try {
+          sessionStorage.removeItem(VIEW_AS_USER_ID_SESSION_KEY);
+        } catch {
+          /* ignore */
+        }
         setViewAsProfile(null);
         setViewAsLoading(false);
         return;
@@ -90,6 +117,17 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
         }
 
         if (!row) {
+          // Fallback by explicit id selected in switcher (avoids staying on manager scope when profiles lookup is blocked).
+          let fallbackUserId = '';
+          try {
+            fallbackUserId = sessionStorage.getItem(VIEW_AS_USER_ID_SESSION_KEY)?.trim() ?? '';
+          } catch {
+            /* ignore */
+          }
+          if (fallbackUserId) {
+            setViewAsProfile(buildViewAsProfileFallback(fallbackUserId, normalizedEmail, activeOrgId ?? null));
+            return;
+          }
           const globalLookup = await supabase
             .from('profiles')
             .select('*')
@@ -134,6 +172,11 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
           ...row,
           user_id: row.user_id ?? row.id,
         };
+        try {
+          sessionStorage.setItem(VIEW_AS_USER_ID_SESSION_KEY, String(resolvedProfile.id));
+        } catch {
+          /* ignore */
+        }
         setViewAsProfile(resolvedProfile);
       } finally {
         if (!cancelled) setViewAsLoading(false);
