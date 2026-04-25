@@ -35,6 +35,8 @@ export type UseTeamMembersOptions = {
   subjectManagerUserId?: string | null;
   /** Subject system-admin flag (supports View As depth). */
   subjectIsSystemAdmin?: boolean;
+  /** מנהל ארגון: הצגה לפי managed_by/parent_admin בלבד (ללא כל הארגון). */
+  managedScopeOnly?: boolean;
 };
 
 /**
@@ -46,6 +48,7 @@ export function useTeamMembers(orgId: string | null | undefined, options?: UseTe
   const loadAllOrgs = options?.loadAllOrgs === true;
   const subjectManagerUserId = options?.subjectManagerUserId ?? null;
   const subjectIsSystemAdmin = options?.subjectIsSystemAdmin === true;
+  const managedScopeOnly = options?.managedScopeOnly === true;
 
   const enabled = Boolean(profile) && (loadAllOrgs || Boolean(orgId));
 
@@ -62,14 +65,17 @@ export function useTeamMembers(orgId: string | null | undefined, options?: UseTe
     queryFn: async (): Promise<Profile[]> => {
       let q = supabase.from('profiles').select('*').order('full_name', { ascending: true });
       if (!loadAllOrgs && orgId) {
-        /**
-         * חברי ארגון + דיווחים ישירים (`parent_admin_id` / RLS `profiles_select_managed_by_me`)
-         * גם כש־`org_id` שלהם ארגון נפרד (צי משנה תחת אותו מנהל).
-         */
         if (subjectManagerUserId) {
-          q = q.or(
-            `org_id.eq.${orgId},parent_admin_id.eq.${subjectManagerUserId},managed_by_user_id.eq.${subjectManagerUserId}`,
-          );
+          if (managedScopeOnly) {
+            // מבנה היררכי: מנהל רואה רק מי שמשויך אליו.
+            q = q.or(
+              `parent_admin_id.eq.${subjectManagerUserId},managed_by_user_id.eq.${subjectManagerUserId}`,
+            );
+          } else {
+            q = q.or(
+              `org_id.eq.${orgId},parent_admin_id.eq.${subjectManagerUserId},managed_by_user_id.eq.${subjectManagerUserId}`,
+            );
+          }
         } else {
           q = q.eq('org_id', orgId);
         }

@@ -68,6 +68,7 @@ export default function TeamManagementPage() {
     loadAllOrgs: isSuperAdminTeamView,
     subjectManagerUserId: effectiveUserId,
     subjectIsSystemAdmin,
+    managedScopeOnly: !isSuperAdminTeamView && !subjectIsSystemAdmin,
   });
   const { data: invitations, isLoading: invitationsLoading, isFetching: invitationsFetching } =
     useOrgInvitations(orgId);
