@@ -75,19 +75,34 @@ export function useImpersonationFleetScope() {
     staleTime: 60_000,
   });
 
-  const isDriverContextOnly = useMemo(() => {
+  const loggedInRolesNorm = useMemo(
+    () => (loggedInRoles ?? []).map((x) => String(x).toLowerCase()),
+    [loggedInRoles],
+  );
+  const loggedInDriverContextOnly = useMemo(() => {
+    if (isImpersonating) return false;
+    if (loggedInRolesNorm.length === 0) return false;
+    const hasDriver = loggedInRolesNorm.includes('driver') || loggedInRolesNorm.includes('employee') || loggedInRolesNorm.includes('viewer');
+    const hasElevated = loggedInRolesNorm.includes('admin') || loggedInRolesNorm.includes('fleet_manager');
+    return hasDriver && !hasElevated;
+  }, [isImpersonating, loggedInRolesNorm]);
+
+  const impersonatedDriverContextOnly = useMemo(() => {
     if (!isImpersonating) return false;
     if (!rolesQuery.isFetched) return false;
     const roles = rolesQuery.data ?? [];
     if (roles.length === 0) return false;
-    const hasDriver = roles.includes('driver') || roles.includes('employee');
+    const hasDriver = roles.includes('driver') || roles.includes('employee') || roles.includes('viewer');
     const hasElevated = roles.includes('admin') || roles.includes('fleet_manager');
     return hasDriver && !hasElevated;
   }, [isImpersonating, rolesQuery.data, rolesQuery.isFetched]);
 
+  const isDriverContextOnly = impersonatedDriverContextOnly || loggedInDriverContextOnly;
+  const scopedDriverUserId = isImpersonating ? impersonatedUserId : effectiveUserId;
+
   const driverRowQuery = useQuery({
-    queryKey: ['view-as-scoped-driver', effectiveOrgId, impersonatedUserId, isDriverContextOnly],
-    enabled: Boolean(isDriverContextOnly && effectiveOrgId && impersonatedUserId),
+    queryKey: ['view-as-scoped-driver', effectiveOrgId, scopedDriverUserId, isDriverContextOnly],
+    enabled: Boolean(isDriverContextOnly && effectiveOrgId && scopedDriverUserId),
     retry: false,
     refetchOnWindowFocus: false,
     queryFn: async () => {
@@ -95,7 +110,7 @@ export function useImpersonationFleetScope() {
         .from('drivers')
         .select('id')
         .eq('org_id', effectiveOrgId!)
-        .eq('user_id', impersonatedUserId!)
+        .eq('user_id', scopedDriverUserId!)
         .maybeSingle();
       if (error) throw error;
       return (data as { id: string } | null)?.id ?? null;
@@ -116,8 +131,8 @@ export function useImpersonationFleetScope() {
   const fleetManagerListUserId = (isDriverContextOnly ? null : effectiveUserId) as string | null;
 
   const viewerIsFleetElevated = useMemo(
-    () => rolesIncludeFleetElevated((loggedInRoles ?? []).map((x) => String(x))),
-    [loggedInRoles]
+    () => rolesIncludeFleetElevated(loggedInRolesNorm),
+    [loggedInRolesNorm]
   );
 
   const impersonatedFleetElevated = useMemo(() => {
