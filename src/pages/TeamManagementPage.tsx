@@ -87,10 +87,12 @@ export default function TeamManagementPage() {
     return m.is_system_admin === true || perms.manage_team === true || perms.admin_access === true;
   };
 
-  const orderedMemberRows = useMemo(() => {
-    if (memberRows.length <= 1) return memberRows;
+  const [expandedAdminIds, setExpandedAdminIds] = useState<string[]>([]);
+  const memberHierarchy = useMemo(() => {
     const byId = new Map(memberRows.map((m) => [m.id, m] as const));
-    const admins = memberRows.filter((m) => isMemberAdminLike(m));
+    const admins = memberRows
+      .filter((m) => isMemberAdminLike(m))
+      .sort((a, b) => (a.full_name || a.email || '').localeCompare(b.full_name || b.email || ''));
     const users = memberRows.filter((m) => !isMemberAdminLike(m));
     const usersByManager = new Map<string, Profile[]>();
     const unassigned: Profile[] = [];
@@ -105,20 +107,30 @@ export default function TeamManagementPage() {
       arr.push(u);
       usersByManager.set(managerId, arr);
     }
-
-    const sortedAdmins = [...admins].sort((a, b) => (a.full_name || a.email || '').localeCompare(b.full_name || b.email || ''));
-    const sortedUnassigned = [...unassigned].sort((a, b) => (a.full_name || a.email || '').localeCompare(b.full_name || b.email || ''));
-    const out: Profile[] = [];
-    for (const admin of sortedAdmins) {
-      out.push(admin);
-      const children = [...(usersByManager.get(admin.id) ?? [])].sort((a, b) =>
-        (a.full_name || a.email || '').localeCompare(b.full_name || b.email || ''),
+    for (const [key, arr] of usersByManager.entries()) {
+      usersByManager.set(
+        key,
+        [...arr].sort((a, b) => (a.full_name || a.email || '').localeCompare(b.full_name || b.email || '')),
       );
-      out.push(...children);
     }
-    out.push(...sortedUnassigned);
-    return out;
+
+    return {
+      admins,
+      usersByManager,
+      unassigned: unassigned.sort((a, b) => (a.full_name || a.email || '').localeCompare(b.full_name || b.email || '')),
+    };
   }, [memberRows]);
+
+  const visibleMemberRows = useMemo(() => {
+    const out: Profile[] = [];
+    for (const admin of memberHierarchy.admins) {
+      out.push(admin);
+      if (expandedAdminIds.includes(admin.id)) {
+        out.push(...(memberHierarchy.usersByManager.get(admin.id) ?? []));
+      }
+    }
+    return out;
+  }, [memberHierarchy, expandedAdminIds]);
 
   /** מיילים שכבר יש להם שורה ב-profiles — לא מציגים אותם כהזמנה פתוחה */
   const registeredEmails = useMemo(() => {
@@ -268,11 +280,14 @@ export default function TeamManagementPage() {
                     </TableRow>
                   ) : (
                     <>
-                      {orderedMemberRows.map((m, mi) => {
+                      {visibleMemberRows.map((m, mi) => {
                         const memberEmail = (m.email ?? '').trim().toLowerCase();
                         const memberAuthId = String(m.user_id ?? m.id ?? '').trim();
                         const viewerAuthId = String(profile?.user_id ?? profile?.id ?? '').trim();
                         const isSelf = Boolean(memberAuthId) && memberAuthId === viewerAuthId;
+                        const isAdminRow = isMemberAdminLike(m);
+                        const childrenCount = memberHierarchy.usersByManager.get(m.id)?.length ?? 0;
+                        const isExpanded = expandedAdminIds.includes(m.id);
                         const canOpenFeatureOverrides =
                           isRoeiAdmin ||
                           (memberEmail && memberEmail === viewerEmail) ||
@@ -294,6 +309,21 @@ export default function TeamManagementPage() {
                               <span className="block text-[11px] text-muted-foreground">
                                 {isMemberAdminLike(m) ? 'אדמין' : 'משתמש תחת אדמין'}
                               </span>
+                              {isAdminRow && childrenCount > 0 ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="mt-2 h-7 px-2 text-[11px]"
+                                  onClick={() =>
+                                    setExpandedAdminIds((prev) =>
+                                      prev.includes(m.id) ? prev.filter((id) => id !== m.id) : [...prev, m.id],
+                                    )
+                                  }
+                                >
+                                  {isExpanded ? `הסתר משתמשים (${childrenCount})` : `הצג משתמשים (${childrenCount})`}
+                                </Button>
+                              ) : null}
                             </TableCell>
                             <TableCell className="w-[240px] text-muted-foreground align-middle" dir="ltr">
                               <span className="truncate block">{m.email || '—'}</span>
