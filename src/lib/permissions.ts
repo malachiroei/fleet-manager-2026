@@ -58,7 +58,11 @@ export function hasPermission(
   const perms = profile.permissions as ProfilePermissions | null | undefined;
   if (perms && typeof perms === 'object' && Object.keys(perms).length > 0) {
     if (typeof perms[permission] === 'boolean') return perms[permission] === true;
-    return false;
+    /**
+     * תאימות לאובייקטי הרשאות ישנים/חלקיים (למשל הזמנה עם subset).
+     * מפתח חסר כברירת מחדל = מותר, כדי לא לנעול UI למרות שהפיצ'ר דלוק ב-overrides.
+     */
+    return true;
   }
   return true;
 }

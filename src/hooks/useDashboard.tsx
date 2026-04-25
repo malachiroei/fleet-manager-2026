@@ -465,7 +465,8 @@ export function useComplianceAlerts() {
             if (isDriverContextOnly && scopedDriverId) {
               if (v.assigned_driver_id !== scopedDriverId) continue;
             } else {
-              if (effectiveOrgId && v.org_id && v.org_id !== effectiveOrgId) continue;
+              // בסקופ ארגון: אל תציג התראה לרכב בלי org תואם (כולל org_id=NULL).
+              if (effectiveOrgId && v.org_id !== effectiveOrgId) continue;
               if (
                 applyFleetManagerSlice &&
                 fleetManagerListUserId &&
@@ -495,7 +496,8 @@ export function useComplianceAlerts() {
             if (isDriverContextOnly && scopedDriverId) {
               if (r.entity_id !== scopedDriverId) continue;
             } else {
-              if (effectiveOrgId && d.org_id && d.org_id !== effectiveOrgId) continue;
+              // בסקופ ארגון: אל תציג התראה לנהג בלי org תואם (כולל org_id=NULL).
+              if (effectiveOrgId && d.org_id !== effectiveOrgId) continue;
               if (
                 applyFleetManagerSlice &&
                 fleetManagerListUserId &&
