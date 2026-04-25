@@ -107,6 +107,8 @@ async function appendDerivedComplianceFromFleetDates(
   const { effectiveOrgId, isDriverContextOnly, scopedDriverId, applyFleetManagerSlice, fleetManagerListUserId } =
     ctx;
   if (!effectiveOrgId) return;
+  // Driver-scoped view without resolved driver row: never fallback to org-wide compliance.
+  if (isDriverContextOnly && !scopedDriverId) return;
 
   type VRow = {
     id: string;
@@ -388,6 +390,10 @@ export function useComplianceAlerts() {
     queryFn: async (): Promise<ComplianceItem[]> => {
       const out: ComplianceItem[] = [];
       const occupiedSlots = new Set<string>();
+      // Driver-scoped view without resolved driver row: do not leak org alerts.
+      if (isDriverContextOnly && !scopedDriverId) {
+        return out;
+      }
 
       // `select('*')` — לא מציינים `entity_type` מפורשות: ב-DB ישנים לפעמים אין עמודה וה-PostgREST מחזיר 400 על select עם שדה שלא קיים.
       const { data: rawRows, error } = await supabase.from('compliance_alerts').select('*');
@@ -462,7 +468,8 @@ export function useComplianceAlerts() {
             const v = vehicleById.get(r.entity_id);
             if (!v) continue;
 
-            if (isDriverContextOnly && scopedDriverId) {
+            if (isDriverContextOnly) {
+              if (!scopedDriverId) continue;
               if (v.assigned_driver_id !== scopedDriverId) continue;
             } else {
               // בסקופ ארגון: אל תציג התראה לרכב בלי org תואם (כולל org_id=NULL).
@@ -493,7 +500,8 @@ export function useComplianceAlerts() {
             const d = driverById.get(r.entity_id);
             if (!d) continue;
 
-            if (isDriverContextOnly && scopedDriverId) {
+            if (isDriverContextOnly) {
+              if (!scopedDriverId) continue;
               if (r.entity_id !== scopedDriverId) continue;
             } else {
               // בסקופ ארגון: אל תציג התראה לנהג בלי org תואם (כולל org_id=NULL).
