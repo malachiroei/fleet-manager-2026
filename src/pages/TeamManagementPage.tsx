@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -129,8 +129,18 @@ export default function TeamManagementPage() {
         out.push(...(memberHierarchy.usersByManager.get(admin.id) ?? []));
       }
     }
+    // Never hide unmanaged users: show them even when all admin groups are collapsed.
+    out.push(...memberHierarchy.unassigned);
     return out;
   }, [memberHierarchy, expandedAdminIds]);
+
+  useEffect(() => {
+    if (memberHierarchy.admins.length === 0) return;
+    // First load (or after hierarchy reset): expand all admins so new invited users are visible immediately.
+    if (expandedAdminIds.length === 0) {
+      setExpandedAdminIds(memberHierarchy.admins.map((a) => a.id));
+    }
+  }, [memberHierarchy.admins, expandedAdminIds.length]);
 
   /** מיילים שכבר יש להם שורה ב-profiles — לא מציגים אותם כהזמנה פתוחה */
   const registeredEmails = useMemo(() => {
