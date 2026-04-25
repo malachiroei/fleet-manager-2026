@@ -419,19 +419,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const inviteRole = String(inv.role ?? '').trim().toLowerCase();
       const resolvedRole = inviteRole === 'admin' ? 'admin' : 'driver';
       const inviterId = String(inv.invited_by ?? '').trim() || null;
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({
-          org_id: inv.org_id,
-          permissions: inv.permissions ?? {},
-          ...(inviterId
+      /** אדמין ארגוני מהזמנת חשבון על — לא נשמר תחת המזמין בהיררכיית צוות */
+      const managerFromInvite =
+        resolvedRole === 'admin'
+          ? { parent_admin_id: null, managed_by_user_id: null }
+          : inviterId
             ? { parent_admin_id: inviterId, managed_by_user_id: inviterId }
-            : {}),
-          status: 'active',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', user.id);
-      if (updateError) return;
+            : {};
+      const { error: upsertError } = await (supabase as any)
+        .from('profiles')
+        .upsert(
+          {
+            id: user.id,
+            full_name: user.user_metadata?.full_name ?? '',
+            email,
+            org_id: inv.org_id,
+            role: resolvedRole,
+            permissions: inv.permissions ?? {},
+            ...managerFromInvite,
+            status: 'active',
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'id' },
+        );
+      if (upsertError) return;
       const { data: existingMember } = await (supabase as any)
         .from('org_members')
         .select('id')
@@ -610,6 +621,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signUp = async (email: string, password: string, fullName: string) => {
     try {
       const redirectUrl = resolveSignUpEmailRedirectUrl();
+      const emailNorm = email.trim().toLowerCase();
 
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -625,23 +637,66 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const userId = data.user?.id;
-      const userEmail = (data.user?.email ?? email).toLowerCase();
+      const userEmail = (data.user?.email ?? emailNorm).toLowerCase();
 
       if (userId) {
         const now = new Date().toISOString();
-        const { error: profileError } = await supabase
+        const { data: inviteRows } = await (supabase as any)
+          .from('org_invitations')
+          .select('org_id, permissions, invited_by, role')
+          .eq('email', userEmail)
+          .order('created_at', { ascending: false })
+          .limit(1);
+        const inv = (inviteRows?.[0] ?? null) as
+          | {
+              org_id?: string | null;
+              permissions?: unknown;
+              invited_by?: string | null;
+              role?: string | null;
+            }
+          | null;
+        const inviterId = String(inv?.invited_by ?? '').trim() || null;
+        const inviteOrgId = String(inv?.org_id ?? '').trim() || null;
+        const inviteRole = String(inv?.role ?? '').trim().toLowerCase();
+        const resolvedRole = inviteRole === 'admin' ? 'admin' : 'driver';
+        const managerFromInvite =
+          resolvedRole === 'admin'
+            ? { parent_admin_id: null, managed_by_user_id: null }
+            : inviterId
+              ? { parent_admin_id: inviterId, managed_by_user_id: inviterId }
+              : {};
+
+        const profilePayload: Record<string, unknown> = {
+          id: userId,
+          full_name: fullName,
+          email: userEmail,
+          status: inviteOrgId ? 'active' : 'pending_approval',
+          created_at: now,
+          updated_at: now,
+          ...(inviteOrgId ? { org_id: inviteOrgId, role: resolvedRole } : {}),
+          ...managerFromInvite,
+          ...(inv?.permissions != null ? { permissions: inv.permissions } : {}),
+        };
+        const { error: profileError } = await (supabase as any)
           .from('profiles')
-          .insert({
-            id: userId,
-            full_name: fullName,
-            email: userEmail,
-            status: 'pending_approval',
-            created_at: now,
-            updated_at: now,
-          });
+          .upsert(profilePayload, { onConflict: 'id' });
 
         if (profileError) {
-          console.error('Failed to create pending profile after signUp', profileError);
+          console.error('Failed to create invited profile after signUp', profileError);
+        }
+
+        if (inviteOrgId) {
+          const { data: existingMember } = await (supabase as any)
+            .from('org_members')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('org_id', inviteOrgId)
+            .maybeSingle();
+          if (!existingMember) {
+            await (supabase as any).from('org_members').insert({ user_id: userId, org_id: inviteOrgId });
+          }
+          await (supabase as any).from('user_roles').delete().eq('user_id', userId);
+          await (supabase as any).from('user_roles').insert({ user_id: userId, role: resolvedRole });
         }
       }
 

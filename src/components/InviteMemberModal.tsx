@@ -4,6 +4,8 @@ import type { ProfilePermissions } from '@/types/fleet';
 import { supabase } from '@/integrations/supabase/client';
 import { sendInvitationEmail } from '@/lib/sendInvitationEmail';
 import { toast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/useAuth';
+import { isSuperAdminPermissionBypass } from '@/lib/allowedFeatures';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -38,6 +40,7 @@ export function InviteMemberModal({
   invitedBy,
   onSuccess,
 }: InviteMemberModalProps) {
+  const { profile } = useAuth();
   const [email, setEmail] = useState('');
   const [permissions, setPermissions] = useState<ProfilePermissions>(getDefaultPermissions());
   const [isPending, setIsPending] = useState(false);
@@ -80,12 +83,17 @@ export function InviteMemberModal({
           return;
         }
         const emailNorm = inviteEmail.trim().toLowerCase();
-        const permsPayload = { ..._perms, report_mileage: true };
+        const inviterIsPlatformOwner = isSuperAdminPermissionBypass(profile);
+        const inviteRole: 'admin' | 'driver' = inviterIsPlatformOwner ? 'admin' : 'driver';
+        const permsPayload = inviterIsPlatformOwner
+          ? { ..._perms, report_mileage: true, manage_team: true, admin_access: true }
+          : { ..._perms, report_mileage: true, manage_team: false, admin_access: false };
         const { data, error } = await (supabase as any)
           .from('org_invitations')
           .insert({
             org_id: orgUuid,
             email: emailNorm,
+            role: inviteRole,
             permissions: permsPayload,
             invited_by: invitedBy,
           })
@@ -135,7 +143,7 @@ export function InviteMemberModal({
         setIsPending(false);
       }
     },
-    [invitedBy, onSuccess, handleOpenChange]
+    [invitedBy, onSuccess, handleOpenChange, profile]
   );
 
   const handleSubmit = useCallback(

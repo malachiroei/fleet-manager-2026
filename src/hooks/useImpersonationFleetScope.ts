@@ -79,13 +79,28 @@ export function useImpersonationFleetScope() {
     () => (loggedInRoles ?? []).map((x) => String(x).toLowerCase()),
     [loggedInRoles],
   );
+  const loggedInProfileDelegatedDriverContext = useMemo(() => {
+    if (isImpersonating) return false;
+    if (rolesIncludeFleetElevated(loggedInRolesNorm)) return false;
+    const hasParentAdmin = Boolean(profile?.parent_admin_id?.trim() || profile?.managed_by_user_id?.trim());
+    if (!hasParentAdmin) return false;
+    const perms = (profile?.permissions ?? null) as Record<string, unknown> | null;
+    if (!perms || typeof perms !== 'object') return false;
+    const hasAdminAccessFlag = typeof perms.admin_access === 'boolean';
+    const hasManageTeamFlag = typeof perms.manage_team === 'boolean';
+    if (!hasAdminAccessFlag && !hasManageTeamFlag) return false;
+    const adminAccess = perms.admin_access === true;
+    const manageTeam = perms.manage_team === true;
+    return !adminAccess && !manageTeam;
+  }, [isImpersonating, loggedInRolesNorm, profile?.parent_admin_id, profile?.managed_by_user_id, profile?.permissions]);
   const loggedInDriverContextOnly = useMemo(() => {
+    if (loggedInProfileDelegatedDriverContext) return true;
     if (isImpersonating) return false;
     if (loggedInRolesNorm.length === 0) return false;
     const hasDriver = loggedInRolesNorm.includes('driver') || loggedInRolesNorm.includes('employee') || loggedInRolesNorm.includes('viewer');
     const hasElevated = loggedInRolesNorm.includes('admin') || loggedInRolesNorm.includes('fleet_manager');
     return hasDriver && !hasElevated;
-  }, [isImpersonating, loggedInRolesNorm]);
+  }, [loggedInProfileDelegatedDriverContext, isImpersonating, loggedInRolesNorm]);
 
   const impersonatedDriverContextOnly = useMemo(() => {
     if (!isImpersonating) return false;

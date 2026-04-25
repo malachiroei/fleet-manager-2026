@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -134,14 +134,6 @@ export default function TeamManagementPage() {
     return out;
   }, [memberHierarchy, expandedAdminIds]);
 
-  useEffect(() => {
-    if (memberHierarchy.admins.length === 0) return;
-    // First load (or after hierarchy reset): expand all admins so new invited users are visible immediately.
-    if (expandedAdminIds.length === 0) {
-      setExpandedAdminIds(memberHierarchy.admins.map((a) => a.id));
-    }
-  }, [memberHierarchy.admins, expandedAdminIds.length]);
-
   /** מיילים שכבר יש להם שורה ב-profiles — לא מציגים אותם כהזמנה פתוחה */
   const registeredEmails = useMemo(() => {
     const set = new Set<string>();
@@ -252,28 +244,6 @@ export default function TeamManagementPage() {
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              {memberHierarchy.admins.length > 0 ? (
-                <>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-[12px]"
-                    onClick={() => setExpandedAdminIds(memberHierarchy.admins.map((a) => a.id))}
-                  >
-                    פתח הכל
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-[12px]"
-                    onClick={() => setExpandedAdminIds([])}
-                  >
-                    סגור הכל
-                  </Button>
-                </>
-              ) : null}
               <Button onClick={() => setModalOpen(true)} className="gap-2">
                 <UserPlus className="h-4 w-4" />
                 הזמנת חבר צוות
