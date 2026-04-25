@@ -14,8 +14,15 @@ import { isLikelyUuid } from '@/lib/fleetUuid';
 import { toast } from 'sonner';
 import { clearFleetProUpdateModalSuppressFlag } from '@/lib/pwaUpdateModalBridge';
 import { readViewAsActiveFromSession, setViewAsActiveSession } from '@/lib/viewAsSessionBridge';
+import { isFleetManagerProHostname } from '@/lib/versionManifest';
 
 const ACTIVE_ORG_STORAGE_KEY = 'fleet-manager-active-org';
+
+function resolveSignUpEmailRedirectUrl(): string {
+  if (typeof window === 'undefined') return 'https://fleet-manager-pro.com/auth';
+  if (isFleetManagerProHostname()) return 'https://fleet-manager-pro.com/auth';
+  return `${window.location.origin}/auth`;
+}
 
 /** ארגון פעיל לפי `profiles` + חריג לרביד (זהה לאתחול `activeOrgId`). */
 function resolveProfileOrgIdForActiveSession(profile: Profile | null, user: User | null): string | null {
@@ -602,7 +609,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = async (email: string, password: string, fullName: string) => {
     try {
-      const redirectUrl = `${window.location.origin}/`;
+      const redirectUrl = resolveSignUpEmailRedirectUrl();
 
       const { data, error } = await supabase.auth.signUp({
         email,
