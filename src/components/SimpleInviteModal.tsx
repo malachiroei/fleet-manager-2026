@@ -6,6 +6,7 @@ import { sendInvitationEmail } from '@/lib/sendInvitationEmail';
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { isSuperAdminPermissionBypass } from '@/lib/allowedFeatures';
+import { resolveOrgIdForTeamInvite } from '@/lib/platformTenantOrgInvite';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -58,21 +59,29 @@ export function SimpleInviteModal({
     if (!trimmed) return;
     setIsPending(true);
     try {
-      const orgUuid = String(_orgId ?? '').trim();
-      if (!orgUuid) {
+      const contextOrgId = String(_orgId ?? '').trim();
+      const emailNorm = trimmed.toLowerCase();
+      const { orgId: targetOrgId, error: orgResolveError } = await resolveOrgIdForTeamInvite({
+        inviterIsPlatformOwner,
+        inviteRole,
+        contextOrgId,
+        inviteEmail: emailNorm,
+      });
+      if (orgResolveError || !targetOrgId) {
         toast({
-          title: 'חסר ארגון',
-          description: 'לא ניתן לשמור הזמנה בלי מזהה ארגון. בחר ארגון פעיל או רענן את הדף.',
+          title: 'חסר ארגון או יצירת ארגון נכשלה',
+          description:
+            orgResolveError ??
+            'לא ניתן לשמור הזמנה בלי מזהה ארגון. בחר ארגון פעיל או רענן את הדף.',
           variant: 'destructive',
         });
         return;
       }
-      const emailNorm = trimmed.toLowerCase();
       const permsPayload = effectivePermissions;
       const { data: inserted, error } = await (supabase as any)
         .from('org_invitations')
         .insert({
-          org_id: orgUuid,
+          org_id: targetOrgId,
           email: emailNorm,
           role: inviteRole,
           permissions: permsPayload,
@@ -83,7 +92,7 @@ export function SimpleInviteModal({
 
       if (error) throw error;
 
-      const inviteOrgId = String((inserted as { org_id?: string })?.org_id ?? orgUuid);
+      const inviteOrgId = String((inserted as { org_id?: string })?.org_id ?? targetOrgId);
       const inviteEmail = String((inserted as { email?: string })?.email ?? emailNorm);
 
       let emailSent = false;
@@ -127,6 +136,11 @@ export function SimpleInviteModal({
           <DialogTitle>הזמנת חבר צוות</DialogTitle>
           <DialogDescription>
             הזן אימייל ובחר הרשאות. ההזמנה תישמר.
+            {inviterIsPlatformOwner && inviteRole === 'admin' ? (
+              <span className="mt-2 block text-amber-200/90">
+                כחשבון על: לארגון של אדמין חדש נוצר ארגון נפרד אוטומטית — לא משויך לארגון שבו אתה צופה כרגע.
+              </span>
+            ) : null}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">

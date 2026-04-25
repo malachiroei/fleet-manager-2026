@@ -6,6 +6,7 @@ import { sendInvitationEmail } from '@/lib/sendInvitationEmail';
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { isSuperAdminPermissionBypass } from '@/lib/allowedFeatures';
+import { resolveOrgIdForTeamInvite } from '@/lib/platformTenantOrgInvite';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -88,10 +89,24 @@ export function InviteMemberModal({
         const permsPayload = inviterIsPlatformOwner
           ? { ..._perms, report_mileage: true, manage_team: true, admin_access: true }
           : { ..._perms, report_mileage: true, manage_team: false, admin_access: false };
+        const { orgId: targetOrgId, error: orgResolveError } = await resolveOrgIdForTeamInvite({
+          inviterIsPlatformOwner,
+          inviteRole,
+          contextOrgId: orgUuid,
+          inviteEmail: emailNorm,
+        });
+        if (orgResolveError || !targetOrgId) {
+          toast({
+            title: 'חסר ארגון או יצירת ארגון נכשלה',
+            description: orgResolveError ?? 'לא ניתן לשמור הזמנה בלי מזהה ארגון.',
+            variant: 'destructive',
+          });
+          return;
+        }
         const { data, error } = await (supabase as any)
           .from('org_invitations')
           .insert({
-            org_id: orgUuid,
+            org_id: targetOrgId,
             email: emailNorm,
             role: inviteRole,
             permissions: permsPayload,
