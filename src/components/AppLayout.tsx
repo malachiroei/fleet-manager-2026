@@ -30,7 +30,7 @@ import {
 } from '@/constants/version';
 import { isFleetManagerProHostname } from '@/lib/versionManifest';
 import {
-  isFleetBootstrapOwnerEmail,
+  isFleetOrgAdminFallbackEmail,
   isPlatformSuperOwnerEmail,
   isRavidManagerEmail,
   resolveSessionEmail,
@@ -127,11 +127,13 @@ export function AppLayout({ children }: AppLayoutProps) {
   } = useAuth();
   const isDriverOnlyHeader = Boolean(isDriver && !isManager && !isAdmin);
   /** כולל bootstrap / is_system_admin כש־user_roles ריק בפרו */
+  /** רביד (מנהל ארגון) + חשבון על — לא תלוי בלבד ב-user_roles */
   const isElevatedHeader =
     isAdmin ||
     isManager ||
     profile?.is_system_admin === true ||
-    isFleetBootstrapOwnerEmail(resolveSessionEmail(profile, user));
+    isPlatformSuperOwnerEmail(resolveSessionEmail(profile, user)) ||
+    isFleetOrgAdminFallbackEmail(resolveSessionEmail(profile, user));
   /** מנהל ארגון / מנהל צי — כפתורי ניהול בכותרת (ארגון, צוות) */
   const isOrgAdminOrManager = isElevatedHeader && !isDriverOnlyHeader;
   /** בולטים בזהב/ענבר כדי שלא יפספסו */
@@ -256,14 +258,11 @@ export function AppLayout({ children }: AppLayoutProps) {
   const canAccessGoldenManagementLinks = !isDriverOnlyHeader && (canManageOrgUi || canManageTeamUi);
   const isRavid = isRavidManagerEmail(email);
 
-  /** נעילת org לרביד: לא raw profile.org_id אם עדיין מצביע על הצי הראשי — זה גרם לריצוד מול activeOrgId */
+  /** נעילת org לרביד: תמיד UUID הצי של רביד (2bb0f9c3-… ברירת מחדל) — מנהל בלעדי, בלי נדידה לפי profile שגוי */
   const ravidLockedTargetOrgId = useMemo(() => {
     if (!isRavid) return null;
-    const raw = profile?.org_id?.trim() || null;
-    if (!raw) return RAVID_FLEET_ORG_ID;
-    if (raw === FALLBACK_MAIN_FLEET_ORG_ID) return RAVID_FLEET_ORG_ID;
-    return raw;
-  }, [isRavid, profile?.org_id]);
+    return RAVID_FLEET_ORG_ID;
+  }, [isRavid]);
 
   /** כל מי שבתצוגת משתמש צריך באנר יציאה (לא רק מנהלים מוגדרים מראש). */
   const viewAsBannerVisible = Boolean(viewAsEmail?.trim());

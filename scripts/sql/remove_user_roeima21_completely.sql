@@ -2,6 +2,9 @@
 -- הסרת המשתמש roeima21@gmail.com מהמערכת (נתונים + auth.users).
 -- הרץ ב-Supabase → SQL Editor עם הרשאות postgres (או Service Role דרך migration ידנית).
 -- גיבוי לפני הרצה.
+--
+-- אם נשארה שורה ב-auth.users (או רק רציתם למחוק משם): Dashboard → Authentication → Users
+-- → חיפוש roeima21@gmail.com → Delete user. ב-CLI הנוכחי אין פקודת auth delete ייעודית.
 -- =============================================================================
 
 DO $$

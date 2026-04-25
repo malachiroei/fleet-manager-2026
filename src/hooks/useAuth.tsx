@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import type { AppRole, Profile } from '@/types/fleet';
 import { hasPermission as checkPermission, type PermissionKey } from '@/lib/permissions';
 import {
-  isFleetBootstrapOwnerEmail,
+  isFleetOrgAdminFallbackEmail,
   isPlatformSuperOwnerEmail,
   isRavidManagerEmail,
   resolveSessionEmail,
@@ -661,10 +661,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return lower === 'driver' || lower === 'employee' || lower === 'viewer';
   });
 
-  /** כש־user_roles ריק בפרו (RLS / העתקה), עדיין לא לנעול UI למנהל מערכת או בעלים ידוע. */
+  /**
+   * כש־user_roles ריק בפרו: חשבון על (מלכי) או מנהל צי רביד — תמיד כ-admin ל-UI.
+   * רביד נעול לארגון `RAVID_FLEET_ORG_ID` ב־AppLayout (לא תלוי ב-member/driver בטבלאות).
+   */
   const sessionEmailResolved = resolveSessionEmail(profile, user);
   const isAdminEffective =
-    isAdmin || profile?.is_system_admin === true || isFleetBootstrapOwnerEmail(sessionEmailResolved);
+    isAdmin ||
+    profile?.is_system_admin === true ||
+    isPlatformSuperOwnerEmail(sessionEmailResolved) ||
+    isFleetOrgAdminFallbackEmail(sessionEmailResolved);
   const isManagerEffective = isManager || isAdminEffective;
 
   const hasPermission = useCallback(
