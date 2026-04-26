@@ -37,11 +37,13 @@ const {
   anonKeyEnvSource,
 } = resolveSupabaseViteEnv();
 
-const skipRefGuard = trimEnv(import.meta.env.NEXT_PUBLIC_SUPABASE_SKIP_PROJECT_REF_CHECK) === '1';
+const skipRefGuard =
+  trimEnv(import.meta.env.VITE_SUPABASE_SKIP_PROJECT_REF_CHECK) === '1' ||
+  trimEnv(import.meta.env.NEXT_PUBLIC_SUPABASE_SKIP_PROJECT_REF_CHECK) === '1';
 const refFromUrl = extractProjectRefFromSupabaseUrl(SUPABASE_URL) ?? '';
 const expectedProjectRef =
-  trimEnv(import.meta.env.NEXT_PUBLIC_SUPABASE_PROJECT_REF) ||
   trimEnv(import.meta.env.VITE_SUPABASE_PROJECT_REF) ||
+  trimEnv(import.meta.env.NEXT_PUBLIC_SUPABASE_PROJECT_REF) ||
   refFromUrl;
 
 const envGuard = evaluateSupabaseEnvironmentGuard(SUPABASE_URL, expectedProjectRef, skipRefGuard, {
@@ -137,8 +139,8 @@ if (typeof window !== 'undefined' && !import.meta.env.PROD) {
   // eslint-disable-next-line no-console
   console.log('[Supabase] client bootstrap (URL/key sources)', {
     url: SUPABASE_URL || '(missing)',
-    urlEnvSource: urlEnvSource ?? '(no NEXT_PUBLIC_SUPABASE_URL or VITE_SUPABASE_URL)',
-    anonKeyEnvSource: anonKeyEnvSource ?? '(no NEXT_PUBLIC_SUPABASE_ANON_KEY or VITE_SUPABASE_ANON_KEY)',
+    urlEnvSource: urlEnvSource ?? '(no VITE_SUPABASE_URL)',
+    anonKeyEnvSource: anonKeyEnvSource ?? '(no VITE_SUPABASE_ANON_KEY)',
     urlRefExtracted: extractedRef ?? '(n/a)',
     projectRefEnv: expectedProjectRef || '(not set)',
     envGuardOk: envGuard.ok,
@@ -153,7 +155,7 @@ const shouldInitSupabase =
 const supabaseBlockedMessage: string =
   envGuard.ok === false
     ? envGuard.message
-    : 'Supabase client not initialized: set NEXT_PUBLIC_SUPABASE_URL or VITE_SUPABASE_URL, and NEXT_PUBLIC_SUPABASE_ANON_KEY or VITE_SUPABASE_ANON_KEY.';
+    : 'Supabase client not initialized: set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.';
 
 export const supabase: SupabaseClientType = shouldInitSupabase
   ? createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {

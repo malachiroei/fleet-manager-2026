@@ -14,7 +14,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
 
   return {
-    /** Expose both Vite and NEXT_PUBLIC_* names (Vercel env often uses the latter). */
+    /** `VITE_*` — מפתחות Supabase ללקוח; `NEXT_PUBLIC_*` — שאר דגלים (fleet guard וכו') ללא anon/url. */
     envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
     base: '/',
     server: {
@@ -65,12 +65,8 @@ export default defineConfig(({ mode }) => {
     define: {
       // הזרקה מפורשת של משתני הסביבה כדי למנוע Cache
       'process.env.VITE_APP_STATUS': JSON.stringify(env.VITE_APP_STATUS),
-      'process.env.NEXT_PUBLIC_SUPABASE_URL': JSON.stringify(
-        env.NEXT_PUBLIC_SUPABASE_URL ?? env.VITE_SUPABASE_URL ?? ''
-      ),
-      'process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY': JSON.stringify(
-        env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? env.VITE_SUPABASE_ANON_KEY ?? ''
-      ),
+      'process.env.VITE_SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL ?? ''),
+      'process.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(env.VITE_SUPABASE_ANON_KEY ?? ''),
     },
     resolve: {
       alias: {

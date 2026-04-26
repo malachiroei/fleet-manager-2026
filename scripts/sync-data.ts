@@ -6,10 +6,10 @@
  * system_settings (מניפסט / כפתורים גלובליים), org_documents, feature_flags,
  * user_feature_overrides, vehicle_handovers, driver_vehicle_assignments — והעתקת קבצי Storage.
  *
- * משתני סביבה (חובה):
+ * משתני סביבה (חובה — מוזרקים לתהליך / CI, לא `SUPABASE_SERVICE_ROLE_KEY` בשורש `.env`):
  *   NEXT_PUBLIC_SUPABASE_URL_STAGING / NEXT_PUBLIC_SUPABASE_URL_PROD
- *   NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY_STAGING או SUPABASE_SERVICE_ROLE_KEY_STAGING
- *   NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY_PROD או SUPABASE_SERVICE_ROLE_KEY_PROD
+ *   SUPABASE_SERVICE_ROLE_KEY_STAGING / SUPABASE_SERVICE_ROLE_KEY_PROD
+ *   (או המקבילים עם קידומת NEXT_PUBLIC_ ל-service role — רק בסודות CI/Vercel, לא בקובץ env משותף.)
  *
  * אופציונלי:
  *   SYNC_TARGET_ORG_ID — org_id בפרו (נהגים/רכבים/פרופילים וכו')
@@ -19,7 +19,7 @@
  *   SYNC_SKIP_STORAGE=1 — לדלג על Storage
  *   SYNC_STORAGE_MAX_FILES — מקסימום קבצים לכל bucket (ברירת מחדל ללא הגבלה)
  *
- * טוען .env, .env.local, env.local מהשורש.
+ * טוען רק `.env` מהשורש (לא `.env.local` — מקור אמת אחד לפרויקט hojop).
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
@@ -31,8 +31,6 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = resolve(__dirname, '..');
 
 config({ path: resolve(ROOT, '.env') });
-config({ path: resolve(ROOT, '.env.local'), override: true });
-config({ path: resolve(ROOT, 'env.local'), override: true });
 
 function pickEnv(keys: string[]): string {
   for (const k of keys) {

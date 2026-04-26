@@ -1,10 +1,10 @@
 /**
  * Supabase — משתני סביבה דרך `import.meta.env` (Vite).
- * תומך בשני מוסכמות שמות: `NEXT_PUBLIC_*` ו־`VITE_*`.
+ * בלקוח: רק `VITE_SUPABASE_URL` ו־`VITE_SUPABASE_ANON_KEY` (וב־pro.com — זוגות ה־`VITE_FLEET_PRODUCTION_*` המתאימים). אין `service_role` בפרונט; האבטחה ב־RLS.
  *
- * v2.7.66: ב־`fleet-manager-pro.com` — URL ייצור מ־`NEXT_PUBLIC_FLEET_PRODUCTION_SUPABASE_URL` (או fallback ל־`NEXT_PUBLIC_SUPABASE_URL`); anon מ־Vercel.
+ * ב־`fleet-manager-pro.com` — URL ייצור מ־`VITE_FLEET_PRODUCTION_SUPABASE_URL` (או fallback ל־`VITE_SUPABASE_URL`); anon נבחר כך שיתאים ל־ref של ה־URL.
  *
- * בחירת anon: חייב להתאים ל-ref ב-URL — אחרת Vercel עלול להשאיר מפתח מפרויקט ישן וההתחברות תחזיר «Invalid API key» (401).
+ * בחירת anon: חייב להתאים ל-ref ב-URL — אחרת נשאר מפתח מפרויקט לא נכון וההתחברות תחזיר «Invalid API key» (401).
  *
  * אימות ref: `evaluateSupabaseEnvironmentGuard` ב־`@/lib/supabase/envGuard`.
  */
@@ -69,7 +69,7 @@ function pickAnonKeyForSupabaseUrl(
   if (urlRef && typeof window !== 'undefined') {
     // eslint-disable-next-line no-console
     console.warn(
-      '[Supabase publicEnv] No anon key matches SUPABASE_URL project ref. Update Vercel so NEXT_PUBLIC_SUPABASE_ANON_KEY / NEXT_PUBLIC_FLEET_PRODUCTION_SUPABASE_ANON_KEY belong to the same project as the URL.',
+      '[Supabase publicEnv] No anon key matches SUPABASE_URL project ref. Set VITE_SUPABASE_ANON_KEY / VITE_FLEET_PRODUCTION_SUPABASE_ANON_KEY (Vercel or .env) to the anon key for the same project as the URL.',
       { urlRef },
     );
   }
@@ -95,24 +95,16 @@ export type ResolvedSupabaseViteEnv = {
   anonKeyEnvSource: string | null;
 };
 
-const URL_ENV_PAIRS = [
-  ['NEXT_PUBLIC_SUPABASE_URL', import.meta.env.NEXT_PUBLIC_SUPABASE_URL],
-  ['VITE_SUPABASE_URL', import.meta.env.VITE_SUPABASE_URL],
-] as const;
+const URL_ENV_PAIRS = [['VITE_SUPABASE_URL', import.meta.env.VITE_SUPABASE_URL]] as const;
 
-const ANON_KEY_ENV_PAIRS = [
-  ['NEXT_PUBLIC_SUPABASE_ANON_KEY', import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY],
-  ['VITE_SUPABASE_ANON_KEY', import.meta.env.VITE_SUPABASE_ANON_KEY],
-] as const;
+const ANON_KEY_ENV_PAIRS = [['VITE_SUPABASE_ANON_KEY', import.meta.env.VITE_SUPABASE_ANON_KEY]] as const;
 
 const PRODUCTION_URL_ENV_PAIRS = [
-  ['NEXT_PUBLIC_FLEET_PRODUCTION_SUPABASE_URL', import.meta.env.NEXT_PUBLIC_FLEET_PRODUCTION_SUPABASE_URL],
   ['VITE_FLEET_PRODUCTION_SUPABASE_URL', import.meta.env.VITE_FLEET_PRODUCTION_SUPABASE_URL],
 ] as const;
 
-/** מפתח anon ייעודי לייצור (אופציונלי) — לפני הזוגות הכלליים כשמשתמשים ב-URL הייצור */
+/** מפתח anon ייעודי לייצור (אופציונלי) — לפני `VITE_SUPABASE_ANON_KEY` כשמשתמשים ב-URL הייצור */
 const PRODUCTION_ANON_KEY_ENV_PAIRS = [
-  ['NEXT_PUBLIC_FLEET_PRODUCTION_SUPABASE_ANON_KEY', import.meta.env.NEXT_PUBLIC_FLEET_PRODUCTION_SUPABASE_ANON_KEY],
   ['VITE_FLEET_PRODUCTION_SUPABASE_ANON_KEY', import.meta.env.VITE_FLEET_PRODUCTION_SUPABASE_ANON_KEY],
 ] as const;
 
@@ -159,7 +151,7 @@ export function getSupabaseAnonKey(): string {
   return resolveSupabaseViteEnv().anonKey;
 }
 
-/** מפתח חלופי (אם בשימוש) — רק NEXT_PUBLIC */
+/** מפתח publishable חלופי (אם בשימוש) — רק VITE (אותו סוג גלוי כמו anon; אבטחה ב־RLS). */
 export function getSupabasePublishableKey(): string {
-  return trimEnv(import.meta.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
+  return trimEnv(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY);
 }

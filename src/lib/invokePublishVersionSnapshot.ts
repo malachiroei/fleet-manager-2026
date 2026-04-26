@@ -11,7 +11,7 @@ function anonKeyForFunctions(): string {
   return getSupabaseAnonKey() || getSupabasePublishableKey() || '';
 }
 
-/** חייב להתאים ל־Edge Functions ב־Supabase Dashboard (אותו פרויקט כמו VITE/NEXT_PUBLIC_SUPABASE_URL). */
+/** חייב להתאים ל־Edge Functions ב־Supabase Dashboard (אותו פרויקט כמו VITE_SUPABASE_URL). */
 function publishVersionSnapshotFunctionUrl(): string {
   const base = getSupabaseUrl().replace(/\/+$/, '');
   return `${base}/functions/v1/publish-version-snapshot`;

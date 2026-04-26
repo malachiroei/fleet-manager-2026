@@ -1,5 +1,10 @@
 # Fleet Manager Pro - Critical Development Rules
 
+## 0. Secrets & Supabase env (local + Vercel)
+- **Never** put `SUPABASE_SERVICE_ROLE_KEY` in any repo-tracked `.env` file. That key belongs only in the Supabase project Dashboard (Edge Functions / runtime) and in Vercel **Environment Variables** (or CI secrets), never in the app’s local env file that developers share or commit by mistake.
+- **Frontend:** the browser client must use **only** the public anon pair: `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. Security is enforced by **RLS** in Postgres, not by hiding the anon key.
+- **Single env file:** use one root `.env` for local dev (currently the shared **hojop** Supabase project). Do not reintroduce split env files (`.env.staging`, `.env.production`, etc.) to avoid cross-environment confusion.
+
 ## 1. Multi-Tenancy & Data Isolation (HIGHEST PRIORITY)
 - This application serves multiple organizations. Every table includes an `org_id` column.
 - **NEVER** perform any SELECT, UPDATE, DELETE, or INSERT without strictly enforcing the `org_id` filter.
