@@ -71,7 +71,7 @@ export default function ResetPasswordPage() {
 
   if (authLoading || (!user && !allowRedirect)) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#020617] p-4">
+      <div className="fleet-screen-page flex min-h-screen flex-col items-center justify-center p-4">
         <div className="absolute top-3 left-3 rtl:left-auto rtl:right-3">
           <PwaInstallButton variant="auth" />
         </div>
@@ -87,7 +87,7 @@ export default function ResetPasswordPage() {
 
   if (success) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#020617] p-4">
+      <div className="fleet-screen-page flex min-h-screen flex-col items-center justify-center p-4">
         <Card className="w-full max-w-md border-white/10 bg-[#0d1b2e] text-white">
           <CardContent className="pt-6 text-center">
             <p className="text-cyan-200">הסיסמה עודכנה. מעביר לדף הבית...</p>
@@ -99,7 +99,7 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-[#020617] p-4">
+    <div className="fleet-screen-page flex min-h-screen flex-col items-center justify-center p-4">
       <div className="absolute top-3 left-3 rtl:left-auto rtl:right-3">
         <PwaInstallButton variant="auth" />
       </div>

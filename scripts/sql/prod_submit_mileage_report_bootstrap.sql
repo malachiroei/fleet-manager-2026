@@ -2,6 +2,9 @@
 -- הרצה חד-פעמית בפרו (SQL Editor) כש־submit_mileage_report לא קיימת:
 --   ERROR: function public.submit_mileage_report(uuid, numeric, text) does not exist
 -- סדר: פונקציות עזר → submit_mileage_report → GRANT → רענון PostgREST
+--
+-- אם מקבלים 42P13 ("cannot remove parameter defaults"):
+--   יש כבר גרסה עם חתימה זהה וברירות מחדל שונות — חובה DROP לפני CREATE (מטופל למטה).
 -- =============================================================================
 
 CREATE OR REPLACE FUNCTION public.user_belongs_to_org(_user_id uuid, _org_id uuid)
@@ -80,6 +83,8 @@ GRANT EXECUTE ON FUNCTION public.user_has_fleet_staff_privileges(uuid) TO authen
 GRANT EXECUTE ON FUNCTION public.can_org_admin_write(uuid, uuid) TO authenticated;
 
 -- -----------------------------------------------------------------------------
+
+DROP FUNCTION IF EXISTS public.submit_mileage_report(uuid, numeric, text);
 
 CREATE OR REPLACE FUNCTION public.submit_mileage_report(
   vehicle_id uuid,

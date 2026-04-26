@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { FleetHudPageShell } from '@/components/FleetHudPageShell';
 import { ArrowUpDown, Car, Search, Truck, RotateCcw, Filter } from 'lucide-react';
 import { useHandoverHistory } from '@/hooks/useHandovers';
 import { Badge } from '@/components/ui/badge';
@@ -72,15 +73,11 @@ export default function TransfersPage() {
   const returnCount = handovers.filter((h) => h.handover_type === 'return').length;
 
   return (
-    <div className="min-h-screen p-4 sm:p-6 space-y-5 sm:space-y-6" dir="rtl">
-      {/* Header */}
-      <div className="flex items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">העברות רכבים</h1>
-          <p className="text-sm text-muted-foreground">כל מסירות והחזרות הרכבים במערכת</p>
-        </div>
-      </div>
-
+    <FleetHudPageShell
+      title="העברות רכבים"
+      subtitle="כל מסירות והחזרות הרכבים במערכת."
+    >
+    <section className="dashboard-status-stage dashboard-cyber-stage space-y-5 rounded-3xl border border-cyan-400/25 p-4 text-foreground sm:space-y-6 sm:p-6" dir="rtl">
       {/* Stats row */}
       <div className="flex flex-wrap gap-3">
         <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 shadow-sm">
@@ -234,6 +231,7 @@ export default function TransfersPage() {
           </div>
         )}
       </div>
-    </div>
+    </section>
+    </FleetHudPageShell>
   );
 }

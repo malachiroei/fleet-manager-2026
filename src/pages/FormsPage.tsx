@@ -13,6 +13,7 @@ import { useDrivers } from '@/hooks/useDrivers';
 import { useVehicles } from '@/hooks/useVehicles';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
+import { FleetHudPageShell } from '@/components/FleetHudPageShell';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -1336,17 +1337,15 @@ ${STANDARD_INPUT_FOOTER_TEXT}
   };
 
   return (
-    <div className="container py-4 sm:py-6 space-y-6 forms-clean">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold">טפסים</h1>
-          <p className="text-muted-foreground mt-1">מרכז הטפסים הארגוני לצפייה והורדה</p>
-        </div>
-        <div className="flex items-center gap-2">
+    <FleetHudPageShell
+      title="טפסים"
+      subtitle="מרכז הטפסים הארגוני לצפייה והורדה."
+      headerAside={
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <Button
             variant="outline"
             size="sm"
-            className="gap-2"
+            className="gap-2 border-cyan-500/30 bg-white/5"
             onClick={() => setFolderManagerOpen(true)}
             title="עריכת תיקיות"
             aria-label="עריכת תיקיות"
@@ -1354,11 +1353,11 @@ ${STANDARD_INPUT_FOOTER_TEXT}
             <FolderCog className="h-4 w-4" />
             עריכת תיקיות
           </Button>
-          {canManageForms && (
+          {canManageForms ? (
             <Button
               variant="outline"
               size="icon"
-              className="h-9 w-9"
+              className="h-9 w-9 border-cyan-500/30 bg-white/5"
               onClick={() => {
                 if (canShowManagementControls) {
                   setSettingsOpen(true);
@@ -1371,10 +1370,11 @@ ${STANDARD_INPUT_FOOTER_TEXT}
             >
               <Settings className="h-4 w-4" />
             </Button>
-          )}
+          ) : null}
         </div>
-      </div>
-
+      }
+    >
+    <section className="dashboard-status-stage dashboard-cyber-stage container mx-auto max-w-7xl space-y-6 rounded-3xl border border-cyan-400/25 p-4 sm:p-6 forms-clean">
       <div className="flex flex-wrap gap-2">
         {(['הכל', ...folderOptions] as CategoryFilter[]).map((cat) => (
           (() => {
@@ -2265,6 +2265,7 @@ ${STANDARD_INPUT_FOOTER_TEXT}
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </section>
+    </FleetHudPageShell>
   );
 }

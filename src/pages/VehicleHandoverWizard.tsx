@@ -2397,7 +2397,7 @@ export default function VehicleHandoverWizard() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#020617] text-white">
+    <div className="fleet-screen-page text-white">
       {/* Top bar */}
       <header className="sticky top-0 z-20 bg-[#0d1b2e]/95 backdrop-blur-sm border-b border-white/10">
         <div className="container py-3 flex items-center gap-3">

@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { FleetHudPageShell } from '@/components/FleetHudPageShell';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -49,11 +50,11 @@ export default function ReportsPage() {
   );
 
   return (
-    <div className="container py-4 sm:py-6 space-y-5 sm:space-y-6">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-white">הפקת דוחות</h1>
-        <p className="text-muted-foreground mt-1">סיכום נהגים פעילים ותוקף רישיונות נהיגה</p>
-      </div>
+    <FleetHudPageShell
+      title="הפקת דוחות"
+      subtitle="סיכום נהגים פעילים ותוקף רישיונות נהיגה."
+    >
+    <section className="dashboard-status-stage dashboard-cyber-stage container mx-auto max-w-7xl space-y-5 rounded-3xl border border-cyan-400/25 p-4 sm:space-y-6 sm:p-6">
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <Link to="/vehicles/transfers" className="block rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">
@@ -151,6 +152,7 @@ export default function ReportsPage() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </section>
+    </FleetHudPageShell>
   );
 }

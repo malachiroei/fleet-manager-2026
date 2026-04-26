@@ -39,7 +39,6 @@ const statusCardConfig: Array<{
   titleKey: 'navigation.fleetManagement' | 'navigation.drivers' | 'navigation.exceptionAlerts' | 'dashboard.replacementVehicle';
   icon: React.ElementType;
   theme: 'blue' | 'purple' | 'orange' | 'teal';
-  color: string;
   link: string;
   permission?: PermissionKey;
   featureFlagKey: string;
@@ -50,7 +49,6 @@ const statusCardConfig: Array<{
     titleKey: 'navigation.fleetManagement',
     icon: Car,
     theme: 'blue',
-    color: 'from-blue-500 to-cyan-400',
     link: '/vehicles',
     permission: 'vehicles',
     featureFlagKey: 'dashboard_vehicles',
@@ -60,7 +58,6 @@ const statusCardConfig: Array<{
     titleKey: 'navigation.drivers',
     icon: Users,
     theme: 'purple',
-    color: 'from-purple-500 to-indigo-600',
     link: '/drivers',
     permission: 'drivers',
     featureFlagKey: 'dashboard_drivers',
@@ -70,7 +67,6 @@ const statusCardConfig: Array<{
     titleKey: 'navigation.exceptionAlerts',
     icon: AlertTriangle,
     theme: 'orange',
-    color: 'from-orange-500 to-yellow-400',
     link: '/compliance',
     permission: 'compliance',
     featureFlagKey: 'dashboard_exception_alerts',
@@ -81,7 +77,6 @@ const statusCardConfig: Array<{
     titleKey: 'dashboard.replacementVehicle',
     icon: Repeat,
     theme: 'teal',
-    color: 'from-teal-400 to-emerald-500',
     link: '/handover/replacement',
     permission: 'handover',
     featureFlagKey: 'dashboard_replacement_car',
@@ -89,29 +84,36 @@ const statusCardConfig: Array<{
   },
 ];
 
+const statusIconStroke: Record<'blue' | 'purple' | 'orange' | 'teal', string> = {
+  blue: 'text-[#00f2ff]',
+  purple: 'text-[#c4b5fd]',
+  orange: 'text-[#ff9100]',
+  teal: 'text-[#5eead4]',
+};
+
 function StatusCard({
   title,
   value,
   icon: Icon,
   link,
   theme,
-  color,
 }: {
   title: string;
   value: string | number;
   icon: React.ElementType;
   link: string;
   theme: 'purple' | 'blue' | 'orange' | 'teal';
-  color: string;
 }) {
   const glowClass =
     theme === 'blue'
-      ? 'shadow-[0_0_15px_rgba(59,130,246,0.55)]'
+      ? 'shadow-[0_0_22px_rgba(0,242,255,0.42)]'
       : theme === 'purple'
-        ? 'shadow-[0_0_15px_rgba(168,85,247,0.55)]'
+        ? 'shadow-[0_0_22px_rgba(167,139,250,0.38)]'
         : theme === 'orange'
-          ? 'shadow-[0_0_15px_rgba(249,115,22,0.55)]'
-          : 'shadow-[0_0_15px_rgba(45,212,191,0.55)]';
+          ? 'shadow-[0_0_26px_rgba(255,49,49,0.55),0_0_40px_rgba(255,145,0,0.25)]'
+          : 'shadow-[0_0_22px_rgba(94,234,212,0.4)]';
+
+  const iconStroke = statusIconStroke[theme];
 
   return (
     <Link
@@ -120,41 +122,51 @@ function StatusCard({
       style={{ touchAction: 'manipulation', pointerEvents: 'auto' }}
     >
       <div
-        className={`status-card status-card--${theme} relative h-40 sm:h-44 md:h-56 w-full rounded-2xl bg-white/5/80 backdrop-blur-lg border border-white/10 p-3 sm:p-4 flex flex-col items-center justify-between hover:scale-[1.03] hover:-translate-y-1 overflow-hidden transition-all duration-300 ${glowClass}`}
+        className={`dashboard-cyber-status-card hud-status-card-surface status-card status-card--${theme} relative h-40 sm:h-44 md:h-56 w-full rounded-3xl p-3 sm:p-4 flex flex-col items-center justify-between hover:scale-[1.02] hover:-translate-y-0.5 overflow-hidden transition-all duration-300 border-t border-l border-white/[0.18] border-b border-r border-black/60 backdrop-blur-md ${glowClass}`}
         style={{ pointerEvents: 'none' } as React.CSSProperties}
       >
-        {/* השתקפות + גרדיאנט פנימי */}
-        <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-white/[0.07] via-black/40 to-black/80 opacity-80 pointer-events-none" aria-hidden />
-        <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-black/50 via-transparent to-white/[0.03] pointer-events-none" aria-hidden />
+        <div className="hud-status-card-carbon pointer-events-none absolute inset-0 rounded-3xl opacity-85" aria-hidden />
+        <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-white/[0.08] via-transparent to-black/55 pointer-events-none" aria-hidden />
+        <div
+          className="pointer-events-none absolute inset-[1px] rounded-[1.2rem] border border-cyan-400/10 opacity-70"
+          aria-hidden
+        />
 
         <div className="relative z-10 mt-1 flex flex-col items-center gap-2">
-          <div className={`status-card-icon-box inline-flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-2xl bg-gradient-to-br ${color}`}>
-            <Icon className="h-7 w-7 sm:h-8 sm:w-8 text-white" />
+          <div
+            className={`status-card-icon-box dashboard-cyber-icon-dish inline-flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-2xl border bg-slate-950/65 backdrop-blur-md ${theme === 'blue' ? 'border-[#00f2ff]/55' : theme === 'purple' ? 'border-violet-400/50' : theme === 'orange' ? 'border-[#ff4d00]/65' : 'border-teal-400/50'}`}
+          >
+            <Icon
+              className={`h-7 w-7 sm:h-8 sm:w-8 ${iconStroke}`}
+              strokeWidth={1.35}
+              aria-hidden
+            />
           </div>
-          <p className="text-[11px] sm:text-xs md:text-sm font-medium text-gray-300 tracking-wide truncate">
+          <p className="hud-dashboard-label text-[11px] sm:text-xs md:text-sm font-medium tracking-wide truncate max-w-full">
             {title}
           </p>
         </div>
 
         {value !== '' && (
           <div className="relative z-10 text-center">
-            <p
-              className="text-white text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight"
-              style={{ textShadow: '0 0 40px rgba(255,255,255,0.2)' }}
-            >
+            <p className="hud-kpi-value text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight text-white tabular-nums">
               {value}
             </p>
           </div>
         )}
 
-        <div className="relative z-10 mb-1 flex items-center gap-1 text-[10px] sm:text-xs font-medium text-white/80">
-          <div className="status-card-entry-btn flex items-center justify-center h-6 w-6 sm:h-7 sm:w-7 rounded-full border border-white/25 bg-white/5 backdrop-blur-sm">
-            <ChevronLeft className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+        <div className="relative z-10 mb-1 flex items-center gap-1 text-[10px] sm:text-xs font-medium hud-dashboard-muted">
+          <div className="status-card-entry-btn flex items-center justify-center h-6 w-6 sm:h-7 sm:w-7 rounded-full border border-white/20 bg-black/25 backdrop-blur-sm">
+            <ChevronLeft className="h-3 w-3 sm:h-3.5 sm:h-3.5 opacity-90" strokeWidth={1.5} />
           </div>
           <span className="tracking-wide">כניסה</span>
         </div>
 
         <div className="status-card-shine pointer-events-none absolute -inset-full h-full w-1/2 z-[5] block transform -skew-x-12 bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-0" aria-hidden />
+        <div
+          className={`pointer-events-none absolute bottom-0 left-3 right-3 h-[3px] rounded-full opacity-95 ${theme === 'blue' ? 'bg-[#00ffff] shadow-[0_0_20px_#00ffff,0_0_40px_rgba(0,255,255,0.35)]' : theme === 'purple' ? 'bg-violet-300 shadow-[0_0_18px_rgba(196,181,253,0.9)]' : theme === 'orange' ? 'bg-gradient-to-r from-[#ff3131] via-[#ff4d00] to-[#ff9100] shadow-[0_0_22px_rgba(255,77,0,0.95)]' : 'bg-teal-300 shadow-[0_0_18px_rgba(94,234,212,0.9)]'}`}
+          aria-hidden
+        />
       </div>
     </Link>
   );
@@ -365,12 +377,19 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="container py-6 md:py-8 pb-32 sm:pb-8 space-y-6 md:space-y-8 relative z-[1]">
-      <div className="rounded-2xl border bg-card p-4 md:p-6">
-        <h1 className="hidden sm:block text-2xl md:text-3xl font-bold tracking-tight text-foreground">
+    <div className="dashboard-cyber-page dashboard-page-hud relative isolate z-[1] -mx-6 w-[calc(100%+3rem)] max-w-none shrink-0 px-6 pt-1 pb-2 md:pb-3">
+      <div className="dashboard-cyber-lens dashboard-cyber-lens--top select-none" aria-hidden />
+      <div className="dashboard-cyber-lens dashboard-cyber-lens--bottom select-none" aria-hidden />
+      <div className="dashboard-cyber-vignette select-none" aria-hidden />
+      <div className="dashboard-cyber-grid select-none" aria-hidden />
+
+      <div className="container relative z-[2] mx-auto space-y-6 md:space-y-8 py-5 md:py-7 pb-28 sm:pb-10">
+      <div className="dashboard-hud-header-card rounded-3xl border-t border-l border-white/[0.16] border-b border-r border-black/55 p-5 md:p-8 relative overflow-hidden">
+        <div className="hud-status-card-carbon pointer-events-none absolute inset-0 rounded-3xl opacity-50" aria-hidden />
+        <h1 className="dashboard-cyber-hero-title hidden sm:block relative text-2xl md:text-3xl font-bold tracking-tight text-white">
           {t('dashboard.title')}
         </h1>
-        <p className="text-xs sm:text-sm md:text-base text-muted-foreground mt-0.5 sm:mt-1.5">
+        <p className="relative text-xs sm:text-sm md:text-base hud-dashboard-label mt-1 sm:mt-2 max-w-2xl leading-relaxed">
           {t('dashboard.subtitle')}
         </p>
       </div>
@@ -404,13 +423,13 @@ export default function Dashboard() {
         </Card>
       )}
 
-      <section className="dashboard-status-stage p-4 sm:p-6 md:p-10 pb-6 space-y-6 relative z-[20]">
+      <section className="dashboard-status-stage dashboard-cyber-stage p-4 sm:p-6 md:p-10 pb-6 space-y-6 relative z-[20]">
         {isStatsLoading ? (
           <div className="grid grid-cols-2 sm:grid-cols-2 gap-4 sm:gap-4">
             {[1, 2, 3, 4].map((i) => (
               <Skeleton
                 key={i}
-                className="h-40 w-full rounded-2xl min-h-[10rem]"
+                className="h-40 w-full rounded-3xl min-h-[10rem]"
               />
             ))}
           </div>
@@ -432,7 +451,6 @@ export default function Dashboard() {
                     icon={Icon}
                     link={card.link}
                     theme={card.theme}
-                    color={card.color}
                   />
                 );
               })}
@@ -443,7 +461,9 @@ export default function Dashboard() {
       {isMobile ? (
         <>
           <section className="space-y-3 pb-4">
-            <h2 className="text-base font-semibold text-foreground">{t('dashboard.quickActions')}</h2>
+            <h2 className="dashboard-cyber-section-title text-base font-semibold text-white tracking-tight">
+              {t('dashboard.quickActions')}
+            </h2>
             <div className="grid grid-cols-1 gap-3">
               {isInitialUiLoading ? (
                 <>
@@ -467,8 +487,8 @@ export default function Dashboard() {
                   }}
                 >
                   <CardContent className="p-4 flex items-center gap-3">
-                    <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/20 text-primary">
-                      <Wrench className="h-4.5 w-4.5" />
+                    <div className="dashboard-qa-icon">
+                      <Wrench className="h-4.5 w-4.5" strokeWidth={1.35} />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold text-foreground truncate">עדכן טיפול</p>
@@ -493,8 +513,8 @@ export default function Dashboard() {
                   }}
                 >
                   <CardContent className="p-4 flex items-center gap-3">
-                    <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/20 text-primary">
-                      <FlaskConical className="h-4.5 w-4.5" />
+                    <div className="dashboard-qa-icon">
+                      <FlaskConical className="h-4.5 w-4.5" strokeWidth={1.35} />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold text-foreground truncate">כפתור בדיקה</p>
@@ -512,8 +532,8 @@ export default function Dashboard() {
                 >
                   <Card className="h-full min-h-[48px] transition-all duration-200 hover:shadow-md border-primary/35 bg-primary/[0.07] shadow-sm hover:border-primary/50">
                     <CardContent className="p-4 flex items-center gap-3">
-                      <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/20 text-primary">
-                        <ClipboardList className="h-4.5 w-4.5" />
+                      <div className="dashboard-qa-icon">
+                        <ClipboardList className="h-4.5 w-4.5" strokeWidth={1.35} />
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-foreground truncate">עדכן טיפול</p>
@@ -528,8 +548,8 @@ export default function Dashboard() {
                 action.disabled ? (
                   <Card key={`${action.title}-${idx}`} className="h-full cursor-not-allowed opacity-55 touch-manipulation min-h-[48px]">
                     <CardContent className="p-4 flex items-center gap-3">
-                      <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                        <action.icon className="h-4.5 w-4.5" />
+                      <div className="dashboard-qa-icon dashboard-qa-icon--disabled">
+                        <action.icon className="h-4.5 w-4.5" strokeWidth={1.35} />
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-muted-foreground truncate">{action.title}</p>
@@ -541,8 +561,8 @@ export default function Dashboard() {
                   <Link key={action.href + idx} to={action.href} className="block touch-manipulation cursor-pointer" style={{ touchAction: 'manipulation' }}>
                     <Card className="h-full transition-all duration-200 hover:shadow-md min-h-[48px] cursor-pointer">
                       <CardContent className="p-4 flex items-center gap-3">
-                        <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                          <action.icon className="h-4.5 w-4.5" />
+                        <div className="dashboard-qa-icon">
+                          <action.icon className="h-4.5 w-4.5" strokeWidth={1.35} />
                         </div>
                         <div className="min-w-0 flex-1 flex items-center justify-between gap-2">
                           <p className="text-sm font-medium text-foreground truncate">{action.title}</p>
@@ -562,8 +582,8 @@ export default function Dashboard() {
               {hasPermission('mileage_update') && (
                 <Card className="h-full border-dashed touch-manipulation min-h-[48px] cursor-pointer" style={{ touchAction: 'manipulation' }}>
                   <CardContent className="p-4 flex items-center gap-3">
-                    <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                      <Gauge className="h-4.5 w-4.5" />
+                    <div className="dashboard-qa-icon dashboard-qa-icon--disabled">
+                      <Gauge className="h-4.5 w-4.5" strokeWidth={1.35} />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-foreground truncate">{t('navigation.mileageUpdate')}</p>
@@ -585,7 +605,9 @@ export default function Dashboard() {
       ) : (
         <>
           <section className="space-y-3">
-            <h2 className="text-lg font-semibold text-foreground">{t('dashboard.quickActions')}</h2>
+            <h2 className="dashboard-cyber-section-title text-lg font-semibold text-white tracking-tight">
+              {t('dashboard.quickActions')}
+            </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
               {isInitialUiLoading ? (
                 <>
@@ -609,8 +631,8 @@ export default function Dashboard() {
                   }}
                 >
                   <CardContent className="p-4 flex items-center gap-3">
-                    <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary/20 text-primary">
-                      <Wrench className="h-5 w-5" />
+                    <div className="dashboard-qa-icon">
+                      <Wrench className="h-5 w-5" strokeWidth={1.35} />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold text-foreground truncate">טיפול רכב</p>
@@ -637,8 +659,8 @@ export default function Dashboard() {
                   }}
                 >
                   <CardContent className="p-4 flex items-center gap-3">
-                    <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary/20 text-primary">
-                      <FlaskConical className="h-5 w-5" />
+                    <div className="dashboard-qa-icon">
+                      <FlaskConical className="h-5 w-5" strokeWidth={1.35} />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold text-foreground truncate">כפתור בדיקה</p>
@@ -658,8 +680,8 @@ export default function Dashboard() {
                 >
                   <Card className="h-full min-h-[48px] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md border-primary/35 bg-primary/[0.07] shadow-sm hover:border-primary/50">
                     <CardContent className="p-4 flex items-center gap-3">
-                      <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary/20 text-primary">
-                        <ClipboardList className="h-5 w-5" />
+                      <div className="dashboard-qa-icon">
+                        <ClipboardList className="h-5 w-5" strokeWidth={1.35} />
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-foreground truncate">עדכן טיפול</p>
@@ -676,8 +698,8 @@ export default function Dashboard() {
                 action.disabled ? (
                   <Card key={`${action.title}-${idx}`} className="h-full cursor-not-allowed opacity-55 touch-manipulation">
                     <CardContent className="p-4 flex items-center gap-3">
-                      <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
-                        <action.icon className="h-5 w-5" />
+                      <div className="dashboard-qa-icon dashboard-qa-icon--disabled">
+                        <action.icon className="h-5 w-5" strokeWidth={1.35} />
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-muted-foreground truncate">{action.title}</p>
@@ -689,8 +711,8 @@ export default function Dashboard() {
                   <Link key={action.href + idx} to={action.href} className="block touch-manipulation cursor-pointer" style={{ touchAction: 'manipulation' }}>
                     <Card className="h-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md min-h-[48px] cursor-pointer">
                       <CardContent className="p-4 flex items-center gap-3">
-                        <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                          <action.icon className="h-5 w-5" />
+                        <div className="dashboard-qa-icon">
+                          <action.icon className="h-5 w-5" strokeWidth={1.35} />
                         </div>
                       <div className="min-w-0 flex-1 flex items-center justify-between gap-3">
                         <div className="min-w-0">
@@ -715,8 +737,8 @@ export default function Dashboard() {
               {hasPermission('mileage_update') && (
                 <Card className="h-full border-dashed touch-manipulation min-h-[48px] cursor-pointer" style={{ touchAction: 'manipulation' }}>
                   <CardContent className="p-4 h-full flex items-center gap-3">
-                    <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
-                      <Gauge className="h-5 w-5" />
+                    <div className="dashboard-qa-icon dashboard-qa-icon--disabled">
+                      <Gauge className="h-5 w-5" strokeWidth={1.35} />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-foreground truncate">{t('navigation.mileageUpdate')}</p>
@@ -739,10 +761,11 @@ export default function Dashboard() {
 
       
 
-      <QuickOdometerDialog 
-        open={showOdometerDialog} 
-        onOpenChange={setShowOdometerDialog} 
+      <QuickOdometerDialog
+        open={showOdometerDialog}
+        onOpenChange={setShowOdometerDialog}
       />
+      </div>
     </div>
   );
 }

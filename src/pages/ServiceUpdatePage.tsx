@@ -18,7 +18,11 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { WebcamCapture } from '@/components/WebcamCapture';
 import { useMobilePhotoIngest } from '@/hooks/useMobilePhotoIngest';
-import { isAndroidUserAgent, shouldAttachDirectCameraCapture } from '@/lib/mobilePhotoIngest';
+import {
+  compressImageFileForUpload,
+  isAndroidUserAgent,
+  shouldAttachDirectCameraCapture,
+} from '@/lib/mobilePhotoIngest';
 
 const DOCS_BUCKET = 'vehicle-documents';
 
@@ -49,6 +53,22 @@ function sanitizeFileExt(name: string): string {
   return ext || 'jpg';
 }
 
+/** טבלת audit לא קיימת / לא מסונכרנת ל-PostgREST — לא לעצור את המסמך והמייל אחרי שעדכון הרכב כבר נשמר */
+function isVehicleServiceLogsSchemaOrMissingTable(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const o = err as { code?: string; message?: string };
+  const code = String(o.code ?? '');
+  const msg = String(o.message ?? '').toLowerCase();
+  if (code === 'PGRST204' || code === 'PGRST205') return true;
+  if (msg.includes('vehicle_service_logs') && (msg.includes('schema cache') || msg.includes('could not find'))) {
+    return true;
+  }
+  if (msg.includes('relation') && msg.includes('vehicle_service_logs') && msg.includes('does not exist')) {
+    return true;
+  }
+  return false;
+}
+
 export default function ServiceUpdatePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -72,7 +92,7 @@ export default function ServiceUpdatePage() {
   }, [user, flagsPending, featureFlags, hasPermission, navigate]);
 
   const [plateSearch, setPlateSearch] = useState('');
-  const [selectedVehicleId, setSelectedVehicleId] = useState('');
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string | undefined>(undefined);
   const [serviceDate, setServiceDate] = useState(todayYmdLocal);
   const [mileageInput, setMileageInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -197,14 +217,39 @@ export default function ServiceUpdatePage() {
 
     setSubmitting(true);
     try {
-      const ext = sanitizeFileExt(photoFile.name);
+      let fileToUpload = photoFile;
+      try {
+        fileToUpload = await compressImageFileForUpload(photoFile);
+      } catch (compressErr) {
+        console.warn('[ServiceUpdatePage] image compress skipped', compressErr);
+      }
+
+      const ext = sanitizeFileExt(fileToUpload.name);
       const uid =
         globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
       const path = `vehicle-files/${resolvedVehicle.id}/service_invoice_${uid}.${ext}`;
+      const contentType = fileToUpload.type || 'image/jpeg';
 
-      const { error: uploadError } = await supabase.storage
-        .from(DOCS_BUCKET)
-        .upload(path, photoFile, { upsert: false, contentType: photoFile.type || undefined });
+      let uploadError: { message: string; name?: string } | null = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const up = await supabase.storage
+          .from(DOCS_BUCKET)
+          .upload(path, fileToUpload, { upsert: true, contentType });
+        const err = up.error as { message: string; name?: string } | null;
+        if (!err) {
+          uploadError = null;
+          break;
+        }
+        uploadError = err;
+        const msg = String(err.message ?? '').toLowerCase();
+        const retriable =
+          msg.includes('failed to fetch') ||
+          msg.includes('network') ||
+          msg.includes('fetch') ||
+          err.name === 'StorageUnknownError';
+        if (!retriable || attempt === 2) break;
+        await new Promise((r) => setTimeout(r, 450 * (attempt + 1)));
+      }
       if (uploadError) throw uploadError;
 
       const { data: urlData } = supabase.storage.from(DOCS_BUCKET).getPublicUrl(path);
@@ -228,7 +273,7 @@ export default function ServiceUpdatePage() {
 
       await updateVehicle.mutateAsync(payload);
 
-      // Persist a service log entry (email trigger depends on this succeeding).
+      let serviceAuditSkipped = false;
       const { error: serviceLogError } = await supabase.from('vehicle_service_logs' as any).insert({
         vehicle_id: resolvedVehicle.id,
         plate_number: resolvedVehicle.plate_number,
@@ -237,7 +282,17 @@ export default function ServiceUpdatePage() {
         photo_url: photoUrl,
         user_id: user.id,
       } as any);
-      if (serviceLogError) throw serviceLogError;
+      if (serviceLogError) {
+        if (isVehicleServiceLogsSchemaOrMissingTable(serviceLogError)) {
+          console.warn(
+            '[ServiceUpdatePage] vehicle_service_logs insert skipped (DB schema / cache). הריצו מיגרציות או NOTIFY pgrst.',
+            serviceLogError,
+          );
+          serviceAuditSkipped = true;
+        } else {
+          throw serviceLogError;
+        }
+      }
 
       const { error: docErr } = await supabase.from('vehicle_documents').insert({
         vehicle_id: resolvedVehicle.id,
@@ -304,18 +359,25 @@ export default function ServiceUpdatePage() {
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['vehicle-documents', resolvedVehicle.id] });
 
+      const auditNote = serviceAuditSkipped
+        ? ' יומן טיפול DB (vehicle_service_logs) לא נשמר — יש להריץ מיגרציות Supabase או לרענן schema (NOTIFY pgrst).'
+        : '';
+
       toast({
         title: emailProblem ? 'הנתונים נשמרו; יש בעיה במייל' : 'הנתונים נשמרו והעדכון נשלח במייל',
-        description: emailProblem
-          ? `${emailProblem} | הטיפול והמסמך נשמרו במערכת.`
-          : 'הרכב עודכן ונשלחה הודעה לתיבת הניטור.',
+        description: `${emailProblem ? `${emailProblem} | הטיפול והמסמך נשמרו במערכת.` : 'הרכב עודכן ונשלחה הודעה לתיבת הניטור.'}${auditNote}`,
         variant: emailProblem ? 'destructive' : 'default',
       });
       navigate(`/vehicles/${resolvedVehicle.id}`);
     } catch (err: unknown) {
       console.error('[ServiceUpdatePage] submit failed', err);
-      const msg = err instanceof Error ? err.message : 'נסו שוב';
-      toast({ title: 'שגיאה בשמירה', description: msg, variant: 'destructive' });
+      const raw = err instanceof Error ? err.message : 'נסו שוב';
+      const low = raw.toLowerCase();
+      const hint =
+        low.includes('failed to fetch') || low.includes('network') || low.includes('http2')
+          ? ' (רשת: נסו שוב, בדקו חיבור/VPN, או צילום קטן יותר — התמונה מכווצת אוטומטית לפני העלאה.)'
+          : '';
+      toast({ title: 'שגיאה בשמירה', description: `${raw}${hint}`, variant: 'destructive' });
     } finally {
       setSubmitting(false);
     }
@@ -323,14 +385,14 @@ export default function ServiceUpdatePage() {
 
   if (!user || flagsPending || !serviceUpdateAllowed) {
     return (
-      <div className="min-h-screen bg-[#020617] text-white flex items-center justify-center">
+      <div className="fleet-screen-page text-white flex min-h-[70vh] items-center justify-center">
         <Loader2 className="h-10 w-10 animate-spin text-purple-400" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#020617] text-white">
+    <div className="fleet-screen-page text-white">
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
           <div className="flex items-center gap-3">
@@ -365,12 +427,12 @@ export default function ServiceUpdatePage() {
                     const v = e.target.value;
                     setPlateSearch(v);
                     if (!v.trim()) {
-                      setSelectedVehicleId('');
+                      setSelectedVehicleId(undefined);
                       return;
                     }
                     const sel = vehicles.find((x) => x.id === selectedVehicleId);
                     if (sel && normalizePlate(v) !== normalizePlate(sel.plate_number)) {
-                      setSelectedVehicleId('');
+                      setSelectedVehicleId(undefined);
                     }
                   }}
                   placeholder="הקלד מספר רישוי או חפש"
@@ -385,7 +447,7 @@ export default function ServiceUpdatePage() {
 
               <div className="space-y-2">
                 <Label>בחירה מהרשימה</Label>
-                <Select value={selectedVehicleId || undefined} onValueChange={onSelectVehicle}>
+                <Select value={selectedVehicleId} onValueChange={onSelectVehicle}>
                   <SelectTrigger className="h-12">
                     <SelectValue placeholder="בחר רכב (אופציונלי)" />
                   </SelectTrigger>

@@ -128,7 +128,7 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="relative min-h-screen flex items-center justify-center bg-[#020617] p-4">
+    <div className="fleet-screen-page relative flex min-h-screen items-center justify-center p-4">
       {/* Install app – top corner, also available after login in header */}
       <div className="absolute top-3 left-3 rtl:left-auto rtl:right-3">
         <PwaInstallButton variant="auth" />

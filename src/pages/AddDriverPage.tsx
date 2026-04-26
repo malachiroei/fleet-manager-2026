@@ -240,7 +240,7 @@ export default function AddDriverPage() {
   };
 
   return (
-    <div className="min-h-[100dvh] text-white">
+    <div className="fleet-screen-page min-h-[100dvh] text-foreground">
       <main className="container py-4 pb-24 space-y-6">
         <div className="rounded-2xl border border-border bg-card/90 px-4 py-3 sm:px-5 sm:py-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">

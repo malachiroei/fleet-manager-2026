@@ -1018,7 +1018,10 @@ export function AppLayout({ children }: AppLayoutProps) {
   };
 
   return (
-    <div className="flex min-h-[100dvh] flex-col overflow-x-hidden bg-[#020617]" dir={isRtl ? 'rtl' : 'ltr'}>
+    <div
+      className="flex min-h-[100dvh] flex-col overflow-x-hidden bg-transparent"
+      dir={isRtl ? 'rtl' : 'ltr'}
+    >
       {viewAsBannerVisible && (
         <div
           className={cn(
@@ -1101,7 +1104,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
       <main
         key={location.pathname + location.search}
-        className="relative flex-1 overflow-y-auto bg-transparent px-6 py-6"
+        className="fleet-app-main-scene relative flex-1 overflow-y-auto bg-transparent px-6 py-6"
       >
         {profile?.status === 'pending_approval' ? (
           <div className="flex min-h-[60vh] items-center justify-center">

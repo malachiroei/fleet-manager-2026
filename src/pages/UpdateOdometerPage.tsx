@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useVehicles, useUpdateOdometer } from '@/hooks/useVehicles';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,7 +33,7 @@ export default function UpdateOdometerPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#020617] text-white">
+    <div className="fleet-screen-page text-white">
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
           <div className="flex items-center gap-3">

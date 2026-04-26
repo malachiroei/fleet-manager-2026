@@ -297,7 +297,7 @@ export default function VehicleReturnPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#020617] text-white">
+    <div className="fleet-screen-page text-white">
       <main className="container py-6 pb-24">
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Vehicle & Driver Selection */}
@@ -470,7 +470,7 @@ export default function VehicleReturnPage() {
           </Card>
 
           {/* Submit */}
-          <div className="fixed bottom-12 left-0 right-0 p-4 bg-[#020617]/95 backdrop-blur-sm border-t border-white/10">
+          <div className="fixed bottom-12 left-0 right-0 p-4 bg-slate-950/90 backdrop-blur-sm border-t border-white/10">
             <div className="container">
               <Button 
                 type="submit" 

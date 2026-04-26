@@ -10,6 +10,7 @@ import { useVehicles } from '@/hooks/useVehicles';
 import { toast } from '@/hooks/use-toast';
 
 import { Button } from '@/components/ui/button';
+import { FleetHudPageShell } from '@/components/FleetHudPageShell';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -92,6 +93,23 @@ function describeMileageRpcForbidden(msg?: string, code?: string): string | null
     return 'השרת דחה את submit_mileage_report (Forbidden / חסר הרשאה). בפרו: הריצו GRANT EXECUTE ON FUNCTION public.submit_mileage_report(uuid, numeric, text) TO authenticated; ורעננו schema ב-API (או NOTIFY pgrst). ודאו שמחוברים כמשתמש רשום.';
   }
   return null;
+}
+
+/** PGRST202 / schema cache — הפונקציה לא קיימת בפרויקט או לא נטענה ל-PostgREST. */
+function isSubmitMileageReportRpcMissing(err: {
+  message?: string;
+  code?: string;
+  details?: string;
+  hint?: string;
+}): boolean {
+  const blob = `${err?.message ?? ''} ${err?.details ?? ''} ${err?.hint ?? ''}`.toLowerCase();
+  if (err?.code === 'PGRST202') return true;
+  if (blob.includes('could not find the function') && blob.includes('submit_mileage_report')) return true;
+  return false;
+}
+
+function describeMileageRpcMissingOnProject(): string {
+  return 'במסד Supabase של הפרויקט חסרה הפונקציה public.submit_mileage_report (או לא עודכן schema). הריצו את המיגרציות (למשל 20260409120000) או את scripts/sql/prod_submit_mileage_report_bootstrap.sql ב-SQL Editor, ואז Settings → API → Reload schema.';
 }
 
 export default function ReportMileagePage() {
@@ -282,37 +300,69 @@ export default function ReportMileagePage() {
         return;
       }
 
-      const { data: rpcRaw, error: rpcTransportError } = await (supabase as any).rpc('submit_mileage_report', {
+      const { data: rpcRaw, error: rpcTransportError } = await supabase.rpc('submit_mileage_report', {
         vehicle_id: selectedVehicle.id,
         odometer_value: odometerValue,
         photo_url: photoUrl,
       });
 
+      let persistedViaDirectInsert = false;
+
       if (rpcTransportError) {
-        logMileageLogsInsertError({
-          message: rpcTransportError.message,
-          code: rpcTransportError.code,
-          details: (rpcTransportError as any).details,
-          hint: (rpcTransportError as any).hint,
-        });
-        const schemaHint = describeMileageSchemaMismatch(rpcTransportError.message);
-        const forbiddenHint = describeMileageRpcForbidden(
-          rpcTransportError.message,
-          rpcTransportError.code,
-        );
-        toast({
-          title: 'שגיאה בשמירת הדיווח (מסד נתונים)',
-          description:
-            schemaHint ||
-            forbiddenHint ||
-            rpcTransportError.message ||
-            'ודאו שמיגרציית submit_mileage_report הורצה בפרויקט Supabase (20260406100000).',
-          variant: 'destructive',
-        });
-        return;
+        if (isSubmitMileageReportRpcMissing(rpcTransportError)) {
+          console.warn(
+            '[ReportMileagePage] submit_mileage_report RPC missing on project; attempting mileage_logs INSERT (RLS)',
+            rpcTransportError,
+          );
+          const { error: directInsertError } = await supabase.from('mileage_logs').insert({
+            vehicle_id: selectedVehicle.id,
+            odometer_value: odometerValue,
+            photo_url: photoUrl,
+            user_id: user.id,
+          });
+          if (directInsertError) {
+            logMileageLogsInsertError({
+              message: directInsertError.message,
+              code: directInsertError.code,
+              details: (directInsertError as { details?: string }).details,
+              hint: (directInsertError as { hint?: string }).hint,
+            });
+            toast({
+              title: 'שגיאה בשמירת הדיווח (מסד נתונים)',
+              description: `${describeMileageRpcMissingOnProject()} גם INSERT ל-mileage_logs נכשל: ${directInsertError.message}`,
+              variant: 'destructive',
+            });
+            return;
+          }
+          persistedViaDirectInsert = true;
+        } else {
+          logMileageLogsInsertError({
+            message: rpcTransportError.message,
+            code: rpcTransportError.code,
+            details: (rpcTransportError as { details?: string }).details,
+            hint: (rpcTransportError as { hint?: string }).hint,
+          });
+          const schemaHint = describeMileageSchemaMismatch(rpcTransportError.message);
+          const forbiddenHint = describeMileageRpcForbidden(
+            rpcTransportError.message,
+            rpcTransportError.code,
+          );
+          toast({
+            title: 'שגיאה בשמירת הדיווח (מסד נתונים)',
+            description:
+              schemaHint ||
+              forbiddenHint ||
+              rpcTransportError.message ||
+              'ודאו שמיגרציית submit_mileage_report הורצה בפרויקט Supabase (20260406100000).',
+            variant: 'destructive',
+          });
+          return;
+        }
       }
 
-      const rpcResult = rpcRaw as { ok?: boolean; error?: string; detail?: string; log_id?: string } | null;
+      const rpcResult = persistedViaDirectInsert
+        ? ({ ok: true } as const)
+        : (rpcRaw as { ok?: boolean; error?: string; detail?: string; log_id?: string } | null);
       if (!rpcResult?.ok) {
         const errKey = rpcResult?.error ?? 'unknown';
         console.error('[ReportMileagePage] submit_mileage_report rejected', rpcResult);
@@ -385,11 +435,15 @@ export default function ReportMileagePage() {
       queryClient.invalidateQueries({ queryKey: ['vehicles', orgId] });
       queryClient.invalidateQueries({ queryKey: ['vehicle-documents', selectedVehicle.id] });
 
+      const savedNote = persistedViaDirectInsert
+        ? ' (נשמר ישירות — מומלץ להריץ מיגרציית submit_mileage_report ב-Supabase כדי לאחד לוגיקה.)'
+        : '';
+
       toast({
         title: emailProblem ? 'הדיווח נשמר; יש בעיה במייל' : 'הדיווח נשמר והרכב עודכן',
         description: emailProblem
-          ? `${emailProblem} | קילומטראז׳ ${odometerValue.toLocaleString('he-IL')} ק״מ במערכת.`
-          : `קילומטראז׳ ${odometerValue.toLocaleString('he-IL')} ק״מ. מעבירים לדף הבית…`,
+          ? `${emailProblem} | קילומטראז׳ ${odometerValue.toLocaleString('he-IL')} ק״מ במערכת.${savedNote}`
+          : `קילומטראז׳ ${odometerValue.toLocaleString('he-IL')} ק״מ. מעבירים לדף הבית…${savedNote}`,
         variant: emailProblem ? 'destructive' : 'default',
       });
       navigate('/', { replace: true });
@@ -407,22 +461,23 @@ export default function ReportMileagePage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#020617] text-white">
-      <header className="bg-card border-b border-border sticky top-0 z-10">
-        <div className="container py-4">
-          <div className="flex items-center justify-between gap-3">
-            <h1 className="font-bold text-xl">דיווח קילומטראז׳</h1>
-            <Link to="/vehicles/service-update">
-              <Button type="button" variant="outline" className="h-10 gap-2">
-                <Wrench className="h-4 w-4 shrink-0" />
-                עדכון טיפול
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </header>
-
-      <main className="container py-6 pb-28">
+    <FleetHudPageShell
+      title="דיווח קילומטראז׳"
+      subtitle="בחר רכב, הזן קילומטראז׳ וצרף תמונה מהשטח."
+      headerAside={
+        <Link to="/vehicles/service-update" className="w-full sm:w-auto">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-10 w-full gap-2 border-cyan-500/40 bg-white/5 font-semibold text-cyan-100 hover:bg-cyan-500/10 sm:w-auto"
+          >
+            <Wrench className="h-4 w-4 shrink-0" />
+            עדכון טיפול
+          </Button>
+        </Link>
+      }
+    >
+      <section className="dashboard-status-stage dashboard-cyber-stage mx-auto max-w-3xl space-y-6 rounded-3xl border border-cyan-400/25 p-4 pb-28 text-white sm:p-6">
         <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
@@ -624,7 +679,7 @@ export default function ReportMileagePage() {
             )}
           </CardContent>
         </Card>
-      </main>
+      </section>
 
       <WebcamCapture
         key={webcamMountKey}
@@ -633,6 +688,6 @@ export default function ReportMileagePage() {
         onCapture={handleWebcamCapturedFile}
         disabled={submitting || isMaterializing}
       />
-    </div>
+    </FleetHudPageShell>
   );
 }

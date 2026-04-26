@@ -64,7 +64,7 @@ export default function DriverSectionEditPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#020617] text-white">
+      <div className="fleet-screen-page text-white">
         <header className="sticky top-0 z-10 border-b border-border bg-card">
           <div className="container py-4">
             <Skeleton className="h-8 w-64" />
@@ -80,7 +80,7 @@ export default function DriverSectionEditPage() {
   if (isError) {
     const msg = error instanceof Error ? error.message : String(error ?? 'שגיאה');
     return (
-      <div className="min-h-screen bg-[#020617] text-white">
+      <div className="fleet-screen-page text-white">
         <header className="sticky top-0 z-10 border-b border-border bg-card">
           <div className="container flex items-center gap-3 py-4">
             <h1 className="text-xl font-bold">שגיאה בטעינת הנהג</h1>
@@ -98,7 +98,7 @@ export default function DriverSectionEditPage() {
 
   if (!driver || !section) {
     return (
-      <div className="min-h-screen bg-[#020617] text-white">
+      <div className="fleet-screen-page text-white">
         <header className="border-b border-border bg-card">
           <div className="container flex items-center gap-3 py-4">
             <h1 className="text-xl font-bold">סקשן לא נמצא</h1>
@@ -177,7 +177,7 @@ export default function DriverSectionEditPage() {
   const d = driver as Driver;
 
   return (
-    <div className="min-h-screen bg-[#020617] text-white">
+    <div className="fleet-screen-page text-white">
       <main className="container max-w-5xl py-6 space-y-6">
         {/* הירו כמו מסך רכב — אישור שינויים באותו מיקום (צד אחד), כותרת בצד השני */}
         <div className="relative overflow-hidden rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-slate-800/90 via-slate-900 to-[#0a1628] px-5 py-6 shadow-[0_0_50px_rgba(6,182,212,0.06)] sm:px-8 sm:py-8">

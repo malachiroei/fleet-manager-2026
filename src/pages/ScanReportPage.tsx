@@ -27,7 +27,7 @@ export default function ScanReportPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#020617] text-white p-6 flex flex-col items-center gap-6">
+    <div className="fleet-screen-page text-white p-6 flex flex-col items-center gap-6">
       <div className="w-full flex justify-between items-center">
         <h2 className="text-xl font-bold">סריקת דוח</h2>
         <Link to="/"><Button variant="ghost">ביטול</Button></Link>

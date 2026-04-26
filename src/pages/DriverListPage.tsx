@@ -24,6 +24,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Plus, Search, User, Filter, FolderOpen } from 'lucide-react';
+import { FleetHudPageShell } from '@/components/FleetHudPageShell';
 import { DriverCard, licenseExpiresWithin30Days } from '@/components/DriverCard';
 import DriverFolders from '@/components/DriverFolders';
 import { useDriver } from '@/hooks/useDrivers';
@@ -128,27 +129,26 @@ export default function DriverListPage() {
       : 'bg-muted/50 text-muted-foreground border-border hover:bg-muted';
 
   return (
-    <div className="container min-h-[50vh] space-y-5 bg-[#020617] py-4 text-foreground sm:space-y-6 sm:py-6">
-      <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-white md:text-3xl">{t('drivers.title')}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{t('drivers.subtitle')}</p>
-        </div>
+    <FleetHudPageShell
+      title={t('drivers.title')}
+      subtitle={t('drivers.subtitle')}
+      headerAside={
         <Link to="/drivers/add" className="w-full shrink-0 sm:w-auto">
-          <Button size="sm" className="w-full sm:w-auto">
+          <Button size="sm" className="w-full border-cyan-500/40 bg-cyan-600/90 font-bold text-white shadow-[0_0_16px_rgba(6,182,212,0.35)] hover:bg-cyan-500 sm:w-auto">
             <Plus className="mr-2 h-4 w-4" />
             {t('drivers.addDriver')}
           </Button>
         </Link>
-      </div>
-
+      }
+    >
+      <section className="dashboard-status-stage dashboard-cyber-stage mx-auto max-w-7xl space-y-5 rounded-3xl border border-cyan-400/25 p-4 text-foreground sm:space-y-6 sm:p-6">
       <div className="relative w-full max-w-md">
-        <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-cyan-500/50" />
         <Input
           placeholder={t('drivers.searchPlaceholder')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="pr-10"
+          className="h-11 bg-white/5 pr-10 text-base focus:border-cyan-500 md:h-12"
         />
       </div>
 
@@ -311,6 +311,7 @@ export default function DriverListPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+      </section>
+    </FleetHudPageShell>
   );
 }

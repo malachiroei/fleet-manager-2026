@@ -442,7 +442,7 @@ export default function VehicleDeliveryPage() {
   };
 
   return (
-    <div className="relative min-h-screen bg-[#020617] text-white">
+    <div className="relative fleet-screen-page text-white">
       <main className="container py-6 pb-24">
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Vehicle & Driver Selection */}
@@ -609,7 +609,7 @@ export default function VehicleDeliveryPage() {
           </Card>
 
           {/* Submit — sticky בתוך ה-main במקום fixed ל-viewport, כדי שלא יישאר "רפאים" מעל דף אחר אחרי ניווט */}
-          <div className="sticky bottom-0 left-0 right-0 z-10 bg-[#020617]/95 pb-4 pt-4 backdrop-blur-sm">
+          <div className="sticky bottom-0 left-0 right-0 z-10 bg-slate-950/90 pb-4 pt-4 backdrop-blur-sm">
             <div className="container flex justify-center">
               <Button 
                 type="submit" 

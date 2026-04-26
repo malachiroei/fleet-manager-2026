@@ -147,7 +147,7 @@ function AppRoutes() {
           <ProtectedRoute>
             <Suspense
               fallback={
-                <div className="flex min-h-[40vh] items-center justify-center bg-[#020617] text-sm text-white/70">
+                <div className="fleet-screen-page flex min-h-[40vh] items-center justify-center text-sm text-white/70">
                   טוען הגדרות…
                 </div>
               }

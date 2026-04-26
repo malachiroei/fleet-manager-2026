@@ -1,4 +1,5 @@
 import { useComplianceAlerts } from '@/hooks/useDashboard';
+import { FleetHudPageShell } from '@/components/FleetHudPageShell';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -23,16 +24,11 @@ export default function CompliancePage() {
   const warningAlerts = alerts?.filter(a => a.status === 'warning') || [];
 
   return (
-    <div className="min-h-screen bg-[#020617] text-white">
-      <header className="bg-card border-b border-border sticky top-0 z-10">
-        <div className="container py-4">
-          <div className="flex items-center gap-3">
-            <h1 className="font-bold text-xl">מרכז ציות ותקינות</h1>
-          </div>
-        </div>
-      </header>
-
-      <main className="container py-6 space-y-6">
+    <FleetHudPageShell
+      title="מרכז ציות ותקינות"
+      subtitle="מעקב אחר תוקפים, אזהרות ופריטים שדורשים טיפול — בסגנון לוח הבקרה."
+    >
+      <section className="dashboard-status-stage dashboard-cyber-stage mx-auto max-w-5xl space-y-6 rounded-3xl border border-cyan-400/25 p-4 text-white sm:p-6">
         {/* Summary */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card className="border-destructive/50 bg-destructive/5">
@@ -138,7 +134,7 @@ export default function CompliancePage() {
             )}
           </>
         )}
-      </main>
-    </div>
+      </section>
+    </FleetHudPageShell>
   );
 }

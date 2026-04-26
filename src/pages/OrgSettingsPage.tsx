@@ -1,4 +1,5 @@
 import React, { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FleetHudPageShell } from '@/components/FleetHudPageShell';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -766,77 +767,69 @@ export default function OrgSettingsPage() {
     readOnly || !orgId || orgLoading || settingsLoading || isExportingSnapshot || importFileBusy;
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-4xl mx-auto p-6 space-y-6" dir="rtl">
-
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">הגדרות ארגון</h1>
-            <p className="text-muted-foreground text-sm">ניהול פרטי חברה, תבניות PDF, שמות מותאמים ומסמכים נוספים</p>
-          </div>
-          </div>
-
-          {/* Always visible in Production: Backup / Restore / Check updates */}
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={backupSystemTools} disabled={isBackingUp || isRestoring}>
-              {isBackingUp ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : <Download className="h-4 w-4 ml-2" />}
-              גיבוי
-            </Button>
-            <Button variant="outline" size="sm" onClick={restoreSystemTools} disabled={isRestoring || isBackingUp}>
-              {isRestoring ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : <RotateCcw className="h-4 w-4 ml-2" />}
-              שחזור
-            </Button>
-            <Button variant="outline" size="sm" onClick={checkForUpdates} disabled={isCheckingUpdates}>
-              {isCheckingUpdates ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : <RefreshCw className="h-4 w-4 ml-2" />}
-              בדוק עדכונים
-            </Button>
-            {!readOnly && (
-              isStagingForCrossEnvSync ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  disabled={crossEnvSyncDisabled}
-                  onClick={() => handleSyncExportDialogChange(true)}
-                  className="gap-2"
-                >
-                  העברת הגדרות לפרו
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  disabled={crossEnvSyncDisabled}
-                  onClick={openCrossEnvImportPicker}
-                  className="gap-2"
-                >
-                  {importFileBusy ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : <Upload className="h-4 w-4 ml-2" />}
-                  טען עדכונים מסטייג׳ינג
-                </Button>
-              )
-            )}
-            <input
-              ref={restoreInputRef}
-              type="file"
-              accept="application/json,.json"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) void handleRestorePicked(f);
-              }}
-            />
-            <input
-              ref={crossEnvImportInputRef}
-              type="file"
-              accept="application/json,.json"
-              className="hidden"
-              onChange={handleCrossEnvImportFilePicked}
-            />
-          </div>
+    <FleetHudPageShell
+      title="הגדרות ארגון"
+      subtitle="ניהול פרטי חברה, תבניות PDF, שמות מותאמים ומסמכים נוספים."
+      headerAside={
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={backupSystemTools} disabled={isBackingUp || isRestoring}>
+            {isBackingUp ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : <Download className="h-4 w-4 ml-2" />}
+            גיבוי
+          </Button>
+          <Button variant="outline" size="sm" onClick={restoreSystemTools} disabled={isRestoring || isBackingUp}>
+            {isRestoring ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : <RotateCcw className="h-4 w-4 ml-2" />}
+            שחזור
+          </Button>
+          <Button variant="outline" size="sm" onClick={checkForUpdates} disabled={isCheckingUpdates}>
+            {isCheckingUpdates ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : <RefreshCw className="h-4 w-4 ml-2" />}
+            בדוק עדכונים
+          </Button>
+          {!readOnly &&
+            (isStagingForCrossEnvSync ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={crossEnvSyncDisabled}
+                onClick={() => handleSyncExportDialogChange(true)}
+                className="gap-2"
+              >
+                העברת הגדרות לפרו
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={crossEnvSyncDisabled}
+                onClick={openCrossEnvImportPicker}
+                className="gap-2"
+              >
+                {importFileBusy ? <Loader2 className="h-4 w-4 animate-spin ml-2" /> : <Upload className="h-4 w-4 ml-2" />}
+                טען עדכונים מסטייג׳ינג
+              </Button>
+            ))}
+          <input
+            ref={restoreInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void handleRestorePicked(f);
+            }}
+          />
+          <input
+            ref={crossEnvImportInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={handleCrossEnvImportFilePicked}
+          />
         </div>
-
+      }
+    >
+      <section className="dashboard-status-stage dashboard-cyber-stage mx-auto max-w-4xl space-y-6 rounded-3xl border border-cyan-400/25 p-4 sm:p-6" dir="rtl">
         <ExportChecklistDialog
           open={syncExportModalOpen}
           onOpenChange={handleSyncExportDialogChange}
@@ -1223,7 +1216,7 @@ export default function OrgSettingsPage() {
           </Tabs>
           </>
         )}
-      </div>
-    </div>
+      </section>
+    </FleetHudPageShell>
   );
 }

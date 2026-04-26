@@ -22,6 +22,7 @@ import {
 } from '@/lib/releaseSnapshot';
 import { supabase } from '@/integrations/supabase/client';
 import { getSupabaseAnonKey } from '@/integrations/supabase/publicEnv';
+import { FleetHudPageShell } from '@/components/FleetHudPageShell';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -192,42 +193,36 @@ export default function TeamManagementPage() {
   const inviteModalOrgId = orgId ?? profile?.org_id ?? '';
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-4xl mx-auto px-3 py-4 sm:p-6 space-y-4 sm:space-y-6" dir="rtl">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-          <div className="flex items-center gap-3">
-            <div className="min-w-0">
-              <h1 className="text-xl sm:text-2xl font-bold text-foreground">ניהול צוות</h1>
-              <p className="text-muted-foreground text-xs sm:text-sm">
-                {isSuperAdminTeamView ? 'כל הארגונים — תצוגת סופר־אדמין' : 'חברי הארגון ופיצ׳רים אישיים'}
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 sm:ms-auto">
-            {canManageGlobalFeatures ? (
-              <Dialog open={globalFeaturesOpen} onOpenChange={setGlobalFeaturesOpen}>
-                <DialogTrigger asChild>
-                  <Button
-                    type="button"
-                    className="h-9 gap-2 border-2 border-[gold] bg-amber-500/25 px-4 text-amber-50 shadow-[0_0_18px_rgba(251,191,36,0.45)] hover:bg-amber-500/40 hover:text-white hover:border-[#ffd700]"
-                  >
-                    <Flag className="h-4 w-4" />
-                    ניהול פיצ'רים גלובליים
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="w-[min(100vw-1rem,56rem)] max-h-[min(100dvh-1rem,90vh)] overflow-y-auto" dir="rtl">
-                  <DialogHeader>
-                    <DialogTitle>ניהול פיצ'רים גלובליים</DialogTitle>
-                  </DialogHeader>
-                  <div className="max-h-[75vh] overflow-auto pr-1">
-                    <GlobalFeatureFlagsAdminPanel />
-                  </div>
-                </DialogContent>
-              </Dialog>
-            ) : null}
-          </div>
-        </div>
-
+    <FleetHudPageShell
+      title="ניהול צוות"
+      subtitle={
+        isSuperAdminTeamView ? 'כל הארגונים — תצוגת סופר־אדמין' : 'חברי הארגון ופיצ׳רים אישיים'
+      }
+      headerAside={
+        canManageGlobalFeatures ? (
+          <Dialog open={globalFeaturesOpen} onOpenChange={setGlobalFeaturesOpen}>
+            <DialogTrigger asChild>
+              <Button
+                type="button"
+                className="h-9 gap-2 border-2 border-[gold] bg-amber-500/25 px-4 text-amber-50 shadow-[0_0_18px_rgba(251,191,36,0.45)] hover:bg-amber-500/40 hover:text-white hover:border-[#ffd700]"
+              >
+                <Flag className="h-4 w-4" />
+                ניהול פיצ'רים גלובליים
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="w-[min(100vw-1rem,56rem)] max-h-[min(100dvh-1rem,90vh)] overflow-y-auto" dir="rtl">
+              <DialogHeader>
+                <DialogTitle>ניהול פיצ'רים גלובליים</DialogTitle>
+              </DialogHeader>
+              <div className="max-h-[75vh] overflow-auto pr-1">
+                <GlobalFeatureFlagsAdminPanel />
+              </div>
+            </DialogContent>
+          </Dialog>
+        ) : null
+      }
+    >
+      <section className="dashboard-status-stage dashboard-cyber-stage mx-auto max-w-4xl space-y-4 rounded-3xl border border-cyan-400/25 p-3 sm:space-y-6 sm:p-6" dir="rtl">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <div>
@@ -469,7 +464,7 @@ export default function TeamManagementPage() {
             </CardContent>
           </Card>
         ) : null}
-      </div>
+      </section>
 
       <SimpleInviteModal
         key={modalOpen ? 'open' : 'closed'}
@@ -558,6 +553,6 @@ export default function TeamManagementPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </FleetHudPageShell>
   );
 }

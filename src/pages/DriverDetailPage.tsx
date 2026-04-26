@@ -26,7 +26,7 @@ export default function DriverDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#020617] text-white">
+      <div className="fleet-screen-page text-white">
         <header className="sticky top-0 z-10 border-b border-border bg-card">
           <div className="container py-4">
             <div className="flex items-center gap-3">
@@ -44,7 +44,7 @@ export default function DriverDetailPage() {
   if (isError) {
     const msg = error instanceof Error ? error.message : String(error ?? 'שגיאה');
     return (
-      <div className="min-h-screen bg-[#020617] text-white">
+      <div className="fleet-screen-page text-white">
         <header className="border-b border-border bg-card">
           <div className="container py-4">
             <div className="flex items-center gap-3">
@@ -73,7 +73,7 @@ export default function DriverDetailPage() {
 
   if (!driver) {
     return (
-      <div className="min-h-screen bg-[#020617] text-white">
+      <div className="fleet-screen-page text-white">
         <header className="border-b border-border bg-card">
           <div className="container py-4">
             <div className="flex items-center gap-3">
@@ -102,7 +102,7 @@ export default function DriverDetailPage() {
     .filter((v, i, arr) => arr.findIndex((x) => x.id === v.id) === i);
 
   return (
-    <div className="min-h-screen bg-[#020617] text-white">
+    <div className="fleet-screen-page text-white">
       <header className="sticky top-0 z-10 border-b border-border bg-card">
         <div className="container py-4">
           <div className="flex flex-col gap-3">

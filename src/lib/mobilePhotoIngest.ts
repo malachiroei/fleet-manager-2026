@@ -101,6 +101,78 @@ export async function createFastPreviewUrl(source: Blob): Promise<string | null>
 }
 
 /**
+ * מכווץ תמונה ל-JPEG לפני העלאה ל-Storage — מפחית נפח (צילומי מסך/מצלמה) ועוזר נגד כשלי רשת/HTTP2.
+ */
+export async function compressImageFileForUpload(
+  source: File,
+  opts?: { maxDim?: number; quality?: number; skipBelowBytes?: number },
+): Promise<File> {
+  const skipBelow = opts?.skipBelowBytes ?? 350_000;
+  if (source.size > 0 && source.size < skipBelow) {
+    const t = source.type || '';
+    if (t === 'image/jpeg' || t === 'image/jpg') return source;
+  }
+  const mime = source.type || '';
+  if (mime && !mime.startsWith('image/') && mime !== 'application/octet-stream') {
+    return source;
+  }
+
+  const maxDim = opts?.maxDim ?? 2048;
+  const quality = opts?.quality ?? 0.82;
+
+  const bitmap = await decodeToBitmap(source);
+  if (!bitmap) return source;
+
+  const w = bitmap.width || 0;
+  const h = bitmap.height || 0;
+  if (w <= 0 || h <= 0) {
+    try {
+      bitmap.close();
+    } catch {
+      /* ignore */
+    }
+    return source;
+  }
+
+  const scale = Math.min(1, maxDim / Math.max(w, h));
+  const outW = Math.max(2, Math.floor(w * scale));
+  const outH = Math.max(2, Math.floor(h * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = outW;
+  canvas.height = outH;
+  const ctx = canvas.getContext('2d', { alpha: false });
+  if (!ctx) {
+    try {
+      bitmap.close();
+    } catch {
+      /* ignore */
+    }
+    return source;
+  }
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'medium';
+  try {
+    ctx.drawImage(bitmap, 0, 0, w, h, 0, 0, outW, outH);
+  } finally {
+    try {
+      bitmap.close();
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob((b) => resolve(b), 'image/jpeg', quality),
+  );
+  if (!blob || blob.size === 0) return source;
+
+  const base = (source.name?.trim() || 'service').replace(/\.[^/.]+$/, '');
+  return new File([blob], `${base}_upload.jpg`, { type: 'image/jpeg' });
+}
+
+/**
  * Plain `accept="image/*"` on desktop lets the OS picker offer files, webcam, or “Take photo” where supported.
  * `capture="environment"` is limited to iOS-style mobile UAs only — never Android (separate activity / dropped result).
  */
