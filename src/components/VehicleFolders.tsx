@@ -6,6 +6,7 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { FleetDatePicker } from '@/components/ui/FleetDatePicker';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -125,15 +126,14 @@ function ExpensesTab({ vehicleId }: { vehicleId: string }) {
           <p className="text-sm font-semibold">הוצאה חדשה</p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <div>
-              <label className="text-xs text-muted-foreground">תאריך</label>
-              <Input
-                type="date"
+              <FleetDatePicker
+                label="תאריך"
+                className="[&_input]:h-8 [&_input]:text-sm"
                 value={form.expense_date}
-                onChange={(e) => {
+                onChange={(ymd) => {
                   setDirty(DIRTY_SOURCE_FOLDERS_DRAFT, true);
-                  setForm((f) => ({ ...f, expense_date: e.target.value }));
+                  setForm((f) => ({ ...f, expense_date: ymd }));
                 }}
-                className="h-8 text-sm mt-1"
               />
             </div>
             <div>
@@ -325,8 +325,15 @@ function IncidentsTab({ vehicleId, type }: { vehicleId: string; type: 'event' | 
           <p className="text-sm font-semibold">{isAccident ? 'תאונה חדשה' : 'אירוע חדש'}</p>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-muted-foreground">תאריך</label>
-              <Input type="date" value={form.incident_date} onChange={e => { markFoldersDraft(); setForm(f => ({ ...f, incident_date: e.target.value })); }} className="h-8 text-sm mt-1" />
+              <FleetDatePicker
+                label="תאריך"
+                className="[&_input]:h-8 [&_input]:text-sm"
+                value={form.incident_date}
+                onChange={(ymd) => {
+                  markFoldersDraft();
+                  setForm((f) => ({ ...f, incident_date: ymd }));
+                }}
+              />
             </div>
             <div>
               <label className="text-xs text-muted-foreground">מיקום</label>
@@ -610,12 +617,11 @@ function MaintenanceTab({ vehicle }: { vehicle: Vehicle }) {
         </p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
-            <p className="text-xs text-muted-foreground mb-1">טיפול אחרון — תאריך</p>
-            <Input
-              type="date"
+            <FleetDatePicker
+              label="טיפול אחרון — תאריך"
+              className="[&_input]:h-9 [&_input]:bg-background/80 [&_input]:text-sm"
               value={fields.last_service_date}
-              onChange={(e) => onLastServiceDateChange(e.target.value)}
-              className="h-9 bg-background/80 text-sm"
+              onChange={onLastServiceDateChange}
             />
           </div>
           <div>
@@ -629,12 +635,11 @@ function MaintenanceTab({ vehicle }: { vehicle: Vehicle }) {
             />
           </div>
           <div>
-            <p className="text-xs text-muted-foreground mb-1">טיפול הבא — תאריך</p>
-            <Input
-              type="date"
+            <FleetDatePicker
+              label="טיפול הבא — תאריך"
+              className="[&_input]:h-9 [&_input]:bg-background/80 [&_input]:text-sm"
               value={fields.next_maintenance_date}
-              onChange={(e) => setField('next_maintenance_date', e.target.value)}
-              className="h-9 bg-background/80 text-sm"
+              onChange={(v) => setField('next_maintenance_date', v)}
             />
           </div>
           <div>
@@ -666,12 +671,11 @@ function MaintenanceTab({ vehicle }: { vehicle: Vehicle }) {
             ] as const
           ).map(([key, label]) => (
             <div key={key}>
-              <p className="text-xs text-muted-foreground mb-1">תאריך החלפה — {label}</p>
-              <Input
-                type="date"
+              <FleetDatePicker
+                label={`תאריך החלפה — ${label}`}
+                className="[&_input]:h-9 [&_input]:bg-background/80 [&_input]:text-sm"
                 value={fields[key]}
-                onChange={(e) => setField(key, e.target.value)}
-                className="h-9 bg-background/80 text-sm"
+                onChange={(v) => setField(key, v)}
               />
             </div>
           ))}
@@ -686,21 +690,19 @@ function MaintenanceTab({ vehicle }: { vehicle: Vehicle }) {
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
-            <p className="text-xs text-muted-foreground mb-1">ביקורת אחרונה</p>
-            <Input
-              type="date"
+            <FleetDatePicker
+              label="ביקורת אחרונה"
+              className="[&_input]:h-9 [&_input]:bg-background/80 [&_input]:text-sm"
               value={fields.last_inspection_date}
-              onChange={(e) => setField('last_inspection_date', e.target.value)}
-              className="h-9 bg-background/80 text-sm"
+              onChange={(v) => setField('last_inspection_date', v)}
             />
           </div>
           <div>
-            <p className="text-xs text-muted-foreground mb-1">ביקורת הבאה</p>
-            <Input
-              type="date"
+            <FleetDatePicker
+              label="ביקורת הבאה"
+              className="[&_input]:h-9 [&_input]:bg-background/80 [&_input]:text-sm"
               value={fields.next_inspection_date}
-              onChange={(e) => setField('next_inspection_date', e.target.value)}
-              className="h-9 bg-background/80 text-sm"
+              onChange={(v) => setField('next_inspection_date', v)}
             />
           </div>
         </div>

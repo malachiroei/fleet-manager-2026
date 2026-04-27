@@ -6,6 +6,8 @@ import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { Upload, Car, Users, Loader2 } from 'lucide-react';
+import { canonicalOwnershipType } from '@/lib/vehicleOwnership';
+import { normalizePlateNumber } from '@/lib/plateNumber';
 
 // ─── helpers ───
 
@@ -67,7 +69,7 @@ const normalizeRow = (row: Record<string, any>): Record<string, any> => {
 const mapVehicleRow = (rawRow: Record<string, any>) => {
   const row = normalizeRow(rawRow);
   return {
-  plate_number: str(row["מס' רשוי"]) || str(row['מס רשוי']) || '',
+  plate_number: normalizePlateNumber(str(row["מס' רשוי"]) || str(row['מס רשוי']) || ''),
   manufacturer: str(row['שם יצרן']) || '',
   model: str(row['דגם']) || '',
   year: num(row['שנת ייצור']) || new Date().getFullYear(),
@@ -79,7 +81,7 @@ const mapVehicleRow = (rawRow: Record<string, any>) => {
   insurance_expiry: parseExcelDate(row['ת.רישוי']) || new Date().toISOString().slice(0, 10),
   manufacturer_code: str(row['סמל יצרן']) || str(row['קוד יצרן']),
   model_code: str(row['סמל דגם']),
-  ownership_type: str(row['בעלות']),
+  ownership_type: canonicalOwnershipType(str(row['בעלות'])) || null,
   engine_volume: str(row['נפח']),
   is_active: str(row['סטטוס']) === 'פעיל' || bool(row['פעיל']),
   adjusted_price: num(row['מחיר מתואם']),

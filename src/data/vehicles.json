@@ -1,7 +1,7 @@
 [
     {
         "id": "1",
-        "plate_number": "12-345-67",
+        "plate_number": "1234567",
         "manufacturer": "טויוטה",
         "model": "קורולה",
         "year": 2023,
@@ -16,7 +16,7 @@
     },
     {
         "id": "2",
-        "plate_number": "89-123-45",
+        "plate_number": "8912345",
         "manufacturer": "יונדאי",
         "model": "איוניק",
         "year": 2022,
@@ -31,7 +31,7 @@
     },
     {
         "id": "3",
-        "plate_number": "77-888-99",
+        "plate_number": "7788899",
         "manufacturer": "קיה",
         "model": "פיקנטו",
         "year": 2024,

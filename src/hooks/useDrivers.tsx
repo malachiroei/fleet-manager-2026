@@ -44,7 +44,44 @@ export function useDrivers() {
       if (error) {
         let fallbackQ = supabase
           .from('drivers')
-          .select('id, full_name, id_number, license_expiry, phone, email, address, job_title, department, license_number, health_declaration_date, safety_training_date, regulation_585b_date, license_front_url, license_back_url, health_declaration_url, status')
+          .select(
+            [
+              'id',
+              'full_name',
+              'id_number',
+              'license_expiry',
+              'phone',
+              'email',
+              'address',
+              'city',
+              'birth_date',
+              'note1',
+              'note2',
+              'rating',
+              'job_title',
+              'department',
+              'employee_number',
+              'driver_code',
+              'division',
+              'area',
+              'group_name',
+              'group_code',
+              'eligibility',
+              'work_start_date',
+              'license_number',
+              'health_declaration_date',
+              'safety_training_date',
+              'regulation_585b_date',
+              'practical_driving_test_date',
+              'is_field_person',
+              'is_active',
+              'driving_permit',
+              'license_front_url',
+              'license_back_url',
+              'health_declaration_url',
+              'status',
+            ].join(', '),
+          )
           .eq('org_id', orgId);
         if (isDriverContextOnly && impersonatedUserId) {
           fallbackQ = fallbackQ.eq('user_id', impersonatedUserId);
@@ -68,6 +105,13 @@ export function useDrivers() {
 }
 
 function mapRowToDriverSummary(row: Record<string, unknown>): DriverSummary {
+  const s = (k: string) => {
+    const v = row[k];
+    if (v == null || v === '') return null;
+    return String(v);
+  };
+  const bool = (k: string) => row[k] === true || row[k] === 'true' || row[k] === 1 || row[k] === '1';
+
   return {
     id: String(row.id ?? ''),
     full_name: String(row.full_name ?? ''),
@@ -76,16 +120,33 @@ function mapRowToDriverSummary(row: Record<string, unknown>): DriverSummary {
     email: (row.email as string) ?? null,
     license_expiry: String(row.license_expiry ?? ''),
     status: (row.status as DriverSummary['status']) ?? 'valid',
-    address: (row.address as string) ?? null,
-    job_title: (row.job_title as string) ?? null,
-    department: (row.department as string) ?? null,
-    license_number: (row.license_number as string) ?? null,
-    health_declaration_date: (row.health_declaration_date as string) ?? null,
-    safety_training_date: (row.safety_training_date as string) ?? null,
-    regulation_585b_date: (row.regulation_585b_date as string) ?? null,
-    license_front_url: (row.license_front_url as string) ?? null,
-    license_back_url: (row.license_back_url as string) ?? null,
-    health_declaration_url: (row.health_declaration_url as string) ?? null,
+    address: s('address'),
+    city: s('city'),
+    birth_date: s('birth_date'),
+    note1: s('note1'),
+    note2: s('note2'),
+    rating: s('rating'),
+    job_title: s('job_title'),
+    department: s('department'),
+    employee_number: s('employee_number'),
+    driver_code: s('driver_code'),
+    division: s('division'),
+    area: s('area'),
+    group_name: s('group_name'),
+    group_code: s('group_code'),
+    eligibility: s('eligibility'),
+    work_start_date: s('work_start_date'),
+    license_number: s('license_number'),
+    health_declaration_date: s('health_declaration_date'),
+    safety_training_date: s('safety_training_date'),
+    regulation_585b_date: s('regulation_585b_date'),
+    practical_driving_test_date: s('practical_driving_test_date'),
+    is_field_person: bool('is_field_person'),
+    is_active: row.is_active === false || row.is_active === 'false' ? false : true,
+    driving_permit: s('driving_permit'),
+    license_front_url: s('license_front_url'),
+    license_back_url: s('license_back_url'),
+    health_declaration_url: s('health_declaration_url'),
   };
 }
 

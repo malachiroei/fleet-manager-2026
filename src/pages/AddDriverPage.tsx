@@ -6,6 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { FleetDatePicker } from '@/components/ui/FleetDatePicker';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Loader2,
@@ -160,6 +161,10 @@ export default function AddDriverPage() {
   const [licenseBack, setLicenseBack] = useState<File | null>(null);
   const [healthDeclaration, setHealthDeclaration] = useState<File | null>(null);
   const [additionalDoc, setAdditionalDoc] = useState<File | null>(null);
+  const [licenseExpiry, setLicenseExpiry] = useState('');
+  const [healthDeclarationDate, setHealthDeclarationDate] = useState('');
+  const [safetyTrainingDate, setSafetyTrainingDate] = useState('');
+  const [regulation585bDate, setRegulation585bDate] = useState('');
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -167,23 +172,28 @@ export default function AddDriverPage() {
 
     try {
       const formData = new FormData(e.currentTarget);
+      if (!licenseExpiry.trim()) {
+        toast.error('נא למלא תוקף רישיון נהיגה');
+        setIsSubmitting(false);
+        return;
+      }
 
       const createdDriver = await createDriver.mutateAsync({
         full_name: formData.get('full_name') as string,
         id_number: formData.get('id_number') as string,
-        license_expiry: formData.get('license_expiry') as string,
+        license_expiry: licenseExpiry,
         // Optional fields
         user_id: null,
         phone: formData.get('phone') as string || null,
         email: formData.get('email') as string || null,
-        health_declaration_date: formData.get('health_declaration_date') as string || null,
-        safety_training_date: formData.get('safety_training_date') as string || null,
+        health_declaration_date: healthDeclarationDate.trim() || null,
+        safety_training_date: safetyTrainingDate.trim() || null,
         // New fields
         address: formData.get('address') as string || null,
         job_title: formData.get('job_title') as string || null,
         department: formData.get('department') as string || null,
         license_number: formData.get('license_number') as string || null,
-        regulation_585b_date: formData.get('regulation_585b_date') as string || null
+        regulation_585b_date: regulation585bDate.trim() || null,
       });
 
       if (createdDriver?.id) {
@@ -382,39 +392,29 @@ export default function AddDriverPage() {
                 </div>
 
                 <div className="col-span-2">
-                  <Label htmlFor="license_expiry">תוקף רישיון נהיגה *</Label>
-                  <Input
-                    id="license_expiry"
-                    name="license_expiry"
-                    type="date"
-                    required
-                  />
+                  <FleetDatePicker id="license_expiry" label="תוקף רישיון נהיגה *" value={licenseExpiry} onChange={setLicenseExpiry} />
                 </div>
 
-                <div>
-                  <Label htmlFor="health_declaration_date">תאריך הצהרת בריאות</Label>
-                  <Input
-                    id="health_declaration_date"
-                    name="health_declaration_date"
-                    type="date"
-                  />
-                </div>
+                <FleetDatePicker
+                  id="health_declaration_date"
+                  label="תאריך הצהרת בריאות"
+                  value={healthDeclarationDate}
+                  onChange={setHealthDeclarationDate}
+                />
 
-                <div>
-                  <Label htmlFor="safety_training_date">תאריך הדרכת בטיחות</Label>
-                  <Input
-                    id="safety_training_date"
-                    name="safety_training_date"
-                    type="date"
-                  />
-                </div>
+                <FleetDatePicker
+                  id="safety_training_date"
+                  label="תאריך הדרכת בטיחות"
+                  value={safetyTrainingDate}
+                  onChange={setSafetyTrainingDate}
+                />
 
                 <div className="col-span-2">
-                  <Label htmlFor="regulation_585b_date">תאריך בדיקת תקנה 585ב'</Label>
-                  <Input
+                  <FleetDatePicker
                     id="regulation_585b_date"
-                    name="regulation_585b_date"
-                    type="date"
+                    label="תאריך בדיקת תקנה 585ב'"
+                    value={regulation585bDate}
+                    onChange={setRegulation585bDate}
                   />
                 </div>
               </div>

@@ -6,11 +6,12 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrganization } from '@/hooks/useOrganizations';
 import { useTeamMembersForSwitcher } from '@/hooks/useTeam';
-import { LanguageSwitcher } from './LanguageSwitcher';
 import { AIChatAssistant } from './AIChatAssistant';
 import { useTheme } from '@/hooks/useTheme';
-import { Sun, Moon, Building2, LogOut, Home, ArrowRight, ChevronDown, Building, Settings, UserCog, Menu } from 'lucide-react';
-import { PwaInstallButton } from './PwaInstallButton';
+import { Sun, Moon, Building2, LogOut, Home, ArrowRight, ChevronDown, Building, Settings, UserCog, Menu, Download, Smartphone } from 'lucide-react';
+import { setLanguageDirection } from '@/i18n/config';
+import { usePwaInstall } from '@/hooks/usePwaInstall';
+import { toast } from '@/hooks/use-toast';
 import { Button } from './ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import {
@@ -20,6 +21,11 @@ import {
   DropdownMenuTrigger,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
 } from './ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { getBrandLogoUrl } from '@/components/BrandLogo';
@@ -108,6 +114,8 @@ export function AppLayout({ children }: AppLayoutProps) {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const { theme, toggleTheme } = useTheme();
+  const { isInstalled: pwaInstalled, canPrompt: pwaCanPrompt, isIos: pwaIsIos, promptInstall: pwaPromptInstall } =
+    usePwaInstall();
   const {
     user,
     signOut,
@@ -336,8 +344,10 @@ export function AppLayout({ children }: AppLayoutProps) {
       /* ignore */
     }
 
-    window.location.assign(`${window.location.origin}/`);
-  }, [setViewAsEmail, isMainAdmin, profile?.org_id, memberOrganizations, setActiveOrgId]);
+    requestAnimationFrame(() => {
+      navigate('/', { replace: true });
+    });
+  }, [setViewAsEmail, isMainAdmin, profile?.org_id, memberOrganizations, setActiveOrgId, navigate]);
 
   /** תצוגה כחבר צוות: לרביד תמיד מעבירים ל-VIEW_AS_RAVID_ORG_ID (לא org של המנהל המחובר). */
   const handleViewAs = useCallback(
@@ -382,174 +392,125 @@ export function AppLayout({ children }: AppLayoutProps) {
     return out;
   }, [canManageOrgUi, canManageTeamUi]);
 
-  const ThemeToggle = () => (
-    <button
-      type="button"
-      onClick={toggleTheme}
-      title={theme === 'dark' ? 'עבור למצב בהיר' : 'עבור למצב כהה'}
-      className="h-8 w-8 rounded-lg flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10 transition-colors"
-    >
-      {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-    </button>
-  );
+  const handlePwaNativeInstall = async () => {
+    const accepted = await pwaPromptInstall();
+    if (accepted) {
+      toast({
+        title: 'האפליקציה הותקנה',
+        description: 'תוכלו לפתוח אותה מהמסך הראשי או מתפריט האפליקציות.',
+      });
+    }
+  };
 
-  const MobileSettingsMenu = () => {
-    // ארגונים זמינים (כמו ב-OrgSwitcher)
-    const orgItems = isMainAdmin
-      ? (mainFleetOrgId ? memberOrganizations.filter((org) => org.id === mainFleetOrgId) : memberOrganizations)
-      : memberOrgsForSwitcher;
-
-    // חברי צוות זמינים (אותה לוגיקה כמו OrgSwitcher)
-    const mobileMembers = canViewAsTeamMembers
-      ? augmentSwitcherMembers(teamMembers, {
-          selfEmail: email,
-          isMainAdmin,
-          isRavid,
-          activeOrgId,
-          mainFleetOrgId,
-          profileOrgId: profile?.org_id,
-        })
-      : [];
-
-  return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            title="ניהול"
-            aria-label="ניהול"
+  /** שפה, מצב בהיר/כהה, התקנת PWA והתנתקות — כפתור מסגרת אחד */
+  const HeaderSettingsMenu = ({
+    className,
+    alwaysShowLabel,
+  }: {
+    className?: string;
+    /** בתפריט המבורגר — להציג תמיד את המילה «הגדרות» גם במסכים צרים */
+    alwaysShowLabel?: boolean;
+  }) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          title="הגדרות"
+          aria-label="הגדרות"
+          className={cn(
+            'h-8 gap-1.5 border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white shrink-0',
+            className
+          )}
+        >
+          <Settings className="h-4 w-4 shrink-0" />
+          <span
             className={cn(
-              'relative z-[9999] flex sm:hidden h-8 rounded-lg border transition-colors',
-              isOrgAdminOrManager
-                ? cn('gap-1 px-2 min-w-[4.5rem]', managementNavClass)
-                : 'w-8 px-0 justify-center border-cyan-400/30 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20 hover:text-white'
+              'text-xs font-semibold',
+              alwaysShowLabel ? 'inline' : 'hidden sm:inline'
             )}
           >
-            <Settings className={cn('h-4 w-4 shrink-0', isOrgAdminOrManager && 'text-amber-200')} />
-            {isOrgAdminOrManager ? (
-              <span className="text-[11px] font-semibold leading-none text-amber-100">ניהול</span>
-            ) : null}
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align={isRtl ? 'start' : 'end'} className="min-w-[220px]">
-          {/* User info */}
-          <div className="px-3 py-2 border-b border-border text-xs">
-            <div className="font-semibold truncate">{name || email}</div>
-            <div className="text-[11px] text-muted-foreground truncate">{email}</div>
-                </div>
-
-          {/* Org select / view-as */}
-          {orgItems.length > 0 && (
-            <div className="py-1">
-              <div className="px-3 pb-1 text-[11px] font-semibold text-muted-foreground">
-                הארגון הנוכחי
-              </div>
-              {orgItems.map((org) => (
-                <DropdownMenuItem
-                  key={org.id}
-                  className="text-xs cursor-pointer"
-                  onClick={() => {
-                    if (isMainAdmin && mainFleetOrgId && org.id === mainFleetOrgId) {
-                      setViewAsEmail(null);
-                      setActiveOrgId(mainFleetOrgId);
-                    } else {
-                      setActiveOrgId(org.id);
-                    }
-                  }}
-                >
-                  <span className="truncate">{org.name || org.id}</span>
-                </DropdownMenuItem>
-              ))}
-            </div>
-          )}
-
-          {mobileMembers.length > 0 && (
-            <div className="py-1 border-t border-border mt-1">
-              <div className="px-3 pb-1 text-[11px] font-semibold text-muted-foreground">
-                תצוגה כחבר צוות
-              </div>
-              {mobileMembers.map((member) => (
-                <DropdownMenuItem
-                  key={member.id}
-                  className="text-xs cursor-pointer"
-                  onClick={() => handleViewAs(member)}
-                >
-                  <div className="flex flex-col">
-                    <span className="font-medium truncate">
-                      {member.full_name || member.email || 'חבר צוות'}
-                    </span>
-                    {member.email && (
-                      <span className="text-[11px] text-muted-foreground truncate">
-                        {member.email}
-                      </span>
-                    )}
-                  </div>
-                </DropdownMenuItem>
-              ))}
-            </div>
-          )}
-
-          {/* Language / theme / org */}
-          <div className="py-1 border-t border-border mt-1">
-            <DropdownMenuItem asChild className="cursor-pointer">
-              <button type="button" className="w-full flex items-center justify-between text-xs">
-                <span>שפה</span>
-                <span className="ml-2">
-                  <LanguageSwitcher />
-                </span>
-              </button>
+            הגדרות
+          </span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align={isRtl ? 'start' : 'end'} className="min-w-[220px] z-[10001]">
+        <DropdownMenuLabel className="text-xs font-semibold">הגדרות</DropdownMenuLabel>
+        <DropdownMenuItem
+          className="cursor-pointer text-xs"
+          onClick={() => {
+            i18n.changeLanguage('he');
+            setLanguageDirection('he');
+          }}
+        >
+          🇮🇱 {t('common.hebrew')}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="cursor-pointer text-xs"
+          onClick={() => {
+            i18n.changeLanguage('en');
+            setLanguageDirection('en');
+          }}
+        >
+          🇬🇧 {t('common.english')}
+        </DropdownMenuItem>
+        <DropdownMenuItem className="cursor-pointer text-xs" onClick={() => toggleTheme()}>
+          <span className="flex w-full items-center justify-between gap-2">
+            <span>{theme === 'dark' ? 'מסך בהיר' : 'מסך כהה'}</span>
+            {theme === 'dark' ? <Sun className="h-3.5 w-3.5 shrink-0" /> : <Moon className="h-3.5 w-3.5 shrink-0" />}
+          </span>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {!pwaInstalled ? (
+          pwaCanPrompt ? (
+            <DropdownMenuItem className="cursor-pointer text-xs gap-2" onClick={() => void handlePwaNativeInstall()}>
+              <Download className="h-3.5 w-3.5 shrink-0" />
+              התקן אפליקציה על המכשיר
             </DropdownMenuItem>
-            <DropdownMenuItem asChild className="cursor-pointer">
-              <button
-                type="button"
-                onClick={toggleTheme}
-                className="w-full flex items-center justify-between text-xs"
-              >
-                <span>מצב תצוגה</span>
-                <span className="ml-2 flex items-center justify-center">
-                  {theme === 'dark' ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-                </span>
-              </button>
-            </DropdownMenuItem>
-            {canAccessGoldenManagementLinks ? (
-              <DropdownMenuItem asChild className="cursor-pointer">
-                <Link
-                  to="/admin/org-settings"
-                  className="w-full flex items-center justify-between text-xs text-amber-700 dark:text-amber-200"
-                >
-                  <span className="font-medium">ארגון</span>
-                  <Building2 className="h-3.5 w-3.5 text-amber-600 dark:text-amber-300" />
-                </Link>
-              </DropdownMenuItem>
-            ) : null}
-            {canAccessGoldenManagementLinks ? (
-              <DropdownMenuItem asChild className="cursor-pointer">
-                <Link
-                  to="/team"
-                  className="w-full flex items-center justify-between text-xs text-amber-700 dark:text-amber-200"
-                >
-                  <span className="font-medium">ניהול צוות</span>
-                  <UserCog className="h-3.5 w-3.5 text-amber-600 dark:text-amber-300" />
-                </Link>
-              </DropdownMenuItem>
-            ) : null}
-          </div>
-
-          {/* Logout */}
-          <div className="py-1 border-t border-border mt-1">
-            <DropdownMenuItem
-              className="text-xs text-red-500 cursor-pointer"
-              onClick={handleLogout}
-            >
-              <LogOut className="h-3.5 w-3.5 mr-2" />
-              התנתקות
-            </DropdownMenuItem>
-          </div>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    );
-  };
+          ) : (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className="text-xs gap-2">
+                <Smartphone className="h-3.5 w-3.5 shrink-0" />
+                התקנת אפליקציה…
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-80 border-white/10 bg-popover p-3 text-popover-foreground">
+                <p className="text-sm font-semibold mb-2">התקנת Fleet Manager</p>
+                {pwaIsIos ? (
+                  <ol className="text-xs space-y-2 list-decimal list-inside rtl:text-right text-muted-foreground">
+                    <li>
+                      לחצו על כפתור השיתוף <span className="font-medium text-foreground">״שתף״</span> בסרגל התחתון
+                    </li>
+                    <li>
+                      גללו ובחרו <span className="font-medium text-foreground">״הוסף למסך הבית״</span>
+                    </li>
+                    <li>אשרו – האייקון יופיע במסך הבית כאפליקציה</li>
+                  </ol>
+                ) : (
+                  <ol className="text-xs space-y-2 list-decimal list-inside rtl:text-right text-muted-foreground">
+                    <li>בכרום או אדג&apos;: פתחו את התפריט (⋮) בפינה</li>
+                    <li>
+                      בחרו <span className="font-medium text-foreground">״התקן אפליקציה…״</span> או{' '}
+                      <span className="font-medium text-foreground">״התקן Fleet Manager״</span>
+                    </li>
+                    <li>במחשב: אפשר גם דרך סרגל הכתובות (אייקון מחשב+חץ)</li>
+                  </ol>
+                )}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          )
+        ) : null}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          className="cursor-pointer text-xs text-red-500 focus:text-red-500 focus:bg-red-500/10 gap-2"
+          onClick={handleLogout}
+        >
+          <LogOut className="h-3.5 w-3.5 shrink-0" />
+          התנתקות
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 
   const OrgSwitcher = () => {
     // אם אין ארגונים משויכים בכלל, נסתיר רק למשתמשים רגילים – אבל לא למנהל הראשי ולא לרביד
@@ -725,27 +686,14 @@ export function AppLayout({ children }: AppLayoutProps) {
           </div>
 
           <div className="pt-3 space-y-2">
-            <p className="px-1 text-[11px] font-medium text-muted-foreground">כלים והגדרות</p>
+            <p className="px-1 text-[11px] font-medium text-muted-foreground">ארגון והגדרות</p>
             <div className="flex flex-col gap-2">
               <OrgSwitcher />
-              <div className="flex flex-wrap items-center gap-2">
-                <PwaInstallButton />
-                <ThemeToggle />
-                <LanguageSwitcher />
-              </div>
+              <HeaderSettingsMenu
+                className="w-full justify-center border-cyan-400/30"
+                alwaysShowLabel
+              />
             </div>
-          </div>
-
-          <div className="pt-4 mt-4 border-t border-border">
-            <Button
-              type="button"
-              variant="destructive"
-              className="w-full justify-between"
-              onClick={handleLogout}
-            >
-              <span>התנתקות</span>
-              <LogOut className="h-4 w-4" />
-            </Button>
           </div>
         </SheetContent>
       </Sheet>
@@ -772,9 +720,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   const UtilityCluster = () => (
     <>
-      <PwaInstallButton />
-      <ThemeToggle />
-      <LanguageSwitcher />
+      <HeaderSettingsMenu />
       <OrgSwitcher />
     </>
   );
@@ -827,25 +773,32 @@ export function AppLayout({ children }: AppLayoutProps) {
     tryNavigate('/');
   };
 
-  /** מובייל: שורה ייעודית — בית עדין, ניהול בזהב */
+  /** מובייל: שורה ייעודית — בית + חזרה צמודים, ניהול בזהב */
   const MobilePrimaryNav = () => (
     <nav
       className="flex w-full min-w-0 flex-wrap items-stretch justify-around gap-2 rounded-lg border border-white/10 bg-black/30 px-0.5 py-1 md:hidden"
       aria-label="ניווט ראשי"
     >
-      <Link
-        to="/"
-        onClick={handleGoHomeNav}
-        className={cn(
-          'flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1.5 rounded-md px-2 text-base font-medium transition-colors active:opacity-90',
-          isHomeActive
-            ? 'bg-white/10 text-cyan-100 ring-1 ring-cyan-400/35'
-            : 'bg-white/[0.05] text-white/75 hover:bg-white/10'
-        )}
-      >
-        <Home className="h-5 w-5 shrink-0 opacity-90" />
-        <span className="truncate">בית</span>
-      </Link>
+      <div className="flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1.5">
+        <Link
+          to="/"
+          onClick={handleGoHomeNav}
+          className={cn(
+            'flex min-h-[48px] min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-2 text-base font-medium transition-colors active:opacity-90',
+            isHomeActive
+              ? 'bg-white/10 text-cyan-100 ring-1 ring-cyan-400/35'
+              : 'bg-white/[0.05] text-white/75 hover:bg-white/10'
+          )}
+        >
+          <Home className="h-5 w-5 shrink-0 opacity-90" />
+          <span className="truncate">בית</span>
+        </Link>
+        {location.pathname !== '/' ? (
+          <div className="flex shrink-0 items-center pr-0.5">
+            <BackButton />
+          </div>
+        ) : null}
+      </div>
       {canManageOrgUi ? (
         <Link
           to="/admin/org-settings"
@@ -914,7 +867,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   const MobileUserRow = () => null;
 
-  /* דסקטופ: מייל + התנתקות — min-w-0 מונע חפיפה עם כפתורי זהב */
+  /* דסקטופ: מייל + אווטאר — התנתקות מתפריט ההגדרות */
   const UserInline = () =>
     user ? (
       <div
@@ -937,59 +890,20 @@ export function AppLayout({ children }: AppLayoutProps) {
             {email}
           </span>
         ) : null}
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-7 shrink-0 gap-1 px-2 text-red-300 hover:bg-red-500/10 hover:text-red-200 cursor-pointer"
-          onClick={handleLogout}
-        >
-          <LogOut className="h-3.5 w-3.5 shrink-0" />
-          <span className="hidden text-[11px] font-medium sm:inline">התנתקות</span>
-        </Button>
       </div>
     ) : null;
 
-  /* Mobile: dropdown trigger (avatar only); content = email + logout */
-  const UserDropdown = () =>
+  /** מובייל: אווטאר + מייל ב־title — התנתקות מתפריט ההגדרות */
+  const MobileUserBadge = () =>
     user ? (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="md:hidden h-10 min-h-[44px] w-10 min-w-[44px] rounded-full border border-cyan-400/30 bg-cyan-500/20 text-cyan-200 hover:bg-cyan-500/30 hover:text-cyan-100 cursor-pointer touch-manipulation shrink-0"
-            style={{ touchAction: 'manipulation' }}
-            aria-label={email || 'תפריט משתמש'}
-          >
-            <span className="text-xs font-bold">{initials}</span>
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align={isRtl ? 'start' : 'end'}
-          side={isRtl ? 'left' : 'right'}
-          className="min-w-[220px] z-[100]"
-        >
-          <div className={cn('px-2 py-2 border-b border-border', isRtl ? 'text-right' : 'text-left')}>
-            <p className="text-xs font-medium text-foreground truncate" title={email}>
-              {email}
-            </p>
-            {name && name !== email && (
-              <p className="text-[11px] text-muted-foreground truncate" title={name}>
-                {name}
-              </p>
-            )}
-          </div>
-          <DropdownMenuItem
-            className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-500/10 gap-2"
-            onSelect={handleLogout}
-          >
-            <LogOut className="h-4 w-4 shrink-0" />
-            התנתקות
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <div
+        className="md:hidden flex h-10 min-h-[44px] w-10 min-w-[44px] shrink-0 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-500/20 text-cyan-200 touch-manipulation"
+        style={{ touchAction: 'manipulation' }}
+        title={email ? `${name ? `${name} · ` : ''}${email}` : name || ''}
+        aria-label={email || name || 'משתמש'}
+      >
+        <span className="text-xs font-bold">{initials}</span>
+      </div>
     ) : null;
 
   const BackButton = () => {
@@ -1071,8 +985,14 @@ export function AppLayout({ children }: AppLayoutProps) {
           </div>
 
           <div className="flex w-full min-w-0 flex-nowrap items-center justify-between gap-x-2 border-t border-white/10 py-2 md:pb-3 lg:gap-x-4">
-            <div className={cn('flex shrink-0 items-center', isRtl ? 'order-1' : 'order-2')}>
+            <div
+              className={cn(
+                'flex shrink-0 flex-nowrap items-center gap-2',
+                isRtl ? 'order-1' : 'order-2',
+              )}
+            >
               <HomeNavLinkDesktop />
+              {location.pathname !== '/' ? <BackButton /> : null}
             </div>
             {canAccessGoldenManagementLinks ? (
               <div className={cn('flex min-w-0 shrink-0 items-center', isRtl ? 'order-2' : 'order-1')}>
@@ -1090,7 +1010,8 @@ export function AppLayout({ children }: AppLayoutProps) {
             </div>
             <div className="relative z-[10001] flex shrink-0 items-center gap-2">
               <MobileNavDrawer />
-              <UserDropdown />
+              <HeaderSettingsMenu />
+              <MobileUserBadge />
             </div>
           </div>
           <MobilePrimaryNav />
@@ -1132,19 +1053,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             </div>
           </div>
         ) : (
-          <>
-            {location.pathname !== '/' && (
-              <div
-                className={cn(
-                  'relative z-20 mb-4 flex pointer-events-auto',
-                  isRtl ? 'justify-start' : 'justify-end'
-                )}
-              >
-                <BackButton />
-              </div>
-            )}
-            {children}
-          </>
+          <>{children}</>
         )}
       </main>
 

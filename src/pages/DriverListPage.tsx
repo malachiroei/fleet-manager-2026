@@ -1,16 +1,12 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useDrivers, useDeleteDriver } from '@/hooks/useDrivers';
-import {
-  useActiveDriverVehicleAssignments,
-  type ActiveDriverVehicleAssignment,
-} from '@/hooks/useVehicles';
+import { useDrivers, useDeleteDriver, useDriver } from '@/hooks/useDrivers';
+import type { DriverSummary, ComplianceStatus } from '@/types/fleet';
 
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -23,11 +19,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, Search, User, Filter, FolderOpen } from 'lucide-react';
+import { Plus, User, FolderOpen } from 'lucide-react';
 import { FleetHudPageShell } from '@/components/FleetHudPageShell';
-import { DriverCard, licenseExpiresWithin30Days } from '@/components/DriverCard';
 import DriverFolders from '@/components/DriverFolders';
-import { useDriver } from '@/hooks/useDrivers';
+import { DriversHudTable, type StatusFilter } from '@/components/drivers/DriversHudTable';
+import { useVehicles, useActiveDriverVehicleAssignments } from '@/hooks/useVehicles';
+import { mergeAssignedVehiclesForDriver } from '@/lib/mergeDriverAssignedVehicles';
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -40,17 +37,32 @@ function getErrorMessage(error: unknown) {
   return 'אירעה שגיאה לא צפויה בעת שליפת הנהגים.';
 }
 
+function rowLicenseStatus(d: DriverSummary): ComplianceStatus {
+  if (!d.is_active) return 'valid';
+  const raw = d.license_expiry;
+  const expiry = raw && String(raw).trim() !== '' ? new Date(raw) : null;
+  const expiryValid = expiry && !Number.isNaN(expiry.getTime());
+  if (!expiryValid) return 'valid';
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays < 0) return 'expired';
+  if (diffDays <= 30) return 'warning';
+  return 'valid';
+}
+
 export default function DriverListPage() {
   const { data: drivers, isLoading, isError, error, refetch } = useDrivers();
-  const { data: activeAssignments } = useActiveDriverVehicleAssignments();
+  const { data: vehicles = [] } = useVehicles();
+  const { data: activeAssignments = [] } = useActiveDriverVehicleAssignments();
   const deleteDriver = useDeleteDriver();
   const { isManager } = useAuth();
   const { t } = useTranslation();
   const [search, setSearch] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [filterExpiredLicense, setFilterExpiredLicense] = useState(false);
-  const [filterNoVehicle, setFilterNoVehicle] = useState(false);
-  const [filterNoSafetyTraining, setFilterNoSafetyTraining] = useState(false);
+  const [filterStatus, setFilterStatus] = useState<StatusFilter>('all');
+  const [filterLicense, setFilterLicense] = useState('all');
+  const [filterOperation, setFilterOperation] = useState('all');
   const [searchParams, setSearchParams] = useSearchParams();
   const foldersDriverId = searchParams.get('folders') || '';
   const highlightDriverId = searchParams.get('highlightDriver') || '';
@@ -72,16 +84,41 @@ export default function DriverListPage() {
   }, [highlightDriverId, drivers]);
   const errorMessage = getErrorMessage(error);
 
-  const assignmentsByDriver = useMemo(() => {
-    const map = new Map<string, ActiveDriverVehicleAssignment[]>();
-    for (const a of activeAssignments ?? []) {
-      if (!a.driver_id) continue;
-      const list = map.get(a.driver_id) ?? [];
-      list.push(a);
-      map.set(a.driver_id, list);
+  const licenseTypeOptions = useMemo(() => {
+    const s = new Set<string>();
+    for (const d of drivers ?? []) {
+      const v = d.driving_permit?.trim();
+      if (v) s.add(v);
     }
-    return map;
-  }, [activeAssignments]);
+    return [...s].sort((a, b) => a.localeCompare(b, 'he'));
+  }, [drivers]);
+
+  const operationOptions = useMemo(() => {
+    const s = new Set<string>();
+    for (const d of drivers ?? []) {
+      const a = d.area?.trim();
+      if (a) s.add(a);
+      const div = d.division?.trim();
+      if (div) s.add(div);
+    }
+    return [...s].sort((a, b) => a.localeCompare(b, 'he'));
+  }, [drivers]);
+
+  const assignedVehicleByDriverId = useMemo(() => {
+    const m = new Map<string, { modelLabel: string; plateLabel: string }>();
+    for (const d of drivers ?? []) {
+      const tiles = mergeAssignedVehiclesForDriver(d.id, activeAssignments, vehicles);
+      if (tiles.length === 0) continue;
+      const primary = tiles[0];
+      const extra = tiles.length - 1;
+      const modelCore = [primary.manufacturer, primary.model].filter(Boolean).join(' ').trim();
+      const modelLabel = extra > 0 ? `${modelCore || '—'} (+${extra})` : modelCore || '—';
+      const plate = String(primary.plate_number ?? '').trim() || '—';
+      const plateLabel = extra > 0 ? `${plate} (+${extra})` : plate;
+      m.set(d.id, { modelLabel, plateLabel });
+    }
+    return m;
+  }, [drivers, vehicles, activeAssignments]);
 
   const filteredDrivers = useMemo(() => {
     let list = drivers ?? [];
@@ -98,35 +135,31 @@ export default function DriverListPage() {
         );
       });
     }
-    if (filterExpiredLicense) {
-      list = list.filter((d) => licenseExpiresWithin30Days(d.license_expiry));
-    }
-    if (filterNoVehicle) {
+    if (filterStatus === 'training_gap') {
+      list = list.filter(
+        (d) => d.is_active && (!d.safety_training_date || String(d.safety_training_date).trim() === ''),
+      );
+    } else if (filterStatus !== 'all') {
       list = list.filter((d) => {
-        const assigns = assignmentsByDriver.get(d.id) ?? [];
-        const hasVehicle = assigns.some((a) => a.vehicle != null);
-        return !hasVehicle;
+        if (filterStatus === 'inactive') return !d.is_active;
+        if (!d.is_active) return false;
+        const ls = rowLicenseStatus(d);
+        if (filterStatus === 'active_ok') return ls === 'valid';
+        if (filterStatus === 'renewal') return ls === 'warning';
+        if (filterStatus === 'expired') return ls === 'expired';
+        return true;
       });
     }
-    if (filterNoSafetyTraining) {
+    if (filterLicense !== 'all') {
+      list = list.filter((d) => (d.driving_permit?.trim() || '') === filterLicense);
+    }
+    if (filterOperation !== 'all') {
       list = list.filter(
-        (d) => !d.safety_training_date || String(d.safety_training_date).trim() === ''
+        (d) => d.area?.trim() === filterOperation || d.division?.trim() === filterOperation
       );
     }
     return list;
-  }, [
-    drivers,
-    search,
-    filterExpiredLicense,
-    filterNoVehicle,
-    filterNoSafetyTraining,
-    assignmentsByDriver,
-  ]);
-
-  const toggleBtn = (active: boolean) =>
-    active
-      ? 'bg-primary text-primary-foreground border-primary'
-      : 'bg-muted/50 text-muted-foreground border-border hover:bg-muted';
+  }, [drivers, search, filterStatus, filterLicense, filterOperation]);
 
   return (
     <FleetHudPageShell
@@ -141,176 +174,136 @@ export default function DriverListPage() {
         </Link>
       }
     >
-      <section className="dashboard-status-stage dashboard-cyber-stage mx-auto max-w-7xl space-y-5 rounded-3xl border border-cyan-400/25 p-4 text-foreground sm:space-y-6 sm:p-6">
-      <div className="relative w-full max-w-md">
-        <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-cyan-500/50" />
-        <Input
-          placeholder={t('drivers.searchPlaceholder')}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="h-11 bg-white/5 pr-10 text-base focus:border-cyan-500 md:h-12"
-        />
-      </div>
-
-      {/* סינון מתקדם */}
-      <div className="flex flex-col gap-2 rounded-xl border border-white/10 bg-slate-900/40 p-3 sm:p-4">
-        <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          <Filter className="h-4 w-4" />
-          <span>סינון מתקדם</span>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className={toggleBtn(filterExpiredLicense)}
-            onClick={() => setFilterExpiredLicense((v) => !v)}
-          >
-            נהגים עם רישיון פג תוקף
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className={toggleBtn(filterNoVehicle)}
-            onClick={() => setFilterNoVehicle((v) => !v)}
-          >
-            נהגים ללא שיוך רכב
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className={toggleBtn(filterNoSafetyTraining)}
-            onClick={() => setFilterNoSafetyTraining((v) => !v)}
-          >
-            נהגים ללא הדרכת בטיחות
-          </Button>
-        </div>
-      </div>
-
-      {/* תיקיות — מוצגות מעל הרשימה כשבוחרים נהג, כדי שלא יישארו מתחת למסך */}
-      {foldersDriverId && !foldersDriver && (
-        <Alert className="mb-4">
-          <AlertTitle>טוען תיקיות…</AlertTitle>
-          <AlertDescription>
-            אם זה נמשך,{' '}
-            <Button variant="link" className="h-auto p-0" onClick={() => { searchParams.delete('folders'); setSearchParams(searchParams); }}>
-              נקה בחירה
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
-      {foldersDriver && (
-        <div id="driver-folders-panel" ref={foldersPanelRef} className="mb-6 scroll-mt-24 rounded-xl border border-white/10 bg-slate-900/40 p-4">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <span className="text-sm text-muted-foreground">
-              תיקיות עבור: <strong className="font-semibold text-slate-200">{foldersDriver.full_name}</strong>
-            </span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                searchParams.delete('folders');
-                setSearchParams(searchParams);
-              }}
-            >
-              סגור תיקיות
-            </Button>
-          </div>
-          <DriverFolders driver={foldersDriver} collapsible={false} defaultOpen />
-        </div>
-      )}
-
-      <div>
-        {isLoading ? (
-          <div className="space-y-4">
-            {[1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-64" />
-            ))}
-          </div>
-        ) : isError ? (
-          <Alert variant="destructive">
-            <AlertTitle>שגיאה בטעינת הנהגים</AlertTitle>
-            <AlertDescription className="space-y-3">
-              <p>{errorMessage}</p>
-              <Button variant="outline" size="sm" onClick={() => refetch()}>
-                נסה שוב
+      <section className="dashboard-status-stage dashboard-cyber-stage mx-auto w-full max-w-[1920px] space-y-5 rounded-3xl border border-cyan-400/25 p-4 text-foreground sm:space-y-6 sm:p-6">
+        {foldersDriverId && !foldersDriver && (
+          <Alert className="mb-4">
+            <AlertTitle>טוען תיקיות…</AlertTitle>
+            <AlertDescription>
+              אם זה נמשך,{' '}
+              <Button variant="link" className="h-auto p-0" onClick={() => { searchParams.delete('folders'); setSearchParams(searchParams); }}>
+                נקה בחירה
               </Button>
             </AlertDescription>
           </Alert>
-        ) : filteredDrivers.length === 0 ? (
-          <Card>
-            <CardContent className="py-8 text-center">
-              <User className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
-              <p className="text-muted-foreground">{t('drivers.noDrivers')}</p>
-              <Link to="/drivers/add">
-                <Button className="mt-4">
-                  <Plus className="mr-2 h-4 w-4" />
-                  {t('drivers.addNewDriver')}
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-4">
-            {foldersDriverId && !foldersDriver && !isLoading && (
-              <Alert variant="destructive">
-                <AlertTitle>נהג לא נמצא</AlertTitle>
-                <AlertDescription className="flex flex-wrap items-center gap-2">
-                  <span>לא נטען נהג עבור התיקיות. </span>
-                  <Button variant="link" className="h-auto p-0" onClick={() => { searchParams.delete('folders'); setSearchParams(searchParams); }}>
-                    נקה בחירה
-                  </Button>
-                </AlertDescription>
-              </Alert>
-            )}
-            {filteredDrivers.map((driver) => (
-              <div key={driver.id} id={`driver-card-${driver.id}`}>
-                <DriverCard
-                  driver={driver}
-                  onDelete={() => setDeleteId(driver.id)}
-                  canEdit={isManager}
-                  driverActiveAssignments={assignmentsByDriver.get(driver.id) ?? []}
-                />
-              </div>
-            ))}
+        )}
+        {foldersDriver && (
+          <div id="driver-folders-panel" ref={foldersPanelRef} className="mb-6 scroll-mt-24 rounded-xl border border-white/10 bg-slate-900/40 p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-sm text-muted-foreground">
+                תיקיות עבור: <strong className="font-semibold text-slate-200">{foldersDriver.full_name}</strong>
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  searchParams.delete('folders');
+                  setSearchParams(searchParams);
+                }}
+              >
+                סגור תיקיות
+              </Button>
+            </div>
+            <DriverFolders driver={foldersDriver} collapsible={false} defaultOpen />
           </div>
         )}
-      </div>
 
-      {!foldersDriver && filteredDrivers.length > 0 && (
-        <div className="rounded-xl border border-dashed border-border/60 bg-muted/5 p-4 text-center">
-          <FolderOpen className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">
-            לפתיחת <strong className="text-foreground">תיקיות ניהול נהג</strong> — לחץ על כפתור התיקיות בכרטיס הנהג
-          </p>
+        <div className="w-full">
+          {isLoading ? (
+            <div className="space-y-4">
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-24 w-full rounded-xl" />
+              ))}
+            </div>
+          ) : isError ? (
+            <Alert variant="destructive">
+              <AlertTitle>שגיאה בטעינת הנהגים</AlertTitle>
+              <AlertDescription className="space-y-3">
+                <p>{errorMessage}</p>
+                <Button variant="outline" size="sm" onClick={() => refetch()}>
+                  נסה שוב
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : (drivers?.length ?? 0) === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <User className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
+                <p className="text-muted-foreground">{t('drivers.noDrivers')}</p>
+                <Link to="/drivers/add">
+                  <Button className="mt-4">
+                    <Plus className="mr-2 h-4 w-4" />
+                    {t('drivers.addNewDriver')}
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              {foldersDriverId && !foldersDriver && !isLoading && (
+                <Alert variant="destructive" className="mb-4">
+                  <AlertTitle>נהג לא נמצא</AlertTitle>
+                  <AlertDescription className="flex flex-wrap items-center gap-2">
+                    <span>לא נטען נהג עבור התיקיות. </span>
+                    <Button variant="link" className="h-auto p-0" onClick={() => { searchParams.delete('folders'); setSearchParams(searchParams); }}>
+                      נקה בחירה
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              )}
+              <DriversHudTable
+                driversAll={drivers ?? []}
+                driversFiltered={filteredDrivers}
+                search={search}
+                onSearchChange={setSearch}
+                filterStatus={filterStatus}
+                onFilterStatus={setFilterStatus}
+                filterLicense={filterLicense}
+                onFilterLicense={setFilterLicense}
+                filterOperation={filterOperation}
+                onFilterOperation={setFilterOperation}
+                licenseTypeOptions={licenseTypeOptions}
+                operationOptions={operationOptions}
+                assignedVehicleByDriverId={assignedVehicleByDriverId}
+                canEdit={isManager}
+                onDelete={(id) => setDeleteId(id)}
+                showNotificationSettingsLink={isManager}
+              />
+            </>
+          )}
         </div>
-      )}
 
-      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('drivers.deleteTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>{t('drivers.deleteDescription')}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="gap-2">
-            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (deleteId) {
-                  deleteDriver.mutate(deleteId);
-                  setDeleteId(null);
-                }
-              }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {t('common.delete')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        {!foldersDriver && filteredDrivers.length > 0 && (
+          <div className="rounded-xl border border-dashed border-border/60 bg-muted/5 p-4 text-center">
+            <FolderOpen className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">
+              לפתיחת <strong className="text-foreground">תיקיות ניהול נהג</strong> — השתמשו בתפריט השורה או בכרטיס הנהג
+            </p>
+          </div>
+        )}
+
+        <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('drivers.deleteTitle')}</AlertDialogTitle>
+              <AlertDialogDescription>{t('drivers.deleteDescription')}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className="gap-2">
+              <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (deleteId) {
+                    deleteDriver.mutate(deleteId);
+                    setDeleteId(null);
+                  }
+                }}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {t('common.delete')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </section>
     </FleetHudPageShell>
   );

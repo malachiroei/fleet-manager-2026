@@ -187,7 +187,7 @@ export interface Driver {
   practical_driving_test_date: string | null;
 }
 
-/** List/card view: same DB fields as edit form — all optional beyond core id/name */
+/** List/card view: same DB fields כמו DriverSectionEditPage — כל השדות האופציונליים לתצוגה בכרטיס */
 export interface DriverSummary {
   id: string;
   org_id?: string | null;
@@ -198,12 +198,31 @@ export interface DriverSummary {
   license_expiry: string;
   status: ComplianceStatus;
   address: string | null;
+  city: string | null;
+  birth_date: string | null;
+  note1: string | null;
+  note2: string | null;
+  rating: string | null;
   job_title: string | null;
   department: string | null;
+  employee_number: string | null;
+  driver_code: string | null;
+  division: string | null;
+  area: string | null;
+  group_name: string | null;
+  group_code: string | null;
+  eligibility: string | null;
+  work_start_date: string | null;
   license_number: string | null;
   health_declaration_date: string | null;
   safety_training_date: string | null;
   regulation_585b_date: string | null;
+  practical_driving_test_date: string | null;
+  is_field_person: boolean;
+  /** פעיל בארגון — לסטטוס בטבלה ולסטטיסטיקה */
+  is_active: boolean;
+  /** סוג רישיון / היתר נהיגה — לסינון בטבלה */
+  driving_permit: string | null;
   license_front_url?: string | null;
   license_back_url?: string | null;
   health_declaration_url?: string | null;

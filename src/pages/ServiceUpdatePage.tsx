@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Camera, ImageIcon, Loader2, Trash2, Wrench } from 'lucide-react';
 
@@ -15,9 +15,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { FleetDatePicker } from '@/components/ui/FleetDatePicker';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { WebcamCapture } from '@/components/WebcamCapture';
 import { useMobilePhotoIngest } from '@/hooks/useMobilePhotoIngest';
+import { normalizePlateNumber } from '@/lib/plateNumber';
 import {
   compressImageFileForUpload,
   isAndroidUserAgent,
@@ -40,10 +42,6 @@ function addOneYearYmd(ymd: string): string {
   const dt = new Date(y, mo - 1, da);
   dt.setFullYear(dt.getFullYear() + 1);
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
-}
-
-function normalizePlate(s: string): string {
-  return s.replace(/[\s-]/g, '').toLowerCase();
 }
 
 function sanitizeFileExt(name: string): string {
@@ -71,6 +69,8 @@ function isVehicleServiceLogsSchemaOrMissingTable(err: unknown): boolean {
 
 export default function ServiceUpdatePage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const vehicleIdFromUrl = searchParams.get('vehicle');
   const queryClient = useQueryClient();
   const { user, hasPermission } = useAuth();
   const { data: featureFlags, isPending: flagsPending } = useFeatureFlags();
@@ -92,7 +92,7 @@ export default function ServiceUpdatePage() {
   }, [user, flagsPending, featureFlags, hasPermission, navigate]);
 
   const [plateSearch, setPlateSearch] = useState('');
-  const [selectedVehicleId, setSelectedVehicleId] = useState<string | undefined>(undefined);
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string | undefined>(() => vehicleIdFromUrl || undefined);
   const [serviceDate, setServiceDate] = useState(todayYmdLocal);
   const [mileageInput, setMileageInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -114,14 +114,26 @@ export default function ServiceUpdatePage() {
     logLabel: '[ServiceUpdatePage]',
   });
 
+  useEffect(() => {
+    if (!vehicleIdFromUrl || vehicles.length === 0) return;
+    const v = vehicles.find((x) => x.id === vehicleIdFromUrl);
+    if (v) {
+      setSelectedVehicleId(v.id);
+      setPlateSearch(v.plate_number);
+    }
+  }, [vehicleIdFromUrl, vehicles]);
+
   const filteredVehicles = useMemo(() => {
     const q = plateSearch.trim().toLowerCase();
     if (!q) return vehicles;
     return vehicles.filter((v) => {
       const plate = (v.plate_number ?? '').toLowerCase();
+      const plateDigits = normalizePlateNumber(v.plate_number);
+      const qDigits = normalizePlateNumber(q);
       const internal = (v.internal_number ?? '').toLowerCase();
       const label = `${v.manufacturer ?? ''} ${v.model ?? ''}`.toLowerCase();
-      return plate.includes(q) || internal.includes(q) || label.includes(q);
+      const plateDigitsMatch = qDigits.length > 0 && plateDigits.includes(qDigits);
+      return plateDigitsMatch || plate.includes(q) || internal.includes(q) || label.includes(q);
     });
   }, [plateSearch, vehicles]);
 
@@ -134,8 +146,8 @@ export default function ServiceUpdatePage() {
     if (selectedByDropdown) return selectedByDropdown;
     const raw = plateSearch.trim();
     if (!raw) return null;
-    const n = normalizePlate(raw);
-    const matches = vehicles.filter((v) => normalizePlate(v.plate_number) === n);
+    const n = normalizePlateNumber(raw);
+    const matches = vehicles.filter((v) => normalizePlateNumber(v.plate_number) === n);
     if (matches.length === 1) return matches[0];
     return null;
   }, [selectedByDropdown, plateSearch, vehicles]);
@@ -359,13 +371,11 @@ export default function ServiceUpdatePage() {
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['vehicle-documents', resolvedVehicle.id] });
 
-      const auditNote = serviceAuditSkipped
-        ? ' יומן טיפול DB (vehicle_service_logs) לא נשמר — יש להריץ מיגרציות Supabase או לרענן schema (NOTIFY pgrst).'
-        : '';
-
       toast({
-        title: emailProblem ? 'הנתונים נשמרו; יש בעיה במייל' : 'הנתונים נשמרו והעדכון נשלח במייל',
-        description: `${emailProblem ? `${emailProblem} | הטיפול והמסמך נשמרו במערכת.` : 'הרכב עודכן ונשלחה הודעה לתיבת הניטור.'}${auditNote}`,
+        title: emailProblem ? 'הנתונים נשמרו; יש בעיה במייל' : 'הטיפול נשמר והעדכון נשלח במייל',
+        description: emailProblem
+          ? `${emailProblem} | הטיפול והמסמך נשמרו במערכת.`
+          : 'הרכב עודכן, המסמך נשמר בלשונית מסמכים ונשלחה הודעה לתיבת הניטור.',
         variant: emailProblem ? 'destructive' : 'default',
       });
       navigate(`/vehicles/${resolvedVehicle.id}`);
@@ -431,7 +441,7 @@ export default function ServiceUpdatePage() {
                       return;
                     }
                     const sel = vehicles.find((x) => x.id === selectedVehicleId);
-                    if (sel && normalizePlate(v) !== normalizePlate(sel.plate_number)) {
+                    if (sel && normalizePlateNumber(v) !== normalizePlateNumber(sel.plate_number)) {
                       setSelectedVehicleId(undefined);
                     }
                   }}
@@ -485,13 +495,12 @@ export default function ServiceUpdatePage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="service-date">תאריך טיפול</Label>
-                  <Input
+                  <FleetDatePicker
                     id="service-date"
-                    type="date"
+                    label="תאריך טיפול"
+                    className="[&_input]:h-11"
                     value={serviceDate}
-                    onChange={(e) => setServiceDate(e.target.value)}
-                    className="h-11"
+                    onChange={setServiceDate}
                   />
                 </div>
                 <div className="space-y-2">

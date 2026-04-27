@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   useVehicleSpecDirty,
@@ -9,6 +9,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { FleetDatePicker } from '@/components/ui/FleetDatePicker';
+import { sendFleetFieldUpdateNotification } from '@/lib/sendFleetFieldUpdateNotification';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Loader2, User, CreditCard, Briefcase, ShieldCheck, FileText, Upload, Heart } from 'lucide-react';
@@ -25,6 +27,15 @@ export default function EditDriverPage() {
   const [licenseFront, setLicenseFront] = useState<File | null>(null);
   const [licenseBack, setLicenseBack] = useState<File | null>(null);
   const [healthDeclaration, setHealthDeclaration] = useState<File | null>(null);
+
+  const slice10 = (x: string | null | undefined) =>
+    x && String(x).length >= 10 ? String(x).slice(0, 10) : '';
+  const [birthDate, setBirthDate] = useState('');
+  const [licenseExp, setLicenseExp] = useState('');
+  const [healthDecDate, setHealthDecDate] = useState('');
+  const [safetyTrainDate, setSafetyTrainDate] = useState('');
+  const [reg585Date, setReg585Date] = useState('');
+  const driverDatesInitId = useRef<string | null>(null);
 
   const uploadDriverFileToStorage = async (driverId: string, file: File, kind: 'license_front' | 'license_back' | 'health'): Promise<string | null> => {
     const ext = file.name.split('.').pop() || 'jpg';
@@ -49,6 +60,17 @@ export default function EditDriverPage() {
   useEffect(() => {
     return () => setDirty(DIRTY_SOURCE_DRIVER_EDIT, false);
   }, [setDirty]);
+
+  useEffect(() => {
+    if (!driver?.id) return;
+    if (driverDatesInitId.current === driver.id) return;
+    driverDatesInitId.current = driver.id;
+    setBirthDate(slice10(driver.birth_date));
+    setLicenseExp(slice10(driver.license_expiry));
+    setHealthDecDate(slice10(driver.health_declaration_date));
+    setSafetyTrainDate(slice10(driver.safety_training_date));
+    setReg585Date(slice10(driver.regulation_585b_date));
+  }, [driver]);
 
   if (isLoading) {
     return (
@@ -80,7 +102,7 @@ export default function EditDriverPage() {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const licenseExpiry = (formData.get('license_expiry') as string)?.trim();
+    const licenseExpiry = licenseExp.trim();
     if (!licenseExpiry) {
       toast.error('חובה למלא תוקף רישיון נהיגה');
       return;
@@ -111,18 +133,37 @@ export default function EditDriverPage() {
         license_expiry: licenseExpiry,
         phone: formData.get('phone') as string || null,
         email: formData.get('email') as string || null,
-        health_declaration_date: formData.get('health_declaration_date') as string || null,
-        safety_training_date: formData.get('safety_training_date') as string || null,
+        health_declaration_date: healthDecDate.trim() || null,
+        safety_training_date: safetyTrainDate.trim() || null,
         address: formData.get('address') as string || null,
         job_title: formData.get('job_title') as string || null,
         department: formData.get('department') as string || null,
         license_number: formData.get('license_number') as string || null,
-        birth_date: (formData.get('birth_date') as string)?.trim() || null,
-        regulation_585b_date: formData.get('regulation_585b_date') as string || null,
+        birth_date: birthDate.trim() || null,
+        regulation_585b_date: reg585Date.trim() || null,
         license_front_url: licenseFrontUrl,
         license_back_url: licenseBackUrl,
         health_declaration_url: healthDeclarationUrl,
       });
+
+      if (licenseFront || licenseBack || healthDeclaration) {
+        const rows: { label: string; value: string }[] = [
+          { label: 'תוקף רישיון', value: licenseExpiry },
+          { label: 'רישיון חזית', value: licenseFront ? 'הועלה / עודכן' : 'ללא שינוי' },
+          { label: 'רישיון גב', value: licenseBack ? 'הועלה / עודכן' : 'ללא שינוי' },
+          { label: 'הצהרת בריאות (קובץ)', value: healthDeclaration ? 'הועלה / עודכן' : 'ללא שינוי' },
+        ];
+        const docUrl = licenseFrontUrl || licenseBackUrl || healthDeclarationUrl || null;
+        const notify = await sendFleetFieldUpdateNotification({
+          subject: `עדכון סריקות / נהג — ${driver.full_name}`,
+          headline: 'עודכנו פרטים או סריקות לנהג',
+          vehicleLabel: driver.full_name,
+          rows,
+          documentUrl: typeof docUrl === 'string' ? docUrl : null,
+        });
+        if (!notify.ok) console.warn('[EditDriverPage] email', notify.message);
+      }
+
       toast.success('הנהג עודכן בהצלחה');
       setDirty(DIRTY_SOURCE_DRIVER_EDIT, false);
       navigate('/drivers', { replace: true });
@@ -173,10 +214,7 @@ export default function EditDriverPage() {
                   <Label htmlFor="id_number">תעודת זהות *</Label>
                   <Input id="id_number" name="id_number" defaultValue={driver.id_number} required dir="ltr" />
                 </div>
-                <div>
-                  <Label htmlFor="birth_date">תאריך לידה</Label>
-                  <Input id="birth_date" name="birth_date" type="date" defaultValue={driver.birth_date || ''} />
-                </div>
+                <FleetDatePicker id="birth_date" label="תאריך לידה" value={birthDate} onChange={setBirthDate} />
                 <div>
                   <Label htmlFor="phone">טלפון</Label>
                   <Input id="phone" name="phone" type="tel" defaultValue={driver.phone || ''} dir="ltr" />
@@ -230,10 +268,7 @@ export default function EditDriverPage() {
                 <Label htmlFor="license_number">מספר רישיון נהיגה</Label>
                 <Input id="license_number" name="license_number" defaultValue={driver.license_number || ''} dir="ltr" />
               </div>
-              <div>
-                <Label htmlFor="license_expiry">תוקף רישיון נהיגה *</Label>
-                <Input id="license_expiry" name="license_expiry" type="date" defaultValue={driver.license_expiry || ''} required />
-              </div>
+              <FleetDatePicker id="license_expiry" label="תוקף רישיון נהיגה *" value={licenseExp} onChange={setLicenseExp} />
             </CardContent>
           </Card>
 
@@ -297,8 +332,12 @@ export default function EditDriverPage() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="health_declaration_date">תאריך הצהרת בריאות</Label>
-                  <Input id="health_declaration_date" name="health_declaration_date" type="date" defaultValue={driver.health_declaration_date || ''} />
+                  <FleetDatePicker
+                    id="health_declaration_date"
+                    label="תאריך הצהרת בריאות"
+                    value={healthDecDate}
+                    onChange={setHealthDecDate}
+                  />
                   <p className="text-xs text-muted-foreground">
                     <span className="font-medium text-foreground">תוקף הצהרת בריאות: </span>
                     {(() => {
@@ -313,13 +352,19 @@ export default function EditDriverPage() {
                     <span className="mr-1 opacity-80"> (5 שנים מההצהרה)</span>
                   </p>
                 </div>
-                <div>
-                  <Label htmlFor="safety_training_date">תאריך הדרכת בטיחות</Label>
-                  <Input id="safety_training_date" name="safety_training_date" type="date" defaultValue={driver.safety_training_date || ''} />
-                </div>
+                <FleetDatePicker
+                  id="safety_training_date"
+                  label="תאריך הדרכת בטיחות"
+                  value={safetyTrainDate}
+                  onChange={setSafetyTrainDate}
+                />
                 <div className="md:col-span-2 space-y-2">
-                  <Label htmlFor="regulation_585b_date">תאריך בדיקת רישיון ע״פ תקנה 585 ב׳</Label>
-                  <Input id="regulation_585b_date" name="regulation_585b_date" type="date" defaultValue={driver.regulation_585b_date || ''} />
+                  <FleetDatePicker
+                    id="regulation_585b_date"
+                    label="תאריך בדיקת רישיון ע״פ תקנה 585 ב׳"
+                    value={reg585Date}
+                    onChange={setReg585Date}
+                  />
                   <p className="text-xs text-muted-foreground">
                     <span className="font-medium text-foreground">תוקף הבדיקה: </span>
                     {(() => {

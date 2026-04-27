@@ -6,6 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { FleetDatePicker } from '@/components/ui/FleetDatePicker';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
@@ -177,14 +178,7 @@ export default function AddMaintenancePage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="maint-date">תאריך</Label>
-                <Input
-                  id="maint-date"
-                  type="date"
-                  value={serviceDate}
-                  onChange={(e) => setServiceDate(e.target.value)}
-                  required
-                />
+                <FleetDatePicker id="maint-date" label="תאריך" value={serviceDate} onChange={setServiceDate} />
               </div>
 
               <div className="space-y-2">

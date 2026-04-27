@@ -12,6 +12,7 @@
  */
 
 import { supabase } from '@/integrations/supabase/client';
+import { normalizePlateNumber } from '@/lib/plateNumber';
 
 // ─────────────────────────────────────────────
 // Types
@@ -379,7 +380,7 @@ export async function executeFlow(state: FlowState): Promise<FlowExecuteResult> 
 
     } else {
       // Insert vehicle
-      const plate = d.plate_number.replace(/\D/g, '').replace(/^(\d{2,3})(\d{2,3})(\d{2,3})$/, '$1-$2-$3');
+      const plate = normalizePlateNumber(d.plate_number);
 
       const { data: inserted, error } = await supabase
         .from('vehicles')

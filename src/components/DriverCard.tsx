@@ -4,7 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Trash2, Edit, Car, Phone, Mail, FolderOpen, Upload } from 'lucide-react';
 import type { DriverSummary, ComplianceStatus } from '@/types/fleet';
-import type { ActiveDriverVehicleAssignment } from '@/hooks/useVehicles';
+import type { AssignedVehicleTile } from '@/lib/mergeDriverAssignedVehicles';
 import { DRIVER_SECTION_LABELS } from '@/lib/driverFieldMap';
 
 /** מוצג לכל שדה ריק — בצבע אפור (text-muted-foreground) */
@@ -106,12 +106,13 @@ export function DriverCard({
   driver,
   onDelete,
   canEdit,
-  driverActiveAssignments,
+  assignedVehicles,
 }: {
   driver: DriverSummary;
   onDelete: () => void;
   canEdit: boolean;
-  driverActiveAssignments: ActiveDriverVehicleAssignment[];
+  /** רכבים מהשיוך הפעיל ומעמודת assigned_driver_id ברכב */
+  assignedVehicles: AssignedVehicleTile[];
 }) {
   const today = new Date();
   const expiryRaw = driver.license_expiry;
@@ -132,10 +133,6 @@ export function DriverCard({
   const licenseUrgent =
     expiryValid && licenseExpiresWithin30Days(driver.license_expiry);
   const healthMissing = missingHealthDeclarationLastYear(driver.health_declaration_date);
-
-  const assignedVehicles = driverActiveAssignments
-    .map((a) => a.vehicle)
-    .filter((v): v is NonNullable<ActiveDriverVehicleAssignment['vehicle']> => !!v);
 
   const str = (v: string | null | undefined) =>
     v && String(v).trim() !== '' ? String(v).trim() : MISSING_DATA;
@@ -256,6 +253,11 @@ export function DriverCard({
               <FieldRow label="שם מלא">{str(driver.full_name)}</FieldRow>
               <FieldRow label="תעודת זהות">{str(driver.id_number)}</FieldRow>
               <FieldRow label="תאריך לידה">{fmtDriverDate(driver.birth_date)}</FieldRow>
+              <FieldRow label="עיר">{str(driver.city)}</FieldRow>
+              <FieldRow label="רחוב">{str(driver.address)}</FieldRow>
+              <FieldRow label="הערה 1">{str(driver.note1)}</FieldRow>
+              <FieldRow label="הערה 2">{str(driver.note2)}</FieldRow>
+              <FieldRow label="דירוג">{str(driver.rating)}</FieldRow>
               <FieldRow label="טלפון" className="dir-ltr">
                 {driver.phone && String(driver.phone).trim() !== '' ? (
                   <span className="inline-flex items-center gap-1 text-slate-200" dir="ltr">
@@ -276,13 +278,26 @@ export function DriverCard({
                   MISSING_DATA
                 )}
               </FieldRow>
-              <FieldRow label="רחוב">{str(driver.address)}</FieldRow>
             </SectionBlock>
 
-            {/* organizational — Edit card 2 */}
+            {/* organizational — תואם DriverSectionEditPage */}
             <SectionBlock sectionId="organizational" driverId={driver.id}>
+              <FieldRow label="מ. עובד" className="dir-ltr">
+                {str(driver.employee_number)}
+              </FieldRow>
+              <FieldRow label="קוד נהג" className="dir-ltr">
+                {str(driver.driver_code)}
+              </FieldRow>
               <FieldRow label="תפקיד">{str(driver.job_title)}</FieldRow>
               <FieldRow label="מחלקה">{str(driver.department)}</FieldRow>
+              <FieldRow label="מחוז">{str(driver.division)}</FieldRow>
+              <FieldRow label="אזור">{str(driver.area)}</FieldRow>
+              <FieldRow label="קבוצה">{str(driver.group_name)}</FieldRow>
+              <FieldRow label="קוד קבוצה" className="dir-ltr">
+                {str(driver.group_code)}
+              </FieldRow>
+              <FieldRow label="כשירות">{str(driver.eligibility)}</FieldRow>
+              <FieldRow label="ת. תחילת עבודה">{fmtDriverDate(driver.work_start_date)}</FieldRow>
             </SectionBlock>
 
             {/* licenses — Edit card 3 only (no 585 here) */}
@@ -326,6 +341,19 @@ export function DriverCard({
                   </Link>
                 </FieldRow>
               )}
+              {driver.license_back_url ? (
+                <FieldRow label="">
+                  <a
+                    href={driver.license_back_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-cyan-300 hover:text-cyan-100 underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    צפייה בסריקת רישיון (אחורי)
+                  </a>
+                </FieldRow>
+              ) : null}
             </SectionBlock>
 
             {/* safety — Edit card 4 */}
@@ -339,6 +367,27 @@ export function DriverCard({
               <FieldRow label='תאריך בדיקת רישיון ע״פ תקנה 585 ב׳'>
                 {fmtDriverDate(driver.regulation_585b_date)}
               </FieldRow>
+              <FieldRow label="מבחן מעשי">{fmtDriverDate(driver.practical_driving_test_date)}</FieldRow>
+              <FieldRow label="איש שטח">
+                {driver.is_field_person ? (
+                  <span className="text-slate-200">כן</span>
+                ) : (
+                  <span className="text-muted-foreground">לא</span>
+                )}
+              </FieldRow>
+              {driver.health_declaration_url ? (
+                <FieldRow label="">
+                  <a
+                    href={driver.health_declaration_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-cyan-300 hover:text-cyan-100 underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    צפייה בהצהרת בריאות
+                  </a>
+                </FieldRow>
+              ) : null}
               {healthMissing && (
                 <FieldRow label="">
                   <Link

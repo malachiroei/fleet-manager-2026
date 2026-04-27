@@ -4,7 +4,8 @@
  */
 import { useParams, Link, useSearchParams, Navigate } from 'react-router-dom';
 import { useDriver } from '@/hooks/useDrivers';
-import { useActiveDriverVehicleAssignments } from '@/hooks/useVehicles';
+import { useActiveDriverVehicleAssignments, useVehicles } from '@/hooks/useVehicles';
+import { mergeAssignedVehiclesForDriver } from '@/lib/mergeDriverAssignedVehicles';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -17,6 +18,7 @@ export default function DriverDetailPage() {
   const [searchParams] = useSearchParams();
   const { data: driver, isLoading, isError, error, refetch } = useDriver(id || '');
   const { data: activeAssignments } = useActiveDriverVehicleAssignments();
+  const { data: vehicles = [] } = useVehicles();
 
   const sectionParam = searchParams.get(DRIVER_SECTION_QUERY_PARAM) as DriverSectionId | null;
   const validSections: string[] = ['personal', 'organizational', 'licenses', 'safety'];
@@ -96,10 +98,11 @@ export default function DriverDetailPage() {
     );
   }
 
-  const assignedVehicles = (activeAssignments ?? [])
-    .filter((a) => a.driver_id === driver.id && a.vehicle)
-    .map((a) => a.vehicle!)
-    .filter((v, i, arr) => arr.findIndex((x) => x.id === v.id) === i);
+  const assignedVehicles = mergeAssignedVehiclesForDriver(
+    driver.id,
+    activeAssignments ?? [],
+    vehicles,
+  );
 
   return (
     <div className="fleet-screen-page text-white">

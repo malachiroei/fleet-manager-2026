@@ -18,6 +18,7 @@ import VehicleDamage3DSelector from '@/components/VehicleDamage3DSelector';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { FleetDatePicker } from '@/components/ui/FleetDatePicker';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { orgDocumentTemplateBody } from '@/lib/orgDocumentTemplate';
@@ -861,12 +862,11 @@ function Step4({
             />
           </div>
           <div>
-            <Label className="text-slate-300 text-sm font-semibold">תוקף רישיון</Label>
-            <Input
-              type="date"
+            <FleetDatePicker
+              label="תוקף רישיון"
               value={licenseExpiry}
-              onChange={(e) => setLicenseExpiry(e.target.value)}
-              className="mt-1 border-slate-700 bg-slate-900 text-slate-50 font-semibold focus:border-cyan-400"
+              onChange={setLicenseExpiry}
+              className="mt-1 [&_label]:text-slate-300 [&_label]:text-sm [&_label]:font-semibold [&_input]:border-slate-700 [&_input]:bg-slate-900 [&_input]:text-slate-50 [&_input]:font-semibold [&_input]:focus:border-cyan-400"
             />
           </div>
           <div>
@@ -1387,16 +1387,16 @@ function renderStepContent({
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <Label className="text-slate-700 text-sm font-semibold">תאריך</Label>
-                <Input
-                  type="date"
+                <FleetDatePicker
+                  label="תאריך"
                   value={practicalState.date || defaultDateIso}
-                  onChange={(e) =>
+                  onChange={(ymd) =>
                     setPracticalTestUiByDocId((prev) => ({
                       ...prev,
-                      [doc.id]: { ...practicalState, date: e.target.value },
+                      [doc.id]: { ...practicalState, date: ymd },
                     }))
                   }
+                  className="[&_label]:text-slate-700 [&_label]:text-sm [&_label]:font-semibold"
                 />
               </div>
               <div>
@@ -1533,8 +1533,13 @@ function renderStepContent({
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-slate-200 pt-3">
               <div>
-                <Label>תאריך החזרה</Label>
-                <Input type="date" value={returnState.returnDate || defaultDateIso} onChange={(e) => setReturnFormUiByDocId((prev) => ({ ...prev, [doc.id]: { ...returnState, returnDate: e.target.value } }))} />
+                <FleetDatePicker
+                  label="תאריך החזרה"
+                  value={returnState.returnDate || defaultDateIso}
+                  onChange={(ymd) =>
+                    setReturnFormUiByDocId((prev) => ({ ...prev, [doc.id]: { ...returnState, returnDate: ymd } }))
+                  }
+                />
               </div>
               <div>
                 <Label>שעת החזרה</Label>

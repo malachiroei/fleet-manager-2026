@@ -5,6 +5,12 @@ import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
 import { fleetManagerVisibilityOrFilter } from '@/lib/fleetManagerScope';
+import { normalizePlateNumber } from '@/lib/plateNumber';
+
+function vehicleWithNormalizedPlate<T extends { plate_number: string }>(v: T): T {
+  const p = normalizePlateNumber(v.plate_number);
+  return p ? { ...v, plate_number: p } : v;
+}
 
 export interface ActiveDriverVehicleAssignment {
   id: string;
@@ -30,7 +36,12 @@ export async function fetchActiveDriverAssignments(driverId: string, excludeVehi
   const { data, error } = await query;
   if (error) throw error;
 
-  return (data ?? []) as unknown as ActiveDriverVehicleAssignment[];
+  return ((data ?? []) as unknown as ActiveDriverVehicleAssignment[]).map((row) => ({
+    ...row,
+    vehicle: row.vehicle
+      ? vehicleWithNormalizedPlate(row.vehicle as Pick<Vehicle, 'id' | 'manufacturer' | 'model' | 'plate_number'>)
+      : null,
+  }));
 }
 
 export function useActiveDriverVehicleAssignments() {
@@ -78,7 +89,12 @@ export function useActiveDriverVehicleAssignments() {
       }
       const { data, error } = await assignQuery;
       if (error) throw error;
-      return (data ?? []) as unknown as ActiveDriverVehicleAssignment[];
+      return ((data ?? []) as unknown as ActiveDriverVehicleAssignment[]).map((row) => ({
+        ...row,
+        vehicle: row.vehicle
+          ? vehicleWithNormalizedPlate(row.vehicle as Pick<Vehicle, 'id' | 'manufacturer' | 'model' | 'plate_number'>)
+          : null,
+      }));
     },
   });
 }
@@ -117,7 +133,7 @@ export function useVehicles() {
       }
       const { data, error } = await q;
       if (error) throw error;
-      return (data ?? []) as Vehicle[];
+      return ((data ?? []) as Vehicle[]).map((v) => vehicleWithNormalizedPlate(v));
     },
   });
 }
@@ -135,7 +151,7 @@ export function useVehicle(id: string) {
       }
       const { data, error } = await query.maybeSingle();
       if (error) throw error;
-      return data as Vehicle | null;
+      return data ? vehicleWithNormalizedPlate(data as Vehicle) : null;
     },
     enabled: Boolean(id && fleetListReady && orgId != null),
   });
@@ -148,6 +164,9 @@ export function useCreateVehicle() {
   return useMutation({
     mutationFn: async (newVehicle: Partial<Vehicle>) => {
       const row = { ...newVehicle } as Record<string, unknown>;
+      if (typeof row.plate_number === 'string') {
+        row.plate_number = normalizePlateNumber(row.plate_number);
+      }
       const effectiveOrgId = activeOrgId ?? profile?.org_id;
       if (effectiveOrgId != null && row.org_id == null) {
         row.org_id = effectiveOrgId;
@@ -163,7 +182,7 @@ export function useCreateVehicle() {
         .single();
 
       if (error) throw error;
-      return data;
+      return vehicleWithNormalizedPlate(data as Vehicle);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
@@ -180,9 +199,13 @@ export function useUpdateVehicle() {
 
   return useMutation({
     mutationFn: async ({ id, ...updates }: Partial<Vehicle> & { id: string }) => {
+      const payload = { ...updates } as Partial<Vehicle>;
+      if (typeof payload.plate_number === 'string') {
+        payload.plate_number = normalizePlateNumber(payload.plate_number);
+      }
       const { data, error } = await supabase
         .from('vehicles')
-        .update(updates)
+        .update(payload)
         .eq('id', id)
         .select();
 
@@ -194,11 +217,11 @@ export function useUpdateVehicle() {
           'אין הרשאת עדכון לרכב זה או הרכב לא נמצא (בדוק הרשאות במסד)',
         );
       }
-      return row;
+      return vehicleWithNormalizedPlate(row as Vehicle);
     },
     onSuccess: (data) => {
       // עדכון מיידי של מסך הסקירה בלי להמתין ל-refetch
-      queryClient.setQueryData(['vehicle', data.id], data as Vehicle);
+      queryClient.setQueryData(['vehicle', data.id], vehicleWithNormalizedPlate(data as Vehicle));
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['vehicle', data.id] });
       toast({ title: 'הרכב עודכן בהצלחה' });

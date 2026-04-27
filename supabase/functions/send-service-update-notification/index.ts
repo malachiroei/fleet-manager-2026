@@ -1,6 +1,10 @@
 /**
  * Secrets (Supabase → Edge Functions): RESEND_API_KEY (חובה).
  * אופציונלי: NOTIFY_FROM_EMAIL — חייב להיות דומיין מאומת ב-Resend (לא onboarding@resend.dev לייצור).
+ *
+ * שני מצבים:
+ * - ברירת מחדל (ללא notificationType או `service`): מייל טיפול — כמו קודם.
+ * - `notificationType: "fleet_field"`: מייל גנרי לטסט / ביטוח / צמיגים (אותו endpoint פרוס כמו טיפול).
  */
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 
@@ -12,7 +16,14 @@ const corsHeaders: Record<string, string> = {
   'Access-Control-Max-Age': '86400',
 };
 
+export interface FleetFieldUpdateRow {
+  label: string;
+  value: string;
+}
+
 export interface ServiceUpdateNotificationBody {
+  /** `fleet_field` — מייל גנרי (טסט, ביטוח, צמיגים); חסר או `service` — מייל טיפול */
+  notificationType?: 'service' | 'fleet_field';
   /** אופציונלי — תואם send-mileage-notification (ברירת מחדל malachiroei@gmail.com) */
   to?: string;
   subject: string;
@@ -24,6 +35,10 @@ export interface ServiceUpdateNotificationBody {
   nextServiceKm: number | null;
   serviceIntervalKm: number | null;
   invoicePhotoUrl: string;
+  /** fleet_field בלבד */
+  headline?: string;
+  rows?: FleetFieldUpdateRow[];
+  documentUrl?: string | null;
 }
 
 function esc(s: string): string {
@@ -52,6 +67,80 @@ serve(async (req) => {
     }
 
     const body = (await req.json()) as ServiceUpdateNotificationBody;
+    const mode = body.notificationType === 'fleet_field' ? 'fleet_field' : 'service';
+
+    if (mode === 'fleet_field') {
+      const subject = (body.subject?.trim() || 'עדכון במערכת').slice(0, 200);
+      const rows = Array.isArray(body.rows) ? body.rows : [];
+      if (rows.length === 0) {
+        return new Response(JSON.stringify({ error: 'fleet_field: נדרש מערך rows לא ריק' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const to =
+        (body.to && String(body.to).includes('@') ? String(body.to).trim() : '') ||
+        'malachiroei@gmail.com';
+      const headline = esc(body.headline?.trim() || subject);
+      const safeDoc = String(body.documentUrl ?? '').trim().replace(/"/g, '');
+
+      let tableRows = '';
+      for (const r of rows) {
+        const lab = esc(String(r.label ?? ''));
+        const val = esc(String(r.value ?? ''));
+        tableRows += `<tr><td style="padding:6px 0;color:#6b7280;vertical-align:top;">${lab}</td><td style="padding:6px 0;">${val}</td></tr>`;
+      }
+
+      const plateBlock =
+        body.plateNumber || body.vehicleLabel
+          ? `<p style="margin:12px 0;"><strong dir="ltr">${esc(body.plateNumber ?? '')}</strong>
+           ${body.vehicleLabel ? `<span> · ${esc(body.vehicleLabel)}</span>` : ''}</p>`
+          : '';
+
+      const docBlock = safeDoc
+        ? `<p style="margin-top:14px;"><strong>מסמך / צילום:</strong><br/>
+         <a href="${safeDoc}" target="_blank" rel="noopener noreferrer">פתיחת קישור</a></p>`
+        : '';
+
+      const html = `
+      <div dir="rtl" style="font-family: Arial, sans-serif; text-align: right;">
+        <h2 style="margin-bottom:8px;">${headline}</h2>
+        ${plateBlock}
+        <table style="border-collapse:collapse;width:100%;max-width:520px;">${tableRows}</table>
+        ${docBlock}
+        <p style="font-size:12px;color:#6b7280;margin-top:20px;">נשלח אוטומטית ממערכת Fleet Manager Pro.</p>
+      </div>
+    `.trim();
+
+      const resendResp = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: fromEmail,
+          to: [to],
+          subject,
+          html,
+        }),
+      });
+
+      if (!resendResp.ok) {
+        const errText = await resendResp.text();
+        console.error('Resend Error (fleet_field):', errText);
+        return new Response(JSON.stringify({ error: `Resend error: ${errText}` }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const data = await resendResp.json();
+      return new Response(JSON.stringify({ success: true, result: data }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const subject = body.subject?.trim() || 'עדכון טיפול';
     const to =
       (body.to && String(body.to).includes('@') ? String(body.to).trim() : '') ||

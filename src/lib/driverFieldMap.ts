@@ -24,27 +24,69 @@ export const DRIVER_SECTION_LABELS: Record<DriverSectionId, string> = {
 /** query param / anchor id לגלילה ממוקדת מכרטיס הרשימה */
 export const DRIVER_SECTION_QUERY_PARAM = 'section';
 
-/** Field keys per section — matches EditDriverPage input names */
+/** Field keys per section — תואם DriverSectionEditPage (סדר שדות) */
 export const DRIVER_SECTION_FIELDS: Record<DriverSectionId, readonly string[]> = {
-  personal: ['full_name', 'id_number', 'birth_date', 'phone', 'email', 'address'],
-  organizational: ['job_title', 'department'],
+  personal: [
+    'full_name',
+    'id_number',
+    'birth_date',
+    'city',
+    'address',
+    'note1',
+    'note2',
+    'rating',
+    'phone',
+    'email',
+  ],
+  organizational: [
+    'employee_number',
+    'driver_code',
+    'job_title',
+    'department',
+    'division',
+    'area',
+    'group_name',
+    'group_code',
+    'eligibility',
+    'work_start_date',
+  ],
   licenses: ['license_number', 'license_expiry'],
-  safety: ['health_declaration_date', 'safety_training_date', 'regulation_585b_date'],
+  safety: [
+    'health_declaration_date',
+    'safety_training_date',
+    'regulation_585b_date',
+    'practical_driving_test_date',
+    'is_field_person',
+  ],
 };
 
-/** Hebrew labels for display (aligned with EditDriverPage Label text) */
+/** Hebrew labels for display (aligned with DriverSectionEditPage Label text) */
 export const DRIVER_FIELD_LABELS: Record<string, string> = {
   full_name: 'שם מלא',
   id_number: 'תעודת זהות',
   phone: 'טלפון',
   email: 'אימייל',
   address: 'רחוב',
+  city: 'עיר',
+  note1: 'הערה 1',
+  note2: 'הערה 2',
+  rating: 'דירוג',
   job_title: 'תפקיד',
   department: 'מחלקה',
+  employee_number: 'מ. עובד',
+  driver_code: 'קוד נהג',
+  division: 'מחוז',
+  area: 'אזור',
+  group_name: 'קבוצה',
+  group_code: 'קוד קבוצה',
+  eligibility: 'כשירות',
+  work_start_date: 'ת. תחילת עבודה',
   license_number: 'מספר רישיון נהיגה',
   license_expiry: 'תוקף רישיון נהיגה',
   birth_date: 'תאריך לידה',
   health_declaration_date: 'תאריך הצהרת בריאות',
   safety_training_date: 'תאריך הדרכת בטיחות',
   regulation_585b_date: "תאריך בדיקת רישיון ע״פ תקנה 585 ב׳",
+  practical_driving_test_date: 'מבחן מעשי',
+  is_field_person: 'איש שטח',
 };

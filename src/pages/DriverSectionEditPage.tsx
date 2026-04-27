@@ -12,6 +12,7 @@ import { useDriver, useUpdateDriver } from '@/hooks/useDrivers';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { FleetDatePicker } from '@/components/ui/FleetDatePicker';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Loader2, User, CreditCard, Briefcase, ShieldCheck } from 'lucide-react';
@@ -52,9 +53,34 @@ export default function DriverSectionEditPage() {
   const { setDirty, tryNavigate } = useVehicleSpecDirty();
   const formRef = useRef<HTMLFormElement>(null);
 
+  const slice10 = (x: string | null | undefined) =>
+    x && String(x).length >= 10 ? String(x).slice(0, 10) : '';
+  const [secBirth, setSecBirth] = useState('');
+  const [secWorkStart, setSecWorkStart] = useState('');
+  const [secLicenseExpiry, setSecLicenseExpiry] = useState('');
+  const [secHealthDec, setSecHealthDec] = useState('');
+  const [secSafety, setSecSafety] = useState('');
+  const [sec585, setSec585] = useState('');
+  const [secPractical, setSecPractical] = useState('');
+  const sectionDatesKey = useRef<string>('');
+
   useEffect(() => {
     return () => setDirty(DIRTY_SOURCE_DRIVER_EDIT, false);
   }, [setDirty]);
+
+  useEffect(() => {
+    if (!driver?.id || !sectionId || !isSectionId(sectionId)) return;
+    const key = `${driver.id}:${sectionId}`;
+    if (sectionDatesKey.current === key) return;
+    sectionDatesKey.current = key;
+    setSecBirth(slice10(driver.birth_date));
+    setSecWorkStart(slice10(driver.work_start_date));
+    setSecLicenseExpiry(slice10(driver.license_expiry));
+    setSecHealthDec(slice10(driver.health_declaration_date));
+    setSecSafety(slice10(driver.safety_training_date));
+    setSec585(slice10(driver.regulation_585b_date));
+    setSecPractical(slice10(driver.practical_driving_test_date));
+  }, [driver, sectionId]);
 
   const markDirty = useCallback(() => {
     setDirty(DIRTY_SOURCE_DRIVER_EDIT, true);
@@ -126,7 +152,7 @@ export default function DriverSectionEditPage() {
         payload.phone = nullable(formData, 'phone');
         payload.email = nullable(formData, 'email');
         payload.address = nullable(formData, 'address');
-        payload.birth_date = nullable(formData, 'birth_date');
+        payload.birth_date = secBirth.trim() || null;
         payload.city = nullable(formData, 'city');
         payload.note1 = nullable(formData, 'note1');
         payload.note2 = nullable(formData, 'note2');
@@ -141,9 +167,9 @@ export default function DriverSectionEditPage() {
         payload.group_name = nullable(formData, 'group_name');
         payload.group_code = nullable(formData, 'group_code');
         payload.eligibility = nullable(formData, 'eligibility');
-        payload.work_start_date = nullable(formData, 'work_start_date');
+        payload.work_start_date = secWorkStart.trim() || null;
       } else if (section === 'licenses') {
-        const licenseExpiry = (formData.get('license_expiry') as string)?.trim();
+        const licenseExpiry = secLicenseExpiry.trim();
         if (!licenseExpiry) {
           toast.error('חובה למלא תוקף רישיון נהיגה');
           setIsSubmitting(false);
@@ -152,10 +178,10 @@ export default function DriverSectionEditPage() {
         payload.license_number = nullable(formData, 'license_number');
         payload.license_expiry = licenseExpiry;
       } else if (section === 'safety') {
-        payload.health_declaration_date = nullable(formData, 'health_declaration_date');
-        payload.safety_training_date = nullable(formData, 'safety_training_date');
-        payload.regulation_585b_date = nullable(formData, 'regulation_585b_date');
-        payload.practical_driving_test_date = nullable(formData, 'practical_driving_test_date');
+        payload.health_declaration_date = secHealthDec.trim() || null;
+        payload.safety_training_date = secSafety.trim() || null;
+        payload.regulation_585b_date = sec585.trim() || null;
+        payload.practical_driving_test_date = secPractical.trim() || null;
         // היתר בני משפחה / היתר נהיגה — מנוהלים בתיקייה יעודית / לא בטופס זה
         payload.is_field_person = formData.get('is_field_person') === 'on';
       }
@@ -239,10 +265,7 @@ export default function DriverSectionEditPage() {
                     <Label htmlFor="id_number">תעודת זהות *</Label>
                     <Input id="id_number" name="id_number" defaultValue={d.id_number} required dir="ltr" />
                   </div>
-                  <div>
-                    <Label htmlFor="birth_date">תאריך לידה</Label>
-                    <Input id="birth_date" name="birth_date" type="date" defaultValue={d.birth_date || ''} />
-                  </div>
+                  <FleetDatePicker id="birth_date" label="תאריך לידה" value={secBirth} onChange={setSecBirth} />
                   <div>
                     <Label htmlFor="city">עיר</Label>
                     <Input id="city" name="city" defaultValue={d.city || ''} />
@@ -321,8 +344,7 @@ export default function DriverSectionEditPage() {
                     <Input id="eligibility" name="eligibility" defaultValue={d.eligibility || ''} />
                   </div>
                   <div className="md:col-span-2">
-                    <Label htmlFor="work_start_date">ת. תחילת עבודה</Label>
-                    <Input id="work_start_date" name="work_start_date" type="date" defaultValue={d.work_start_date || ''} />
+                    <FleetDatePicker id="work_start_date" label="ת. תחילת עבודה" value={secWorkStart} onChange={setSecWorkStart} />
                   </div>
                 </CardContent>
               </Card>
@@ -348,16 +370,7 @@ export default function DriverSectionEditPage() {
                     dir="ltr"
                   />
                 </div>
-                <div>
-                  <Label htmlFor="license_expiry_lic">תוקף רישיון נהיגה *</Label>
-                  <Input
-                    id="license_expiry_lic"
-                    name="license_expiry"
-                    type="date"
-                    defaultValue={d.license_expiry || ''}
-                    required
-                  />
-                </div>
+                <FleetDatePicker id="license_expiry_lic" label="תוקף רישיון נהיגה *" value={secLicenseExpiry} onChange={setSecLicenseExpiry} />
               </CardContent>
             </Card>
           )}
@@ -374,30 +387,34 @@ export default function DriverSectionEditPage() {
                 </CardHeader>
                 <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="health_declaration_date">תאריך הצהרת בריאות</Label>
-                    <Input id="health_declaration_date" name="health_declaration_date" type="date" defaultValue={d.health_declaration_date || ''} />
+                    <FleetDatePicker
+                      id="health_declaration_date"
+                      label="תאריך הצהרת בריאות"
+                      value={secHealthDec}
+                      onChange={setSecHealthDec}
+                    />
                     <p className="text-xs text-muted-foreground">
                       <span className="font-medium text-foreground">תוקף הצהרת בריאות: </span>
-                      {expiryFromDate(d.health_declaration_date, 5)}
+                      {expiryFromDate(secHealthDec || d.health_declaration_date, 5)}
                       <span className="mr-1 opacity-80"> (תמיד 5 שנים ממועד ההצהרה)</span>
                     </p>
                   </div>
-                  <div>
-                    <Label htmlFor="safety_training_date">תאריך הדרכת בטיחות</Label>
-                    <Input id="safety_training_date" name="safety_training_date" type="date" defaultValue={d.safety_training_date || ''} />
-                  </div>
+                  <FleetDatePicker id="safety_training_date" label="תאריך הדרכת בטיחות" value={secSafety} onChange={setSecSafety} />
                   <div className="md:col-span-2 space-y-2">
-                    <Label htmlFor="regulation_585b_date">תאריך בדיקת רישיון ע״פ תקנה 585 ב׳</Label>
-                    <Input id="regulation_585b_date" name="regulation_585b_date" type="date" defaultValue={d.regulation_585b_date || ''} />
+                    <FleetDatePicker id="regulation_585b_date" label="תאריך בדיקת רישיון ע״פ תקנה 585 ב׳" value={sec585} onChange={setSec585} />
                     <p className="text-xs text-muted-foreground">
                       <span className="font-medium text-foreground">תוקף הבדיקה: </span>
-                      {expiryFromDate(d.regulation_585b_date, 3)}
+                      {expiryFromDate(sec585 || d.regulation_585b_date, 3)}
                       <span className="mr-1 opacity-80"> (תמיד 3 שנים קדימה ממועד הבדיקה)</span>
                     </p>
                   </div>
                   <div className="md:col-span-2">
-                    <Label htmlFor="practical_driving_test_date">מבחן מעשי</Label>
-                    <Input id="practical_driving_test_date" name="practical_driving_test_date" type="date" defaultValue={d.practical_driving_test_date || ''} />
+                    <FleetDatePicker
+                      id="practical_driving_test_date"
+                      label="מבחן מעשי"
+                      value={secPractical}
+                      onChange={setSecPractical}
+                    />
                   </div>
                   <div className="flex items-center gap-2 md:col-span-2">
                     <input type="checkbox" id="is_field_person" name="is_field_person" value="true" defaultChecked={d.is_field_person} className="h-4 w-4" />

@@ -1,141 +1,183 @@
-import { useState } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { useVehicles } from '@/hooks/useVehicles';
+import { useVehicles, useActiveDriverVehicleAssignments, useDeleteVehicle } from '@/hooks/useVehicles';
+import { useDrivers } from '@/hooks/useDrivers';
 import { usePermissions } from '@/hooks/usePermissions';
-import type { Vehicle } from '@/types/fleet';
+import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Search, Gauge, Wrench } from 'lucide-react';
+import { Gauge, Wrench } from 'lucide-react';
 import { FleetHudPageShell } from '@/components/FleetHudPageShell';
-
-function fmtDate(d: string | null): string {
-  if (!d) return '—';
-  const dt = new Date(d);
-  return `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}/${dt.getFullYear()}`;
-}
-
-function VehicleCard({ vehicle }: { vehicle: Vehicle }) {
-  return (
-    <div className="audi-premium-card p-4 md:p-8">
-      <div className="relative z-[1] mb-2 text-lg font-bold tracking-tight text-white md:text-2xl dashboard-cyber-hero-title">
-        {vehicle.manufacturer} {vehicle.model}
-      </div>
-      <div className="relative z-[1] mb-4 text-center text-2xl font-bold tracking-[0.08em] text-cyan-300 tabular-nums md:text-4xl md:tracking-[0.12em] hud-kpi-value">
-        {vehicle.plate_number}
-      </div>
-      <div className="relative z-[1] mb-3 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(7.5rem,1fr)] gap-1.5 min-[400px]:gap-2 md:gap-4">
-        <div className="min-w-0 bg-white/5 rounded-xl md:rounded-2xl px-1 py-2 min-[400px]:p-2 md:p-4 flex flex-col items-center justify-center gap-1 border border-white/10">
-          <span
-            className="hud-kpi-value white-data tabular-nums max-w-full text-center leading-tight whitespace-normal text-white [font-size:clamp(0.72rem,2.5vw+0.35rem,1.65rem)]"
-            dir="ltr"
-          >
-            {vehicle.current_odometer.toLocaleString()}
-          </span>
-          <span className="hud-dashboard-label text-[10px] font-semibold uppercase tracking-wide min-[400px]:text-xs text-center leading-tight">
-            ק"מ
-          </span>
-        </div>
-        <div className="min-w-0 bg-white/5 rounded-xl md:rounded-2xl px-1 py-2 min-[400px]:p-2 md:p-4 flex flex-col items-center justify-center gap-1 border border-white/10">
-          <span className="hud-kpi-value text-sm font-bold text-white min-[400px]:text-base md:text-2xl">{vehicle.year}</span>
-          <span className="hud-dashboard-label text-[10px] font-semibold uppercase tracking-wide min-[400px]:text-xs text-center leading-tight">
-            שנה
-          </span>
-        </div>
-        <div className="min-w-[7.5rem] bg-white/5 rounded-xl md:rounded-2xl px-1.5 py-2 min-[400px]:p-2 md:p-4 flex flex-col items-center justify-center gap-1 border border-white/10">
-          <span
-            className="vehicle-stat-mixed text-center text-xs font-bold leading-snug text-white min-[400px]:text-sm md:text-base"
-            lang={/[\u0590-\u05FF]/.test(String(vehicle.ownership_type ?? '')) ? 'he' : 'en'}
-          >
-            {vehicle.ownership_type ?? '—'}
-          </span>
-          <span className="hud-dashboard-label text-[10px] font-semibold uppercase tracking-wide min-[400px]:text-xs text-center leading-tight">
-            בעלות
-          </span>
-        </div>
-      </div>
-      <div className="relative z-[1] mb-3 grid grid-cols-2 gap-1.5 min-[400px]:gap-2 md:gap-4">
-        <div className="min-w-0 bg-white/5 rounded-xl md:rounded-2xl px-1 py-2 min-[400px]:p-2 md:p-4 flex flex-col items-center justify-center gap-1 border border-white/10">
-          <span className="text-xs font-semibold tabular-nums text-white min-[400px]:text-base md:text-xl text-center leading-tight" dir="ltr">
-            {fmtDate(vehicle.last_service_date)}
-          </span>
-          <span className="hud-dashboard-label text-[10px] font-semibold uppercase tracking-wide min-[400px]:text-xs text-center leading-tight px-1 text-balance">
-            תאריך טיפול אחרון
-          </span>
-        </div>
-        <div className="min-w-0 bg-white/5 rounded-xl md:rounded-2xl px-1 py-2 min-[400px]:p-2 md:p-4 flex flex-col items-center justify-center gap-1 border border-white/10">
-          <span className="text-xs font-semibold tabular-nums text-white min-[400px]:text-base md:text-xl text-center leading-tight" dir="ltr">
-            {vehicle.last_service_km != null ? vehicle.last_service_km.toLocaleString() : '—'}
-          </span>
-          <span className="hud-dashboard-label text-[10px] font-semibold uppercase tracking-wide min-[400px]:text-xs text-center leading-tight px-1 text-balance">
-            ק״מ טיפול אחרון
-          </span>
-        </div>
-      </div>
-      <div className="relative z-[1] mb-4 grid grid-cols-1 min-[360px]:grid-cols-3 gap-1.5 min-[400px]:gap-2">
-        <div className="min-w-0 bg-white/5 rounded-xl px-1 py-2 min-[400px]:p-2 flex flex-col items-center justify-center gap-1 border border-white/10">
-          <span className="text-[11px] font-semibold tabular-nums text-white min-[400px]:text-xs md:text-sm text-center leading-tight" dir="ltr">{fmtDate(vehicle.created_at)}</span>
-          <span className="hud-dashboard-label text-[10px] font-semibold uppercase tracking-wide min-[400px]:text-xs text-center leading-tight px-1 text-balance">תאריך הקמה</span>
-        </div>
-        <div className="min-w-0 bg-white/5 rounded-xl px-1 py-2 min-[400px]:p-2 flex flex-col items-center justify-center gap-1 border border-cyan-500/20">
-          <span className="text-[11px] font-bold tabular-nums text-cyan-300 min-[400px]:text-xs md:text-sm text-center leading-tight" dir="ltr">{fmtDate(vehicle.purchase_date)}</span>
-          <span className="hud-dashboard-label text-[10px] font-semibold uppercase tracking-wide min-[400px]:text-xs text-center leading-tight px-1 text-balance">תחילת עסקה</span>
-        </div>
-        <div className="min-w-0 bg-white/5 rounded-xl px-1 py-2 min-[400px]:p-2 flex flex-col items-center justify-center gap-1 border border-orange-500/20">
-          <span className="text-[11px] font-bold tabular-nums text-orange-300 min-[400px]:text-xs md:text-sm text-center leading-tight" dir="ltr">{fmtDate(vehicle.sale_date)}</span>
-          <span className="hud-dashboard-label text-[10px] font-semibold uppercase tracking-wide min-[400px]:text-xs text-center leading-tight px-1 text-balance">סיום עסקה</span>
-        </div>
-      </div>
-      <div className="relative z-[1] grid grid-cols-2 min-[520px]:grid-cols-4 gap-1.5 min-[400px]:gap-2">
-        <Link to={`/vehicles/${vehicle.id}#handover-history`} className="min-w-0">
-          <button type="button" className="glass-button glass-button--multiline w-full font-bold">היסטוריית העברות</button>
-        </Link>
-        <Link to={`/vehicles/${vehicle.id}#tax-data`} className="min-w-0">
-          <button type="button" className="glass-button glass-button--multiline w-full font-bold">נתוני מס</button>
-        </Link>
-        <Link to={`/vehicles/${vehicle.id}#overview`} className="min-w-0">
-          <button type="button" className="glass-button glass-button--multiline w-full font-bold">צפייה</button>
-        </Link>
-        <Link to={`/vehicles/${vehicle.id}#vehicle-documents`} className="min-w-0">
-          <button type="button" className="glass-button glass-button--multiline w-full font-bold">מסמכים</button>
-        </Link>
-      </div>
-    </div>
-  );
-}
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  VehiclesHudTable,
+  vehicleHasDocExpired,
+  vehicleHasDocWarnNoExpired,
+  type VehicleQuickFilter,
+  type VehicleStatusFilter,
+} from '@/components/vehicles/VehiclesHudTable';
+import { VEHICLE_OWNERSHIP_OPTIONS, canonicalOwnershipType } from '@/lib/vehicleOwnership';
+import { normalizePlateNumber } from '@/lib/plateNumber';
 
 export default function VehicleListPage() {
   const { data: vehicles, isLoading } = useVehicles();
+  const { data: drivers = [] } = useDrivers();
+  const { data: activeAssignments } = useActiveDriverVehicleAssignments();
   const { canAccessUi } = usePermissions();
+  const { isManager } = useAuth();
   const showServiceUpdate = canAccessUi({ permission: 'vehicles', featureKey: 'qa_service_update' });
+  const showReportMileage = canAccessUi({ permission: 'report_mileage', featureKey: 'qa_report_mileage' });
+  const deleteVehicle = useDeleteVehicle();
+
   const [search, setSearch] = useState('');
-  const filtered = vehicles?.filter(v => v.plate_number.includes(search) || v.manufacturer.toLowerCase().includes(search.toLowerCase()));
+  const [filterStatus, setFilterStatus] = useState<VehicleStatusFilter>('all');
+  const [filterOwnership, setFilterOwnership] = useState('all');
+  const [filterGroup, setFilterGroup] = useState('all');
+  const [quickFilter, setQuickFilter] = useState<VehicleQuickFilter>('all');
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  const handleQuickFilterChange = useCallback((qf: VehicleQuickFilter) => {
+    setQuickFilter(qf);
+    if (qf !== 'all') setFilterStatus('all');
+  }, []);
+
+  const handleFilterStatus = useCallback((v: VehicleStatusFilter) => {
+    setFilterStatus(v);
+    setQuickFilter('all');
+  }, []);
+
+  const handleFilterOwnership = useCallback((v: string) => {
+    setFilterOwnership(v);
+    setQuickFilter('all');
+  }, []);
+
+  const handleFilterGroup = useCallback((v: string) => {
+    setFilterGroup(v);
+    setQuickFilter('all');
+  }, []);
+
+  const assignedDriverNameByVehicleId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const v of vehicles ?? []) {
+      if (!v.assigned_driver_id) continue;
+      const d = drivers.find((dr) => dr.id === v.assigned_driver_id);
+      const name = (d?.full_name ?? '').trim();
+      if (name) map.set(v.id, name);
+    }
+    for (const a of activeAssignments ?? []) {
+      if (!a.vehicle_id || !a.driver_id || map.has(a.vehicle_id)) continue;
+      const d = drivers.find((dr) => dr.id === a.driver_id);
+      const name = (d?.full_name ?? '').trim();
+      if (name) map.set(a.vehicle_id, name);
+    }
+    return map;
+  }, [activeAssignments, drivers, vehicles]);
+
+  const groupOptions = useMemo(() => {
+    const s = new Set<string>();
+    for (const v of vehicles ?? []) {
+      const g = v.group_name?.trim();
+      if (g) s.add(g);
+    }
+    return [...s].sort((a, b) => a.localeCompare(b, 'he'));
+  }, [vehicles]);
+
+  const filteredVehicles = useMemo(() => {
+    let list = vehicles ?? [];
+    const q = search.trim().toLowerCase();
+    if (q) {
+      list = list.filter((v) => {
+        const plate = v.plate_number.toLowerCase();
+        const plateDigits = normalizePlateNumber(v.plate_number);
+        const qDigits = normalizePlateNumber(q);
+        const mm = `${v.manufacturer} ${v.model}`.toLowerCase();
+        const internal = v.internal_number?.toLowerCase() ?? '';
+        const typeBits = [v.vehicle_type_name, v.commercial_name].filter(Boolean).join(' ').toLowerCase();
+        const plateDigitsMatch = qDigits.length > 0 && plateDigits.includes(qDigits);
+        return plateDigitsMatch || plate.includes(q) || mm.includes(q) || internal.includes(q) || typeBits.includes(q);
+      });
+    }
+    if (filterStatus !== 'all') {
+      list = list.filter((v) => {
+        if (filterStatus === 'inactive') return !v.is_active;
+        if (!v.is_active) return false;
+        return v.status === filterStatus;
+      });
+    }
+    if (filterOwnership !== 'all') {
+      list = list.filter((v) => canonicalOwnershipType(v.ownership_type) === filterOwnership);
+    }
+    if (filterGroup !== 'all') {
+      list = list.filter((v) => (v.group_name?.trim() || '') === filterGroup);
+    }
+    if (quickFilter === 'inactive') {
+      list = list.filter((v) => !v.is_active);
+    } else if (quickFilter === 'docs_warn') {
+      list = list.filter(vehicleHasDocWarnNoExpired);
+    } else if (quickFilter === 'docs_expired') {
+      list = list.filter(vehicleHasDocExpired);
+    } else if (quickFilter === 'no_driver') {
+      list = list.filter(
+        (v) => v.is_active && !assignedDriverNameByVehicleId.get(v.id)?.trim(),
+      );
+    }
+    return list;
+  }, [
+    vehicles,
+    search,
+    filterStatus,
+    filterOwnership,
+    filterGroup,
+    quickFilter,
+    assignedDriverNameByVehicleId,
+  ]);
 
   return (
     <FleetHudPageShell
       title="ניהול צי רכבים"
-      subtitle="רשימת רכבים, חיפוש ופעולות מהירות — אותה חוויית לוח בקרה."
+      subtitle="רשימת רכבים, חיפוש וסינון — תצוגת טבלה."
       headerAside={
         <>
           <Link to="/vehicles/add" className="w-full sm:w-auto">
-            <Button className="w-full bg-cyan-600 px-4 py-2 text-sm font-bold text-white shadow-[0_0_20px_rgba(6,182,212,0.4)] hover:bg-cyan-500 sm:w-auto md:px-8 md:py-6 md:text-lg">
+            <Button className="w-full border-cyan-500/40 bg-cyan-600/90 text-sm font-bold text-white shadow-[0_0_16px_rgba(6,182,212,0.35)] hover:bg-cyan-500 sm:w-auto">
               הוסף רכב
             </Button>
           </Link>
-          <Link to="/vehicles/odometer" className="w-full sm:w-auto">
-            <Button
-              variant="outline"
-              className="w-full gap-2 border-cyan-500/40 bg-white/5 font-semibold text-cyan-100 hover:bg-cyan-500/10 sm:w-auto"
-            >
-              <Gauge className="h-4 w-4" />
-              עדכון קילומטראז׳
-            </Button>
-          </Link>
+          {showReportMileage ? (
+            <Link to="/report-mileage" className="w-full sm:w-auto">
+              <Button
+                variant="outline"
+                className="w-full gap-2 border-cyan-500/40 bg-white/5 text-sm font-semibold text-cyan-100 hover:bg-cyan-500/10 sm:w-auto"
+              >
+                <Gauge className="h-4 w-4" />
+                דיווח קילומטראז׳
+              </Button>
+            </Link>
+          ) : (
+            <Link to="/vehicles/odometer" className="w-full sm:w-auto">
+              <Button
+                variant="outline"
+                className="w-full gap-2 border-cyan-500/40 bg-white/5 text-sm font-semibold text-cyan-100 hover:bg-cyan-500/10 sm:w-auto"
+              >
+                <Gauge className="h-4 w-4" />
+                עדכון קילומטראז׳
+              </Button>
+            </Link>
+          )}
           {showServiceUpdate ? (
             <Link to="/vehicles/service-update" className="w-full sm:w-auto">
               <Button
                 variant="outline"
-                className="w-full gap-2 border-purple-500/40 bg-white/5 font-semibold text-purple-100 hover:bg-purple-500/10 sm:w-auto"
+                className="w-full gap-2 border-purple-500/40 bg-white/5 text-sm font-semibold text-purple-100 hover:bg-purple-500/10 sm:w-auto"
               >
                 <Wrench className="h-4 w-4" />
                 עדכון טיפול
@@ -145,21 +187,67 @@ export default function VehicleListPage() {
         </>
       }
     >
-      <section className="dashboard-status-stage dashboard-cyber-stage relative space-y-6 rounded-3xl border border-cyan-400/25 p-4 sm:p-6 md:space-y-8">
-        <div className="relative max-w-xl">
-          <Search className="absolute right-4 top-1/2 z-[1] -translate-y-1/2 text-cyan-500/50" />
-          <Input
-            placeholder="חפש רכב..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-11 border-white/10 bg-white/5 pr-12 text-base text-white placeholder:text-slate-500 focus:border-cyan-500 md:h-14 md:text-xl"
+      <section className="dashboard-status-stage dashboard-cyber-stage mx-auto w-full max-w-[1920px] space-y-5 rounded-3xl border border-cyan-400/25 p-4 text-foreground sm:space-y-6 sm:p-6">
+        {isLoading ? (
+          <div className="space-y-4">
+            {[1, 2, 3, 4].map((i) => (
+              <Skeleton key={i} className="h-14 w-full rounded-xl" />
+            ))}
+          </div>
+        ) : (vehicles?.length ?? 0) === 0 ? (
+          <div className="rounded-xl border border-white/10 bg-slate-900/40 py-12 text-center text-slate-400">
+            <p className="mb-4">אין רכבים בצי</p>
+            <Link to="/vehicles/add">
+              <Button>הוסף רכב ראשון</Button>
+            </Link>
+          </div>
+        ) : (
+          <VehiclesHudTable
+            vehiclesAll={vehicles ?? []}
+            vehiclesFiltered={filteredVehicles}
+            search={search}
+            onSearchChange={setSearch}
+            filterStatus={filterStatus}
+            onFilterStatus={handleFilterStatus}
+            filterOwnership={filterOwnership}
+            onFilterOwnership={handleFilterOwnership}
+            filterGroup={filterGroup}
+            onFilterGroup={handleFilterGroup}
+            ownershipOptions={[...VEHICLE_OWNERSHIP_OPTIONS]}
+            groupOptions={groupOptions}
+            assignedDriverNameByVehicleId={assignedDriverNameByVehicleId}
+            quickFilter={quickFilter}
+            onQuickFilterChange={handleQuickFilterChange}
+            canEdit={isManager}
+            onDelete={(id) => setDeleteId(id)}
+            showReportMileage={showReportMileage}
           />
-        </div>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-8 lg:grid-cols-3 lg:gap-10">
-          {isLoading
-            ? [1, 2, 3, 4, 5, 6].map((i) => <Skeleton key={i} className="h-80 rounded-3xl border border-cyan-500/20 bg-slate-900/40" />)
-            : filtered?.map((v) => <VehicleCard key={v.id} vehicle={v} />)}
-        </div>
+        )}
+
+        <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>מחיקת רכב</AlertDialogTitle>
+              <AlertDialogDescription>
+                פעולה זו תמחק את הרכב מהמערכת. האם להמשיך?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className="gap-2">
+              <AlertDialogCancel>ביטול</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (deleteId) {
+                    deleteVehicle.mutate(deleteId);
+                    setDeleteId(null);
+                  }
+                }}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                מחיקה
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </section>
     </FleetHudPageShell>
   );

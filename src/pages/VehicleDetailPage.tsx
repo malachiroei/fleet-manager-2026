@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, Link, useLocation } from 'react-router-dom';
+import { useParams, Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useVehicle, useUpdateVehicle, useActiveDriverVehicleAssignments } from '@/hooks/useVehicles';
 import { useDriver, useUpdateDriver } from '@/hooks/useDrivers';
@@ -9,10 +9,12 @@ import {
   DIRTY_SOURCE_MAINTENANCE,
 } from '@/contexts/VehicleSpecDirtyContext';
 import { useHandovers } from '@/hooks/useHandovers';
+import { usePermissions } from '@/hooks/usePermissions';
 import { usePricingLookup, useSyncVehicleFromPricing } from '@/hooks/usePricingData';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { FleetDatePicker } from '@/components/ui/FleetDatePicker';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -27,7 +29,6 @@ import {
   Edit,
   ClipboardList,
   Fuel,
-  Camera,
   RefreshCw,
   Loader2,
   Zap,
@@ -37,9 +38,11 @@ import {
 } from 'lucide-react';
 import type { ComplianceStatus } from '@/types/fleet';
 import { VehicleFolders } from '@/components/VehicleFolders';
+import { VehicleDetailQuickActions } from '@/components/vehicles/VehicleDetailQuickActions';
 import VehicleDamageSnapshot from '@/components/VehicleDamageSnapshot';
 import { parseDamageSummaryLine } from '@/lib/vehicleDamage';
 import { MISSING_DATA, fmtDriverDate } from '@/components/DriverCard';
+import { displayOwnershipType, canonicalOwnershipType, ownershipSelectDefault } from '@/lib/vehicleOwnership';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -54,7 +57,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import type { Vehicle } from '@/types/fleet';
 
-function StatusBadge({ status, daysLeft }: { status: ComplianceStatus; daysLeft?: number }) {
+function StatusBadge({
+  status,
+  daysLeft,
+  compact,
+}: {
+  status: ComplianceStatus;
+  daysLeft?: number;
+  compact?: boolean;
+}) {
   const config = {
     valid: { label: 'תקין', className: 'status-valid' },
     warning: { label: 'אזהרה', className: 'status-warning' },
@@ -62,6 +73,9 @@ function StatusBadge({ status, daysLeft }: { status: ComplianceStatus; daysLeft?
   };
 
   const { label, className } = config[status];
+  if (compact) {
+    return <Badge className={className}>{label}</Badge>;
+  }
   return (
     <div className="flex items-center gap-2">
       <Badge className={className}>{label}</Badge>
@@ -90,24 +104,11 @@ function str(v: string | number | null | undefined): string {
   return s === '' ? MISSING_DATA : s;
 }
 
-/** תצוגה בעברית — בבסיס הנתונים נשמרים owned / leasing / rental */
-function ownershipTypeLabel(v: string | null | undefined): string {
-  if (v == null || String(v).trim() === '') return '';
-  const key = String(v).trim().toLowerCase();
-  const map: Record<string, string> = {
-    owned: 'בבעלות החברה',
-    leasing: 'ליסינג',
-    rental: 'השכרה',
-  };
-  return map[key] ?? String(v);
-}
-
 /** שדות מפרט מלא לעריכה inline — ערכים כמחרוזות; תאריכים בפורמט input date */
 type SpecFormState = Record<string, string>;
 
 function vehicleToSpecForm(v: Vehicle): SpecFormState {
   const d = (x: string | null | undefined) => (x && String(x).trim() !== '' ? String(x).slice(0, 10) : '');
-  const n = (x: number | null | undefined) => (x != null && !Number.isNaN(x) ? String(x) : '');
   return {
     manufacturer: v.manufacturer ?? '',
     model: v.model ?? '',
@@ -115,22 +116,17 @@ function vehicleToSpecForm(v: Vehicle): SpecFormState {
     color: v.color ?? '',
     engine_volume: v.engine_volume ?? '',
     ignition_code: v.ignition_code ?? '',
-    ownership_type: v.ownership_type ?? '',
+    ownership_type: ownershipSelectDefault(v.ownership_type),
     leasing_company_name: v.leasing_company_name ?? '',
     pickup_date: d(v.pickup_date),
     purchase_date: d(v.purchase_date),
     sale_date: d(v.sale_date),
     chassis_number: v.chassis_number ?? '',
-    average_fuel_consumption: n(v.average_fuel_consumption),
-    last_service_date: d(v.last_service_date),
-    last_service_km: n(v.last_service_km),
-    service_interval_km: n(v.service_interval_km),
-    last_tire_change_date: d(v.last_tire_change_date),
-    next_tire_change_date: d(v.next_tire_change_date),
-    license_image_url: v.license_image_url ?? '',
-    insurance_pdf_url: v.insurance_pdf_url ?? '',
-    test_expiry: d(v.test_expiry),
-    insurance_expiry: d(v.insurance_expiry),
+    average_fuel_consumption:
+      v.average_fuel_consumption != null && !Number.isNaN(Number(v.average_fuel_consumption))
+        ? String(v.average_fuel_consumption)
+        : '',
+    service_interval_km: v.service_interval_km != null ? String(v.service_interval_km) : '',
   };
 }
 
@@ -146,17 +142,9 @@ const SPEC_LABELS: Record<string, string> = {
   pickup_date: 'תאריך קליטה',
   purchase_date: 'תאריך קניה / תחילת עסקה',
   sale_date: 'תאריך מכירה / סיום עסקה',
-  chassis_number: 'מספר שלדה (VIN)',
-  average_fuel_consumption: 'צריכת דלק ממוצעת (ל׳/100 ק״מ)',
-  last_service_date: 'תאריך טיפול אחרון',
-  last_service_km: 'ק״מ טיפול אחרון',
-  service_interval_km: 'מרווח טיפול מומלץ (ק״מ, יצרן)',
-  last_tire_change_date: 'תאריך החלפת צמיגים אחרון',
-  next_tire_change_date: 'תאריך החלפת צמיגים הבא',
-  license_image_url: 'תמונת רישיון',
-  insurance_pdf_url: 'קובץ ביטוח',
-  test_expiry: 'תוקף טסט',
-  insurance_expiry: 'תוקף ביטוח',
+  chassis_number: 'מספר שלדה',
+  average_fuel_consumption: 'צריכת דלק ממוצעת',
+  service_interval_km: 'מרווח טיפול מומלץ (ק״מ)',
   assigned_driver_name: 'שם נהג מוקצה',
   assigned_driver_phone: 'טלפון נהג',
 };
@@ -247,9 +235,18 @@ function HandoverHistoryList({ handovers }: { handovers: any[] }) {
 export default function VehicleDetailPage() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const docFocusParam = searchParams.get('focus');
   const { data: vehicle, isLoading, isError, error, refetch } = useVehicle(id || '');
   const { data: activeAssignments } = useActiveDriverVehicleAssignments();
-  const currentAssignedDriverId = (activeAssignments ?? []).find((assignment) => assignment.vehicle_id === vehicle?.id)?.driver_id ?? '';
+  const { canAccessUi } = usePermissions();
+  const assignmentDriverId =
+    (activeAssignments ?? []).find((assignment) => assignment.vehicle_id === vehicle?.id)?.driver_id ?? '';
+  /** עמודת הרכב מסונכרנת עם מסירה אחרונה; assignment משמש רק כשאין ערך בעמודה */
+  const currentAssignedDriverId =
+    ((vehicle?.assigned_driver_id ?? assignmentDriverId) || '').trim();
+  const showReportMileage = canAccessUi({ permission: 'report_mileage', featureKey: 'qa_report_mileage' });
+  const showServiceUpdate = canAccessUi({ permission: 'vehicles', featureKey: 'qa_service_update' });
   const { data: assignedDriver } = useDriver(currentAssignedDriverId || '');
   const { data: handovers } = useHandovers(id);
   const updateVehicle = useUpdateVehicle();
@@ -258,6 +255,7 @@ export default function VehicleDetailPage() {
   const syncFromPricing = useSyncVehicleFromPricing();
   const [isSyncing, setIsSyncing] = useState(false);
   const [isUploadingDocument, setIsUploadingDocument] = useState(false);
+  const docScrollDoneKeyRef = useRef<string | null>(null);
   const section = location.hash.replace('#', '');
   const isOverviewSection = section === 'overview';
   const isTaxSection = section === 'tax-data';
@@ -273,7 +271,6 @@ export default function VehicleDetailPage() {
 
   const [specForm, setSpecForm] = useState<SpecFormState>({});
   const initialSpecRef = useRef<SpecFormState>({});
-  const [specUploading, setSpecUploading] = useState<'license' | 'insurance' | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [changeLines, setChangeLines] = useState<string[]>([]);
   const [specSaving, setSpecSaving] = useState(false);
@@ -339,12 +336,18 @@ export default function VehicleDetailPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('vehicle_documents' as any)
-        .select('id, title, file_url, created_at')
+        .select('id, title, file_url, created_at, document_type')
         .eq('vehicle_id', vehicle!.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      return (data ?? []) as Array<{ id: string; title: string; file_url: string; created_at: string }>;
+      return (data ?? []) as Array<{
+        id: string;
+        title: string;
+        file_url: string;
+        created_at: string;
+        document_type?: string | null;
+      }>;
     },
   });
   const { data: pricingLookup } = usePricingLookup(
@@ -359,6 +362,38 @@ export default function VehicleDetailPage() {
     const target = document.querySelector(hash);
     if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [section, handovers]);
+
+  useEffect(() => {
+    if (!isDocumentsSection || !vehicle?.id) {
+      docScrollDoneKeyRef.current = null;
+      return;
+    }
+    const scrollKey = `${vehicle.id}|${docFocusParam ?? ''}|${vehicleDocuments.length}`;
+    if (docScrollDoneKeyRef.current === scrollKey) return;
+    const t = window.setTimeout(() => {
+      try {
+        const safe = docFocusParam && /^[a-z0-9_]+$/i.test(docFocusParam) ? docFocusParam : null;
+        if (safe) {
+          const el = document.querySelector(`[data-doc-focus="${safe}"]`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            docScrollDoneKeyRef.current = scrollKey;
+            return;
+          }
+        }
+        if (docFocusParam === 'annual_license') {
+          const legacy = document.querySelector('[data-doc-focus="legacy_license"]');
+          if (legacy) {
+            legacy.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            docScrollDoneKeyRef.current = scrollKey;
+          }
+        }
+      } catch {
+        /* מזהה לא תקין ל-querySelector */
+      }
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [isDocumentsSection, docFocusParam, vehicle?.id, vehicleDocuments.length]);
 
   if (isLoading) {
     return (
@@ -494,25 +529,23 @@ export default function VehicleDetailPage() {
     setIfChanged('purchase_date', dateOrNull('purchase_date'));
     setIfChanged('sale_date', dateOrNull('sale_date'));
     setIfChanged('chassis_number', specForm.chassis_number?.trim() || null);
-    if (norm(specForm.average_fuel_consumption) !== norm(init.average_fuel_consumption)) {
-      const n = parseFloat(specForm.average_fuel_consumption);
-      payload.average_fuel_consumption = Number.isNaN(n) ? null : n;
+
+    if (norm(specForm.average_fuel_consumption ?? '') !== norm(init.average_fuel_consumption ?? '')) {
+      const t = specForm.average_fuel_consumption?.trim() ?? '';
+      if (t === '') (payload as Record<string, unknown>).average_fuel_consumption = null;
+      else {
+        const n = parseFloat(t.replace(',', '.'));
+        if (!Number.isNaN(n)) (payload as Record<string, unknown>).average_fuel_consumption = n;
+      }
     }
-    setIfChanged('last_service_date', dateOrNull('last_service_date'));
-    if (norm(specForm.last_service_km) !== norm(init.last_service_km)) {
-      const n = parseInt(specForm.last_service_km, 10);
-      payload.last_service_km = Number.isNaN(n) ? null : n;
+    if (norm(specForm.service_interval_km ?? '') !== norm(init.service_interval_km ?? '')) {
+      const t = specForm.service_interval_km?.trim() ?? '';
+      if (t === '') (payload as Record<string, unknown>).service_interval_km = null;
+      else {
+        const n = parseInt(t, 10);
+        if (!Number.isNaN(n)) (payload as Record<string, unknown>).service_interval_km = n;
+      }
     }
-    if (norm(specForm.service_interval_km) !== norm(init.service_interval_km)) {
-      const n = parseInt(specForm.service_interval_km, 10);
-      payload.service_interval_km = Number.isNaN(n) ? null : n;
-    }
-    setIfChanged('last_tire_change_date', dateOrNull('last_tire_change_date'));
-    setIfChanged('next_tire_change_date', dateOrNull('next_tire_change_date'));
-    setIfChanged('license_image_url', specForm.license_image_url?.trim() || null);
-    setIfChanged('insurance_pdf_url', specForm.insurance_pdf_url?.trim() || null);
-    setIfChanged('test_expiry', dateOrNull('test_expiry'));
-    setIfChanged('insurance_expiry', dateOrNull('insurance_expiry'));
 
     const vehicleKeys = Object.keys(payload).filter((k) => k !== 'id');
     const driverNameChanged =
@@ -553,27 +586,6 @@ export default function VehicleDetailPage() {
       setDirty(DIRTY_SOURCE_SPEC, false);
     } finally {
       setSpecSaving(false);
-    }
-  };
-
-  const handleSpecFileUpload = async (file: File | null, field: 'license_image_url' | 'insurance_pdf_url') => {
-    if (!file || !vehicle) return;
-    setSpecUploading(field === 'license_image_url' ? 'license' : 'insurance');
-    try {
-      const prefix = field === 'license_image_url' ? 'license' : 'insurance';
-      const fileName = `vehicle-files/${vehicle.id}/${prefix}_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-      const { error: uploadError } = await supabase.storage
-        .from('vehicle-documents')
-        .upload(fileName, file, { upsert: true });
-      if (uploadError) throw uploadError;
-      const { data } = supabase.storage.from('vehicle-documents').getPublicUrl(fileName);
-      setSpecForm((p) => ({ ...p, [field]: data.publicUrl }));
-      toast.success(field === 'license_image_url' ? 'תמונת רישיון הועלתה' : 'קובץ ביטוח הועלה');
-    } catch (e) {
-      console.error(e);
-      toast.error('העלאה נכשלה');
-    } finally {
-      setSpecUploading(null);
     }
   };
 
@@ -653,10 +665,12 @@ export default function VehicleDetailPage() {
     }
   };
 
+  const pageFrame = 'mx-auto w-full max-w-[1920px] px-4 sm:px-6';
+
   return (
     <div className="fleet-screen-page text-white">
       <header className="bg-card border-b border-border sticky top-0 z-10">
-        <div className="container py-4">
+        <div className={`${pageFrame} py-4`}>
           <div className="flex items-center gap-3">
             <div>
               <h1 className="font-bold text-xl">{vehicle.manufacturer} {vehicle.model}</h1>
@@ -668,7 +682,7 @@ export default function VehicleDetailPage() {
 
       {/* Tab navigation */}
       <div className="sticky top-[65px] z-10 bg-card border-b border-border">
-        <div className="container">
+        <div className={pageFrame}>
           <nav className="flex gap-1 overflow-x-auto" aria-label="סעיפי רכב">
             {[
               { label: 'סקירה', hash: '' },
@@ -704,14 +718,14 @@ export default function VehicleDetailPage() {
         </div>
       </div>
 
-      <main className="container py-6 space-y-4">
+      <main className={`${pageFrame} py-6 space-y-4`}>
         {/* סקירה — פריסה אחת: הירו + בנטו + טבלת מפרט (בלי מחסנית כרטיסים) */}
         {(isOverviewSection || !section) && !isHandoverSection && !isTaxSection && !isDocumentsSection && !isFoldersSection && (
-          <div className="mx-auto max-w-5xl space-y-6">
+          <div className="w-full space-y-6">
             {/* הירו — זהות הרכב */}
-            <div className="relative overflow-hidden rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-slate-800/90 via-slate-900 to-[#0a1628] px-5 py-6 shadow-[0_0_50px_rgba(6,182,212,0.06)] sm:px-8 sm:py-8">
+            <div className="relative overflow-hidden rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-slate-800/90 via-slate-900 to-[#0a1628] px-4 py-4 shadow-[0_0_50px_rgba(6,182,212,0.06)] sm:px-6 sm:py-5">
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(34,211,238,0.12),transparent)]" />
-              <div className="relative flex flex-col gap-4 sm:flex-row-reverse sm:items-center sm:justify-between">
+              <div className="relative flex flex-col gap-3 sm:flex-row-reverse sm:items-start sm:justify-between">
                 <div className="shrink-0 self-center sm:self-start">
                   <Button
                     type="button"
@@ -726,18 +740,38 @@ export default function VehicleDetailPage() {
                     אישור שינויים
                   </Button>
                 </div>
-                <div className="min-w-0 flex-1 text-center sm:text-right">
+                <div className="min-w-0 flex-1 space-y-1.5 text-center sm:text-right">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-500/70">רכב</p>
-                  <h2 className="mt-1 font-mono text-3xl font-black tracking-[0.15em] text-cyan-200 sm:text-4xl" dir="ltr">
-                    {str(vehicle.plate_number)}
-                  </h2>
-                  <p className="mt-2 text-base font-medium text-slate-200 sm:text-lg">
+                  <div
+                    dir="ltr"
+                    className="mt-0.5 flex flex-wrap items-baseline justify-center gap-x-4 gap-y-1 sm:justify-end"
+                  >
+                    <p className="order-2 text-sm text-slate-300 sm:order-1">
+                      <span className="text-muted-foreground">נהג משויך: </span>
+                      {assignedDriver ? (
+                        <Link
+                          to={`/drivers/${assignedDriver.id}`}
+                          className="font-medium text-cyan-300 hover:text-cyan-200 hover:underline"
+                        >
+                          {assignedDriver.full_name}
+                        </Link>
+                      ) : (
+                        <span className="text-muted-foreground">אין נהג משויך</span>
+                      )}
+                    </p>
+                    <h2
+                      className="order-1 font-mono text-3xl font-black tracking-[0.15em] text-cyan-200 sm:order-2 sm:text-4xl"
+                    >
+                      {str(vehicle.plate_number)}
+                    </h2>
+                  </div>
+                  <p className="pt-0.5 text-base font-medium text-slate-200 sm:text-lg">
                     {str(vehicle.manufacturer)} {str(vehicle.model)}
                   </p>
-                  <p className="mt-1 text-sm text-slate-500">
+                  <p className="text-sm text-slate-500">
                     שנת {vehicle.year ?? '—'}
-                    {vehicle.ownership_type ? ` · ${ownershipTypeLabel(vehicle.ownership_type)}` : ''}
-                    {String(vehicle.ownership_type || '').toLowerCase() === 'leasing' &&
+                    {vehicle.ownership_type ? ` · ${displayOwnershipType(vehicle.ownership_type)}` : ''}
+                    {canonicalOwnershipType(vehicle.ownership_type) === 'הרץ' &&
                     vehicle.leasing_company_name?.trim()
                       ? ` · ${vehicle.leasing_company_name.trim()}`
                       : ''}
@@ -745,6 +779,12 @@ export default function VehicleDetailPage() {
                 </div>
               </div>
             </div>
+
+            <VehicleDetailQuickActions
+              vehicle={vehicle}
+              showReportMileage={showReportMileage}
+              showServiceUpdate={showServiceUpdate}
+            />
 
             {/* בנטו — שלושה מדדים מרכזיים בשורה */}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -787,14 +827,36 @@ export default function VehicleDetailPage() {
                 </div>
                 <div className="mt-3 space-y-2">
                   <div className="flex items-center justify-between gap-2 text-sm">
-                    <span className="text-muted-foreground">טסט</span>
+                    <Link
+                      to={`/vehicles/${vehicle.id}?focus=annual_license#vehicle-documents`}
+                      onClick={(e) => {
+                        if (!getIsDirty()) return;
+                        e.preventDefault();
+                        confirmLeaveIfDirty(`/vehicles/${vehicle.id}?focus=annual_license#vehicle-documents`);
+                      }}
+                      className="text-muted-foreground underline-offset-2 hover:text-cyan-300 hover:underline"
+                      title="מסמכי רישוי / טסט"
+                    >
+                      טסט
+                    </Link>
                     <span className="font-mono tabular-nums" dir="ltr">{fmtDriverDate(vehicle.test_expiry)}</span>
-                    {test ? <StatusBadge status={test.status} daysLeft={test.daysLeft} /> : <Badge variant="outline" className="text-[10px]">{MISSING_DATA}</Badge>}
+                    {test ? <StatusBadge status={test.status} daysLeft={test.daysLeft} compact /> : <Badge variant="outline" className="text-[10px]">{MISSING_DATA}</Badge>}
                   </div>
                   <div className="flex items-center justify-between gap-2 text-sm">
-                    <span className="text-muted-foreground">ביטוח</span>
+                    <Link
+                      to={`/vehicles/${vehicle.id}?focus=insurance_policy#vehicle-documents`}
+                      onClick={(e) => {
+                        if (!getIsDirty()) return;
+                        e.preventDefault();
+                        confirmLeaveIfDirty(`/vehicles/${vehicle.id}?focus=insurance_policy#vehicle-documents`);
+                      }}
+                      className="text-muted-foreground underline-offset-2 hover:text-cyan-300 hover:underline"
+                      title="מסמכי ביטוח"
+                    >
+                      ביטוח
+                    </Link>
                     <span className="font-mono tabular-nums" dir="ltr">{fmtDriverDate(vehicle.insurance_expiry)}</span>
-                    {insurance ? <StatusBadge status={insurance.status} daysLeft={insurance.daysLeft} /> : <Badge variant="outline" className="text-[10px]">{MISSING_DATA}</Badge>}
+                    {insurance ? <StatusBadge status={insurance.status} daysLeft={insurance.daysLeft} compact /> : <Badge variant="outline" className="text-[10px]">{MISSING_DATA}</Badge>}
                   </div>
                 </div>
               </div>
@@ -823,131 +885,31 @@ export default function VehicleDetailPage() {
               </div>
               {/* dir=ltr כדי שעמודת תאריכים תישאר משמאל ועמודת יצרן מימין (עקביות עם מסך) */}
               <div className="grid grid-cols-1 gap-0 md:grid-cols-2" dir="ltr">
-                {/* עמודה שמאלית: תאריכים + רישיון/ביטוח */}
+                {/* עמודה שמאלית: תאריכי קליטה / קניה / מכירה — רישוי/ביטוח/טסט/צמיגים/טיפול מעודכנים מהריבועים למעלה */}
                 <div className="space-y-2 border-t border-white/10 p-3 md:border-t-0 md:border-e md:border-white/10">
-                  {(
-                    [
-                      ['pickup_date', 'תאריך קליטה', 'date'],
-                      ['purchase_date', 'תאריך קניה / תחילת עסקה', 'date'],
-                      ['sale_date', 'תאריך מכירה / סיום עסקה', 'date'],
-                      ['chassis_number', 'מספר שלדה (VIN)', 'text'],
-                      ['average_fuel_consumption', 'צריכת דלק ממוצעת (ל׳/100 ק״מ)', 'text'],
-                      ['last_service_date', 'תאריך טיפול אחרון', 'date'],
-                      ['last_service_km', 'ק״מ טיפול אחרון', 'text'],
-                      ['service_interval_km', 'מרווח טיפול מומלץ (ק״מ, יצרן)', 'text'],
-                      ['last_tire_change_date', 'תאריך החלפת צמיגים אחרון', 'date'],
-                      ['next_tire_change_date', 'תאריך החלפת צמיגים הבא', 'date'],
-                    ] as const
-                  ).map(([key, label, typ]) => (
-                    <div key={key} className="flex flex-col gap-1" dir="rtl">
-                      <span className="text-xs font-medium text-muted-foreground">{label}</span>
-                      <Input
-                        type={typ === 'date' ? 'date' : 'text'}
-                        className="h-9 bg-background/80"
-                        value={specForm[key] ?? ''}
-                        onChange={(e) => setSpecForm((p) => ({ ...p, [key]: e.target.value }))}
-                      />
-                    </div>
-                  ))}
-                  {/* תמונת רישיון — העלאה / סריקה */}
                   <div className="flex flex-col gap-1" dir="rtl">
-                    <span className="text-xs font-medium text-muted-foreground">תמונת רישיון</span>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <input
-                        type="file"
-                        accept="image/*,application/pdf"
-                        className="hidden"
-                        id="spec-license-upload"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) handleSpecFileUpload(f, 'license_image_url');
-                          e.target.value = '';
-                        }}
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={specUploading === 'license'}
-                        onClick={() => document.getElementById('spec-license-upload')?.click()}
-                      >
-                        {specUploading === 'license' ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : <Camera className="ml-2 h-4 w-4" />}
-                        העלאת קובץ
-                      </Button>
-                      <Button type="button" variant="ghost" size="sm" disabled className="text-muted-foreground">
-                        סריקה (בקרוב)
-                      </Button>
-                      {specForm.license_image_url ? (
-                        <a
-                          href={specForm.license_image_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-cyan-400 hover:underline"
-                          dir="ltr"
-                        >
-                          צפייה בקובץ
-                        </a>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-1" dir="rtl">
-                    <span className="text-xs font-medium text-muted-foreground">תוקף טסט</span>
-                    <Input
-                      type="date"
-                      className="h-9 bg-background/80"
-                      value={specForm.test_expiry ?? ''}
-                      onChange={(e) => setSpecForm((p) => ({ ...p, test_expiry: e.target.value }))}
+                    <FleetDatePicker
+                      label="תאריך קליטה"
+                      className="[&_input]:h-9"
+                      value={specForm.pickup_date ?? ''}
+                      onChange={(ymd) => setSpecForm((p) => ({ ...p, pickup_date: ymd }))}
                     />
                   </div>
-                  <div className="flex flex-col gap-1" dir="rtl">
-                    <span className="text-xs font-medium text-muted-foreground">קובץ ביטוח</span>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <input
-                        type="file"
-                        accept="image/*,application/pdf"
-                        className="hidden"
-                        id="spec-insurance-upload"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) handleSpecFileUpload(f, 'insurance_pdf_url');
-                          e.target.value = '';
-                        }}
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={specUploading === 'insurance'}
-                        onClick={() => document.getElementById('spec-insurance-upload')?.click()}
-                      >
-                        {specUploading === 'insurance' ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : <FileText className="ml-2 h-4 w-4" />}
-                        העלאת קובץ
-                      </Button>
-                      <Button type="button" variant="ghost" size="sm" disabled className="text-muted-foreground">
-                        סריקה (בקרוב)
-                      </Button>
-                      {specForm.insurance_pdf_url ? (
-                        <a
-                          href={specForm.insurance_pdf_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-cyan-400 hover:underline"
-                          dir="ltr"
-                        >
-                          צפייה בקובץ
-                        </a>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-1" dir="rtl">
-                    <span className="text-xs font-medium text-muted-foreground">תוקף ביטוח</span>
-                    <Input
-                      type="date"
-                      className="h-9 bg-background/80"
-                      value={specForm.insurance_expiry ?? ''}
-                      onChange={(e) => setSpecForm((p) => ({ ...p, insurance_expiry: e.target.value }))}
-                    />
-                  </div>
+                  <FleetDatePicker
+                    label="תאריך קניה / תחילת עסקה"
+                    className="[&_input]:h-9"
+                    value={specForm.purchase_date ?? ''}
+                    onChange={(ymd) => setSpecForm((p) => ({ ...p, purchase_date: ymd }))}
+                  />
+                  <FleetDatePicker
+                    label="תאריך מכירה / סיום עסקה"
+                    className="[&_input]:h-9"
+                    value={specForm.sale_date ?? ''}
+                    onChange={(ymd) => setSpecForm((p) => ({ ...p, sale_date: ymd }))}
+                  />
+                  <p className="text-xs leading-relaxed text-muted-foreground" dir="rtl">
+                    לעדכון רישוי שנתי, ביטוח, צמיגים, טיפול או ק״מ השתמשי בריבועים מתחת לכותרת הרכב — הקבצים נשמרים בלשונית &quot;מסמכים&quot; עם כותרת מתאימה.
+                  </p>
                 </div>
                 {/* עמודה ימנית: יצרן וכו׳ */}
                 <div className="space-y-2 border-t border-white/10 p-3 md:border-t-0 md:border-s md:border-white/10">
@@ -972,6 +934,40 @@ export default function VehicleDetailPage() {
                       />
                     </div>
                   ))}
+                  <div className="flex flex-col gap-1" dir="rtl">
+                    <span className="text-xs font-medium text-muted-foreground">מספר שלדה</span>
+                    <Input
+                      className="h-9 bg-background/80"
+                      dir="ltr"
+                      value={specForm.chassis_number ?? ''}
+                      onChange={(e) => setSpecForm((p) => ({ ...p, chassis_number: e.target.value }))}
+                      placeholder="VIN / מספר שלדה"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1" dir="rtl">
+                    <span className="text-xs font-medium text-muted-foreground">צריכת דלק ממוצעת</span>
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      className="h-9 bg-background/80"
+                      dir="ltr"
+                      placeholder="למשל 6.5"
+                      value={specForm.average_fuel_consumption ?? ''}
+                      onChange={(e) => setSpecForm((p) => ({ ...p, average_fuel_consumption: e.target.value }))}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1" dir="rtl">
+                    <span className="text-xs font-medium text-muted-foreground">מרווח טיפול מומלץ (ק״מ)</span>
+                    <Input
+                      type="number"
+                      min={0}
+                      className="h-9 bg-background/80"
+                      dir="ltr"
+                      placeholder="למשל 15000"
+                      value={specForm.service_interval_km ?? ''}
+                      onChange={(e) => setSpecForm((p) => ({ ...p, service_interval_km: e.target.value }))}
+                    />
+                  </div>
                   <div className="flex flex-col gap-1" dir="rtl">
                     <span className="text-xs font-medium text-muted-foreground">נהג מוקצה</span>
                     <Input
@@ -1004,9 +1000,10 @@ export default function VehicleDetailPage() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">—</SelectItem>
-                        <SelectItem value="owned">בבעלות החברה</SelectItem>
-                        <SelectItem value="leasing">ליסינג</SelectItem>
-                        <SelectItem value="rental">השכרה</SelectItem>
+                        <SelectItem value="הרץ">הרץ</SelectItem>
+                        <SelectItem value="יוניון מוביליטי">יוניון מוביליטי</SelectItem>
+                        <SelectItem value="פריים ליס">פריים ליס</SelectItem>
+                        <SelectItem value="rental">השכרה (ישן)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -1255,18 +1252,50 @@ export default function VehicleDetailPage() {
                 <p className="text-sm text-muted-foreground">אין מסמכים לרכב זה</p>
               ) : (
                 <div className="space-y-2">
-                  {vehicleDocuments.map((doc) => (
-                    <a
-                      key={doc.id}
-                      href={doc.file_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center justify-between rounded-md border border-border p-2 text-foreground hover:bg-muted"
-                    >
-                      <span>{doc.title}</span>
-                      <span className="text-xs text-muted-foreground">{new Date(doc.created_at).toLocaleDateString('he-IL')}</span>
-                    </a>
-                  ))}
+                  {vehicleDocuments.map((doc) => {
+                    const titleStr = String(doc?.title ?? 'מסמך');
+                    const fileUrl = typeof doc?.file_url === 'string' ? doc.file_url.trim() : '';
+                    const dt = String(doc?.document_type ?? '').trim();
+                    const inferredFocus =
+                      dt === 'annual_license' || dt === 'insurance_policy' || dt === 'tire_change'
+                        ? dt
+                        : /רישיון רכב \(טסט\)|טסט/i.test(titleStr)
+                          ? 'annual_license'
+                          : /פוליסת|ביטוח/i.test(titleStr)
+                            ? 'insurance_policy'
+                            : /החלפת צמיג|צמיגים/i.test(titleStr)
+                              ? 'tire_change'
+                              : null;
+                    const dataFocus =
+                      inferredFocus === 'annual_license'
+                        ? dt === 'annual_license'
+                          ? 'annual_license'
+                          : 'legacy_license'
+                        : inferredFocus ?? undefined;
+                    const createdLabel = (() => {
+                      try {
+                        const d = doc?.created_at ? new Date(doc.created_at) : null;
+                        return d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString('he-IL') : '—';
+                      } catch {
+                        return '—';
+                      }
+                    })();
+                    return (
+                      <button
+                        key={doc.id}
+                        type="button"
+                        data-doc-focus={dataFocus ?? undefined}
+                        disabled={!fileUrl}
+                        onClick={() => {
+                          if (fileUrl) window.open(fileUrl, '_blank', 'noopener,noreferrer');
+                        }}
+                        className="flex w-full items-center justify-between rounded-md border border-border p-2 text-right text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <span className="min-w-0 flex-1 truncate ps-2 text-start font-medium">{titleStr}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">{createdLabel}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </CardContent>

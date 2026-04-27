@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   useVehicleSpecDirty,
@@ -11,12 +11,15 @@ import { usePricingLookup } from '@/hooks/usePricingData';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { FleetDatePicker } from '@/components/ui/FleetDatePicker';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Loader2, Car, Settings, Shield, Building, DollarSign } from 'lucide-react';
 import { toast } from 'sonner';
+import { ownershipSelectDefault } from '@/lib/vehicleOwnership';
+import { normalizePlateNumber } from '@/lib/plateNumber';
 
 export default function EditVehiclePage() {
   const { id } = useParams<{ id: string }>();
@@ -37,6 +40,17 @@ export default function EditVehiclePage() {
   const [adjustedPrice, setAdjustedPrice] = useState<string>('');
   const { setDirty, tryNavigate } = useVehicleSpecDirty();
 
+  const slice10 = (x: string | null | undefined) =>
+    x && String(x).length >= 10 ? String(x).slice(0, 10) : '';
+  const [vehPickup, setVehPickup] = useState('');
+  const [vehPurchase, setVehPurchase] = useState('');
+  const [vehSale, setVehSale] = useState('');
+  const [vehTest, setVehTest] = useState('');
+  const [vehIns, setVehIns] = useState('');
+  const [vehNextMaint, setVehNextMaint] = useState('');
+  const [vehLastService, setVehLastService] = useState('');
+  const datesInitForId = useRef<string | null>(null);
+
   useEffect(() => {
     return () => setDirty(DIRTY_SOURCE_VEHICLE_EDIT, false);
   }, [setDirty]);
@@ -56,6 +70,19 @@ export default function EditVehiclePage() {
     setTaxValuePrice(vehicle.tax_value_price?.toString() || '');
     setTaxValueYear(vehicle.tax_year?.toString() || '');
     setAdjustedPrice(vehicle.adjusted_price?.toString() || '');
+  }, [vehicle]);
+
+  useEffect(() => {
+    if (!vehicle?.id) return;
+    if (datesInitForId.current === vehicle.id) return;
+    datesInitForId.current = vehicle.id;
+    setVehPickup(slice10(vehicle.pickup_date));
+    setVehPurchase(slice10((vehicle as { purchase_date?: string | null }).purchase_date));
+    setVehSale(slice10((vehicle as { sale_date?: string | null }).sale_date));
+    setVehTest(slice10(vehicle.test_expiry));
+    setVehIns(slice10(vehicle.insurance_expiry));
+    setVehNextMaint(slice10(vehicle.next_maintenance_date));
+    setVehLastService(slice10(vehicle.last_service_date));
   }, [vehicle]);
 
   useEffect(() => {
@@ -101,12 +128,24 @@ export default function EditVehiclePage() {
     setIsSubmitting(true);
     try {
       const formData = new FormData(e.currentTarget);
+      const plateRaw = normalizePlateNumber(formData.get('plate_number') as string);
+      if (!plateRaw) {
+        toast.error('נא להזין מספר רישוי (ספרות בלבד)');
+        setIsSubmitting(false);
+        return;
+      }
+      if (!vehTest.trim() || !vehIns.trim()) {
+        toast.error('נא למלא תאריכי תוקף לטסט ולביטוח');
+        setIsSubmitting(false);
+        return;
+      }
+
       const newDriverId = driverValue || null;
       const oldDriverId = currentActiveDriverId || null;
 
       await updateVehicle.mutateAsync({
         id: vehicle.id,
-        plate_number: formData.get('plate_number') as string,
+        plate_number: plateRaw,
         manufacturer: formData.get('manufacturer') as string,
         model: formData.get('model') as string,
         year: parseInt(formData.get('year') as string),
@@ -114,11 +153,11 @@ export default function EditVehiclePage() {
         color: formData.get('color') as string || null,
         ignition_code: formData.get('ignition_code') as string || null,
         is_active: activeValue,
-        test_expiry: formData.get('test_expiry') as string,
-        insurance_expiry: formData.get('insurance_expiry') as string,
+        test_expiry: vehTest,
+        insurance_expiry: vehIns,
         next_maintenance_km: formData.get('next_maintenance_km') ? parseInt(formData.get('next_maintenance_km') as string) : null,
-        next_maintenance_date: formData.get('next_maintenance_date') as string || null,
-        last_service_date: (formData.get('last_service_date') as string)?.trim() || null,
+        next_maintenance_date: vehNextMaint.trim() || null,
+        last_service_date: vehLastService.trim() || null,
         last_service_km: (() => {
           const v = (formData.get('last_service_km') as string)?.trim();
           if (!v) return null;
@@ -176,7 +215,7 @@ export default function EditVehiclePage() {
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
           <div className="flex items-center gap-3">
-            <h1 className="font-bold text-xl">עריכת רכב - {vehicle.plate_number}</h1>
+            <h1 className="font-bold text-xl">עריכת רכב - {normalizePlateNumber(vehicle.plate_number)}</h1>
           </div>
         </div>
       </header>
@@ -199,7 +238,22 @@ export default function EditVehiclePage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <Label htmlFor="plate_number">מספר רישוי *</Label>
-                  <Input id="plate_number" name="plate_number" defaultValue={vehicle.plate_number} required dir="ltr" />
+                  <Input
+                    id="plate_number"
+                    name="plate_number"
+                    defaultValue={normalizePlateNumber(vehicle.plate_number)}
+                    required
+                    dir="ltr"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    pattern="[0-9]+"
+                    title="ספרות בלבד, ללא מקפים"
+                    onChange={(e) => {
+                      const el = e.target;
+                      const next = normalizePlateNumber(el.value);
+                      if (el.value !== next) el.value = next;
+                    }}
+                  />
                 </div>
                 <div><Label htmlFor="manufacturer">יצרן *</Label><Input id="manufacturer" name="manufacturer" defaultValue={vehicle.manufacturer} required /></div>
                 <div><Label htmlFor="model">דגם *</Label><Input id="model" name="model" defaultValue={vehicle.model} required /></div>
@@ -235,18 +289,9 @@ export default function EditVehiclePage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label htmlFor="pickup_date">תאריך קליטה</Label>
-                <Input id="pickup_date" name="pickup_date" type="date" defaultValue={vehicle.pickup_date || ''} />
-              </div>
-              <div>
-                <Label htmlFor="purchase_date">תאריך קניה / תחילת עסקה</Label>
-                <Input id="purchase_date" name="purchase_date" type="date" defaultValue={(vehicle as any).purchase_date || ''} />
-              </div>
-              <div>
-                <Label htmlFor="sale_date">תאריך מכירה / סיום עסקה</Label>
-                <Input id="sale_date" name="sale_date" type="date" defaultValue={(vehicle as any).sale_date || ''} />
-              </div>
+              <FleetDatePicker id="pickup_date" label="תאריך קליטה" value={vehPickup} onChange={setVehPickup} />
+              <FleetDatePicker id="purchase_date" label="תאריך קניה / תחילת עסקה" value={vehPurchase} onChange={setVehPurchase} />
+              <FleetDatePicker id="sale_date" label="תאריך מכירה / סיום עסקה" value={vehSale} onChange={setVehSale} />
             </CardContent>
           </Card>
 
@@ -259,11 +304,11 @@ export default function EditVehiclePage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div><Label htmlFor="test_expiry">תוקף טסט *</Label><Input id="test_expiry" name="test_expiry" type="date" defaultValue={vehicle.test_expiry} required /></div>
-                <div><Label htmlFor="insurance_expiry">תוקף ביטוח *</Label><Input id="insurance_expiry" name="insurance_expiry" type="date" defaultValue={vehicle.insurance_expiry} required /></div>
+                <FleetDatePicker id="test_expiry" label="תוקף טסט *" value={vehTest} onChange={setVehTest} />
+                <FleetDatePicker id="insurance_expiry" label="תוקף ביטוח *" value={vehIns} onChange={setVehIns} />
                 <div><Label htmlFor="next_maintenance_km">ק"מ לטיפול הבא</Label><Input id="next_maintenance_km" name="next_maintenance_km" type="number" defaultValue={vehicle.next_maintenance_km || ''} dir="ltr" /></div>
-                <div><Label htmlFor="next_maintenance_date">תאריך טיפול הבא</Label><Input id="next_maintenance_date" name="next_maintenance_date" type="date" defaultValue={vehicle.next_maintenance_date || ''} /></div>
-                <div><Label htmlFor="last_service_date">תאריך טיפול אחרון</Label><Input id="last_service_date" name="last_service_date" type="date" defaultValue={vehicle.last_service_date?.slice(0, 10) || ''} /></div>
+                <FleetDatePicker id="next_maintenance_date" label="תאריך טיפול הבא" value={vehNextMaint} onChange={setVehNextMaint} />
+                <FleetDatePicker id="last_service_date" label="תאריך טיפול אחרון" value={vehLastService} onChange={setVehLastService} />
                 <div><Label htmlFor="last_service_km">ק״מ טיפול אחרון</Label><Input id="last_service_km" name="last_service_km" type="number" defaultValue={vehicle.last_service_km ?? ''} dir="ltr" placeholder="למשל 45000" /></div>
                 <div><Label htmlFor="service_interval_km">מרווח טיפול מומלץ (ק״מ, יצרן)</Label><Input id="service_interval_km" name="service_interval_km" type="number" defaultValue={vehicle.service_interval_km ?? ''} dir="ltr" placeholder="למשל 15000" /></div>
               </div>
@@ -280,12 +325,13 @@ export default function EditVehiclePage() {
             <CardContent className="space-y-4">
               <div>
                 <Label htmlFor="ownership_type">סוג בעלות</Label>
-                <Select name="ownership_type" defaultValue={vehicle.ownership_type || ''}>
+                <Select name="ownership_type" defaultValue={ownershipSelectDefault(vehicle.ownership_type)}>
                   <SelectTrigger><SelectValue placeholder="בחר סוג בעלות" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="owned">בבעלות החברה</SelectItem>
-                    <SelectItem value="leasing">ליסינג</SelectItem>
-                    <SelectItem value="rental">השכרה</SelectItem>
+                    <SelectItem value="הרץ">הרץ</SelectItem>
+                    <SelectItem value="יוניון מוביליטי">יוניון מוביליטי</SelectItem>
+                    <SelectItem value="פריים ליס">פריים ליס</SelectItem>
+                    <SelectItem value="rental">השכרה (ישן)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

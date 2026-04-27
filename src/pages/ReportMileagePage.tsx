@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Camera, Gauge, ImageIcon, Loader2, Wrench } from 'lucide-react';
 
 import { supabase } from '@/integrations/supabase/client';
@@ -114,6 +114,8 @@ function describeMileageRpcMissingOnProject(): string {
 
 export default function ReportMileagePage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const vehicleIdFromQuery = (searchParams.get('vehicle') ?? '').trim();
   const { user, profile, loading, activeOrgId } = useAuth();
   const { data: vehicles = [] } = useVehicles();
   const queryClient = useQueryClient();
@@ -176,9 +178,10 @@ export default function ReportMileagePage() {
       const odo = sessionStorage.getItem(MILEAGE_REPORT_SESSION.odometer);
       const vsearch = sessionStorage.getItem(MILEAGE_REPORT_SESSION.vehicleSearch);
 
-      if (vid) setSelectedVehicleId(vid);
+      // כשיש ?vehicle= מהכרטיס — לא לשחזר vehicleId מ-session (מניעת דריסה / בלבול)
+      if (vid && !vehicleIdFromQuery.trim()) setSelectedVehicleId(vid);
       if (odo !== null) setOdometer(odo);
-      if (vsearch !== null) setVehicleSearch(vsearch);
+      if (vsearch !== null && !vehicleIdFromQuery.trim()) setVehicleSearch(vsearch);
 
       if (sessionStorage.getItem(MILEAGE_REPORT_SESSION.cameraPending) === '1') {
         sessionStorage.removeItem(MILEAGE_REPORT_SESSION.cameraPending);
@@ -193,7 +196,19 @@ export default function ReportMileagePage() {
     } finally {
       setSessionHydrated(true);
     }
-  }, [loading]);
+  }, [loading, vehicleIdFromQuery]);
+
+  /** קישור מכרטיס רכב: ?vehicle=<uuid> — מיד כשהרשימה נטענת (לא תלוי sessionHydrated) */
+  useEffect(() => {
+    const qid = vehicleIdFromQuery.trim();
+    if (!qid || vehicles.length === 0) return;
+    if (!vehicles.some((v) => v.id === qid)) return;
+    setSelectedVehicleId(qid);
+    const v = vehicles.find((x) => x.id === qid);
+    if (v) {
+      setVehicleSearch(`${v.plate_number} ${v.manufacturer} ${v.model}`.trim());
+    }
+  }, [vehicleIdFromQuery, vehicles]);
 
   /** Persist vehicle + mileage as the user types (before camera / reload). */
   useEffect(() => {
@@ -217,18 +232,42 @@ export default function ReportMileagePage() {
 
   const filteredVehicles = useMemo(() => {
     const q = vehicleSearch.trim().toLowerCase();
-    if (!q) return vehicles;
-    return vehicles.filter((v) => {
-      const plate = (v.plate_number ?? '').toLowerCase();
-      const internal = (v.internal_number ?? '').toLowerCase();
-      const label = `${v.manufacturer ?? ''} ${v.model ?? ''}`.toLowerCase();
-      return plate.includes(q) || internal.includes(q) || label.includes(q);
-    });
-  }, [vehicleSearch, vehicles]);
+    const base = !q
+      ? vehicles
+      : vehicles.filter((v) => {
+          const plate = (v.plate_number ?? '').toLowerCase();
+          const internal = (v.internal_number ?? '').toLowerCase();
+          const label = `${v.manufacturer ?? ''} ${v.model ?? ''}`.toLowerCase();
+          const hay = `${plate} ${internal} ${label}`.trim();
+          // חיפוש מלא "לוחית + יצרן + דגם" לא נמצא כsubstring בשדה בודד — נבדוק גם טוקנים
+          const tokens = q.split(/\s+/).filter(Boolean);
+          const tokenMatch =
+            tokens.length > 0 && tokens.every((t) => hay.includes(t) || plate.includes(t) || label.includes(t));
+          return (
+            plate.includes(q) ||
+            internal.includes(q) ||
+            label.includes(q) ||
+            hay.includes(q) ||
+            tokenMatch
+          );
+        });
+    const sid = selectedVehicleId.trim();
+    if (!sid) return base;
+    const chosen = vehicles.find((v) => v.id === sid);
+    if (!chosen || base.some((v) => v.id === sid)) return base;
+    return [chosen, ...base];
+  }, [vehicleSearch, vehicles, selectedVehicleId]);
 
   const selectedVehicle = useMemo(
     () => vehicles.find((v) => v.id === selectedVehicleId) ?? null,
-    [vehicles, selectedVehicleId]
+    [vehicles, selectedVehicleId],
+  );
+
+  /** נכנס מכרטיס רכב עם ?vehicle= — בלי בוחר רכב נפרד */
+  const lockedFromVehicleCard = Boolean(
+    vehicleIdFromQuery.trim() &&
+      selectedVehicle &&
+      selectedVehicle.id === vehicleIdFromQuery.trim(),
   );
 
   const handleFile = (e: ChangeEvent<HTMLInputElement>) => {
@@ -463,7 +502,11 @@ export default function ReportMileagePage() {
   return (
     <FleetHudPageShell
       title="דיווח קילומטראז׳"
-      subtitle="בחר רכב, הזן קילומטראז׳ וצרף תמונה מהשטח."
+      subtitle={
+        lockedFromVehicleCard
+          ? 'הרכב נבחר מהכרטיס — הזינו קילומטראז׳ וצרפו תמונת לוח שעונים.'
+          : 'בחר רכב, הזן קילומטראז׳ וצרף תמונה מהשטח.'
+      }
       headerAside={
         <Link to="/vehicles/service-update" className="w-full sm:w-auto">
           <Button
@@ -486,7 +529,11 @@ export default function ReportMileagePage() {
               </div>
               <div className="space-y-0.5">
                 <CardTitle className="text-base sm:text-lg">דווח עכשיו מהשטח</CardTitle>
-                <p className="text-sm text-muted-foreground">בחר רכב, הזן קילומטראז׳ וצורף תמונה</p>
+                <p className="text-sm text-muted-foreground">
+                  {lockedFromVehicleCard
+                    ? 'הזינו קילומטראז׳ וצרפו תמונה — הרכב כבר מזוהה.'
+                    : 'בחר רכב, הזן קילומטראז׳ וצורף תמונה'}
+                </p>
               </div>
             </div>
           </CardHeader>
@@ -497,35 +544,52 @@ export default function ReportMileagePage() {
               </div>
             ) : (
               <form onSubmit={submit} className="space-y-6">
-                <div className="space-y-2">
-                  <Label htmlFor="vehicle-search">חיפוש רכב</Label>
-                  <Input
-                    id="vehicle-search"
-                    value={vehicleSearch}
-                    onChange={(e) => setVehicleSearch(e.target.value)}
-                    placeholder="לדוגמה: 12-345-67"
-                    className="text-base"
-                    dir="ltr"
-                    autoComplete="off"
-                  />
-                </div>
+                {vehicleIdFromQuery.trim() && !selectedVehicle ? (
+                  <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+                    לא נמצא רכב התואם לקישור מהכרטיס. חזרו לכרטיס הרכב או בחרו רכב מהרשימה למטה.
+                  </p>
+                ) : null}
 
-                <div className="space-y-2">
-                  <Label>בחר רכב</Label>
-                  <Select value={selectedVehicleId} onValueChange={setSelectedVehicleId}>
-                    <SelectTrigger className="h-12">
-                      <SelectValue placeholder="בחר מספר רכב" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {filteredVehicles.map((v) => (
-                        <SelectItem key={v.id} value={v.id}>
-                          {v.plate_number}
-                          {v.internal_number ? ` · ${v.internal_number}` : ''} · {v.manufacturer} {v.model}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                {lockedFromVehicleCard ? (
+                  <div className="rounded-xl border border-cyan-500/30 bg-slate-900/60 px-4 py-3 text-right">
+                    <p className="text-xs font-medium text-muted-foreground">רכב לדיווח</p>
+                    <p className="mt-1 text-base font-semibold text-cyan-100" dir="ltr">
+                      {selectedVehicle!.plate_number} · {selectedVehicle!.manufacturer} {selectedVehicle!.model}
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="vehicle-search">חיפוש רכב</Label>
+                      <Input
+                        id="vehicle-search"
+                        value={vehicleSearch}
+                        onChange={(e) => setVehicleSearch(e.target.value)}
+                        placeholder="לדוגמה: 12-345-67"
+                        className="text-base"
+                        dir="ltr"
+                        autoComplete="off"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>בחר רכב</Label>
+                      <Select value={selectedVehicleId} onValueChange={setSelectedVehicleId}>
+                        <SelectTrigger className="h-12">
+                          <SelectValue placeholder="בחר מספר רכב" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {filteredVehicles.map((v) => (
+                            <SelectItem key={v.id} value={v.id}>
+                              {v.plate_number}
+                              {v.internal_number ? ` · ${v.internal_number}` : ''} · {v.manufacturer} {v.model}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </>
+                )}
 
                 <div className="space-y-2">
                   <Label htmlFor="odometer">קילומטראז׳ נוכחי</Label>

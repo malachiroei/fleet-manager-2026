@@ -16,6 +16,7 @@ import { useDriverStorageFiles } from '@/hooks/useDriverStorageFiles';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { FleetDatePicker } from '@/components/ui/FleetDatePicker';
 import {
   Select,
   SelectContent,
@@ -175,14 +176,12 @@ function IncidentsTab({
               </Button>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-xs text-muted-foreground">תאריך *</label>
-                <Input
-                  type="date"
-                  value={form.incident_date}
-                  onChange={(e) => setForm((f) => ({ ...f, incident_date: e.target.value }))}
-                />
-              </div>
+              <FleetDatePicker
+                label="תאריך *"
+                className="[&_label]:text-xs [&_label]:text-muted-foreground"
+                value={form.incident_date}
+                onChange={(ymd) => setForm((f) => ({ ...f, incident_date: ymd }))}
+              />
               <div>
                 <label className="text-xs text-muted-foreground">מיקום</label>
                 <Input
@@ -633,14 +632,12 @@ function FamilyTab({ driver }: { driver: Driver }) {
                   onChange={(e) => setForm((f) => ({ ...f, id_number: e.target.value }))}
                 />
               </div>
-              <div>
-                <label className="text-xs text-muted-foreground">תאריך לידה</label>
-                <Input
-                  type="date"
-                  value={form.birth_date}
-                  onChange={(e) => setForm((f) => ({ ...f, birth_date: e.target.value }))}
-                />
-              </div>
+              <FleetDatePicker
+                label="תאריך לידה"
+                className="[&_label]:text-xs [&_label]:text-muted-foreground"
+                value={form.birth_date}
+                onChange={(ymd) => setForm((f) => ({ ...f, birth_date: ymd }))}
+              />
               <div>
                 <label className="text-xs text-muted-foreground">עיר</label>
                 <Input

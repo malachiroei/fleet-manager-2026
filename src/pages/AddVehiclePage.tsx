@@ -7,11 +7,13 @@ import { usePricingLookup } from '@/hooks/usePricingData';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { FleetDatePicker } from '@/components/ui/FleetDatePicker';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Loader2, Car, FileText, Shield, Upload, Settings, Building, Gauge, DollarSign } from 'lucide-react';
 import { toast } from 'sonner';
+import { normalizePlateNumber } from '@/lib/plateNumber';
 
 export default function AddVehiclePage() {
   const navigate = useNavigate();
@@ -27,7 +29,12 @@ export default function AddVehiclePage() {
   const [taxValuePrice, setTaxValuePrice] = useState('');
   const [taxValueYear, setTaxValueYear] = useState('');
   const [adjustedPrice, setAdjustedPrice] = useState('');
-  
+  const [pickupDate, setPickupDate] = useState('');
+  const [lastOdometerDate, setLastOdometerDate] = useState('');
+  const [testExpiry, setTestExpiry] = useState('');
+  const [insuranceExpiry, setInsuranceExpiry] = useState('');
+  const [nextMaintenanceDate, setNextMaintenanceDate] = useState('');
+
   // Auto-fetch pricing data based on codes
   const { data: pricingData } = usePricingLookup(
     manufacturerCode || null, 
@@ -48,9 +55,20 @@ export default function AddVehiclePage() {
 
     try {
       const formData = new FormData(e.currentTarget);
-      
+      const plateRaw = normalizePlateNumber(formData.get('plate_number') as string);
+      if (!plateRaw) {
+        toast.error('נא להזין מספר רישוי (ספרות בלבד)');
+        setIsSubmitting(false);
+        return;
+      }
+      if (!testExpiry.trim() || !insuranceExpiry.trim()) {
+        toast.error('נא למלא תאריכי תוקף לטסט ולביטוח');
+        setIsSubmitting(false);
+        return;
+      }
+
       const createdVehicle = await createVehicle.mutateAsync({
-        plate_number: formData.get('plate_number') as string,
+        plate_number: plateRaw,
         manufacturer: formData.get('manufacturer') as string,
         model: formData.get('model') as string,
         year: parseInt(formData.get('year') as string),
@@ -58,16 +76,16 @@ export default function AddVehiclePage() {
         next_maintenance_km: formData.get('next_maintenance_km') 
           ? parseInt(formData.get('next_maintenance_km') as string) 
           : null,
-        next_maintenance_date: formData.get('next_maintenance_date') as string || null,
-        test_expiry: formData.get('test_expiry') as string,
-        insurance_expiry: formData.get('insurance_expiry') as string,
+        next_maintenance_date: nextMaintenanceDate.trim() || null,
+        test_expiry: testExpiry,
+        insurance_expiry: insuranceExpiry,
         // New fields
         engine_volume: formData.get('engine_volume') as string || null,
         color: formData.get('color') as string || null,
         ignition_code: formData.get('ignition_code') as string || null,
         is_active: isActive,
         assigned_driver_id: null,
-        pickup_date: formData.get('pickup_date') as string || null,
+        pickup_date: pickupDate.trim() || null,
         road_ascent_year: formData.get('road_ascent_year') 
           ? parseInt(formData.get('road_ascent_year') as string) 
           : null,
@@ -76,7 +94,7 @@ export default function AddVehiclePage() {
           : null,
         ownership_type: formData.get('ownership_type') as string || null,
         leasing_company_name: formData.get('leasing_company_name') as string || null,
-        last_odometer_date: formData.get('last_odometer_date') as string || null,
+        last_odometer_date: lastOdometerDate.trim() || null,
         manufacturer_code: manufacturerCode || null,
         model_code: modelCode || null,
         // Operational costs fields
@@ -137,12 +155,21 @@ export default function AddVehiclePage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <Label htmlFor="plate_number">מספר רישוי *</Label>
-                  <Input 
-                    id="plate_number" 
-                    name="plate_number" 
-                    placeholder="12-345-67"
+                  <Input
+                    id="plate_number"
+                    name="plate_number"
+                    placeholder="82667304"
                     required
                     dir="ltr"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    pattern="[0-9]+"
+                    title="ספרות בלבד, ללא מקפים"
+                    onChange={(e) => {
+                      const el = e.target;
+                      const next = normalizePlateNumber(el.value);
+                      if (el.value !== next) el.value = next;
+                    }}
                   />
                 </div>
 
@@ -248,14 +275,7 @@ export default function AddVehiclePage() {
                 </Select>
               </div>
 
-              <div>
-                <Label htmlFor="pickup_date">תאריך קליטה לחברה</Label>
-                <Input 
-                  id="pickup_date" 
-                  name="pickup_date" 
-                  type="date"
-                />
-              </div>
+              <FleetDatePicker id="pickup_date" label="תאריך קליטה לחברה" value={pickupDate} onChange={setPickupDate} />
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -270,14 +290,7 @@ export default function AddVehiclePage() {
                   />
                 </div>
 
-                <div>
-                  <Label htmlFor="last_odometer_date">תאריך עדכון ק"מ</Label>
-                  <Input 
-                    id="last_odometer_date" 
-                    name="last_odometer_date" 
-                    type="date"
-                  />
-                </div>
+                <FleetDatePicker id="last_odometer_date" label='תאריך עדכון ק"מ' value={lastOdometerDate} onChange={setLastOdometerDate} />
               </div>
             </CardContent>
           </Card>
@@ -318,25 +331,8 @@ export default function AddVehiclePage() {
                   />
                 </div>
 
-                <div>
-                  <Label htmlFor="test_expiry">תוקף טסט *</Label>
-                  <Input 
-                    id="test_expiry" 
-                    name="test_expiry" 
-                    type="date"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="insurance_expiry">תוקף ביטוח *</Label>
-                  <Input 
-                    id="insurance_expiry" 
-                    name="insurance_expiry" 
-                    type="date"
-                    required
-                  />
-                </div>
+                <FleetDatePicker id="test_expiry" label="תוקף טסט *" value={testExpiry} onChange={setTestExpiry} />
+                <FleetDatePicker id="insurance_expiry" label="תוקף ביטוח *" value={insuranceExpiry} onChange={setInsuranceExpiry} />
 
                 <div>
                   <Label htmlFor="next_maintenance_km">ק"מ לטיפול הבא</Label>
@@ -350,14 +346,7 @@ export default function AddVehiclePage() {
                   />
                 </div>
 
-                <div>
-                  <Label htmlFor="next_maintenance_date">תאריך טיפול הבא</Label>
-                  <Input 
-                    id="next_maintenance_date" 
-                    name="next_maintenance_date" 
-                    type="date"
-                  />
-                </div>
+                <FleetDatePicker id="next_maintenance_date" label="תאריך טיפול הבא" value={nextMaintenanceDate} onChange={setNextMaintenanceDate} />
               </div>
             </CardContent>
           </Card>
@@ -380,9 +369,9 @@ export default function AddVehiclePage() {
                     <SelectValue placeholder="בחר סוג בעלות" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="owned">בבעלות החברה</SelectItem>
-                    <SelectItem value="leasing">ליסינג</SelectItem>
-                    <SelectItem value="rental">השכרה</SelectItem>
+                    <SelectItem value="הרץ">הרץ</SelectItem>
+                    <SelectItem value="יוניון מוביליטי">יוניון מוביליטי</SelectItem>
+                    <SelectItem value="פריים ליס">פריים ליס</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

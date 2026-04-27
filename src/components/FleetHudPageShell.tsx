@@ -29,22 +29,22 @@ export function FleetHudPageShell({
       <div className="dashboard-cyber-vignette select-none" aria-hidden />
       <div className="dashboard-cyber-grid select-none" aria-hidden />
 
-      <div className="container relative z-[2] mx-auto max-w-[1920px] space-y-6 md:space-y-8 py-5 md:py-7 pb-24 sm:pb-10">
-        <div className="dashboard-hud-header-card rounded-3xl border-t border-l border-white/[0.16] border-b border-r border-black/55 p-5 md:p-8 relative overflow-hidden">
-          <div className="hud-status-card-carbon pointer-events-none absolute inset-0 rounded-3xl opacity-50" aria-hidden />
-          <div className="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0 flex-1">
-              <h1 className="dashboard-cyber-hero-title text-xl sm:text-2xl md:text-3xl font-bold tracking-tight text-white">
+      <div className="container relative z-[2] mx-auto max-w-[1920px] space-y-4 py-3 pb-24 sm:space-y-5 sm:pb-10 md:py-4">
+        <div className="dashboard-hud-header-card relative overflow-hidden rounded-2xl border-t border-l border-white/[0.16] border-b border-r border-black/55 p-4 md:rounded-3xl md:p-5">
+          <div className="hud-status-card-carbon pointer-events-none absolute inset-0 rounded-2xl opacity-50 md:rounded-3xl" aria-hidden />
+          <div className="relative flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
+            <div className="min-w-0 shrink">
+              <h1 className="dashboard-cyber-hero-title text-lg font-bold tracking-tight text-white sm:text-xl md:text-2xl">
                 {title}
               </h1>
               {subtitle ? (
-                <p className="relative mt-2 text-xs sm:text-sm md:text-base hud-dashboard-label max-w-2xl leading-relaxed">
+                <p className="relative mt-1 max-w-2xl text-xs leading-relaxed hud-dashboard-label sm:text-sm">
                   {subtitle}
                 </p>
               ) : null}
             </div>
             {headerAside ? (
-              <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:items-end">{headerAside}</div>
+              <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">{headerAside}</div>
             ) : null}
           </div>
         </div>
