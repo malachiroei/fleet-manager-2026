@@ -19,12 +19,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { fmtDriverDate } from '@/components/DriverCard';
 import {
@@ -32,7 +26,6 @@ import {
   Bell,
   ChevronLeft,
   ChevronRight,
-  MoreHorizontal,
   IdCard,
   GraduationCap,
   Users,
@@ -151,8 +144,6 @@ export interface DriversHudTableProps {
   operationOptions: string[];
   /** רכב ראשון משויך — דגם ומספר רישוי בנפרד */
   assignedVehicleByDriverId: ReadonlyMap<string, { modelLabel: string; plateLabel: string }>;
-  canEdit: boolean;
-  onDelete: (id: string) => void;
   showNotificationSettingsLink?: boolean;
 }
 
@@ -170,8 +161,6 @@ export function DriversHudTable({
   licenseTypeOptions,
   operationOptions,
   assignedVehicleByDriverId,
-  canEdit,
-  onDelete,
   showNotificationSettingsLink = false,
 }: DriversHudTableProps) {
   const navigate = useNavigate();
@@ -233,13 +222,6 @@ export function DriversHudTable({
     },
     [pageSlice]
   );
-
-  const openFolders = (id: string) => {
-    navigate(`/drivers?folders=${id}`, { replace: false });
-    setTimeout(() => {
-      document.getElementById('driver-folders-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 120);
-  };
 
   return (
     <div className="w-full max-w-[100vw] space-y-4 overflow-x-hidden sm:space-y-5">
@@ -431,7 +413,6 @@ export function DriversHudTable({
               <col style={{ width: '10%' }} />
               <col style={{ width: '11%' }} />
               <col style={{ width: '11%' }} />
-              <col style={{ width: 48 }} />
             </colgroup>
             <TableHeader>
               <TableRow className="border-cyan-500/15 bg-black/40 hover:bg-black/40">
@@ -464,13 +445,12 @@ export function DriversHudTable({
                 <TableHead className="p-0 px-3 py-2.5 text-right align-middle text-xs font-semibold text-slate-300">
                   תוקף רישיון
                 </TableHead>
-                <TableHead className="w-12 p-0 px-1 align-middle text-right" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {pageSlice.length === 0 ? (
                 <TableRow className="border-0 hover:bg-transparent">
-                  <TableCell colSpan={9} className="py-16 text-center text-slate-400">
+                  <TableCell colSpan={8} className="py-16 text-center text-slate-400">
                     אין נהגים להצגה לפי הסינון
                   </TableCell>
                 </TableRow>
@@ -481,12 +461,16 @@ export function DriversHudTable({
                     <TableRow
                       key={d.id}
                       id={`driver-card-${d.id}`}
+                      onClick={() => navigate(`/drivers/${d.id}/edit`)}
                       className={cn(
-                        'border-white/5 transition-all duration-200',
+                        'cursor-pointer border-white/5 transition-all duration-200',
                         'hover:border-cyan-400/25 hover:bg-cyan-500/[0.06] hover:shadow-[0_0_18px_rgba(34,211,238,0.12)]'
                       )}
                     >
-                      <TableCell className="p-0 px-2 py-2.5 text-center align-middle [&:has([role=checkbox])]:pr-2">
+                      <TableCell
+                        className="p-0 px-2 py-2.5 text-center align-middle [&:has([role=checkbox])]:pr-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <Checkbox
                           checked={selected.has(d.id)}
                           onCheckedChange={(v) => toggleOne(d.id, v === true)}
@@ -509,7 +493,8 @@ export function DriversHudTable({
                           )}
                           <div className="min-w-0 text-right">
                             <Link
-                              to={`/drivers/${d.id}`}
+                              to={`/drivers/${d.id}/edit`}
+                              onClick={(e) => e.stopPropagation()}
                               className="block truncate font-semibold text-slate-100 hover:text-cyan-200 hover:underline"
                             >
                               {d.full_name}
@@ -553,43 +538,6 @@ export function DriversHudTable({
                       </TableCell>
                       <TableCell className="p-0 px-3 py-2.5 align-middle whitespace-nowrap text-sm tabular-nums text-slate-200">
                         {fmtDriverDate(d.license_expiry)}
-                      </TableCell>
-                      <TableCell className="p-0 px-1 py-2.5 text-center align-middle">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-slate-400 hover:bg-white/10 hover:text-cyan-200"
-                              aria-label="פעולות"
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="start" className="min-w-[10rem]">
-                            <DropdownMenuItem asChild className="cursor-pointer">
-                              <Link to={`/drivers/${d.id}`}>כרטיס נהג</Link>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem asChild className="cursor-pointer">
-                              <Link to={`/drivers/${d.id}/edit`}>עריכה</Link>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="cursor-pointer"
-                              onClick={() => openFolders(d.id)}
-                            >
-                              תיקיות
-                            </DropdownMenuItem>
-                            {canEdit ? (
-                              <DropdownMenuItem
-                                className="cursor-pointer text-red-400 focus:text-red-300"
-                                onClick={() => onDelete(d.id)}
-                              >
-                                מחיקה
-                              </DropdownMenuItem>
-                            ) : null}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
                       </TableCell>
                     </TableRow>
                   );

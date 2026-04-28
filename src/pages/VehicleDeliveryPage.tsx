@@ -91,6 +91,22 @@ export default function VehicleDeliveryPage() {
   const labelClass = 'mb-1.5 block text-xs font-semibold tracking-wide text-cyan-100/80';
 
   const availableDeliveryForms = (orgDocuments ?? []).filter((doc) => doc.is_active);
+  const preselectedVehicleId = (searchParams.get('vehicleId') ?? '').trim();
+  const preselectedDriverId = (searchParams.get('driverId') ?? '').trim();
+
+  useEffect(() => {
+    if (!vehicles || vehicles.length === 0) return;
+    if (!preselectedVehicleId) return;
+    if (!vehicles.some((v) => v.id === preselectedVehicleId)) return;
+    setSelectedVehicle((prev) => (prev ? prev : preselectedVehicleId));
+  }, [vehicles, preselectedVehicleId]);
+
+  useEffect(() => {
+    if (!drivers || drivers.length === 0) return;
+    if (!preselectedDriverId) return;
+    if (!drivers.some((d) => d.id === preselectedDriverId)) return;
+    setSelectedDriver((prev) => (prev ? prev : preselectedDriverId));
+  }, [drivers, preselectedDriverId]);
 
   useEffect(() => {
     if (availableDeliveryForms.length === 0) return;

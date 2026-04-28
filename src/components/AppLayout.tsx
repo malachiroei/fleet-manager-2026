@@ -28,7 +28,6 @@ import {
   DropdownMenuSubContent,
 } from './ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-import { getBrandLogoUrl } from '@/components/BrandLogo';
 import { supabase } from '@/integrations/supabase/client';
 import {
   FLEET_PRO_ACK_VERSION_STORAGE_KEY,
@@ -845,17 +844,10 @@ export function AppLayout({ children }: AppLayoutProps) {
   const BrandMarkBlock = () => (
     <div
       className={cn(
-        'flex shrink-0 items-center gap-2 min-w-0 lg:min-w-[150px]',
+        'flex shrink-0 items-center min-w-0 lg:min-w-[150px]',
         isRtl && 'flex-row-reverse'
       )}
     >
-      <div className="flex h-9 min-w-fit w-[3.15rem] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[#0a1525] p-1.5 md:h-12 md:w-16 md:min-w-[4rem] md:p-2">
-        <img
-          src={getBrandLogoUrl()}
-          alt=""
-          className="max-h-[1.65rem] w-full min-w-0 object-contain object-center md:max-h-12"
-        />
-      </div>
       <div className={cn('min-w-0', isRtl ? 'text-right' : 'text-left')}>
         <span className="block max-w-[min(100%,70vw)] truncate text-sm font-bold leading-tight text-white md:max-w-[min(100%,28rem)]">
           {t('navigation.fleetManager')}
@@ -908,10 +900,8 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   const BackButton = () => {
     const handleBack = () => {
-      const here = `${location.pathname}${location.search}`;
-      const last = getLastPath();
-      if (last && last !== here) {
-        tryNavigate(last);
+      if (typeof window !== 'undefined' && window.history.length > 1) {
+        window.history.back();
         return;
       }
       tryNavigate('/');

@@ -114,6 +114,8 @@ export interface Vehicle {
   vehicle_type_code: string | null;
   model_description: string | null;
   fuel_type: string | null;
+  vehicle_standard: string | null;
+  vat_recognized: number | null;
   commercial_name: string | null;
   is_automatic: boolean | null;
   drive_type: string | null;
@@ -127,6 +129,7 @@ export interface Vehicle {
   last_service_km: number | null;
   /** מרווח טיפול מומלץ בק״מ (המלצת יצרן, למשל 15000) */
   service_interval_km: number | null;
+  safety_officer: string | null;
   last_tire_change_date: string | null;
   next_tire_change_date: string | null;
   /** תאריך החלפה לפי מיקום צמיג */
@@ -178,6 +181,7 @@ export interface Driver {
   area: string | null;
   group_name: string | null;
   group_code: string | null;
+  safety_officer: string | null;
   documents?: DriverDocument[];
   // Driver folder fields
   birth_date: string | null;
@@ -211,6 +215,7 @@ export interface DriverSummary {
   area: string | null;
   group_name: string | null;
   group_code: string | null;
+  safety_officer: string | null;
   eligibility: string | null;
   work_start_date: string | null;
   license_number: string | null;

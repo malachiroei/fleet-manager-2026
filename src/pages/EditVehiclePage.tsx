@@ -149,9 +149,42 @@ export default function EditVehiclePage() {
         manufacturer: formData.get('manufacturer') as string,
         model: formData.get('model') as string,
         year: parseInt(formData.get('year') as string),
+        road_ascent_year: (() => {
+          const v = (formData.get('road_ascent_year') as string)?.trim();
+          if (!v) return null;
+          const n = parseInt(v, 10);
+          return Number.isNaN(n) ? null : n;
+        })(),
+        road_ascent_month: (() => {
+          const v = (formData.get('road_ascent_month') as string)?.trim();
+          if (!v) return null;
+          const n = parseInt(v, 10);
+          if (Number.isNaN(n) || n < 1 || n > 12) return null;
+          return n;
+        })(),
         engine_volume: formData.get('engine_volume') as string || null,
         color: formData.get('color') as string || null,
         ignition_code: formData.get('ignition_code') as string || null,
+        fuel_type: formData.get('fuel_type') as string || null,
+        vehicle_standard: formData.get('vehicle_standard') as string || null,
+        vat_recognized: (() => {
+          const raw = (formData.get('vat_recognized') as string)?.trim();
+          if (!raw) return null;
+          const n = parseFloat(raw.replace(',', '.'));
+          return Number.isNaN(n) ? null : n;
+        })(),
+        monthly_total_cost: (() => {
+          const raw = (formData.get('monthly_total_cost') as string)?.trim();
+          if (!raw) return null;
+          const n = parseFloat(raw.replace(',', '.'));
+          return Number.isNaN(n) ? null : n;
+        })(),
+        base_index: (() => {
+          const raw = (formData.get('base_index') as string)?.trim();
+          if (!raw) return null;
+          const n = parseFloat(raw.replace(',', '.'));
+          return Number.isNaN(n) ? null : n;
+        })(),
         is_active: activeValue,
         test_expiry: vehTest,
         insurance_expiry: vehIns,
@@ -172,6 +205,7 @@ export default function EditVehiclePage() {
         })(),
         ownership_type: formData.get('ownership_type') as string || null,
         leasing_company_name: formData.get('leasing_company_name') as string || null,
+        safety_officer: formData.get('safety_officer') as string || null,
         pickup_date: formData.get('pickup_date') as string || null,
         purchase_date: formData.get('purchase_date') as string || null,
         sale_date: formData.get('sale_date') as string || null,
@@ -258,9 +292,35 @@ export default function EditVehiclePage() {
                 <div><Label htmlFor="manufacturer">יצרן *</Label><Input id="manufacturer" name="manufacturer" defaultValue={vehicle.manufacturer} required /></div>
                 <div><Label htmlFor="model">דגם *</Label><Input id="model" name="model" defaultValue={vehicle.model} required /></div>
                 <div><Label htmlFor="year">שנת ייצור *</Label><Input id="year" name="year" type="number" defaultValue={vehicle.year} required /></div>
+                <div><Label htmlFor="road_ascent_year">שנת עליה לכביש</Label><Input id="road_ascent_year" name="road_ascent_year" type="number" min="1990" max={new Date().getFullYear() + 1} defaultValue={vehicle.road_ascent_year ?? ''} /></div>
+                <div><Label htmlFor="road_ascent_month">חודש עליה לכביש</Label><Input id="road_ascent_month" name="road_ascent_month" type="number" min="1" max="12" defaultValue={vehicle.road_ascent_month ?? ''} /></div>
                 <div><Label htmlFor="engine_volume">נפח מנוע</Label><Input id="engine_volume" name="engine_volume" defaultValue={vehicle.engine_volume || ''} dir="ltr" /></div>
                 <div><Label htmlFor="color">צבע</Label><Input id="color" name="color" defaultValue={vehicle.color || ''} /></div>
                 <div><Label htmlFor="ignition_code">קוד הנעה</Label><Input id="ignition_code" name="ignition_code" defaultValue={vehicle.ignition_code || ''} dir="ltr" /></div>
+                <div>
+                  <Label htmlFor="fuel_type">סוג דלק</Label>
+                  <Select name="fuel_type" defaultValue={vehicle.fuel_type || undefined}>
+                    <SelectTrigger><SelectValue placeholder="בחר סוג דלק" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="בנזין">בנזין</SelectItem>
+                      <SelectItem value="סולר">סולר</SelectItem>
+                      <SelectItem value="חשמל">חשמל</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div><Label htmlFor="vehicle_standard">התקן</Label><Input id="vehicle_standard" name="vehicle_standard" defaultValue={vehicle.vehicle_standard || ''} /></div>
+                <div>
+                  <Label htmlFor="vat_recognized">מע״מ מוכר</Label>
+                  <Input id="vat_recognized" name="vat_recognized" type="number" step="0.01" min="0" defaultValue={vehicle.vat_recognized ?? ''} dir="ltr" />
+                </div>
+                <div>
+                  <Label htmlFor="monthly_total_cost">עלות ליסינג חודשית</Label>
+                  <Input id="monthly_total_cost" name="monthly_total_cost" type="number" step="0.01" min="0" defaultValue={vehicle.monthly_total_cost ?? ''} dir="ltr" />
+                </div>
+                <div>
+                  <Label htmlFor="base_index">מדד בסיס</Label>
+                  <Input id="base_index" name="base_index" type="number" step="0.01" min="0" defaultValue={vehicle.base_index ?? ''} dir="ltr" />
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -290,6 +350,10 @@ export default function EditVehiclePage() {
                 </Select>
               </div>
               <FleetDatePicker id="pickup_date" label="תאריך קליטה" value={vehPickup} onChange={setVehPickup} />
+              <div>
+                <Label htmlFor="safety_officer">קצין בטיחות</Label>
+                <Input id="safety_officer" name="safety_officer" defaultValue={vehicle.safety_officer || ''} />
+              </div>
               <FleetDatePicker id="purchase_date" label="תאריך קניה / תחילת עסקה" value={vehPurchase} onChange={setVehPurchase} />
               <FleetDatePicker id="sale_date" label="תאריך מכירה / סיום עסקה" value={vehSale} onChange={setVehSale} />
             </CardContent>

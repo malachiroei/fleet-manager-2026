@@ -34,6 +34,7 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { invalidateFleetScopedQueries } from '@/lib/invalidateFleetQueryScope';
 import { toast } from 'sonner';
+import { getBrandLogoUrl } from '@/components/BrandLogo';
 
 const statusCardConfig: Array<{
   titleKey: 'navigation.fleetManagement' | 'navigation.drivers' | 'navigation.exceptionAlerts' | 'dashboard.replacementVehicle';
@@ -386,12 +387,24 @@ export default function Dashboard() {
       <div className="container relative z-[2] mx-auto space-y-6 md:space-y-8 py-5 md:py-7 pb-28 sm:pb-10">
       <div className="dashboard-hud-header-card rounded-3xl border-t border-l border-white/[0.16] border-b border-r border-black/55 p-5 md:p-8 relative overflow-hidden">
         <div className="hud-status-card-carbon pointer-events-none absolute inset-0 rounded-3xl opacity-50" aria-hidden />
-        <h1 className="dashboard-cyber-hero-title hidden sm:block relative text-2xl md:text-3xl font-bold tracking-tight text-white">
-          {t('dashboard.title')}
-        </h1>
-        <p className="relative text-xs sm:text-sm md:text-base hud-dashboard-label mt-1 sm:mt-2 max-w-2xl leading-relaxed">
-          {t('dashboard.subtitle')}
-        </p>
+        <div className="relative flex items-center justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <h1 className="dashboard-cyber-hero-title hidden sm:block relative text-2xl md:text-3xl font-bold tracking-tight text-white">
+              {t('dashboard.title')}
+            </h1>
+            <p className="relative text-xs sm:text-sm md:text-base hud-dashboard-label mt-1 sm:mt-2 max-w-2xl leading-relaxed">
+              {t('dashboard.subtitle')}
+            </p>
+          </div>
+          <div className="hidden h-24 w-44 shrink-0 overflow-hidden rounded-xl sm:flex md:h-28 md:w-56">
+            <img
+              src={getBrandLogoUrl()}
+              alt=""
+              className="h-full w-full object-cover object-center"
+              aria-hidden
+            />
+          </div>
+        </div>
       </div>
 
       {!isStatsLoading && stats && stats.totalVehicles === 0 && stats.totalDrivers === 0 && (

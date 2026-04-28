@@ -63,6 +63,8 @@ GRANT EXECUTE ON FUNCTION public.user_may_audit_vehicle_service(uuid, uuid) TO a
 
 DROP POLICY IF EXISTS "vehicle_service_logs_insert_vehicle_access" ON public.vehicle_service_logs;
 DROP POLICY IF EXISTS "vehicle_service_logs_select_vehicle_access" ON public.vehicle_service_logs;
+DROP POLICY IF EXISTS "vehicle_service_logs_insert_audit_access" ON public.vehicle_service_logs;
+DROP POLICY IF EXISTS "vehicle_service_logs_select_audit_access" ON public.vehicle_service_logs;
 
 CREATE POLICY "vehicle_service_logs_insert_audit_access"
   ON public.vehicle_service_logs FOR INSERT

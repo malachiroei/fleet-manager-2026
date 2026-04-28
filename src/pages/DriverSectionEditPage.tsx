@@ -166,6 +166,7 @@ export default function DriverSectionEditPage() {
         payload.area = nullable(formData, 'area');
         payload.group_name = nullable(formData, 'group_name');
         payload.group_code = nullable(formData, 'group_code');
+        payload.safety_officer = nullable(formData, 'safety_officer');
         payload.eligibility = nullable(formData, 'eligibility');
         payload.work_start_date = secWorkStart.trim() || null;
       } else if (section === 'licenses') {
@@ -338,6 +339,10 @@ export default function DriverSectionEditPage() {
                   <div>
                     <Label htmlFor="group_code">קוד קבוצה</Label>
                     <Input id="group_code" name="group_code" defaultValue={d.group_code || ''} dir="ltr" />
+                  </div>
+                  <div>
+                    <Label htmlFor="safety_officer">קצין בטיחות</Label>
+                    <Input id="safety_officer" name="safety_officer" defaultValue={d.safety_officer || ''} />
                   </div>
                   <div>
                     <Label htmlFor="eligibility">כשירות</Label>

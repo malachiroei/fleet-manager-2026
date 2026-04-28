@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import type { Vehicle } from '@/types/fleet';
 import { useUpdateVehicle } from '@/hooks/useVehicles';
@@ -29,6 +29,42 @@ import {
 import { TireWheelDiagramSelector, TIRE_WHEEL_VALUES } from '@/components/vehicles/TireWheelDiagramSelector';
 
 const DOCS_BUCKET = 'vehicle-documents';
+
+function InlineImagePreview({ file }: { file: File | null }) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!file || !(file.type || '').startsWith('image/')) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  if (!file) return null;
+  if (!previewUrl) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        נבחר קובץ: <span className="font-medium">{file.name}</span>
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <img
+        src={previewUrl}
+        alt="תצוגה מקדימה"
+        className="max-h-40 w-full rounded-md border border-white/10 object-contain bg-black/30"
+      />
+      <p className="text-xs text-muted-foreground">
+        נבחרה תמונה: <span className="font-medium">{file.name}</span>
+      </p>
+    </div>
+  );
+}
 
 function sanitizeFileExt(name: string): string {
   const idx = name.lastIndexOf('.');
@@ -461,6 +497,7 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
                 />
               )}
             </div>
+            <InlineImagePreview file={licenseFile} />
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button type="button" variant="outline" onClick={() => setDialog(null)} disabled={saving}>
@@ -517,6 +554,7 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
                 />
               )}
             </div>
+            <InlineImagePreview file={insuranceFile} />
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button type="button" variant="outline" onClick={() => setDialog(null)} disabled={saving}>
@@ -577,6 +615,7 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
                 />
               )}
             </div>
+            <InlineImagePreview file={tireFile} />
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button type="button" variant="outline" onClick={() => setDialog(null)} disabled={saving}>

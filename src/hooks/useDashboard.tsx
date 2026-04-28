@@ -116,6 +116,8 @@ async function appendDerivedComplianceFromFleetDates(
     org_id: string | null;
     managed_by_user_id: string | null;
     assigned_driver_id: string | null;
+    road_ascent_month: number | null;
+    road_ascent_year: number | null;
     test_expiry: string | null;
     insurance_expiry: string | null;
   };
@@ -132,7 +134,7 @@ async function appendDerivedComplianceFromFleetDates(
     const { data, error } = await supabase
       .from('vehicles')
       .select(
-        'id, plate_number, org_id, managed_by_user_id, assigned_driver_id, test_expiry, insurance_expiry',
+        'id, plate_number, org_id, managed_by_user_id, assigned_driver_id, road_ascent_month, road_ascent_year, test_expiry, insurance_expiry',
       )
       .eq('org_id', effectiveOrgId)
       .eq('assigned_driver_id', scopedDriverId);
@@ -144,7 +146,7 @@ async function appendDerivedComplianceFromFleetDates(
   } else {
     let vq = supabase
       .from('vehicles')
-      .select('id, plate_number, org_id, managed_by_user_id, assigned_driver_id, test_expiry, insurance_expiry')
+      .select('id, plate_number, org_id, managed_by_user_id, assigned_driver_id, road_ascent_month, road_ascent_year, test_expiry, insurance_expiry')
       .eq('org_id', effectiveOrgId);
     if (applyFleetManagerSlice && fleetManagerListUserId) {
       vq = vq.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
@@ -420,12 +422,14 @@ export function useComplianceAlerts() {
             org_id: string | null;
             managed_by_user_id: string | null;
             assigned_driver_id: string | null;
+            road_ascent_month: number | null;
+            road_ascent_year: number | null;
           }
         >();
         for (const part of chunkIds(vehicleIds, COMPLIANCE_IN_CHUNK)) {
           const { data: vrows, error: verr } = await supabase
             .from('vehicles')
-            .select('id, plate_number, org_id, managed_by_user_id, assigned_driver_id')
+            .select('id, plate_number, org_id, managed_by_user_id, assigned_driver_id, road_ascent_month, road_ascent_year')
             .in('id', part);
           if (verr) {
             console.warn('[useComplianceAlerts] vehicles chunk failed — skipping chunk', verr.message);
@@ -437,6 +441,8 @@ export function useComplianceAlerts() {
               org_id: v.org_id ?? null,
               managed_by_user_id: v.managed_by_user_id ?? null,
               assigned_driver_id: v.assigned_driver_id ?? null,
+              road_ascent_month: v.road_ascent_month ?? null,
+              road_ascent_year: v.road_ascent_year ?? null,
             });
           }
         }

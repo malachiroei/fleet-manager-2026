@@ -192,6 +192,7 @@ export default function AddDriverPage() {
         address: formData.get('address') as string || null,
         job_title: formData.get('job_title') as string || null,
         department: formData.get('department') as string || null,
+        safety_officer: formData.get('safety_officer') as string || null,
         license_number: formData.get('license_number') as string || null,
         regulation_585b_date: regulation585bDate.trim() || null,
       });
@@ -363,6 +364,14 @@ export default function AddDriverPage() {
                     id="department"
                     name="department"
                     placeholder="לוגיסטיקה"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="safety_officer">קצין בטיחות</Label>
+                  <Input
+                    id="safety_officer"
+                    name="safety_officer"
+                    placeholder="שם קצין בטיחות"
                   />
                 </div>
               </div>

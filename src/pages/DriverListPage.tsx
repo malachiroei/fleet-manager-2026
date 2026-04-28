@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useDrivers, useDeleteDriver, useDriver } from '@/hooks/useDrivers';
+import { useDrivers, useDriver } from '@/hooks/useDrivers';
 import type { DriverSummary, ComplianceStatus } from '@/types/fleet';
 
 import { useAuth } from '@/hooks/useAuth';
@@ -9,16 +9,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { Plus, User, FolderOpen } from 'lucide-react';
 import { FleetHudPageShell } from '@/components/FleetHudPageShell';
 import DriverFolders from '@/components/DriverFolders';
@@ -55,11 +45,9 @@ export default function DriverListPage() {
   const { data: drivers, isLoading, isError, error, refetch } = useDrivers();
   const { data: vehicles = [] } = useVehicles();
   const { data: activeAssignments = [] } = useActiveDriverVehicleAssignments();
-  const deleteDriver = useDeleteDriver();
   const { isManager } = useAuth();
   const { t } = useTranslation();
   const [search, setSearch] = useState('');
-  const [deleteId, setDeleteId] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<StatusFilter>('all');
   const [filterLicense, setFilterLicense] = useState('all');
   const [filterOperation, setFilterOperation] = useState('all');
@@ -265,8 +253,6 @@ export default function DriverListPage() {
                 licenseTypeOptions={licenseTypeOptions}
                 operationOptions={operationOptions}
                 assignedVehicleByDriverId={assignedVehicleByDriverId}
-                canEdit={isManager}
-                onDelete={(id) => setDeleteId(id)}
                 showNotificationSettingsLink={isManager}
               />
             </>
@@ -277,33 +263,10 @@ export default function DriverListPage() {
           <div className="rounded-xl border border-dashed border-border/60 bg-muted/5 p-4 text-center">
             <FolderOpen className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">
-              לפתיחת <strong className="text-foreground">תיקיות ניהול נהג</strong> — השתמשו בתפריט השורה או בכרטיס הנהג
+              לפתיחת <strong className="text-foreground">תיקיות ניהול נהג</strong> — היכנסו לכרטיס/עריכת הנהג
             </p>
           </div>
         )}
-
-        <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t('drivers.deleteTitle')}</AlertDialogTitle>
-              <AlertDialogDescription>{t('drivers.deleteDescription')}</AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter className="gap-2">
-              <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => {
-                  if (deleteId) {
-                    deleteDriver.mutate(deleteId);
-                    setDeleteId(null);
-                  }
-                }}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              >
-                {t('common.delete')}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
       </section>
     </FleetHudPageShell>
   );

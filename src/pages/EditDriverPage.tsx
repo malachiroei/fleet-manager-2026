@@ -5,6 +5,7 @@ import {
   DIRTY_SOURCE_DRIVER_EDIT,
 } from '@/contexts/VehicleSpecDirtyContext';
 import { useDriver, useUpdateDriver } from '@/hooks/useDrivers';
+import { useDeleteDriver } from '@/hooks/useDrivers';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,6 +13,16 @@ import { Label } from '@/components/ui/label';
 import { FleetDatePicker } from '@/components/ui/FleetDatePicker';
 import { sendFleetFieldUpdateNotification } from '@/lib/sendFleetFieldUpdateNotification';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Loader2, User, CreditCard, Briefcase, ShieldCheck, FileText, Upload, Heart } from 'lucide-react';
 import { toast } from 'sonner';
@@ -22,7 +33,10 @@ export default function EditDriverPage() {
   const navigate = useNavigate();
   const { data: driver, isLoading } = useDriver(id || '');
   const updateDriver = useUpdateDriver();
+  const deleteDriver = useDeleteDriver();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
   const { setDirty, tryNavigate } = useVehicleSpecDirty();
   const [licenseFront, setLicenseFront] = useState<File | null>(null);
   const [licenseBack, setLicenseBack] = useState<File | null>(null);
@@ -138,6 +152,8 @@ export default function EditDriverPage() {
         address: formData.get('address') as string || null,
         job_title: formData.get('job_title') as string || null,
         department: formData.get('department') as string || null,
+        safety_officer: formData.get('safety_officer') as string || null,
+        driver_code: formData.get('driver_code') as string || null,
         license_number: formData.get('license_number') as string || null,
         birth_date: birthDate.trim() || null,
         regulation_585b_date: reg585Date.trim() || null,
@@ -178,6 +194,22 @@ export default function EditDriverPage() {
     }
   };
 
+  const handleDeleteDriver = async () => {
+    if (deletePassword.trim() !== '2101') {
+      toast.error('סיסמה שגויה למחיקה');
+      return;
+    }
+    try {
+      await deleteDriver.mutateAsync(driver.id);
+      setDeleteDialogOpen(false);
+      setDeletePassword('');
+      setDirty(DIRTY_SOURCE_DRIVER_EDIT, false);
+      navigate('/drivers', { replace: true });
+    } catch {
+      // useDeleteDriver כבר מציג הודעת שגיאה מתאימה
+    }
+  };
+
   return (
     <div className="fleet-screen-page text-white">
       <header className="bg-card border-b border-border sticky top-0 z-10">
@@ -205,8 +237,8 @@ export default function EditDriverPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="col-span-2">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
                   <Label htmlFor="full_name">שם מלא *</Label>
                   <Input id="full_name" name="full_name" defaultValue={driver.full_name} required />
                 </div>
@@ -219,11 +251,11 @@ export default function EditDriverPage() {
                   <Label htmlFor="phone">טלפון</Label>
                   <Input id="phone" name="phone" type="tel" defaultValue={driver.phone || ''} dir="ltr" />
                 </div>
-                <div className="col-span-2">
+                <div>
                   <Label htmlFor="email">אימייל</Label>
                   <Input id="email" name="email" type="email" defaultValue={driver.email || ''} dir="ltr" />
                 </div>
-                <div className="col-span-2">
+                <div className="md:col-span-2">
                   <Label htmlFor="address">רחוב</Label>
                   <Input id="address" name="address" defaultValue={driver.address || ''} />
                 </div>
@@ -243,12 +275,20 @@ export default function EditDriverPage() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
+                  <Label htmlFor="driver_code">קוד נהג</Label>
+                  <Input id="driver_code" name="driver_code" defaultValue={driver.driver_code || ''} dir="ltr" />
+                </div>
+                <div>
                   <Label htmlFor="job_title">תפקיד</Label>
                   <Input id="job_title" name="job_title" defaultValue={driver.job_title || ''} />
                 </div>
                 <div>
                   <Label htmlFor="department">מחלקה</Label>
                   <Input id="department" name="department" defaultValue={driver.department || ''} />
+                </div>
+                <div>
+                  <Label htmlFor="safety_officer">קצין בטיחות</Label>
+                  <Input id="safety_officer" name="safety_officer" defaultValue={driver.safety_officer || ''} />
                 </div>
               </div>
             </CardContent>
@@ -387,9 +427,18 @@ export default function EditDriverPage() {
             <p className="text-xs text-muted-foreground">לחץ אישור שינויים לשמירה — יציאה בלי שמירה תציג התראה</p>
             <div className="flex flex-col gap-2 sm:flex-row">
               <Button
+                type="button"
+                variant="destructive"
+                className="w-full sm:w-auto"
+                onClick={() => setDeleteDialogOpen(true)}
+                disabled={isSubmitting || deleteDriver.isPending}
+              >
+                מחק נהג
+              </Button>
+              <Button
                 type="submit"
                 className="flex-1 bg-cyan-600 hover:bg-cyan-500 font-semibold shadow-lg shadow-cyan-900/30"
-                disabled={isSubmitting}
+                disabled={isSubmitting || deleteDriver.isPending}
               >
                 {isSubmitting && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
                 אישור שינויים
@@ -398,6 +447,7 @@ export default function EditDriverPage() {
                 type="button"
                 variant="outline"
                 className="flex-1 w-full"
+                disabled={isSubmitting || deleteDriver.isPending}
                 onClick={() => tryNavigate('/drivers')}
               >
                 ביטול
@@ -405,6 +455,46 @@ export default function EditDriverPage() {
             </div>
           </div>
         </form>
+        <AlertDialog
+          open={deleteDialogOpen}
+          onOpenChange={(open) => {
+            setDeleteDialogOpen(open);
+            if (!open) setDeletePassword('');
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>מחיקת נהג</AlertDialogTitle>
+              <AlertDialogDescription>
+                כדי למחוק את הנהג, יש להזין סיסמה ולאשר.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="space-y-2">
+              <Label htmlFor="delete-driver-password">סיסמה</Label>
+              <Input
+                id="delete-driver-password"
+                type="password"
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+                placeholder="הזנת סיסמה למחיקה"
+                dir="ltr"
+              />
+            </div>
+            <AlertDialogFooter className="gap-2">
+              <AlertDialogCancel disabled={deleteDriver.isPending}>ביטול</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  void handleDeleteDriver();
+                }}
+                className="bg-red-600 text-white hover:bg-red-500"
+                disabled={deleteDriver.isPending}
+              >
+                {deleteDriver.isPending ? 'מוחק…' : 'מחק נהג'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </main>
     </div>
   );

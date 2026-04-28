@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useVehicle, useUpdateVehicle, useActiveDriverVehicleAssignments } from '@/hooks/useVehicles';
-import { useDriver, useUpdateDriver } from '@/hooks/useDrivers';
+import { useDriver, useDrivers } from '@/hooks/useDrivers';
 import {
   useVehicleSpecDirty,
   DIRTY_SOURCE_SPEC,
@@ -35,6 +35,7 @@ import {
   ChevronDown,
   ChevronUp,
   ExternalLink,
+  ImagePlus,
 } from 'lucide-react';
 import type { ComplianceStatus } from '@/types/fleet';
 import { VehicleFolders } from '@/components/VehicleFolders';
@@ -42,7 +43,8 @@ import { VehicleDetailQuickActions } from '@/components/vehicles/VehicleDetailQu
 import VehicleDamageSnapshot from '@/components/VehicleDamageSnapshot';
 import { parseDamageSummaryLine } from '@/lib/vehicleDamage';
 import { MISSING_DATA, fmtDriverDate } from '@/components/DriverCard';
-import { displayOwnershipType, canonicalOwnershipType, ownershipSelectDefault } from '@/lib/vehicleOwnership';
+import { displayOwnershipType, canonicalOwnershipType } from '@/lib/vehicleOwnership';
+import { isVehicleExemptFromAnnualTestNow } from '@/lib/vehicleAnnualTest';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -104,24 +106,81 @@ function str(v: string | number | null | undefined): string {
   return s === '' ? MISSING_DATA : s;
 }
 
+function toModelImageSlug(input: string): string {
+  return input
+    .toLowerCase()
+    .replace(/[^a-z0-9\u0590-\u05ff]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function uniqueNonEmpty(items: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of items) {
+    const v = (raw ?? '').trim();
+    if (!v || seen.has(v)) continue;
+    seen.add(v);
+    out.push(v);
+  }
+  return out;
+}
+
+function sanitizeFileExt(name: string): string {
+  const idx = name.lastIndexOf('.');
+  if (idx === -1) return 'jpg';
+  const ext = name.slice(idx + 1).toLowerCase().replace(/[^a-z0-9]/g, '');
+  return ext || 'jpg';
+}
+
 /** שדות מפרט מלא לעריכה inline — ערכים כמחרוזות; תאריכים בפורמט input date */
 type SpecFormState = Record<string, string>;
+const LEASING_COMPANY_OPTIONS = ['הרץ', 'פריים ליס', 'יוניון מוביליטי'] as const;
+
+function normalizeOwnershipForEdit(
+  ownershipRaw: string | null | undefined,
+  leasingCompanyRaw: string | null | undefined,
+): { ownershipType: string; leasingCompany: string } {
+  const ownership = (ownershipRaw ?? '').trim();
+  const leasingCompany = (leasingCompanyRaw ?? '').trim();
+  const canonical = canonicalOwnershipType(ownership);
+  const isKnownLeasingCompany = (LEASING_COMPANY_OPTIONS as readonly string[]).includes(canonical);
+
+  if (ownership === 'ליסינג' || isKnownLeasingCompany) {
+    return {
+      ownershipType: 'ליסינג',
+      leasingCompany: isKnownLeasingCompany ? canonical : leasingCompany,
+    };
+  }
+  if (ownership === 'בעלות חברה') {
+    return { ownershipType: 'בעלות חברה', leasingCompany: '' };
+  }
+  return { ownershipType: '', leasingCompany: leasingCompany };
+}
 
 function vehicleToSpecForm(v: Vehicle): SpecFormState {
   const d = (x: string | null | undefined) => (x && String(x).trim() !== '' ? String(x).slice(0, 10) : '');
+  const normalizedOwnership = normalizeOwnershipForEdit(v.ownership_type, v.leasing_company_name);
   return {
     manufacturer: v.manufacturer ?? '',
     model: v.model ?? '',
     year: v.year != null ? String(v.year) : '',
+    road_ascent_year: v.road_ascent_year != null ? String(v.road_ascent_year) : '',
+    road_ascent_month: v.road_ascent_month != null ? String(v.road_ascent_month) : '',
     color: v.color ?? '',
+    fuel_type: v.fuel_type ?? '',
+    vehicle_standard: v.vehicle_standard ?? '',
+    vat_recognized: v.vat_recognized != null && !Number.isNaN(Number(v.vat_recognized)) ? String(v.vat_recognized) : '',
+    monthly_total_cost: v.monthly_total_cost != null && !Number.isNaN(Number(v.monthly_total_cost)) ? String(v.monthly_total_cost) : '',
+    base_index: v.base_index != null && !Number.isNaN(Number(v.base_index)) ? String(v.base_index) : '',
     engine_volume: v.engine_volume ?? '',
     ignition_code: v.ignition_code ?? '',
-    ownership_type: ownershipSelectDefault(v.ownership_type),
-    leasing_company_name: v.leasing_company_name ?? '',
+    ownership_type: normalizedOwnership.ownershipType,
+    leasing_company_name: normalizedOwnership.leasingCompany,
     pickup_date: d(v.pickup_date),
     purchase_date: d(v.purchase_date),
     sale_date: d(v.sale_date),
     chassis_number: v.chassis_number ?? '',
+    safety_officer: v.safety_officer ?? '',
     average_fuel_consumption:
       v.average_fuel_consumption != null && !Number.isNaN(Number(v.average_fuel_consumption))
         ? String(v.average_fuel_consumption)
@@ -134,7 +193,14 @@ const SPEC_LABELS: Record<string, string> = {
   manufacturer: 'יצרן',
   model: 'דגם',
   year: 'שנת ייצור',
+  road_ascent_year: 'שנת עליה לכביש',
+  road_ascent_month: 'חודש עליה לכביש',
   color: 'צבע',
+  fuel_type: 'סוג דלק',
+  vehicle_standard: 'התקן',
+  vat_recognized: 'מע״מ מוכר',
+  monthly_total_cost: 'עלות ליסינג חודשית',
+  base_index: 'מדד בסיס',
   engine_volume: 'נפח מנוע (סמ״ק)',
   ignition_code: 'קוד הנעה',
   ownership_type: 'סוג בעלות',
@@ -143,10 +209,12 @@ const SPEC_LABELS: Record<string, string> = {
   purchase_date: 'תאריך קניה / תחילת עסקה',
   sale_date: 'תאריך מכירה / סיום עסקה',
   chassis_number: 'מספר שלדה',
+  safety_officer: 'קצין בטיחות',
   average_fuel_consumption: 'צריכת דלק ממוצעת',
   service_interval_km: 'מרווח טיפול מומלץ (ק״מ)',
   assigned_driver_name: 'שם נהג מוקצה',
   assigned_driver_phone: 'טלפון נהג',
+  assigned_driver_id: 'נהג מוקצה',
 };
 
 function HandoverHistoryList({ handovers }: { handovers: any[] }) {
@@ -250,7 +318,7 @@ export default function VehicleDetailPage() {
   const { data: assignedDriver } = useDriver(currentAssignedDriverId || '');
   const { data: handovers } = useHandovers(id);
   const updateVehicle = useUpdateVehicle();
-  const updateDriver = useUpdateDriver();
+  const { data: drivers = [] } = useDrivers();
   const { setDirty, tryNavigate, getIsDirty } = useVehicleSpecDirty();
   const syncFromPricing = useSyncVehicleFromPricing();
   const [isSyncing, setIsSyncing] = useState(false);
@@ -274,6 +342,10 @@ export default function VehicleDetailPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [changeLines, setChangeLines] = useState<string[]>([]);
   const [specSaving, setSpecSaving] = useState(false);
+  const [modelImageOverrideUrl, setModelImageOverrideUrl] = useState<string | null>(null);
+  const [modelImageFallbackIndex, setModelImageFallbackIndex] = useState(0);
+  const [isUploadingModelImage, setIsUploadingModelImage] = useState(false);
+  const modelImageInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!vehicle) return;
@@ -281,13 +353,37 @@ export default function VehicleDetailPage() {
     if (assignedDriver) {
       s.assigned_driver_name = assignedDriver.full_name ?? '';
       s.assigned_driver_phone = assignedDriver.phone ?? '';
+      s.assigned_driver_id = assignedDriver.id ?? '';
     } else {
       s.assigned_driver_name = '';
       s.assigned_driver_phone = '';
+      s.assigned_driver_id = '';
     }
     setSpecForm(s);
     initialSpecRef.current = { ...s };
   }, [vehicle?.id, vehicle?.updated_at, assignedDriver?.id]);
+
+  useEffect(() => {
+    const selectedAssignedId = (specForm.assigned_driver_id ?? '').trim();
+    if (!selectedAssignedId) return;
+    const selected = drivers.find((d) => d.id === selectedAssignedId);
+    if (!selected) return;
+    setSpecForm((prev) => {
+      const nextName = selected.full_name ?? '';
+      const nextPhone = selected.phone ?? '';
+      if (
+        (prev.assigned_driver_name ?? '') === nextName &&
+        (prev.assigned_driver_phone ?? '') === nextPhone
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        assigned_driver_name: nextName,
+        assigned_driver_phone: nextPhone,
+      };
+    });
+  }, [specForm.assigned_driver_id, drivers]);
 
   const specIsDirty = useCallback(() => {
     const a = initialSpecRef.current;
@@ -468,6 +564,7 @@ export default function VehicleDetailPage() {
     );
   }
 
+  const testExempt = isVehicleExemptFromAnnualTestNow(vehicle);
   const test = calculateStatus(vehicle.test_expiry);
   const insurance = calculateStatus(vehicle.insurance_expiry);
   /** מד אוץ מוצג כגבוה מבין current_odometer לבין ק״מ טיפול אחרון (מקורות מרובים) */
@@ -480,6 +577,14 @@ export default function VehicleDetailPage() {
   const taxValuePrice = vehicle.tax_value_price ?? pricingLookup?.usage_value ?? null;
   const taxValueYear = vehicle.tax_year ?? pricingLookup?.usage_year ?? null;
   const adjustedPrice = vehicle.adjusted_price ?? pricingLookup?.adjusted_price ?? null;
+  const ascentMonthYear = (() => {
+    const month = vehicle.road_ascent_month;
+    const year = vehicle.road_ascent_year ?? vehicle.year;
+    if (month != null && month >= 1 && month <= 12 && year != null) {
+      return `${month}/${year}`;
+    }
+    return year != null ? String(year) : MISSING_DATA;
+  })();
 
   const norm = (s: string) => (s ?? '').trim();
   const openSpecConfirm = () => {
@@ -516,7 +621,42 @@ export default function VehicleDetailPage() {
       const y = parseInt(specForm.year, 10);
       if (!Number.isNaN(y)) payload.year = y;
     }
+    if (norm(specForm.road_ascent_year) !== norm(init.road_ascent_year)) {
+      const y = parseInt(specForm.road_ascent_year, 10);
+      (payload as Record<string, unknown>).road_ascent_year = Number.isNaN(y) ? null : y;
+    }
+    if (norm(specForm.road_ascent_month) !== norm(init.road_ascent_month)) {
+      const m = parseInt(specForm.road_ascent_month, 10);
+      (payload as Record<string, unknown>).road_ascent_month =
+        Number.isNaN(m) || m < 1 || m > 12 ? null : m;
+    }
     setIfChanged('color', specForm.color?.trim() || null);
+    setIfChanged('fuel_type', specForm.fuel_type?.trim() || null);
+    setIfChanged('vehicle_standard', specForm.vehicle_standard?.trim() || null);
+    if (norm(specForm.vat_recognized) !== norm(init.vat_recognized)) {
+      const raw = specForm.vat_recognized?.trim() ?? '';
+      if (raw === '') (payload as Record<string, unknown>).vat_recognized = null;
+      else {
+        const n = parseFloat(raw.replace(',', '.'));
+        if (!Number.isNaN(n)) (payload as Record<string, unknown>).vat_recognized = n;
+      }
+    }
+    if (norm(specForm.monthly_total_cost) !== norm(init.monthly_total_cost)) {
+      const raw = specForm.monthly_total_cost?.trim() ?? '';
+      if (raw === '') (payload as Record<string, unknown>).monthly_total_cost = null;
+      else {
+        const n = parseFloat(raw.replace(',', '.'));
+        if (!Number.isNaN(n)) (payload as Record<string, unknown>).monthly_total_cost = n;
+      }
+    }
+    if (norm(specForm.base_index) !== norm(init.base_index)) {
+      const raw = specForm.base_index?.trim() ?? '';
+      if (raw === '') (payload as Record<string, unknown>).base_index = null;
+      else {
+        const n = parseFloat(raw.replace(',', '.'));
+        if (!Number.isNaN(n)) (payload as Record<string, unknown>).base_index = n;
+      }
+    }
     setIfChanged('engine_volume', specForm.engine_volume?.trim() || null);
     setIfChanged('ignition_code', specForm.ignition_code?.trim() || null);
     setIfChanged('ownership_type', specForm.ownership_type?.trim() || null);
@@ -529,6 +669,7 @@ export default function VehicleDetailPage() {
     setIfChanged('purchase_date', dateOrNull('purchase_date'));
     setIfChanged('sale_date', dateOrNull('sale_date'));
     setIfChanged('chassis_number', specForm.chassis_number?.trim() || null);
+    setIfChanged('safety_officer', specForm.safety_officer?.trim() || null);
 
     if (norm(specForm.average_fuel_consumption ?? '') !== norm(init.average_fuel_consumption ?? '')) {
       const t = specForm.average_fuel_consumption?.trim() ?? '';
@@ -548,14 +689,10 @@ export default function VehicleDetailPage() {
     }
 
     const vehicleKeys = Object.keys(payload).filter((k) => k !== 'id');
-    const driverNameChanged =
-      assignedDriver &&
-      norm(specForm.assigned_driver_name ?? '') !== norm(init.assigned_driver_name ?? '');
-    const driverPhoneChanged =
-      assignedDriver &&
-      norm(specForm.assigned_driver_phone ?? '') !== norm(init.assigned_driver_phone ?? '');
+    const assignedDriverIdChanged =
+      norm(specForm.assigned_driver_id ?? '') !== norm(init.assigned_driver_id ?? '');
 
-    if (vehicleKeys.length === 0 && !driverNameChanged && !driverPhoneChanged) {
+    if (vehicleKeys.length === 0 && !assignedDriverIdChanged) {
       setConfirmOpen(false);
       return;
     }
@@ -564,14 +701,17 @@ export default function VehicleDetailPage() {
       if (vehicleKeys.length > 0) {
         await updateVehicle.mutateAsync(payload);
       }
-      if (assignedDriver && (driverNameChanged || driverPhoneChanged)) {
-        const name = specForm.assigned_driver_name?.trim();
-        const phone = specForm.assigned_driver_phone?.trim();
-        await updateDriver.mutateAsync({
-          id: assignedDriver.id,
-          full_name: name || assignedDriver.full_name,
-          phone: phone ? phone : null,
-        });
+      if (assignedDriverIdChanged) {
+        const targetDriverId = (specForm.assigned_driver_id ?? '').trim();
+        if (targetDriverId) {
+          toast.message('שינוי נהג מתבצע דרך מסירת רכב');
+          setConfirmOpen(false);
+          setDirty(DIRTY_SOURCE_SPEC, false);
+          window.location.assign(
+            `/handover/delivery?vehicleId=${encodeURIComponent(vehicle.id)}&driverId=${encodeURIComponent(targetDriverId)}`
+          );
+          return;
+        }
       }
       setConfirmOpen(false);
       const s = vehicleToSpecForm(
@@ -580,6 +720,7 @@ export default function VehicleDetailPage() {
       if (assignedDriver) {
         s.assigned_driver_name = specForm.assigned_driver_name?.trim() ?? '';
         s.assigned_driver_phone = specForm.assigned_driver_phone?.trim() ?? '';
+        s.assigned_driver_id = specForm.assigned_driver_id?.trim() ?? '';
       }
       setSpecForm(s);
       initialSpecRef.current = { ...s };
@@ -666,22 +807,91 @@ export default function VehicleDetailPage() {
   };
 
   const pageFrame = 'mx-auto w-full max-w-[1920px] px-4 sm:px-6';
+  const ownershipLabel = vehicle.ownership_type ? displayOwnershipType(vehicle.ownership_type) : '';
+  const leasingLabelRaw = vehicle.leasing_company_name?.trim() ?? '';
+  const leasingLabel =
+    leasingLabelRaw && leasingLabelRaw !== ownershipLabel && leasingLabelRaw !== canonicalOwnershipType(vehicle.ownership_type)
+      ? leasingLabelRaw
+      : '';
+  const modelSlug = toModelImageSlug(`${vehicle.manufacturer} ${vehicle.model}`);
+  const modelOnlySlug = toModelImageSlug(vehicle.model);
+  const manufacturerRaw = (vehicle.manufacturer ?? '').trim();
+  const modelRaw = (vehicle.model ?? '').trim();
+  const manufacturerModelRaw = `${manufacturerRaw} ${modelRaw}`.trim();
+  const manufacturerModelDash = manufacturerModelRaw.replace(/\s+/g, '-');
+  const manufacturerModelUnderscore = manufacturerModelRaw.replace(/\s+/g, '_');
+  const modelRawDash = modelRaw.replace(/\s+/g, '-');
+  const modelRawUnderscore = modelRaw.replace(/\s+/g, '_');
+  const modelImageDocUrl = (() => {
+    const row = vehicleDocuments.find((d) => String(d.document_type ?? '').trim() === 'model_image');
+    return row?.file_url?.trim() || null;
+  })();
+  const modelImageCandidates = (() => {
+    const bases = uniqueNonEmpty([
+      modelSlug,
+      modelOnlySlug,
+      manufacturerModelRaw,
+      manufacturerModelDash,
+      manufacturerModelUnderscore,
+      modelRaw,
+      modelRawDash,
+      modelRawUnderscore,
+    ]);
+    const exts = ['png', 'jpg', 'jpeg', 'jfif', 'webp'] as const;
+    const localCandidates = bases.flatMap((base) =>
+      exts.map((ext) => `/vehicle-models/${encodeURIComponent(base)}.${ext}`),
+    );
+    return uniqueNonEmpty([modelImageOverrideUrl, modelImageDocUrl, ...localCandidates]);
+  })();
+  const currentModelImageSrc = modelImageCandidates[modelImageFallbackIndex] ?? null;
+
+  const handleModelImageUpload = async (file: File | null) => {
+    if (!file || !vehicle?.id) return;
+    setIsUploadingModelImage(true);
+    try {
+      const ext = sanitizeFileExt(file.name);
+      const uid = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const path = `vehicle-models/${vehicle.id}/${uid}.${ext}`;
+      const contentType = file.type || 'image/jpeg';
+      const { error: uploadErr } = await supabase.storage
+        .from('vehicle-documents')
+        .upload(path, file, { upsert: true, contentType });
+      if (uploadErr) throw uploadErr;
+      const { data } = supabase.storage.from('vehicle-documents').getPublicUrl(path);
+      const url = data?.publicUrl?.trim();
+      if (!url) throw new Error('לא התקבל קישור לתמונה');
+      const { error: insertErr } = await supabase.from('vehicle_documents' as any).insert({
+        vehicle_id: vehicle.id,
+        title: `תמונת דגם — ${vehicle.manufacturer} ${vehicle.model}`,
+        file_url: url,
+        document_type: 'model_image',
+      } as any);
+      if (insertErr) throw insertErr;
+      setModelImageOverrideUrl(url);
+      setModelImageFallbackIndex(0);
+      await refetchVehicleDocuments();
+      toast.success('תמונת הדגם עודכנה');
+    } catch (err) {
+      console.error('[VehicleDetailPage] model image upload failed', err);
+      toast.error('עדכון תמונת דגם נכשל');
+    } finally {
+      setIsUploadingModelImage(false);
+      if (modelImageInputRef.current) modelImageInputRef.current.value = '';
+    }
+  };
 
   return (
     <div className="fleet-screen-page text-white">
       <header className="bg-card border-b border-border sticky top-0 z-10">
-        <div className={`${pageFrame} py-4`}>
-          <div className="flex items-center gap-3">
-            <div>
-              <h1 className="font-bold text-xl">{vehicle.manufacturer} {vehicle.model}</h1>
-              <p className="text-sm text-muted-foreground">{vehicle.plate_number}</p>
-            </div>
+        <div className={`${pageFrame} py-2`}>
+          <div className="flex items-center justify-center">
+            <h1 className="text-center font-bold text-xl">כרטיס רכב</h1>
           </div>
         </div>
       </header>
 
       {/* Tab navigation */}
-      <div className="sticky top-[65px] z-10 bg-card border-b border-border">
+      <div className="sticky top-[57px] z-10 bg-card border-b border-border">
         <div className={pageFrame}>
           <nav className="flex gap-1 overflow-x-auto" aria-label="סעיפי רכב">
             {[
@@ -704,7 +914,7 @@ export default function VehicleDetailPage() {
                     e.preventDefault();
                     confirmLeaveIfDirty(`/vehicles/${vehicle.id}${hash}`);
                   }}
-                  className={`whitespace-nowrap px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  className={`whitespace-nowrap px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
                     active
                       ? 'border-primary text-primary'
                       : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
@@ -718,64 +928,92 @@ export default function VehicleDetailPage() {
         </div>
       </div>
 
-      <main className={`${pageFrame} py-6 space-y-4`}>
+      <main className={`${pageFrame} py-3 space-y-3`}>
         {/* סקירה — פריסה אחת: הירו + בנטו + טבלת מפרט (בלי מחסנית כרטיסים) */}
         {(isOverviewSection || !section) && !isHandoverSection && !isTaxSection && !isDocumentsSection && !isFoldersSection && (
-          <div className="w-full space-y-6">
+          <div className="w-full space-y-3">
             {/* הירו — זהות הרכב */}
-            <div className="relative overflow-hidden rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-slate-800/90 via-slate-900 to-[#0a1628] px-4 py-4 shadow-[0_0_50px_rgba(6,182,212,0.06)] sm:px-6 sm:py-5">
-              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(34,211,238,0.12),transparent)]" />
-              <div className="relative flex flex-col gap-3 sm:flex-row-reverse sm:items-start sm:justify-between">
-                <div className="shrink-0 self-center sm:self-start">
-                  <Button
-                    type="button"
-                    className="bg-cyan-600 hover:bg-cyan-500 font-semibold shadow-lg shadow-cyan-900/30"
-                    onClick={() => {
-                      document.getElementById('spec-full-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                      openSpecConfirm();
-                    }}
-                    disabled={specSaving}
-                  >
-                    {specSaving ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : null}
-                    אישור שינויים
-                  </Button>
-                </div>
-                <div className="min-w-0 flex-1 space-y-1.5 text-center sm:text-right">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-500/70">רכב</p>
-                  <div
-                    dir="ltr"
-                    className="mt-0.5 flex flex-wrap items-baseline justify-center gap-x-4 gap-y-1 sm:justify-end"
-                  >
-                    <p className="order-2 text-sm text-slate-300 sm:order-1">
-                      <span className="text-muted-foreground">נהג משויך: </span>
+            <div className="relative overflow-hidden rounded-2xl border border-[rgba(255,215,0,0.25)] bg-[linear-gradient(135deg,#0b1a2a,#0f2438)] p-6 shadow-[0_18px_42px_rgba(0,0,0,0.38)]">
+              <div className="relative flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between" dir="rtl">
+                <div className="order-2 min-w-0 flex-1 text-center sm:order-1 sm:text-right" style={{ fontFamily: 'Heebo, Assistant, sans-serif' }}>
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-end justify-center gap-x-3 gap-y-1 sm:justify-start">
+                      <span className="inline-flex items-center gap-1 text-sm text-[#9aa3b2] sm:text-base">
+                        <Car className="h-4 w-4 text-[rgba(255,215,0,0.7)]" />
+                        רכב
+                      </span>
+                      <h2 className="font-mono text-4xl font-bold tracking-[0.06em] leading-none text-white sm:text-5xl" dir="ltr">
+                        {str(vehicle.plate_number)}
+                      </h2>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1 sm:justify-start">
+                      <span className="text-sm text-[#9aa3b2] sm:text-base">נהג משויך</span>
                       {assignedDriver ? (
                         <Link
                           to={`/drivers/${assignedDriver.id}`}
-                          className="font-medium text-cyan-300 hover:text-cyan-200 hover:underline"
+                          className="text-2xl font-bold leading-tight text-white hover:text-slate-100 hover:underline sm:text-3xl"
                         >
                           {assignedDriver.full_name}
                         </Link>
                       ) : (
-                        <span className="text-muted-foreground">אין נהג משויך</span>
+                        <span className="text-2xl font-bold leading-tight text-white/70 sm:text-3xl">ללא נהג משויך</span>
                       )}
-                    </p>
-                    <h2
-                      className="order-1 font-mono text-3xl font-black tracking-[0.15em] text-cyan-200 sm:order-2 sm:text-4xl"
-                    >
-                      {str(vehicle.plate_number)}
-                    </h2>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 sm:justify-start">
+                      <span className="text-sm text-[#9aa3b2] sm:text-base">קוד נהג:</span>
+                      <span className="font-mono text-2xl font-bold leading-tight text-white sm:text-3xl" dir="ltr">
+                        {assignedDriver?.driver_code?.trim() ? assignedDriver.driver_code : MISSING_DATA}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 sm:justify-start">
+                      <span className="text-sm text-[#9aa3b2] sm:text-base">קצין בטיחות:</span>
+                      <span className="text-lg font-semibold leading-tight text-white sm:text-2xl">
+                        {str(vehicle.safety_officer)}
+                      </span>
+                    </div>
                   </div>
-                  <p className="pt-0.5 text-base font-medium text-slate-200 sm:text-lg">
-                    {str(vehicle.manufacturer)} {str(vehicle.model)}
-                  </p>
-                  <p className="text-sm text-slate-500">
-                    שנת {vehicle.year ?? '—'}
-                    {vehicle.ownership_type ? ` · ${displayOwnershipType(vehicle.ownership_type)}` : ''}
-                    {canonicalOwnershipType(vehicle.ownership_type) === 'הרץ' &&
-                    vehicle.leasing_company_name?.trim()
-                      ? ` · ${vehicle.leasing_company_name.trim()}`
-                      : ''}
-                  </p>
+
+                  <div className="mt-6 border-t border-[rgba(255,215,0,0.18)] pt-3">
+                    <p className="text-sm text-slate-300 sm:text-base">
+                      שנת ייצור {ascentMonthYear} <span className="mx-2 text-slate-500">|</span> {str(vehicle.model)} <span className="mx-2 text-slate-500">|</span> {str(vehicle.manufacturer)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="order-1 shrink-0 self-center sm:order-2 sm:self-start">
+                  <input
+                    ref={modelImageInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => void handleModelImageUpload(e.target.files?.[0] ?? null)}
+                  />
+                  <button
+                    type="button"
+                    className="group relative block h-[145px] w-[240px] overflow-hidden rounded-2xl border border-[rgba(255,215,0,0.25)] bg-[linear-gradient(145deg,#e8edf4,#cfd8e6)]"
+                    onClick={() => modelImageInputRef.current?.click()}
+                    disabled={isUploadingModelImage}
+                    title="החלפת תמונת דגם"
+                  >
+                    {currentModelImageSrc ? (
+                      <img
+                        src={currentModelImageSrc}
+                        alt={`${vehicle.manufacturer} ${vehicle.model}`}
+                        className="h-full w-full object-cover"
+                        onError={() => setModelImageFallbackIndex((i) => i + 1)}
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
+                        הוספת תמונת דגם
+                      </div>
+                    )}
+                    <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 bg-black/55 py-1 text-[10px] text-slate-200 opacity-0 transition-opacity group-hover:opacity-100">
+                      {isUploadingModelImage ? <Loader2 className="h-3 w-3 animate-spin" /> : <ImagePlus className="h-3 w-3" />}
+                      החלף תמונה
+                    </div>
+                  </button>
                 </div>
               </div>
             </div>
@@ -787,45 +1025,39 @@ export default function VehicleDetailPage() {
             />
 
             {/* בנטו — שלושה מדדים מרכזיים בשורה */}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div className="flex flex-col justify-between rounded-xl border border-white/10 bg-slate-900/60 px-4 py-4">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div className="flex flex-col justify-between rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2.5">
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Gauge className="h-4 w-4 text-cyan-500" />
                   <span className="text-xs font-medium uppercase tracking-wider">מד אוץ</span>
                 </div>
-                <p className="mt-3 font-mono text-2xl font-bold tabular-nums text-white" dir="ltr">
+                <p className="mt-1.5 font-mono text-lg font-bold tabular-nums text-white" dir="ltr">
                   {displayOdometer.toLocaleString()}
                   <span className="mr-1 text-sm font-normal text-muted-foreground">ק״מ</span>
                 </p>
-                <p className="mt-1 text-xs text-muted-foreground">
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   {vehicle.updated_at
                     ? `עודכן ב-${fmtDriverDate(vehicle.updated_at)}`
                     : 'תאריך עדכון לא זמין'}
                   {displayOdometer > odoFromOdometer && odoFromLastService > 0 ? ' · כולל תחזוקה' : ''}
                 </p>
-                <div className="mt-3 space-y-1.5 border-t border-white/10 pt-3">
+                <div className="mt-1.5 border-t border-white/10 pt-1.5">
                   <div className="flex items-center justify-between gap-2 text-xs">
-                    <span className="text-muted-foreground">תאריך טיפול אחרון</span>
+                    <span className="text-muted-foreground">ק״מ לטיפול הבא</span>
                     <span className="font-mono tabular-nums text-slate-200" dir="ltr">
-                      {fmtDriverDate(vehicle.last_service_date)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-2 text-xs">
-                    <span className="text-muted-foreground">ק״מ טיפול אחרון</span>
-                    <span className="font-mono tabular-nums text-slate-200" dir="ltr">
-                      {vehicle.last_service_km != null
-                        ? `${vehicle.last_service_km.toLocaleString()} ק״מ`
+                      {vehicle.next_maintenance_km != null
+                        ? `${Math.max(0, vehicle.next_maintenance_km - displayOdometer).toLocaleString()} ק״מ`
                         : MISSING_DATA}
                     </span>
                   </div>
                 </div>
               </div>
-              <div className="flex flex-col justify-between rounded-xl border border-white/10 bg-slate-900/60 px-4 py-4">
+              <div className="flex flex-col justify-between rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2.5">
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Shield className="h-4 w-4 text-amber-500" />
                   <span className="text-xs font-medium uppercase tracking-wider">תקינות</span>
                 </div>
-                <div className="mt-3 space-y-2">
+                <div className="mt-1.5 space-y-1.5">
                   <div className="flex items-center justify-between gap-2 text-sm">
                     <Link
                       to={`/vehicles/${vehicle.id}?focus=annual_license#vehicle-documents`}
@@ -839,8 +1071,17 @@ export default function VehicleDetailPage() {
                     >
                       טסט
                     </Link>
-                    <span className="font-mono tabular-nums" dir="ltr">{fmtDriverDate(vehicle.test_expiry)}</span>
-                    {test ? <StatusBadge status={test.status} daysLeft={test.daysLeft} compact /> : <Badge variant="outline" className="text-[10px]">{MISSING_DATA}</Badge>}
+                    <span className="font-mono tabular-nums" dir="ltr">
+                      {testExempt ? 'פטור בשנה ראשונה' : fmtDriverDate(vehicle.test_expiry)}
+                    </span>
+                    {test ? (
+                      <StatusBadge status={test.status} daysLeft={test.daysLeft} compact />
+                    ) : (
+                      <Badge variant="outline" className="text-[10px]">{MISSING_DATA}</Badge>
+                    )}
+                    {testExempt ? (
+                      <Badge className="border-cyan-500/40 bg-cyan-500/10 text-[10px] text-cyan-100">אגרת בלבד</Badge>
+                    ) : null}
                   </div>
                   <div className="flex items-center justify-between gap-2 text-sm">
                     <Link
@@ -860,160 +1101,347 @@ export default function VehicleDetailPage() {
                   </div>
                 </div>
               </div>
-              <div className="flex flex-col justify-between rounded-xl border border-white/10 bg-slate-900/60 px-4 py-4">
+              <div className="flex flex-col justify-between rounded-xl border border-white/10 bg-slate-900/60 px-3 py-2.5">
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Wrench className="h-4 w-4 text-purple-400" />
                   <span className="text-xs font-medium uppercase tracking-wider">טיפול הבא</span>
                 </div>
-                <p className="mt-3 text-sm font-medium">{fmtDriverDate(vehicle.next_maintenance_date)}</p>
-                <p className="mt-1 font-mono text-sm tabular-nums text-slate-300" dir="ltr">
-                  {vehicle.next_maintenance_km != null ? `${vehicle.next_maintenance_km.toLocaleString()} ק״מ` : MISSING_DATA}
-                </p>
-                {vehicle.service_interval_km != null && (
-                  <p className="mt-2 text-xs text-muted-foreground" dir="ltr">
-                    מרווח מומלץ: {vehicle.service_interval_km.toLocaleString()} ק״מ
-                  </p>
-                )}
+                <div className="mt-1.5 space-y-1 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">תאריך טיפול אחרון</span>
+                    <span className="font-mono tabular-nums text-slate-200" dir="ltr">
+                      {fmtDriverDate(vehicle.last_service_date)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">ק״מ טיפול אחרון</span>
+                    <span className="font-mono tabular-nums text-slate-200" dir="ltr">
+                      {vehicle.last_service_km != null
+                        ? `${vehicle.last_service_km.toLocaleString()} ק״מ`
+                        : MISSING_DATA}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">תאריך טיפול הבא</span>
+                    <span className="font-mono tabular-nums text-slate-200" dir="ltr">
+                      {fmtDriverDate(vehicle.next_maintenance_date)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">ק״מ טיפול הבא</span>
+                    <span className="font-mono tabular-nums text-slate-200" dir="ltr">
+                      {vehicle.next_maintenance_km != null
+                        ? `${vehicle.next_maintenance_km.toLocaleString()} ק״מ`
+                        : MISSING_DATA}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 
             {/* מפרט מלא — עריכה ישירה + אישור שינויים */}
             <div id="spec-full-section" className="overflow-hidden rounded-xl border border-white/10 bg-slate-900/40">
-              <div className="border-b border-white/10 bg-white/[0.03] px-4 py-3">
-                <h3 className="text-sm font-semibold text-slate-200">מפרט מלא</h3>
-                <p className="text-xs text-muted-foreground">עריכה ישירה — לחץ אישור שינויים בהירו לשמירה</p>
-              </div>
-              {/* dir=ltr כדי שעמודת תאריכים תישאר משמאל ועמודת יצרן מימין (עקביות עם מסך) */}
-              <div className="grid grid-cols-1 gap-0 md:grid-cols-2" dir="ltr">
-                {/* עמודה שמאלית: תאריכי קליטה / קניה / מכירה — רישוי/ביטוח/טסט/צמיגים/טיפול מעודכנים מהריבועים למעלה */}
-                <div className="space-y-2 border-t border-white/10 p-3 md:border-t-0 md:border-e md:border-white/10">
-                  <div className="flex flex-col gap-1" dir="rtl">
-                    <FleetDatePicker
-                      label="תאריך קליטה"
-                      className="[&_input]:h-9"
-                      value={specForm.pickup_date ?? ''}
-                      onChange={(ymd) => setSpecForm((p) => ({ ...p, pickup_date: ymd }))}
-                    />
+              <div className="border-b border-white/10 bg-white/[0.03] px-3 py-2">
+                <div className="grid grid-cols-[1fr_auto_1fr] items-center">
+                  <div className="justify-self-start">
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8 bg-cyan-600 px-3 text-xs hover:bg-cyan-500"
+                      onClick={() => {
+                        document.getElementById('spec-full-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        openSpecConfirm();
+                      }}
+                      disabled={specSaving}
+                    >
+                      {specSaving ? <Loader2 className="ml-1 h-3.5 w-3.5 animate-spin" /> : null}
+                      אישור שינויים
+                    </Button>
                   </div>
-                  <FleetDatePicker
-                    label="תאריך קניה / תחילת עסקה"
-                    className="[&_input]:h-9"
-                    value={specForm.purchase_date ?? ''}
-                    onChange={(ymd) => setSpecForm((p) => ({ ...p, purchase_date: ymd }))}
-                  />
-                  <FleetDatePicker
-                    label="תאריך מכירה / סיום עסקה"
-                    className="[&_input]:h-9"
-                    value={specForm.sale_date ?? ''}
-                    onChange={(ymd) => setSpecForm((p) => ({ ...p, sale_date: ymd }))}
-                  />
-                  <p className="text-xs leading-relaxed text-muted-foreground" dir="rtl">
-                    לעדכון רישוי שנתי, ביטוח, צמיגים, טיפול או ק״מ השתמשי בריבועים מתחת לכותרת הרכב — הקבצים נשמרים בלשונית &quot;מסמכים&quot; עם כותרת מתאימה.
-                  </p>
+                  <h3 className="justify-self-center text-sm font-semibold text-slate-200">מפרט מלא</h3>
+                  <div />
                 </div>
-                {/* עמודה ימנית: יצרן וכו׳ */}
-                <div className="space-y-2 border-t border-white/10 p-3 md:border-t-0 md:border-s md:border-white/10">
-                  {(
-                    [
-                      ['manufacturer', 'יצרן'],
-                      ['model', 'דגם'],
-                      ['year', 'שנת ייצור'],
-                      ['color', 'צבע'],
-                      ['engine_volume', 'נפח מנוע (סמ״ק)'],
-                      ['ignition_code', 'קוד הנעה'],
-                    ] as const
-                  ).map(([key, label]) => (
-                    <div key={key} className="flex flex-col gap-1" dir="rtl">
-                      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+              </div>
+              <div className="space-y-2 border-t border-white/10 p-2.5" dir="rtl">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div className="flex flex-col gap-2 sm:flex-row-reverse">
+                    <div className="flex-1 flex flex-col gap-1">
+                      <span className="text-xs font-medium text-muted-foreground">יצרן</span>
                       <Input
-                        type={key === 'year' ? 'number' : 'text'}
                         className="h-9 bg-background/80"
-                        dir={key === 'engine_volume' || key === 'year' ? 'ltr' : undefined}
-                        value={specForm[key] ?? ''}
-                        onChange={(e) => setSpecForm((p) => ({ ...p, [key]: e.target.value }))}
+                        value={specForm.manufacturer ?? ''}
+                        onChange={(e) => setSpecForm((p) => ({ ...p, manufacturer: e.target.value }))}
                       />
                     </div>
-                  ))}
-                  <div className="flex flex-col gap-1" dir="rtl">
-                    <span className="text-xs font-medium text-muted-foreground">מספר שלדה</span>
-                    <Input
-                      className="h-9 bg-background/80"
-                      dir="ltr"
-                      value={specForm.chassis_number ?? ''}
-                      onChange={(e) => setSpecForm((p) => ({ ...p, chassis_number: e.target.value }))}
-                      placeholder="VIN / מספר שלדה"
-                    />
+                    <div className="flex-1 flex flex-col gap-1">
+                      <span className="text-xs font-medium text-muted-foreground">דגם</span>
+                      <Input
+                        className="h-9 bg-background/80"
+                        value={specForm.model ?? ''}
+                        onChange={(e) => setSpecForm((p) => ({ ...p, model: e.target.value }))}
+                      />
+                    </div>
                   </div>
-                  <div className="flex flex-col gap-1" dir="rtl">
-                    <span className="text-xs font-medium text-muted-foreground">צריכת דלק ממוצעת</span>
-                    <Input
-                      type="text"
-                      inputMode="decimal"
-                      className="h-9 bg-background/80"
-                      dir="ltr"
-                      placeholder="למשל 6.5"
-                      value={specForm.average_fuel_consumption ?? ''}
-                      onChange={(e) => setSpecForm((p) => ({ ...p, average_fuel_consumption: e.target.value }))}
-                    />
+                  <div className="flex flex-col gap-2 sm:flex-row-reverse">
+                    <div className="flex-1 flex flex-col gap-1">
+                      <FleetDatePicker
+                        label="תאריך קניה / תחילת עסקה"
+                        className="[&_input]:h-9"
+                        value={specForm.purchase_date ?? ''}
+                        onChange={(ymd) => setSpecForm((p) => ({ ...p, purchase_date: ymd }))}
+                      />
+                    </div>
+                    <div className="flex-1 flex flex-col gap-1">
+                      <FleetDatePicker
+                        label="תאריך מכירה / סיום עסקה"
+                        className="[&_input]:h-9"
+                        value={specForm.sale_date ?? ''}
+                        onChange={(ymd) => setSpecForm((p) => ({ ...p, sale_date: ymd }))}
+                      />
+                    </div>
                   </div>
-                  <div className="flex flex-col gap-1" dir="rtl">
-                    <span className="text-xs font-medium text-muted-foreground">מרווח טיפול מומלץ (ק״מ)</span>
-                    <Input
-                      type="number"
-                      min={0}
-                      className="h-9 bg-background/80"
-                      dir="ltr"
-                      placeholder="למשל 15000"
-                      value={specForm.service_interval_km ?? ''}
-                      onChange={(e) => setSpecForm((p) => ({ ...p, service_interval_km: e.target.value }))}
-                    />
+                </div>
+
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div className="flex flex-col gap-2 sm:flex-row-reverse">
+                    <div className="flex-1 flex flex-col gap-1">
+                      <span className="text-xs font-medium text-muted-foreground">שנת ייצור</span>
+                      <Input type="number" className="h-9 bg-background/80" dir="ltr" value={specForm.year ?? ''} onChange={(e) => setSpecForm((p) => ({ ...p, year: e.target.value }))} />
+                    </div>
+                    <div className="flex-1 flex flex-col gap-1">
+                      <span className="text-xs font-medium text-muted-foreground">חודש עליה לכביש</span>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={12}
+                        className="h-9 bg-background/80"
+                        dir="ltr"
+                        value={specForm.road_ascent_month ?? ''}
+                        onChange={(e) => setSpecForm((p) => ({ ...p, road_ascent_month: e.target.value }))}
+                      />
+                    </div>
+                    <div className="flex-1 flex flex-col gap-1">
+                      <span className="text-xs font-medium text-muted-foreground">סוג דלק</span>
+                      <Select
+                        value={specForm.fuel_type || 'none'}
+                        onValueChange={(v) => setSpecForm((p) => ({ ...p, fuel_type: v === 'none' ? '' : v }))}
+                      >
+                        <SelectTrigger className="h-9 bg-background/80">
+                          <SelectValue placeholder="בחר סוג דלק" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">—</SelectItem>
+                          <SelectItem value="בנזין">בנזין</SelectItem>
+                          <SelectItem value="סולר">סולר</SelectItem>
+                          <SelectItem value="חשמל">חשמל</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex-1 flex flex-col gap-1">
+                      <span className="text-xs font-medium text-muted-foreground">צבע</span>
+                      <Input className="h-9 bg-background/80" value={specForm.color ?? ''} onChange={(e) => setSpecForm((p) => ({ ...p, color: e.target.value }))} />
+                    </div>
                   </div>
-                  <div className="flex flex-col gap-1" dir="rtl">
-                    <span className="text-xs font-medium text-muted-foreground">נהג מוקצה</span>
-                    <Input
-                      className="h-9 bg-background/80"
-                      value={specForm.assigned_driver_name ?? ''}
-                      onChange={(e) => setSpecForm((p) => ({ ...p, assigned_driver_name: e.target.value }))}
-                      placeholder={assignedDriver ? undefined : 'אין נהג מוקצה'}
-                      disabled={!assignedDriver}
-                    />
+                  <div className="flex flex-col gap-2 sm:flex-row-reverse">
+                    <div className="flex-1 flex flex-col gap-1">
+                      <span className="text-xs font-medium text-muted-foreground">סוג בעלות</span>
+                      <Select
+                        value={specForm.ownership_type || 'none'}
+                        onValueChange={(v) =>
+                          setSpecForm((p) => ({
+                            ...p,
+                            ownership_type: v === 'none' ? '' : v,
+                            leasing_company_name: v === 'ליסינג' ? p.leasing_company_name : '',
+                          }))
+                        }
+                      >
+                        <SelectTrigger className="h-9 bg-background/80">
+                          <SelectValue placeholder="בחר" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">—</SelectItem>
+                          <SelectItem value="ליסינג">ליסינג</SelectItem>
+                          <SelectItem value="בעלות חברה">בעלות חברה</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex-1 flex flex-col gap-1">
+                      <span className="text-xs font-medium text-muted-foreground">חברת ליסינג</span>
+                      <Select
+                        value={specForm.leasing_company_name || 'none'}
+                        onValueChange={(v) =>
+                          setSpecForm((p) => ({
+                            ...p,
+                            leasing_company_name: v === 'none' ? '' : v,
+                          }))
+                        }
+                        disabled={specForm.ownership_type !== 'ליסינג'}
+                      >
+                        <SelectTrigger className="h-9 bg-background/80">
+                          <SelectValue placeholder={specForm.ownership_type === 'ליסינג' ? 'בחר חברת ליסינג' : 'זמין רק בליסינג'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">—</SelectItem>
+                          {LEASING_COMPANY_OPTIONS.map((company) => (
+                            <SelectItem key={company} value={company}>
+                              {company}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
-                  <div className="flex flex-col gap-1" dir="rtl">
-                    <span className="text-xs font-medium text-muted-foreground">טלפון נהג</span>
-                    <Input
-                      className="h-9 bg-background/80"
-                      dir="ltr"
-                      value={specForm.assigned_driver_phone ?? ''}
-                      onChange={(e) => setSpecForm((p) => ({ ...p, assigned_driver_phone: e.target.value }))}
-                      placeholder={assignedDriver ? undefined : '—'}
-                      disabled={!assignedDriver}
-                    />
+                </div>
+
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div className="flex flex-col gap-2 sm:flex-row-reverse">
+                    <div className="flex-1 flex flex-col gap-1">
+                      <span className="text-xs font-medium text-muted-foreground">נפח מנוע (סמ״ק)</span>
+                      <Input className="h-9 bg-background/80" dir="ltr" value={specForm.engine_volume ?? ''} onChange={(e) => setSpecForm((p) => ({ ...p, engine_volume: e.target.value }))} />
+                    </div>
+                    <div className="flex-1 flex flex-col gap-1">
+                      <span className="text-xs font-medium text-muted-foreground">קוד הנעה</span>
+                      <Input className="h-9 bg-background/80" dir="ltr" value={specForm.ignition_code ?? ''} onChange={(e) => setSpecForm((p) => ({ ...p, ignition_code: e.target.value }))} />
+                    </div>
                   </div>
-                  <div className="flex flex-col gap-1">
-                    <span className="text-xs font-medium text-muted-foreground">סוג בעלות</span>
-                    <Select
-                      value={specForm.ownership_type || 'none'}
-                      onValueChange={(v) => setSpecForm((p) => ({ ...p, ownership_type: v === 'none' ? '' : v }))}
-                    >
-                      <SelectTrigger className="h-9 bg-background/80">
-                        <SelectValue placeholder="בחר" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">—</SelectItem>
-                        <SelectItem value="הרץ">הרץ</SelectItem>
-                        <SelectItem value="יוניון מוביליטי">יוניון מוביליטי</SelectItem>
-                        <SelectItem value="פריים ליס">פריים ליס</SelectItem>
-                        <SelectItem value="rental">השכרה (ישן)</SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <div className="flex flex-col gap-2 sm:flex-row-reverse">
+                    <div className="flex-1 flex flex-col gap-1">
+                      <span className="text-xs font-medium text-muted-foreground">מספר שלדה</span>
+                      <Input className="h-9 bg-background/80" dir="ltr" value={specForm.chassis_number ?? ''} onChange={(e) => setSpecForm((p) => ({ ...p, chassis_number: e.target.value }))} placeholder="VIN / מספר שלדה" />
+                    </div>
+                    <div className="flex-1 flex flex-col gap-1">
+                      <FleetDatePicker label="תאריך קליטה" className="[&_input]:h-9" value={specForm.pickup_date ?? ''} onChange={(ymd) => setSpecForm((p) => ({ ...p, pickup_date: ymd }))} />
+                    </div>
                   </div>
-                  <div className="flex flex-col gap-1" dir="rtl">
-                    <span className="text-xs font-medium text-muted-foreground">חברת ליסינג</span>
-                    <Input
-                      className="h-9 bg-background/80"
-                      value={specForm.leasing_company_name ?? ''}
-                      onChange={(e) => setSpecForm((p) => ({ ...p, leasing_company_name: e.target.value }))}
-                    />
+                </div>
+
+                
+
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div className="flex flex-col gap-2 sm:flex-row-reverse">
+                    <div className="flex-1 flex flex-col gap-1">
+                      <span className="text-xs font-medium text-muted-foreground">נהג מוקצה</span>
+                      <Select
+                        value={specForm.assigned_driver_id?.trim() ? specForm.assigned_driver_id : 'none'}
+                        onValueChange={(value) => {
+                          const selectedId = value === 'none' ? '' : value;
+                          const selected = drivers.find((d) => d.id === selectedId);
+                          setSpecForm((p) => ({
+                            ...p,
+                            assigned_driver_id: selectedId,
+                            assigned_driver_name: selected?.full_name ?? '',
+                            assigned_driver_phone: selected?.phone ?? '',
+                          }));
+                        }}
+                      >
+                        <SelectTrigger className="h-9 bg-background/80">
+                          <SelectValue placeholder="בחר נהג" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">ללא נהג מוקצה</SelectItem>
+                          {drivers.map((d) => (
+                            <SelectItem key={d.id} value={d.id}>
+                              {d.full_name}
+                              {d.driver_code?.trim() ? ` (${d.driver_code})` : ''}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex-1 flex flex-col gap-1">
+                      <span className="text-xs font-medium text-muted-foreground">טלפון נהג</span>
+                      <Input
+                        className="h-9 bg-background/80"
+                        dir="ltr"
+                        value={specForm.assigned_driver_phone ?? ''}
+                        placeholder={specForm.assigned_driver_id ? undefined : '—'}
+                        readOnly
+                        disabled
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row-reverse">
+                    <div className="flex-1 flex flex-col gap-1">
+                      <span className="text-xs font-medium text-muted-foreground">התקן</span>
+                      <Input
+                        className="h-9 bg-background/80"
+                        value={specForm.vehicle_standard ?? ''}
+                        onChange={(e) => setSpecForm((p) => ({ ...p, vehicle_standard: e.target.value }))}
+                        placeholder="למשל Euro 6"
+                      />
+                    </div>
+                    <div className="flex-1 flex flex-col gap-1">
+                      <span className="text-xs font-medium text-muted-foreground">מע״מ מוכר</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        className="h-9 bg-background/80"
+                        dir="ltr"
+                        placeholder="למשל 17"
+                        value={specForm.vat_recognized ?? ''}
+                        onChange={(e) => setSpecForm((p) => ({ ...p, vat_recognized: e.target.value }))}
+                      />
+                    </div>
+                    <div className="flex-1 flex flex-col gap-1">
+                      <span className="text-xs font-medium text-muted-foreground">קצין בטיחות</span>
+                      <Input
+                        className="h-9 bg-background/80"
+                        value={specForm.safety_officer ?? ''}
+                        onChange={(e) => setSpecForm((p) => ({ ...p, safety_officer: e.target.value }))}
+                        placeholder="שם קצין בטיחות"
+                      />
+                    </div>
+                    <div className="flex-1 flex flex-col gap-1">
+                      <span className="text-xs font-medium text-muted-foreground">עלות ליסינג חודשית</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        className="h-9 bg-background/80"
+                        dir="ltr"
+                        placeholder="למשל 3200"
+                        value={specForm.monthly_total_cost ?? ''}
+                        onChange={(e) => setSpecForm((p) => ({ ...p, monthly_total_cost: e.target.value }))}
+                      />
+                    </div>
+                    <div className="flex-1 flex flex-col gap-1">
+                      <span className="text-xs font-medium text-muted-foreground">מדד בסיס</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        className="h-9 bg-background/80"
+                        dir="ltr"
+                        placeholder="למשל 100.5"
+                        value={specForm.base_index ?? ''}
+                        onChange={(e) => setSpecForm((p) => ({ ...p, base_index: e.target.value }))}
+                      />
+                    </div>
+                    <div className="flex-1 flex flex-col gap-1">
+                      <span className="text-xs font-medium text-muted-foreground">מרווח טיפול מומלץ (ק״מ)</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        className="h-9 bg-background/80"
+                        dir="ltr"
+                        placeholder="למשל 15000"
+                        value={specForm.service_interval_km ?? ''}
+                        onChange={(e) => setSpecForm((p) => ({ ...p, service_interval_km: e.target.value }))}
+                      />
+                    </div>
+                    <div className="flex-1 flex flex-col gap-1">
+                      <span className="text-xs font-medium text-muted-foreground">צריכת דלק ממוצעת</span>
+                      <Input
+                        type="text"
+                        inputMode="decimal"
+                        className="h-9 bg-background/80"
+                        dir="ltr"
+                        placeholder="למשל 6.5"
+                        value={specForm.average_fuel_consumption ?? ''}
+                        onChange={(e) => setSpecForm((p) => ({ ...p, average_fuel_consumption: e.target.value }))}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>

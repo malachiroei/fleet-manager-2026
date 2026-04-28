@@ -296,6 +296,7 @@ export function DriverCard({
               <FieldRow label="קוד קבוצה" className="dir-ltr">
                 {str(driver.group_code)}
               </FieldRow>
+              <FieldRow label="קצין בטיחות">{str(driver.safety_officer)}</FieldRow>
               <FieldRow label="כשירות">{str(driver.eligibility)}</FieldRow>
               <FieldRow label="ת. תחילת עבודה">{fmtDriverDate(driver.work_start_date)}</FieldRow>
             </SectionBlock>

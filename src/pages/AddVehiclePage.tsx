@@ -83,6 +83,26 @@ export default function AddVehiclePage() {
         engine_volume: formData.get('engine_volume') as string || null,
         color: formData.get('color') as string || null,
         ignition_code: formData.get('ignition_code') as string || null,
+        fuel_type: formData.get('fuel_type') as string || null,
+        vehicle_standard: formData.get('vehicle_standard') as string || null,
+        vat_recognized: (() => {
+          const raw = (formData.get('vat_recognized') as string)?.trim();
+          if (!raw) return null;
+          const n = parseFloat(raw.replace(',', '.'));
+          return Number.isNaN(n) ? null : n;
+        })(),
+        monthly_total_cost: (() => {
+          const raw = (formData.get('monthly_total_cost') as string)?.trim();
+          if (!raw) return null;
+          const n = parseFloat(raw.replace(',', '.'));
+          return Number.isNaN(n) ? null : n;
+        })(),
+        base_index: (() => {
+          const raw = (formData.get('base_index') as string)?.trim();
+          if (!raw) return null;
+          const n = parseFloat(raw.replace(',', '.'));
+          return Number.isNaN(n) ? null : n;
+        })(),
         is_active: isActive,
         assigned_driver_id: null,
         pickup_date: pickupDate.trim() || null,
@@ -94,6 +114,7 @@ export default function AddVehiclePage() {
           : null,
         ownership_type: formData.get('ownership_type') as string || null,
         leasing_company_name: formData.get('leasing_company_name') as string || null,
+        safety_officer: formData.get('safety_officer') as string || null,
         last_odometer_date: lastOdometerDate.trim() || null,
         manufacturer_code: manufacturerCode || null,
         model_code: modelCode || null,
@@ -234,6 +255,35 @@ export default function AddVehiclePage() {
                     dir="ltr"
                   />
                 </div>
+                <div>
+                  <Label htmlFor="fuel_type">סוג דלק</Label>
+                  <Select name="fuel_type">
+                    <SelectTrigger>
+                      <SelectValue placeholder="בחר סוג דלק" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="בנזין">בנזין</SelectItem>
+                      <SelectItem value="סולר">סולר</SelectItem>
+                      <SelectItem value="חשמל">חשמל</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="vehicle_standard">התקן</Label>
+                  <Input id="vehicle_standard" name="vehicle_standard" placeholder="למשל Euro 6" />
+                </div>
+                <div>
+                  <Label htmlFor="vat_recognized">מע״מ מוכר</Label>
+                  <Input id="vat_recognized" name="vat_recognized" type="number" step="0.01" min="0" placeholder="למשל 17" dir="ltr" />
+                </div>
+                <div>
+                  <Label htmlFor="monthly_total_cost">עלות ליסינג חודשית</Label>
+                  <Input id="monthly_total_cost" name="monthly_total_cost" type="number" step="0.01" min="0" placeholder="למשל 3200" dir="ltr" />
+                </div>
+                <div>
+                  <Label htmlFor="base_index">מדד בסיס</Label>
+                  <Input id="base_index" name="base_index" type="number" step="0.01" min="0" placeholder="למשל 100.5" dir="ltr" />
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -276,6 +326,14 @@ export default function AddVehiclePage() {
               </div>
 
               <FleetDatePicker id="pickup_date" label="תאריך קליטה לחברה" value={pickupDate} onChange={setPickupDate} />
+              <div>
+                <Label htmlFor="safety_officer">קצין בטיחות</Label>
+                <Input
+                  id="safety_officer"
+                  name="safety_officer"
+                  placeholder="שם קצין בטיחות"
+                />
+              </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>

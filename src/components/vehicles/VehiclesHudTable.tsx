@@ -28,6 +28,12 @@ import {
 import { cn } from '@/lib/utils';
 import { displayOwnershipType } from '@/lib/vehicleOwnership';
 import { fmtDriverDate } from '@/components/DriverCard';
+import {
+  urgencyForDocDate,
+  urgencyForVehicleTest,
+  daysUntilCalendarDate,
+  isVehicleExemptFromAnnualTestNow,
+} from '@/lib/vehicleAnnualTest';
 import { AlertTriangle, ChevronLeft, ChevronRight, MoreHorizontal, Car, IdCard, UserX } from 'lucide-react';
 
 const PAGE_SIZE = 10;
@@ -38,40 +44,18 @@ export type VehicleQuickFilter = 'all' | 'inactive' | 'docs_warn' | 'docs_expire
 export function vehicleHasDocExpired(v: Vehicle): boolean {
   if (!v.is_active) return false;
   return (
-    urgencyForVehicleDocDate(v.test_expiry) === 'expired' ||
-    urgencyForVehicleDocDate(v.insurance_expiry) === 'expired'
+    urgencyForVehicleTest(v) === 'expired' ||
+    urgencyForDocDate(v.insurance_expiry) === 'expired'
   );
 }
 
 /** רכב פעיל עם טסט/ביטוח בחלון 30 יום (ללא פג תוקף באחד מהם) */
 export function vehicleHasDocWarnNoExpired(v: Vehicle): boolean {
   if (!v.is_active) return false;
-  const t = urgencyForVehicleDocDate(v.test_expiry);
-  const i = urgencyForVehicleDocDate(v.insurance_expiry);
+  const t = urgencyForVehicleTest(v);
+  const i = urgencyForDocDate(v.insurance_expiry);
   if (t === 'expired' || i === 'expired') return false;
   return t === 'warn' || i === 'warn';
-}
-
-/** ימים עד תוקף (חצות); null אם אין תאריך תקף */
-function daysUntilCalendarDate(raw: string | null | undefined): number | null {
-  if (raw == null || String(raw).trim() === '') return null;
-  const expiry = new Date(raw);
-  if (Number.isNaN(expiry.getTime())) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  expiry.setHours(0, 0, 0, 0);
-  return Math.ceil((expiry.getTime() - today.getTime()) / 86400000);
-}
-
-/** תואם לסינון KPI «טסט/ביטוח»: פג או פחות מ־30 יום */
-export type DocExpiryUrgency = 'ok' | 'warn' | 'expired';
-
-export function urgencyForVehicleDocDate(raw: string | null | undefined): DocExpiryUrgency {
-  const days = daysUntilCalendarDate(raw);
-  if (days === null) return 'ok';
-  if (days < 0) return 'expired';
-  if (days < 30) return 'warn';
-  return 'ok';
 }
 
 function complianceRank(s: ComplianceStatus): number {
@@ -83,8 +67,8 @@ function complianceRank(s: ComplianceStatus): number {
 /** סטטוס תצוגה: שדה `status` מה-DB יחד עם טסט/ביטוח (כמו סינון הכרטיסייה) */
 function effectiveVehicleComplianceStatus(v: Vehicle): ComplianceStatus {
   if (!v.is_active) return 'valid';
-  const testU = urgencyForVehicleDocDate(v.test_expiry);
-  const insU = urgencyForVehicleDocDate(v.insurance_expiry);
+  const testU = urgencyForVehicleTest(v);
+  const insU = urgencyForDocDate(v.insurance_expiry);
   let fromDocs: ComplianceStatus = 'valid';
   if (testU === 'expired' || insU === 'expired') fromDocs = 'expired';
   else if (testU === 'warn' || insU === 'warn') fromDocs = 'warning';
@@ -97,11 +81,12 @@ function effectiveVehicleComplianceStatus(v: Vehicle): ComplianceStatus {
 function statusPillTitle(v: Vehicle): string {
   if (!v.is_active) return 'רכב מסומן כלא פעיל';
   const bits: string[] = [];
-  const t = urgencyForVehicleDocDate(v.test_expiry);
-  const i = urgencyForVehicleDocDate(v.insurance_expiry);
+  const t = urgencyForVehicleTest(v);
+  const i = urgencyForDocDate(v.insurance_expiry);
   const dt = daysUntilCalendarDate(v.test_expiry);
   const di = daysUntilCalendarDate(v.insurance_expiry);
-  if (t === 'expired') bits.push(`טסט פג (${fmtDriverDate(v.test_expiry)})`);
+  if (isVehicleExemptFromAnnualTestNow(v)) bits.push('טסט: פטור בשנה הראשונה');
+  else if (t === 'expired') bits.push(`טסט פג (${fmtDriverDate(v.test_expiry)})`);
   else if (t === 'warn' && dt != null) bits.push(`טסט: נותרו ${dt} ימים · ${fmtDriverDate(v.test_expiry)}`);
   if (i === 'expired') bits.push(`ביטוח פג (${fmtDriverDate(v.insurance_expiry)})`);
   else if (i === 'warn' && di != null) bits.push(`ביטוח: נותרו ${di} ימים · ${fmtDriverDate(v.insurance_expiry)}`);
@@ -124,14 +109,20 @@ function vehicleTypeLabel(v: Vehicle): string {
 /** פירוט טסט/ביטוח (ולעיתים סטטוס מערכת) מתחת לתג — כדי לראות למה השורה מסומנת בלי עמודות נפרדות */
 function VehicleComplianceDocSubtext({ v }: { v: Vehicle }) {
   if (!v.is_active) return null;
-  const t = urgencyForVehicleDocDate(v.test_expiry);
-  const i = urgencyForVehicleDocDate(v.insurance_expiry);
+  const t = urgencyForVehicleTest(v);
+  const i = urgencyForDocDate(v.insurance_expiry);
   const dt = daysUntilCalendarDate(v.test_expiry);
   const di = daysUntilCalendarDate(v.insurance_expiry);
   const docNonOk = t !== 'ok' || i !== 'ok';
   const rows: { key: string; className: string; children: ReactNode }[] = [];
 
-  if (t === 'expired') {
+  if (isVehicleExemptFromAnnualTestNow(v)) {
+    rows.push({
+      key: 'texempt',
+      className: 'text-emerald-200/95',
+      children: <>טסט: פטור בשנה הראשונה (נדרשת אגרת רישיון בלבד)</>,
+    });
+  } else if (t === 'expired') {
     rows.push({
       key: 'te',
       className: 'text-red-200/95',
