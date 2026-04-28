@@ -12,6 +12,7 @@ import {
   DialogPortal,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { toast } from '@/hooks/use-toast';
 import { ANDROID_WEBCAM_WARMUP_POST_STOP_MS } from '@/lib/mobilePhotoIngest';
 
 type WebcamCaptureProps = {
@@ -728,16 +729,32 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     });
   }, []);
 
+  const debugStep = useCallback((step: string, details?: Record<string, unknown>) => {
+    if (details) {
+      console.log(`[WebcamCapture][debug] ${step}`, details);
+    } else {
+      console.log(`[WebcamCapture][debug] ${step}`);
+    }
+    toast({
+      title: `Webcam debug: ${step}`,
+      description: details ? JSON.stringify(details) : undefined,
+    });
+  }, []);
+
   const finalizeDeliverCapture = useCallback(
     async (blob: Blob | null) => {
+      debugStep('finalize:start', { hasBlob: Boolean(blob), blobSize: blob?.size ?? 0 });
       if (!blob || blob.size < 200) {
+        debugStep('finalize:invalid-blob', { blobSize: blob?.size ?? 0 });
         setError('יצירת התמונה נכשלה או שהקובץ ריק');
         return;
       }
       try {
         const name = `capture-${Date.now()}.jpg`;
         const workFile = new File([blob], name, { type: 'image/jpeg' });
+        debugStep('finalize:file-created', { name: workFile.name, size: workFile.size });
         if (!workFile.size || workFile.size < 200) {
+          debugStep('finalize:file-invalid', { fileSize: workFile.size });
           setError('יצירת התמונה נכשלה או שהקובץ ריק');
           return;
         }
@@ -745,33 +762,66 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
         if (cameraProfileRef.current === 'environment') {
           maybePersistRearDeviceId(streamRef.current);
         }
+        debugStep('finalize:stopping-stream');
         stopStream(streamRef.current);
         streamRef.current = null;
         if (videoRef.current) videoRef.current.srcObject = null;
+        const streamStopped = streamRef.current === null;
+        debugStep('finalize:stream-stopped', { streamStopped, fileSize: workFile.size });
+        if (!streamStopped) {
+          setError('שגיאה בעצירת המצלמה לפני מסירת הקובץ');
+          return;
+        }
+        if (workFile.size < 200) {
+          setError('הקובץ שהופק לא תקין');
+          return;
+        }
+        if (typeof window !== 'undefined') {
+          window.alert(`DEBUG: לפני onCapture | ${workFile.name} | ${workFile.size} bytes`);
+        }
+        debugStep('finalize:calling-onCapture');
+        try {
+          onCapture(workFile);
+          debugStep('finalize:onCapture-success');
+        } catch (handoverErr) {
+          console.error('[WebcamCapture] parent onCapture crashed', handoverErr);
+          debugStep('finalize:onCapture-failed');
+          setError('קריסה במסירת התמונה למסך ההורה');
+          return;
+        }
+        debugStep('finalize:closing-dialog');
         onOpenChange(false);
-        onCapture(workFile);
       } catch (e) {
         console.error('[WebcamCapture] finalizeDeliverCapture failed', e);
+        debugStep('finalize:exception');
         setError('שגיאה בעיבוד התמונה');
       }
     },
-    [onCapture, onOpenChange]
+    [debugStep, onCapture, onOpenChange]
   );
 
   const handleSnap = useCallback(async () => {
+    debugStep('snap:start', { disabled, snapping });
     if (disabled || snapping) return;
     const video = videoRef.current;
     const stream = streamRef.current;
     const track = stream?.getVideoTracks()[0];
-    if (!track) return;
+    if (!track) {
+      debugStep('snap:no-track');
+      return;
+    }
     const w = video?.videoWidth ?? 0;
     const h = video?.videoHeight ?? 0;
-    if (w <= 0 || h <= 0) return;
+    debugStep('snap:dimensions', { w, h });
+    if (w <= 0 || h <= 0) {
+      debugStep('snap:invalid-dimensions');
+      return;
+    }
 
     setSnapping(true);
     try {
       if (w > 0 && h > 0 && video) {
-        const maxDim = isAndroidUa() ? 1920 : 2560;
+        const maxDim = 1280;
         let outW = w;
         let outH = h;
         if (Math.max(w, h) > maxDim) {
@@ -779,6 +829,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
           outW = Math.max(1, Math.floor(w * s));
           outH = Math.max(1, Math.floor(h * s));
         }
+        debugStep('snap:canvas-main', { outW, outH, maxDim });
         const canvas = document.createElement('canvas');
         canvas.width = outW;
         canvas.height = outH;
@@ -786,10 +837,11 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
         if (ctx) {
           ctx.drawImage(video, 0, 0, w, h, 0, 0, outW, outH);
           const blob = await new Promise<Blob | null>((resolve) =>
-            canvas.toBlob((b) => resolve(b), 'image/jpeg', isAndroidUa() ? 0.85 : 0.9)
+            canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.9)
           );
-          /** אחרי כיווץ JPEG יכול להישאר קטן (מעל הסף 200) ואסור לדחות עם probe — אחרת הצילום לא מגיע ל-handler. */
+          debugStep('snap:main-blob', { size: blob?.size ?? 0 });
           if (blob && blob.size >= 200) {
+            debugStep('snap:main-finalize');
             await finalizeDeliverCapture(blob);
             return;
           }
@@ -798,21 +850,25 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
 
       const mirror = previewCanvasRef.current;
       if (mirror && mirror.width >= 2 && mirror.height >= 2) {
+        debugStep('snap:mirror-canvas', { w: mirror.width, h: mirror.height });
         const blob = await new Promise<Blob | null>((resolve) =>
-          mirror.toBlob((b) => resolve(b), 'image/jpeg', 0.92)
+          mirror.toBlob((b) => resolve(b), 'image/jpeg', 0.9)
         );
+        debugStep('snap:mirror-blob', { size: blob?.size ?? 0 });
         if (blob && blob.size >= 500) {
+          debugStep('snap:mirror-finalize');
           await finalizeDeliverCapture(blob);
           return;
         }
       }
 
       if (typeof ImageCapture !== 'undefined') {
+        debugStep('snap:image-capture-fallback:start');
         const ic = new ImageCapture(track);
         const bitmap = await ic.grabFrame();
         const bw = bitmap.width;
         const bh = bitmap.height;
-        const maxDim = isAndroidUa() ? 1920 : 2560;
+        const maxDim = 1280;
         let outW = bw;
         let outH = bh;
         if (Math.max(bw, bh) > maxDim) {
@@ -820,32 +876,38 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
           outW = Math.max(1, Math.floor(bw * s));
           outH = Math.max(1, Math.floor(bh * s));
         }
+        debugStep('snap:image-capture-fallback:dimensions', { bw, bh, outW, outH });
         const canvas = document.createElement('canvas');
         canvas.width = outW;
         canvas.height = outH;
         const ctx = canvas.getContext('2d');
         if (!ctx) {
           bitmap.close();
+          debugStep('snap:image-capture-no-context');
           setError('יצירת התמונה נכשלה או שהקובץ ריק');
           return;
         }
         ctx.drawImage(bitmap, 0, 0, bw, bh, 0, 0, outW, outH);
         bitmap.close();
         const blob = await new Promise<Blob | null>((resolve) =>
-          canvas.toBlob((b) => resolve(b), 'image/jpeg', isAndroidUa() ? 0.85 : 0.9)
+          canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.9)
         );
+        debugStep('snap:image-capture-fallback:blob', { size: blob?.size ?? 0 });
         await finalizeDeliverCapture(blob);
         return;
       }
 
+      debugStep('snap:all-paths-failed');
       setError('יצירת התמונה נכשלה או שהקובץ ריק');
     } catch (e) {
       console.error('[WebcamCapture] snap failed', e);
+      debugStep('snap:exception');
       setError('שגיאה בצילום');
     } finally {
+      debugStep('snap:finally');
       setSnapping(false);
     }
-  }, [disabled, finalizeDeliverCapture, snapping]);
+  }, [debugStep, disabled, finalizeDeliverCapture, snapping]);
 
   const showCameraLoader = loading || androidRearBootstrapping;
 
