@@ -745,11 +745,12 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
         if (cameraProfileRef.current === 'environment') {
           maybePersistRearDeviceId(streamRef.current);
         }
+        /** קודם מעבירים קובץ להורה — רק אז סוגרים דיאלוג ועוצרים מדיה (מניעת מירוץ עם unmount ב-WebView). */
+        onCapture(workFile);
         stopStream(streamRef.current);
         streamRef.current = null;
         if (videoRef.current) videoRef.current.srcObject = null;
         onOpenChange(false);
-        onCapture(workFile);
       } catch (e) {
         console.error('[WebcamCapture] finalizeDeliverCapture failed', e);
         setError('שגיאה בעיבוד התמונה');
@@ -788,12 +789,10 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
           const blob = await new Promise<Blob | null>((resolve) =>
             canvas.toBlob((b) => resolve(b), 'image/jpeg', isAndroidUa() ? 0.85 : 0.9)
           );
-          if (blob && blob.size >= 400) {
-            const probe = probeVideoFrameOnCanvas(video);
-            if (probe.ok || blob.size >= 2500) {
-              await finalizeDeliverCapture(blob);
-              return;
-            }
+          /** אחרי כיווץ JPEG יכול להישאר קטן (מעל הסף 200) ואסור לדחות עם probe — אחרת הצילום לא מגיע ל-handler. */
+          if (blob && blob.size >= 200) {
+            await finalizeDeliverCapture(blob);
+            return;
           }
         }
       }
