@@ -26,6 +26,13 @@ function parseLooseDate(input: string): Date | undefined {
   return d;
 }
 
+function toYmd(d: Date): string {
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const da = String(d.getDate()).padStart(2, '0');
+  return `${y}-${mo}-${da}`;
+}
+
 /** מספרים בלבד → dd/MM/yyyy עם מקפים אוטומטיים תוך הקלדה */
 function formatDigitsToDdMmYyyy(raw: string): string {
   const digits = raw.replace(/\D/g, '').slice(0, 8);
@@ -92,8 +99,11 @@ export function FleetDatePicker({ id, label, value, onChange, className }: Fleet
             const isoFull = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
             if (isoFull) {
               const ymd = `${isoFull[1]}-${isoFull[2]}-${isoFull[3]}`;
-              onChange(ymd);
-              setText(syncTextFromValue(ymd));
+              const d = new Date(`${ymd}T12:00:00`);
+              if (isValid(d)) {
+                onChange(ymd);
+                setText(syncTextFromValue(ymd));
+              }
               return;
             }
             const formatted = formatDigitsToDdMmYyyy(v);
@@ -103,15 +113,42 @@ export function FleetDatePicker({ id, label, value, onChange, className }: Fleet
               onChange('');
               return;
             }
-            const parsed = parseLooseDate(formatted);
-            if (parsed) {
-              const y = parsed.getFullYear();
-              const mo = String(parsed.getMonth() + 1).padStart(2, '0');
-              const da = String(parsed.getDate()).padStart(2, '0');
-              onChange(`${y}-${mo}-${da}`);
+            /** רק תאריך מלא (יום+חודש+שנה בארבע ספרות) מתעדכן תוך הקלדה — 6 ספרות (yy) היו ננעלות על 2020 לפני סיום 2026 */
+            if (digits.length === 8) {
+              const parsed = parseLooseDate(formatted);
+              if (parsed) onChange(toYmd(parsed));
             }
           }}
-          onBlur={() => {
+          onBlur={(e) => {
+            const v = e.target.value.trim();
+            const isoFull = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (isoFull) {
+              const ymd = `${isoFull[1]}-${isoFull[2]}-${isoFull[3]}`;
+              const d = new Date(`${ymd}T12:00:00`);
+              if (isValid(d)) {
+                onChange(ymd);
+                setText(syncTextFromValue(ymd));
+              } else {
+                setText(syncTextFromValue(value));
+              }
+              return;
+            }
+            const formatted = formatDigitsToDdMmYyyy(v);
+            const digits = formatted.replace(/\D/g, '');
+            if (!digits.length) {
+              onChange('');
+              setText('');
+              return;
+            }
+            if (digits.length === 6 || digits.length === 8) {
+              const parsed = parseLooseDate(formatted);
+              if (parsed) {
+                const ymd = toYmd(parsed);
+                onChange(ymd);
+                setText(syncTextFromValue(ymd));
+                return;
+              }
+            }
             setText(syncTextFromValue(value));
           }}
         />

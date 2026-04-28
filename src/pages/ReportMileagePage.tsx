@@ -274,7 +274,7 @@ export default function ReportMileagePage() {
     startPhotoIngest(e.target.files?.[0] ?? null, e.target);
   };
 
-  /** WebcamCapture already materializes to an in-memory File; ingest runs materialize again for a stable ArrayBuffer + updates `photoFile`. */
+  /** קובץ צילום כבר בזיכרון — ingest לא מכפיל arrayBuffer (חוסך זיכרון באנדרואיד). */
   const handleWebcamCapturedFile = (captured: File) => {
     startPhotoIngest(captured, null);
   };

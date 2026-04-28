@@ -12,7 +12,7 @@ import {
   DialogPortal,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ANDROID_WEBCAM_WARMUP_POST_STOP_MS, tryMaterializeImageFileFromInput } from '@/lib/mobilePhotoIngest';
+import { ANDROID_WEBCAM_WARMUP_POST_STOP_MS } from '@/lib/mobilePhotoIngest';
 
 type WebcamCaptureProps = {
   open: boolean;
@@ -736,8 +736,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       }
       try {
         const name = `capture-${Date.now()}.jpg`;
-        const rawFile = new File([blob], name, { type: 'image/jpeg' });
-        const { file: workFile } = await tryMaterializeImageFileFromInput(rawFile);
+        const workFile = new File([blob], name, { type: 'image/jpeg' });
         if (!workFile.size || workFile.size < 200) {
           setError('יצירת התמונה נכשלה או שהקובץ ריק');
           return;
@@ -772,14 +771,22 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     setSnapping(true);
     try {
       if (w > 0 && h > 0 && video) {
+        const maxDim = isAndroidUa() ? 1920 : 2560;
+        let outW = w;
+        let outH = h;
+        if (Math.max(w, h) > maxDim) {
+          const s = maxDim / Math.max(w, h);
+          outW = Math.max(1, Math.floor(w * s));
+          outH = Math.max(1, Math.floor(h * s));
+        }
         const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
+        canvas.width = outW;
+        canvas.height = outH;
         const ctx = canvas.getContext('2d');
         if (ctx) {
-          ctx.drawImage(video, 0, 0, w, h);
+          ctx.drawImage(video, 0, 0, w, h, 0, 0, outW, outH);
           const blob = await new Promise<Blob | null>((resolve) =>
-            canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.92)
+            canvas.toBlob((b) => resolve(b), 'image/jpeg', isAndroidUa() ? 0.85 : 0.9)
           );
           if (blob && blob.size >= 400) {
             const probe = probeVideoFrameOnCanvas(video);
@@ -805,19 +812,29 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
       if (typeof ImageCapture !== 'undefined') {
         const ic = new ImageCapture(track);
         const bitmap = await ic.grabFrame();
+        const bw = bitmap.width;
+        const bh = bitmap.height;
+        const maxDim = isAndroidUa() ? 1920 : 2560;
+        let outW = bw;
+        let outH = bh;
+        if (Math.max(bw, bh) > maxDim) {
+          const s = maxDim / Math.max(bw, bh);
+          outW = Math.max(1, Math.floor(bw * s));
+          outH = Math.max(1, Math.floor(bh * s));
+        }
         const canvas = document.createElement('canvas');
-        canvas.width = bitmap.width;
-        canvas.height = bitmap.height;
+        canvas.width = outW;
+        canvas.height = outH;
         const ctx = canvas.getContext('2d');
         if (!ctx) {
           bitmap.close();
           setError('יצירת התמונה נכשלה או שהקובץ ריק');
           return;
         }
-        ctx.drawImage(bitmap, 0, 0);
+        ctx.drawImage(bitmap, 0, 0, bw, bh, 0, 0, outW, outH);
         bitmap.close();
         const blob = await new Promise<Blob | null>((resolve) =>
-          canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.92)
+          canvas.toBlob((b) => resolve(b), 'image/jpeg', isAndroidUa() ? 0.85 : 0.9)
         );
         await finalizeDeliverCapture(blob);
         return;
