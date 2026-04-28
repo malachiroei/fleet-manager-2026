@@ -19,7 +19,7 @@ import { IdCard, Shield, Gauge, Wrench, CircleDot, Loader2 } from 'lucide-react'
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { sendFleetFieldUpdateNotification } from '@/lib/sendFleetFieldUpdateNotification';
-import { compressImageFileForUpload } from '@/lib/mobilePhotoIngest';
+import { compressImageFileForUpload, tryMaterializeImageFileFromInput } from '@/lib/mobilePhotoIngest';
 import { TireWheelDiagramSelector, TIRE_WHEEL_VALUES } from '@/components/vehicles/TireWheelDiagramSelector';
 
 const DOCS_BUCKET = 'vehicle-documents';
@@ -132,6 +132,35 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
   const [tireDate, setTireDate] = useState('');
   const [tireNextDate, setTireNextDate] = useState('');
   const [tireFile, setTireFile] = useState<File | null>(null);
+
+  const setDocFile = useCallback(
+    async (kind: 'license' | 'insurance' | 'tire', file: File | null) => {
+      if (!file) {
+        if (kind === 'license') setLicenseFile(null);
+        if (kind === 'insurance') setInsuranceFile(null);
+        if (kind === 'tire') setTireFile(null);
+        return;
+      }
+
+      const mime = file.type || '';
+      const looksLikeImage = mime.startsWith('image/') || mime === 'application/octet-stream' || mime === '';
+      let normalized = file;
+      if (looksLikeImage) {
+        try {
+          const out = await tryMaterializeImageFileFromInput(file);
+          normalized = out.file;
+        } catch (err) {
+          console.warn('[VehicleDetailQuickActions] materialize doc image failed; using original', err);
+          normalized = file;
+        }
+      }
+
+      if (kind === 'license') setLicenseFile(normalized);
+      if (kind === 'insurance') setInsuranceFile(normalized);
+      if (kind === 'tire') setTireFile(normalized);
+    },
+    [],
+  );
 
   const invalidate = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ['vehicle', vehicle.id] });
@@ -382,7 +411,7 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
                 id="qd-license-file"
                 type="file"
                 accept="image/*,application/pdf"
-                onChange={(e) => setLicenseFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => void setDocFile('license', e.target.files?.[0] ?? null)}
               />
             </div>
           </div>
@@ -416,7 +445,7 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
                 id="qd-ins-file"
                 type="file"
                 accept="image/*,application/pdf"
-                onChange={(e) => setInsuranceFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => void setDocFile('insurance', e.target.files?.[0] ?? null)}
               />
             </div>
           </div>
@@ -450,7 +479,12 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
             />
             <div className="space-y-1">
               <Label htmlFor="qd-tire-file">צילום (אופציונלי)</Label>
-              <Input id="qd-tire-file" type="file" accept="image/*,application/pdf" onChange={(e) => setTireFile(e.target.files?.[0] ?? null)} />
+              <Input
+                id="qd-tire-file"
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(e) => void setDocFile('tire', e.target.files?.[0] ?? null)}
+              />
             </div>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
