@@ -37,7 +37,10 @@ async function decodeToBitmap(source: Blob): Promise<ImageBitmap | null> {
   }
 }
 
-export async function createFastPreviewBlob(source: Blob): Promise<Blob | null> {
+export async function createFastPreviewBlob(
+  source: Blob,
+  opts?: { maxDim?: number; quality?: number },
+): Promise<Blob | null> {
   const bitmap = await decodeToBitmap(source);
   if (!bitmap) return null;
 
@@ -53,7 +56,7 @@ export async function createFastPreviewBlob(source: Blob): Promise<Blob | null> 
   }
 
   // Keep it simple: limit preview size to reduce CPU/memory.
-  const maxDim = 1280;
+  const maxDim = opts?.maxDim ?? 600;
   const scale = Math.min(1, maxDim / Math.max(w, h));
   const outW = Math.max(2, Math.floor(w * scale));
   const outH = Math.max(2, Math.floor(h * scale));
@@ -85,14 +88,17 @@ export async function createFastPreviewBlob(source: Blob): Promise<Blob | null> 
 
   // Preview quality tuned for speed and size.
   const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.7)
+    canvas.toBlob((b) => resolve(b), 'image/jpeg', opts?.quality ?? 0.7)
   );
   return blob;
 }
 
-export async function createFastPreviewUrl(source: Blob): Promise<string | null> {
+export async function createFastPreviewUrl(
+  source: Blob,
+  opts?: { maxDim?: number; quality?: number },
+): Promise<string | null> {
   try {
-    const blob = await createFastPreviewBlob(source);
+    const blob = await createFastPreviewBlob(source, opts);
     if (!blob || blob.size === 0) return null;
     return URL.createObjectURL(blob);
   } catch {

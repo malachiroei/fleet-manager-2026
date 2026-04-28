@@ -3,8 +3,7 @@ import { flushSync } from 'react-dom';
 
 import { toast } from '@/hooks/use-toast';
 import {
-  isAndroidUserAgent,
-  readFileAsDataUrl,
+  createFastPreviewUrl,
   tryMaterializeImageFileFromInput,
 } from '@/lib/mobilePhotoIngest';
 
@@ -32,8 +31,7 @@ export function useMobilePhotoIngest(options?: UseMobilePhotoIngestOptions) {
 
   const blobPreviewRevokeRef = useRef<string | null>(null);
   const ingestGenRef = useRef(0);
-  const fastPreviewSetRef = useRef(false);
-
+  const inFlightSigRef = useRef<string | null>(null);
   useEffect(() => {
     return () => {
       if (blobPreviewRevokeRef.current) {
@@ -45,38 +43,31 @@ export function useMobilePhotoIngest(options?: UseMobilePhotoIngestOptions) {
 
   const startPhotoIngest = useCallback(
     (file: File | null, clearInput: HTMLInputElement | null) => {
+      const nextSig = file ? `${file.name}::${file.size}::${file.lastModified}` : null;
+      if (file && isMaterializing && inFlightSigRef.current === nextSig) {
+        if (clearInput) clearInput.value = '';
+        return;
+      }
       const gen = ++ingestGenRef.current;
+      inFlightSigRef.current = nextSig;
 
       if (blobPreviewRevokeRef.current) {
         URL.revokeObjectURL(blobPreviewRevokeRef.current);
         blobPreviewRevokeRef.current = null;
       }
-      fastPreviewSetRef.current = false;
       setPhotoPreviewUrl(null);
       setPhotoFile(null);
       setIsMaterializing(false);
       onCommittedChange?.(null);
 
       if (!file) {
+        inFlightSigRef.current = null;
         if (clearInput) clearInput.value = '';
         return;
       }
 
       setIsMaterializing(true);
       onIngestBeginWithFile?.();
-
-      // Instant UI preview: no canvas work, no materialization dependency.
-      try {
-        const previewUrl = URL.createObjectURL(file);
-        blobPreviewRevokeRef.current = previewUrl;
-        fastPreviewSetRef.current = true;
-        flushSync(() => {
-          setPhotoPreviewUrl(previewUrl);
-          setPreviewMountKey((k) => k + 1);
-        });
-      } catch {
-        // fallback below (still no canvas)
-      }
 
       void (async () => {
         try {
@@ -97,24 +88,8 @@ export function useMobilePhotoIngest(options?: UseMobilePhotoIngestOptions) {
           setPhotoFile(workFile);
           onCommittedChange?.(workFile);
 
-          // If the instant preview already landed, don't block UI with anything else.
-          if (fastPreviewSetRef.current) {
-            return;
-          }
-
-          let displayUrl: string | null = null;
-          if (isAndroidUserAgent()) {
-            displayUrl = await readFileAsDataUrl(workFile);
-          } else {
-            try {
-              displayUrl = URL.createObjectURL(workFile);
-            } catch (err) {
-              console.warn(`${logLabel} createObjectURL failed`, err);
-            }
-            if (!displayUrl) {
-              displayUrl = await readFileAsDataUrl(workFile);
-            }
-          }
+          // Emergency memory mode: always preview a tiny blob URL (max 600px), never base64 in state.
+          const displayUrl = await createFastPreviewUrl(workFile, { maxDim: 600, quality: 0.72 });
 
           if (gen !== ingestGenRef.current) {
             if (displayUrl?.startsWith('blob:')) URL.revokeObjectURL(displayUrl);
@@ -151,12 +126,13 @@ export function useMobilePhotoIngest(options?: UseMobilePhotoIngestOptions) {
         } finally {
           if (gen === ingestGenRef.current) {
             setIsMaterializing(false);
+            inFlightSigRef.current = null;
           }
           if (clearInput) clearInput.value = '';
         }
       })();
     },
-    [logLabel, onCommittedChange, onIngestBeginWithFile]
+    [isMaterializing, logLabel, onCommittedChange, onIngestBeginWithFile]
   );
 
   const resetPhoto = useCallback(() => {
@@ -168,6 +144,7 @@ export function useMobilePhotoIngest(options?: UseMobilePhotoIngestOptions) {
     setPhotoPreviewUrl(null);
     setPhotoFile(null);
     setIsMaterializing(false);
+    inFlightSigRef.current = null;
     onCommittedChange?.(null);
   }, [onCommittedChange]);
 
