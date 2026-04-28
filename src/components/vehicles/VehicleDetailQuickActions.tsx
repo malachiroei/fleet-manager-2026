@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import type { Vehicle } from '@/types/fleet';
 import { useUpdateVehicle } from '@/hooks/useVehicles';
@@ -19,7 +19,13 @@ import { IdCard, Shield, Gauge, Wrench, CircleDot, Loader2 } from 'lucide-react'
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { sendFleetFieldUpdateNotification } from '@/lib/sendFleetFieldUpdateNotification';
-import { compressImageFileForUpload, tryMaterializeImageFileFromInput } from '@/lib/mobilePhotoIngest';
+import { WebcamCapture } from '@/components/WebcamCapture';
+import {
+  compressImageFileForUpload,
+  isAndroidUserAgent,
+  shouldAttachDirectCameraCapture,
+  tryMaterializeImageFileFromInput,
+} from '@/lib/mobilePhotoIngest';
 import { TireWheelDiagramSelector, TIRE_WHEEL_VALUES } from '@/components/vehicles/TireWheelDiagramSelector';
 
 const DOCS_BUCKET = 'vehicle-documents';
@@ -132,6 +138,13 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
   const [tireDate, setTireDate] = useState('');
   const [tireNextDate, setTireNextDate] = useState('');
   const [tireFile, setTireFile] = useState<File | null>(null);
+  const [webcamOpen, setWebcamOpen] = useState(false);
+  const [webcamMountKey, setWebcamMountKey] = useState(0);
+  const [captureTarget, setCaptureTarget] = useState<'license' | 'insurance' | 'tire' | null>(null);
+  const licenseInputRef = useRef<HTMLInputElement>(null);
+  const insuranceInputRef = useRef<HTMLInputElement>(null);
+  const tireInputRef = useRef<HTMLInputElement>(null);
+  const android = isAndroidUserAgent();
 
   const setDocFile = useCallback(
     async (kind: 'license' | 'insurance' | 'tire', file: File | null) => {
@@ -185,6 +198,18 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
     setTireFile(null);
     setDialog('tire');
   };
+
+  const openGalleryPicker = useCallback((kind: 'license' | 'insurance' | 'tire') => {
+    if (kind === 'license') licenseInputRef.current?.click();
+    if (kind === 'insurance') insuranceInputRef.current?.click();
+    if (kind === 'tire') tireInputRef.current?.click();
+  }, []);
+
+  const openCameraPicker = useCallback((kind: 'license' | 'insurance' | 'tire') => {
+    setCaptureTarget(kind);
+    setWebcamMountKey((k) => k + 1);
+    setWebcamOpen(true);
+  }, []);
 
   const saveLicense = async () => {
     if (!licenseDate.trim()) {
@@ -407,12 +432,34 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
             />
             <div className="space-y-1">
               <Label htmlFor="qd-license-file">צילום רישיון / PDF (אופציונלי)</Label>
-              <Input
-                id="qd-license-file"
-                type="file"
-                accept="image/*,application/pdf"
-                onChange={(e) => void setDocFile('license', e.target.files?.[0] ?? null)}
-              />
+              {android ? (
+                <>
+                  <input
+                    ref={licenseInputRef}
+                    id="qd-license-file"
+                    type="file"
+                    accept="image/*,application/pdf"
+                    className="hidden"
+                    onChange={(e) => void setDocFile('license', e.target.files?.[0] ?? null)}
+                  />
+                  <div className="flex gap-2">
+                    <Button type="button" variant="outline" className="flex-1" onClick={() => openCameraPicker('license')}>
+                      צלם מהמצלמה
+                    </Button>
+                    <Button type="button" variant="outline" className="flex-1" onClick={() => openGalleryPicker('license')}>
+                      בחר מהגלריה / קבצים
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <Input
+                  id="qd-license-file"
+                  type="file"
+                  accept="image/*,application/pdf"
+                  {...(shouldAttachDirectCameraCapture() ? ({ capture: 'environment' } as const) : {})}
+                  onChange={(e) => void setDocFile('license', e.target.files?.[0] ?? null)}
+                />
+              )}
             </div>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
@@ -441,12 +488,34 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
             />
             <div className="space-y-1">
               <Label htmlFor="qd-ins-file">צילום פוליסה / PDF (אופציונלי)</Label>
-              <Input
-                id="qd-ins-file"
-                type="file"
-                accept="image/*,application/pdf"
-                onChange={(e) => void setDocFile('insurance', e.target.files?.[0] ?? null)}
-              />
+              {android ? (
+                <>
+                  <input
+                    ref={insuranceInputRef}
+                    id="qd-ins-file"
+                    type="file"
+                    accept="image/*,application/pdf"
+                    className="hidden"
+                    onChange={(e) => void setDocFile('insurance', e.target.files?.[0] ?? null)}
+                  />
+                  <div className="flex gap-2">
+                    <Button type="button" variant="outline" className="flex-1" onClick={() => openCameraPicker('insurance')}>
+                      צלם מהמצלמה
+                    </Button>
+                    <Button type="button" variant="outline" className="flex-1" onClick={() => openGalleryPicker('insurance')}>
+                      בחר מהגלריה / קבצים
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <Input
+                  id="qd-ins-file"
+                  type="file"
+                  accept="image/*,application/pdf"
+                  {...(shouldAttachDirectCameraCapture() ? ({ capture: 'environment' } as const) : {})}
+                  onChange={(e) => void setDocFile('insurance', e.target.files?.[0] ?? null)}
+                />
+              )}
             </div>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
@@ -479,12 +548,34 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
             />
             <div className="space-y-1">
               <Label htmlFor="qd-tire-file">צילום (אופציונלי)</Label>
-              <Input
-                id="qd-tire-file"
-                type="file"
-                accept="image/*,application/pdf"
-                onChange={(e) => void setDocFile('tire', e.target.files?.[0] ?? null)}
-              />
+              {android ? (
+                <>
+                  <input
+                    ref={tireInputRef}
+                    id="qd-tire-file"
+                    type="file"
+                    accept="image/*,application/pdf"
+                    className="hidden"
+                    onChange={(e) => void setDocFile('tire', e.target.files?.[0] ?? null)}
+                  />
+                  <div className="flex gap-2">
+                    <Button type="button" variant="outline" className="flex-1" onClick={() => openCameraPicker('tire')}>
+                      צלם מהמצלמה
+                    </Button>
+                    <Button type="button" variant="outline" className="flex-1" onClick={() => openGalleryPicker('tire')}>
+                      בחר מהגלריה / קבצים
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <Input
+                  id="qd-tire-file"
+                  type="file"
+                  accept="image/*,application/pdf"
+                  {...(shouldAttachDirectCameraCapture() ? ({ capture: 'environment' } as const) : {})}
+                  onChange={(e) => void setDocFile('tire', e.target.files?.[0] ?? null)}
+                />
+              )}
             </div>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
@@ -497,6 +588,19 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {android ? (
+        <WebcamCapture
+          key={webcamMountKey}
+          open={webcamOpen}
+          onOpenChange={setWebcamOpen}
+          onCapture={(f) => {
+            if (!captureTarget) return;
+            void setDocFile(captureTarget, f);
+            setWebcamOpen(false);
+          }}
+          disabled={saving}
+        />
+      ) : null}
     </>
   );
 }
