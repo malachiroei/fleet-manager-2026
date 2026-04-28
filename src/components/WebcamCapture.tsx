@@ -745,12 +745,11 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
         if (cameraProfileRef.current === 'environment') {
           maybePersistRearDeviceId(streamRef.current);
         }
-        /** קודם מעבירים קובץ להורה — רק אז סוגרים דיאלוג ועוצרים מדיה (מניעת מירוץ עם unmount ב-WebView). */
-        onCapture(workFile);
         stopStream(streamRef.current);
         streamRef.current = null;
         if (videoRef.current) videoRef.current.srcObject = null;
         onOpenChange(false);
+        onCapture(workFile);
       } catch (e) {
         console.error('[WebcamCapture] finalizeDeliverCapture failed', e);
         setError('שגיאה בעיבוד התמונה');

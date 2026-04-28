@@ -18,7 +18,7 @@ export type UseMobilePhotoIngestOptions = {
 
 /**
  * Single pipeline for file inputs + WebcamCapture: materialize to an in-memory `File`, preview URL, stale-gen guard.
- * מגלריה (במיוחד אנדרואיד): `tryMaterializeImageFileFromInput` מעתיק ל-`File` יציב. מצלמת Web: `clearInput === null` — ללא העתקה כפולה.
+ * Materialization normalizes Android `content://` handles and camera-produced files before preview/upload state.
  */
 export function useMobilePhotoIngest(options?: UseMobilePhotoIngestOptions) {
   const logLabel = options?.logLabel ?? '[useMobilePhotoIngest]';
@@ -80,12 +80,8 @@ export function useMobilePhotoIngest(options?: UseMobilePhotoIngestOptions) {
 
       void (async () => {
         try {
-          // `clearInput === null` = צילום מתוך WebcamCapture — הקובץ כבר בזיכרון; העתקת arrayBuffer
-          // כפולה גורמת לעומס זיכרון חריף ב-WebView אנדרואיד ("מחסור בזיכרון").
-          const workFile =
-            clearInput === null
-              ? file
-              : (await tryMaterializeImageFileFromInput(file)).file;
+          // Always materialize once to a stable in-memory File before state/preview updates.
+          const { file: workFile } = await tryMaterializeImageFileFromInput(file);
 
           if (gen !== ingestGenRef.current) return;
 
