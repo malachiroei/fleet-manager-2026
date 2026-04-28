@@ -4,6 +4,7 @@ import { flushSync } from 'react-dom';
 import { toast } from '@/hooks/use-toast';
 import {
   createFastPreviewUrl,
+  isAndroidUserAgent,
   tryMaterializeImageFileFromInput,
 } from '@/lib/mobilePhotoIngest';
 
@@ -88,8 +89,10 @@ export function useMobilePhotoIngest(options?: UseMobilePhotoIngestOptions) {
           setPhotoFile(workFile);
           onCommittedChange?.(workFile);
 
-          // Emergency memory mode: always preview a tiny blob URL (max 600px), never base64 in state.
-          const displayUrl = await createFastPreviewUrl(workFile, { maxDim: 600, quality: 0.72 });
+          // Android Chrome: avoid extra decode/canvas churn for preview (OOM risk); keep blob URL only.
+          const displayUrl = isAndroidUserAgent()
+            ? URL.createObjectURL(workFile)
+            : await createFastPreviewUrl(workFile, { maxDim: 600, quality: 0.72 });
 
           if (gen !== ingestGenRef.current) {
             if (displayUrl?.startsWith('blob:')) URL.revokeObjectURL(displayUrl);
