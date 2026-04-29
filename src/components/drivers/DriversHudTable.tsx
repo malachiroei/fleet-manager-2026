@@ -31,6 +31,13 @@ import {
   Users,
   UserX,
 } from 'lucide-react';
+import { fleetTableColumnsStorageKey, readOptionalColumnIds, writeOptionalColumnIds } from '@/lib/fleetTableColumnPrefs';
+import { FleetTableColumnsButton, FleetTableColumnsSheet } from '@/components/fleet/FleetTableColumnsSheet';
+import {
+  DRIVER_HUD_OPTIONAL_COLUMNS,
+  DRIVER_HUD_OPTIONAL_IDS,
+  DEFAULT_DRIVER_HUD_OPTIONAL_VISIBLE,
+} from '@/components/drivers/driverHudColumnDefinitions';
 
 const PAGE_SIZE = 10;
 
@@ -82,6 +89,155 @@ function statusPill(d: DriverSummary) {
       {cfg.label}
     </span>
   );
+}
+
+function fmtDriverCellText(raw: unknown): string {
+  if (raw === null || raw === undefined) return '—';
+  const s = String(raw).trim();
+  return s || '—';
+}
+
+function renderDriverHudOptionalCell(
+  colId: string,
+  d: DriverSummary,
+  vehicleCols: { modelLabel: string; plateLabel: string } | undefined,
+): ReactNode {
+  switch (colId) {
+    case 'id_number':
+      return (
+        <span className="font-mono text-sm tabular-nums text-slate-300" dir="ltr">
+          {d.id_number?.trim() ? d.id_number.trim() : '—'}
+        </span>
+      );
+    case 'assigned_vehicle_model':
+      return vehicleCols?.modelLabel ? (
+        <span className="block truncate text-sm text-slate-300" title={vehicleCols.modelLabel}>
+          {vehicleCols.modelLabel}
+        </span>
+      ) : (
+        <span className="text-slate-500">—</span>
+      );
+    case 'assigned_vehicle_plate':
+      return vehicleCols?.plateLabel ? (
+        <span
+          className="block truncate font-mono text-sm tabular-nums text-slate-200"
+          dir="ltr"
+          title={vehicleCols.plateLabel}
+        >
+          {vehicleCols.plateLabel}
+        </span>
+      ) : (
+        <span className="text-slate-500">—</span>
+      );
+    case 'status':
+      return statusPill(d);
+    case 'phone':
+      return (
+        <span className="font-mono text-sm text-slate-200" dir="ltr">
+          {d.phone?.trim() || '—'}
+        </span>
+      );
+    case 'license_expiry':
+      return (
+        <span className="whitespace-nowrap text-sm tabular-nums text-slate-200" dir="ltr">
+          {fmtDriverDate(d.license_expiry)}
+        </span>
+      );
+    case 'driver_code':
+      return (
+        <span className="font-mono text-sm text-slate-200" dir="ltr">
+          {fmtDriverCellText(d.driver_code)}
+        </span>
+      );
+    case 'employee_number':
+      return (
+        <span className="font-mono text-sm text-slate-200" dir="ltr">
+          {fmtDriverCellText(d.employee_number)}
+        </span>
+      );
+    case 'email':
+      return <span className="block truncate text-sm text-slate-300">{fmtDriverCellText(d.email)}</span>;
+    case 'address':
+      return <span className="block max-w-[12rem] truncate text-sm text-slate-300">{fmtDriverCellText(d.address)}</span>;
+    case 'city':
+      return <span className="block truncate text-sm text-slate-300">{fmtDriverCellText(d.city)}</span>;
+    case 'job_title':
+      return <span className="block truncate text-sm text-slate-300">{fmtDriverCellText(d.job_title)}</span>;
+    case 'department':
+      return <span className="block truncate text-sm text-slate-300">{fmtDriverCellText(d.department)}</span>;
+    case 'group_name':
+      return <span className="block truncate text-sm text-slate-300">{fmtDriverCellText(d.group_name)}</span>;
+    case 'group_code':
+      return (
+        <span className="font-mono text-sm text-slate-200" dir="ltr">
+          {fmtDriverCellText(d.group_code)}
+        </span>
+      );
+    case 'division':
+      return <span className="block truncate text-sm text-slate-300">{fmtDriverCellText(d.division)}</span>;
+    case 'area':
+      return <span className="block truncate text-sm text-slate-300">{fmtDriverCellText(d.area)}</span>;
+    case 'safety_officer':
+      return <span className="block truncate text-sm text-slate-300">{fmtDriverCellText(d.safety_officer)}</span>;
+    case 'birth_date':
+      return (
+        <span className="text-sm tabular-nums text-slate-200" dir="ltr">
+          {fmtDriverDate(d.birth_date)}
+        </span>
+      );
+    case 'work_start_date':
+      return (
+        <span className="text-sm tabular-nums text-slate-200" dir="ltr">
+          {fmtDriverDate(d.work_start_date)}
+        </span>
+      );
+    case 'license_number':
+      return (
+        <span className="font-mono text-sm text-slate-200" dir="ltr">
+          {fmtDriverCellText(d.license_number)}
+        </span>
+      );
+    case 'driving_permit':
+      return <span className="block truncate text-sm text-slate-300">{fmtDriverCellText(d.driving_permit)}</span>;
+    case 'health_declaration_date':
+      return (
+        <span className="text-sm tabular-nums text-slate-200" dir="ltr">
+          {fmtDriverDate(d.health_declaration_date)}
+        </span>
+      );
+    case 'safety_training_date':
+      return (
+        <span className="text-sm tabular-nums text-slate-200" dir="ltr">
+          {fmtDriverDate(d.safety_training_date)}
+        </span>
+      );
+    case 'regulation_585b_date':
+      return (
+        <span className="text-sm tabular-nums text-slate-200" dir="ltr">
+          {fmtDriverDate(d.regulation_585b_date)}
+        </span>
+      );
+    case 'practical_driving_test_date':
+      return (
+        <span className="text-sm tabular-nums text-slate-200" dir="ltr">
+          {fmtDriverDate(d.practical_driving_test_date)}
+        </span>
+      );
+    case 'eligibility':
+      return <span className="block truncate text-sm text-slate-300">{fmtDriverCellText(d.eligibility)}</span>;
+    case 'rating':
+      return <span className="block truncate text-sm text-slate-300">{fmtDriverCellText(d.rating)}</span>;
+    case 'note1':
+      return <span className="block max-w-[10rem] truncate text-sm text-slate-400">{fmtDriverCellText(d.note1)}</span>;
+    case 'note2':
+      return <span className="block max-w-[10rem] truncate text-sm text-slate-400">{fmtDriverCellText(d.note2)}</span>;
+    case 'is_field_person':
+      return <span className="text-sm text-slate-300">{d.is_field_person ? 'כן' : 'לא'}</span>;
+    case 'is_active':
+      return <span className="text-sm text-slate-300">{d.is_active ? 'פעיל' : 'לא פעיל'}</span>;
+    default:
+      return <span className="text-slate-500">—</span>;
+  }
 }
 
 function StatCardButton({
@@ -223,6 +379,14 @@ export function DriversHudTable({
     [pageSlice]
   );
 
+  const driverColumnsKey = fleetTableColumnsStorageKey('drivers');
+  const driverColAllowed = useMemo(() => new Set(DRIVER_HUD_OPTIONAL_IDS), []);
+  const [driverOptionalVisible, setDriverOptionalVisible] = useState(() =>
+    readOptionalColumnIds(driverColumnsKey, driverColAllowed, [...DEFAULT_DRIVER_HUD_OPTIONAL_VISIBLE]),
+  );
+  const [driverColSheetOpen, setDriverColSheetOpen] = useState(false);
+  const driverTableColSpan = 2 + driverOptionalVisible.length;
+
   return (
     <div className="w-full max-w-[100vw] space-y-4 overflow-x-hidden sm:space-y-5">
       {/* KPI — לחיצה מסננת ומגללת לטבלה (כמו מסך רכבים) */}
@@ -320,7 +484,7 @@ export function DriversHudTable({
       </div>
 
       {/* Filters row */}
-      <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-slate-950/80 p-3 sm:flex-row sm:flex-wrap sm:items-end sm:gap-3 sm:p-4">
+      <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-slate-950/80 p-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between sm:gap-3 sm:p-4">
         <div className="min-w-0 flex-1 sm:max-w-xs">
           <label className="mb-1 block text-[11px] font-medium text-slate-400">חיפוש</label>
           <Input
@@ -384,8 +548,8 @@ export function DriversHudTable({
             </SelectContent>
           </Select>
         </div>
-        {showNotificationSettingsLink ? (
-          <div className="flex min-h-[2.5rem] flex-1 items-end justify-start sm:justify-end">
+        <div className="flex w-full min-h-[2.5rem] flex-wrap items-end justify-start gap-2 sm:ml-auto sm:w-auto sm:justify-end">
+          {showNotificationSettingsLink ? (
             <Link
               to="/admin/settings"
               className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:border-cyan-400/50 hover:bg-cyan-500/15"
@@ -393,9 +557,25 @@ export function DriversHudTable({
               <Bell className="h-3.5 w-3.5 shrink-0" aria-hidden />
               הגדרות התראות (מייל)
             </Link>
-          </div>
-        ) : null}
+          ) : null}
+          <FleetTableColumnsButton onClick={() => setDriverColSheetOpen(true)} />
+        </div>
       </div>
+
+      <FleetTableColumnsSheet
+        open={driverColSheetOpen}
+        onOpenChange={setDriverColSheetOpen}
+        title="עמודות בטבלת נהגים"
+        description="בחר אילו שדות יוצגו בטבלה אחרי עמודת שם הנהג. ההעדפה נשמרת בדפדפן."
+        options={DRIVER_HUD_OPTIONAL_COLUMNS}
+        value={driverOptionalVisible}
+        defaultValue={[...DEFAULT_DRIVER_HUD_OPTIONAL_VISIBLE]}
+        onSave={(next) => {
+          const cleaned = next.filter((id) => driverColAllowed.has(id));
+          writeOptionalColumnIds(driverColumnsKey, cleaned);
+          setDriverOptionalVisible(cleaned);
+        }}
+      />
 
       {/* Table */}
       <div
@@ -403,17 +583,12 @@ export function DriversHudTable({
         className="scroll-mt-24 overflow-hidden rounded-xl border border-cyan-500/20 bg-[#070d18]/95 shadow-[0_0_32px_rgba(6,182,212,0.06)]"
       >
         <div className="overflow-x-auto">
-          <Table className="w-full min-w-[1040px] table-fixed border-separate border-spacing-0 text-right">
-            <colgroup>
-              <col style={{ width: 44 }} />
-              <col style={{ width: '18%' }} />
-              <col style={{ width: '11%' }} />
-              <col style={{ width: '15%' }} />
-              <col style={{ width: '11%' }} />
-              <col style={{ width: '10%' }} />
-              <col style={{ width: '11%' }} />
-              <col style={{ width: '11%' }} />
-            </colgroup>
+          <Table
+            className={cn(
+              'w-full border-separate border-spacing-0 text-right',
+              driverOptionalVisible.length <= 6 ? 'min-w-[880px]' : 'min-w-[1040px]',
+            )}
+          >
             <TableHeader>
               <TableRow className="border-cyan-500/15 bg-black/40 hover:bg-black/40">
                 <TableHead className="h-11 w-11 p-0 px-2 text-center align-middle [&:has([role=checkbox])]:pr-2">
@@ -424,33 +599,23 @@ export function DriversHudTable({
                     className="border-cyan-400/50 data-[state=checked]:bg-cyan-600"
                   />
                 </TableHead>
-                <TableHead className="p-0 px-3 py-2.5 text-right align-middle text-xs font-semibold text-slate-300">
+                <TableHead className="min-w-[10rem] p-0 px-3 py-2.5 text-right align-middle text-xs font-semibold text-slate-300">
                   נהג
                 </TableHead>
-                <TableHead className="p-0 px-3 py-2.5 text-right align-middle text-xs font-semibold text-slate-300">
-                  ת.ז.
-                </TableHead>
-                <TableHead className="p-0 px-3 py-2.5 text-right align-middle text-xs font-semibold text-slate-300">
-                  סוג רכב משויך
-                </TableHead>
-                <TableHead className="p-0 px-3 py-2.5 text-right align-middle text-xs font-semibold text-slate-300">
-                  מספר רכב משויך
-                </TableHead>
-                <TableHead className="p-0 px-3 py-2.5 text-right align-middle text-xs font-semibold text-slate-300">
-                  סטטוס
-                </TableHead>
-                <TableHead className="p-0 px-3 py-2.5 text-right align-middle text-xs font-semibold text-slate-300">
-                  טלפון
-                </TableHead>
-                <TableHead className="p-0 px-3 py-2.5 text-right align-middle text-xs font-semibold text-slate-300">
-                  תוקף רישיון
-                </TableHead>
+                {driverOptionalVisible.map((colId) => (
+                  <TableHead
+                    key={colId}
+                    className="p-0 px-3 py-2.5 text-right align-middle text-xs font-semibold text-slate-300 whitespace-nowrap"
+                  >
+                    {DRIVER_HUD_OPTIONAL_COLUMNS.find((c) => c.id === colId)?.label ?? colId}
+                  </TableHead>
+                ))}
               </TableRow>
             </TableHeader>
             <TableBody>
               {pageSlice.length === 0 ? (
                 <TableRow className="border-0 hover:bg-transparent">
-                  <TableCell colSpan={8} className="py-16 text-center text-slate-400">
+                  <TableCell colSpan={driverTableColSpan} className="py-16 text-center text-slate-400">
                     אין נהגים להצגה לפי הסינון
                   </TableCell>
                 </TableRow>
@@ -464,7 +629,7 @@ export function DriversHudTable({
                       onClick={() => navigate(`/drivers/${d.id}/edit`)}
                       className={cn(
                         'cursor-pointer border-white/5 transition-all duration-200',
-                        'hover:border-cyan-400/25 hover:bg-cyan-500/[0.06] hover:shadow-[0_0_18px_rgba(34,211,238,0.12)]'
+                        'hover:border-cyan-400/25 hover:bg-cyan-500/[0.06] hover:shadow-[0_0_18px_rgba(34,211,238,0.12)]',
                       )}
                     >
                       <TableCell
@@ -502,43 +667,11 @@ export function DriversHudTable({
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell
-                        className="p-0 px-3 py-2.5 align-middle font-mono text-sm tabular-nums text-slate-300"
-                        dir="ltr"
-                      >
-                        {d.id_number?.trim() ? d.id_number.trim() : '—'}
-                      </TableCell>
-                      <TableCell className="p-0 px-3 py-2.5 align-middle text-sm text-slate-300">
-                        {vehicleCols?.modelLabel ? (
-                          <span className="block truncate" title={vehicleCols.modelLabel}>
-                            {vehicleCols.modelLabel}
-                          </span>
-                        ) : (
-                          <span className="text-slate-500">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell
-                        className="p-0 px-3 py-2.5 align-middle font-mono text-sm tabular-nums text-slate-200"
-                        dir="ltr"
-                      >
-                        {vehicleCols?.plateLabel ? (
-                          <span className="block truncate" title={vehicleCols.plateLabel}>
-                            {vehicleCols.plateLabel}
-                          </span>
-                        ) : (
-                          <span className="text-slate-500">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="p-0 px-3 py-2.5 align-middle">{statusPill(d)}</TableCell>
-                      <TableCell
-                        className="p-0 px-3 py-2.5 align-middle font-mono text-sm text-slate-200"
-                        dir="ltr"
-                      >
-                        {d.phone?.trim() || '—'}
-                      </TableCell>
-                      <TableCell className="p-0 px-3 py-2.5 align-middle whitespace-nowrap text-sm tabular-nums text-slate-200">
-                        {fmtDriverDate(d.license_expiry)}
-                      </TableCell>
+                      {driverOptionalVisible.map((colId) => (
+                        <TableCell key={colId} className="max-w-[14rem] p-0 px-3 py-2.5 align-middle">
+                          {renderDriverHudOptionalCell(colId, d, vehicleCols)}
+                        </TableCell>
+                      ))}
                     </TableRow>
                   );
                 })

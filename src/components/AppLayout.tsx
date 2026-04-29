@@ -43,6 +43,7 @@ import {
 } from '@/lib/fleetBootstrapEmails';
 import { FALLBACK_MAIN_FLEET_ORG_ID, RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 import { isSuperAdminPermissionBypass } from '@/lib/allowedFeatures';
+import { resolveLogicalBackTarget } from '@/lib/appBackNavigation';
 import type { TeamMemberSummary } from '@/hooks/useTeam';
 
 /** קישור מנהל ראשי ↔ מנהל צי ↔ נהג — כש־RLS לא מחזיר את כל ה־profiles במחליף */
@@ -145,7 +146,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const name = (profile?.full_name?.trim()) || user?.user_metadata?.full_name || email.split('@')[0] || '';
   const initials = (name || email || '?').slice(0, 2).toUpperCase();
   const isRtl = i18n.dir() === 'rtl';
-  const { tryNavigate, getIsDirty, getLastPath } = useVehicleSpecDirty();
+  const { tryNavigate } = useVehicleSpecDirty();
   const isHomeActive = location.pathname === '/';
   const { data: organization } = useOrganization(activeOrgId ?? null);
   const orgName = organization?.name?.trim() ?? '';
@@ -900,11 +901,8 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   const BackButton = () => {
     const handleBack = () => {
-      if (typeof window !== 'undefined' && window.history.length > 1) {
-        window.history.back();
-        return;
-      }
-      tryNavigate('/');
+      const target = resolveLogicalBackTarget(location.pathname);
+      tryNavigate(target);
     };
 
     return (

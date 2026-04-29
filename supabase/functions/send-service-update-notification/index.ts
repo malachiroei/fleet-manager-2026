@@ -39,6 +39,9 @@ export interface ServiceUpdateNotificationBody {
   headline?: string;
   rows?: FleetFieldUpdateRow[];
   documentUrl?: string | null;
+  /** קישור יחיד בתחתית המייל (טפסי ציות) */
+  primaryLinkUrl?: string;
+  primaryLinkLabel?: string;
 }
 
 function esc(s: string): string {
@@ -101,12 +104,19 @@ serve(async (req) => {
         ? `<p style="margin-top:14px;"><strong>מסמך / צילום:</strong><br/>
          <a href="${safeDoc}" target="_blank" rel="noopener noreferrer">פתיחת קישור</a></p>`
         : '';
+      const ctaHrefRaw = String(body.primaryLinkUrl ?? '').trim().replace(/["'<>]/g, '');
+      const ctaLbl = esc(String(body.primaryLinkLabel ?? '').trim()) || 'פתיחת הטופס';
+      const ctaBlock =
+        ctaHrefRaw && ctaHrefRaw.startsWith('http')
+          ? `<p style="margin-top:18px;"><a href="${ctaHrefRaw}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:10px 16px;background:#0891b2;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;">${ctaLbl}</a></p>`
+          : '';
 
       const html = `
       <div dir="rtl" style="font-family: Arial, sans-serif; text-align: right;">
         <h2 style="margin-bottom:8px;">${headline}</h2>
         ${plateBlock}
         <table style="border-collapse:collapse;width:100%;max-width:520px;">${tableRows}</table>
+        ${ctaBlock}
         ${docBlock}
         <p style="font-size:12px;color:#6b7280;margin-top:20px;">נשלח אוטומטית ממערכת Fleet Manager Pro.</p>
       </div>

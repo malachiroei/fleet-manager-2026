@@ -1,4 +1,5 @@
 import { useComplianceAlerts } from '@/hooks/useDashboard';
+import { ComplianceTower } from '@/components/compliance/ComplianceTower';
 import { FleetHudPageShell } from '@/components/FleetHudPageShell';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -26,8 +27,11 @@ export default function CompliancePage() {
   return (
     <FleetHudPageShell
       title="מרכז ציות ותקינות"
-      subtitle="מעקב אחר תוקפים, אזהרות ופריטים שדורשים טיפול — בסגנון לוח הבקרה."
+      subtitle="מגדל ציות — מעקב, ספים והודעות לעובדים; למטה סיכום המצב הגולמי."
     >
+      <div className="mx-auto max-w-6xl pb-8">
+        <ComplianceTower />
+      </div>
       <section className="dashboard-status-stage dashboard-cyber-stage mx-auto max-w-5xl space-y-6 rounded-3xl border border-cyan-400/25 p-4 text-white sm:p-6">
         {/* Summary */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

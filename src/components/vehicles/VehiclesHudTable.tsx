@@ -35,6 +35,13 @@ import {
   isVehicleExemptFromAnnualTestNow,
 } from '@/lib/vehicleAnnualTest';
 import { AlertTriangle, ChevronLeft, ChevronRight, MoreHorizontal, Car, IdCard, UserX } from 'lucide-react';
+import { fleetTableColumnsStorageKey, readOptionalColumnIds, writeOptionalColumnIds } from '@/lib/fleetTableColumnPrefs';
+import { FleetTableColumnsButton, FleetTableColumnsSheet } from '@/components/fleet/FleetTableColumnsSheet';
+import {
+  VEHICLE_HUD_OPTIONAL_COLUMNS,
+  VEHICLE_HUD_OPTIONAL_IDS,
+  DEFAULT_VEHICLE_HUD_OPTIONAL_VISIBLE,
+} from '@/components/vehicles/vehicleHudColumnDefinitions';
 
 const PAGE_SIZE = 10;
 
@@ -235,6 +242,257 @@ function vehicleCompliancePill(v: Vehicle) {
   );
 }
 
+function fmtCellText(raw: unknown): string {
+  if (raw === null || raw === undefined) return '—';
+  const s = String(raw).trim();
+  return s || '—';
+}
+
+function fmtNumHe(raw: number | null | undefined, maxFrac = 0): string {
+  if (raw == null || Number.isNaN(Number(raw))) return '—';
+  return Number(raw).toLocaleString('he-IL', { maximumFractionDigits: maxFrac });
+}
+
+function vehicleRoadAscentLabel(v: Vehicle): string {
+  const y = v.road_ascent_year;
+  const m = v.road_ascent_month;
+  if (y != null && m != null) return `${m}/${y}`;
+  if (y != null) return String(y);
+  return '—';
+}
+
+function renderVehicleHudOptionalCell(colId: string, v: Vehicle, driverName: string): ReactNode {
+  switch (colId) {
+    case 'vehicle_type': {
+      const typeLabel = vehicleTypeLabel(v);
+      return (
+        <Link
+          to={`/vehicles/${v.id}`}
+          className="block truncate font-semibold text-slate-100 hover:text-cyan-200 hover:underline"
+          title={typeLabel}
+        >
+          {typeLabel}
+        </Link>
+      );
+    }
+    case 'assigned_driver':
+      return (
+        <span className="block truncate text-sm text-slate-300" title={driverName || undefined}>
+          {driverName || '—'}
+        </span>
+      );
+    case 'compliance':
+      return (
+        <div className="flex flex-col items-stretch gap-0">
+          {vehicleCompliancePill(v)}
+          <VehicleComplianceDocSubtext v={v} />
+        </div>
+      );
+    case 'ownership': {
+      const ownershipLabel = displayOwnershipType(v.ownership_type);
+      return (
+        <span className="block truncate text-sm text-slate-300" title={ownershipLabel || undefined}>
+          {ownershipLabel || '—'}
+        </span>
+      );
+    }
+    case 'odometer':
+      return (
+        <span className="font-mono text-sm tabular-nums text-slate-200" dir="ltr">
+          {v.current_odometer.toLocaleString('he-IL')}
+        </span>
+      );
+    case 'is_active':
+      return <span className="text-sm text-slate-300">{v.is_active ? 'פעיל' : 'לא פעיל'}</span>;
+    case 'test_expiry':
+      return (
+        <span className="whitespace-nowrap text-sm tabular-nums text-slate-200" dir="ltr">
+          {fmtDriverDate(v.test_expiry)}
+        </span>
+      );
+    case 'insurance_expiry':
+      return (
+        <span className="whitespace-nowrap text-sm tabular-nums text-slate-200" dir="ltr">
+          {fmtDriverDate(v.insurance_expiry)}
+        </span>
+      );
+    case 'monthly_total_cost':
+      return (
+        <span dir="ltr" className="font-mono text-sm">
+          {fmtNumHe(v.monthly_total_cost, 2)}
+        </span>
+      );
+    case 'tax_value_price':
+      return (
+        <span dir="ltr" className="font-mono text-sm">
+          {fmtNumHe(v.tax_value_price, 2)}
+        </span>
+      );
+    case 'last_odometer_date':
+      return (
+        <span className="text-sm tabular-nums text-slate-200" dir="ltr">
+          {fmtDriverDate(v.last_odometer_date)}
+        </span>
+      );
+    case 'year':
+      return <span className="text-sm text-slate-200">{v.year != null ? String(v.year) : '—'}</span>;
+    case 'road_ascent':
+      return (
+        <span className="text-sm text-slate-200" dir="ltr">
+          {vehicleRoadAscentLabel(v)}
+        </span>
+      );
+    case 'manufacturer':
+      return <span className="block truncate text-sm text-slate-300">{fmtCellText(v.manufacturer)}</span>;
+    case 'model':
+      return <span className="block truncate text-sm text-slate-300">{fmtCellText(v.model)}</span>;
+    case 'color':
+      return <span className="block truncate text-sm text-slate-300">{fmtCellText(v.color)}</span>;
+    case 'fuel_type':
+      return <span className="block truncate text-sm text-slate-300">{fmtCellText(v.fuel_type)}</span>;
+    case 'group_name':
+      return <span className="block truncate text-sm text-slate-300">{fmtCellText(v.group_name)}</span>;
+    case 'chassis_number':
+      return (
+        <span className="font-mono text-sm text-slate-200" dir="ltr">
+          {fmtCellText(v.chassis_number)}
+        </span>
+      );
+    case 'driver_code':
+      return (
+        <span className="font-mono text-sm text-slate-200" dir="ltr">
+          {fmtCellText(v.driver_code)}
+        </span>
+      );
+    case 'safety_officer':
+      return <span className="block truncate text-sm text-slate-300">{fmtCellText(v.safety_officer)}</span>;
+    case 'vat_recognized':
+      return (
+        <span className="font-mono text-sm" dir="ltr">
+          {fmtNumHe(v.vat_recognized, 2)}
+        </span>
+      );
+    case 'base_index':
+      return (
+        <span className="font-mono text-sm" dir="ltr">
+          {fmtNumHe(v.base_index, 2)}
+        </span>
+      );
+    case 'vehicle_standard':
+      return <span className="block truncate text-sm text-slate-300">{fmtCellText(v.vehicle_standard)}</span>;
+    case 'leasing_company_name':
+      return <span className="block truncate text-sm text-slate-300">{fmtCellText(v.leasing_company_name)}</span>;
+    case 'internal_number':
+      return (
+        <span className="font-mono text-sm text-slate-200" dir="ltr">
+          {fmtCellText(v.internal_number)}
+        </span>
+      );
+    case 'next_maintenance_km':
+      return (
+        <span className="font-mono text-sm" dir="ltr">
+          {fmtNumHe(v.next_maintenance_km)}
+        </span>
+      );
+    case 'last_service_date':
+      return (
+        <span className="text-sm tabular-nums text-slate-200" dir="ltr">
+          {fmtDriverDate(v.last_service_date)}
+        </span>
+      );
+    case 'pickup_date':
+      return (
+        <span className="text-sm tabular-nums text-slate-200" dir="ltr">
+          {fmtDriverDate(v.pickup_date)}
+        </span>
+      );
+    case 'purchase_date':
+      return (
+        <span className="text-sm tabular-nums text-slate-200" dir="ltr">
+          {fmtDriverDate(v.purchase_date)}
+        </span>
+      );
+    case 'sale_date':
+      return (
+        <span className="text-sm tabular-nums text-slate-200" dir="ltr">
+          {fmtDriverDate(v.sale_date)}
+        </span>
+      );
+    case 'engine_volume':
+      return <span className="text-sm text-slate-300">{fmtCellText(v.engine_volume)}</span>;
+    case 'ignition_code':
+      return (
+        <span className="font-mono text-sm text-slate-200" dir="ltr">
+          {fmtCellText(v.ignition_code)}
+        </span>
+      );
+    case 'next_maintenance_date':
+      return (
+        <span className="text-sm tabular-nums text-slate-200" dir="ltr">
+          {fmtDriverDate(v.next_maintenance_date)}
+        </span>
+      );
+    case 'last_service_km':
+      return (
+        <span className="font-mono text-sm" dir="ltr">
+          {fmtNumHe(v.last_service_km)}
+        </span>
+      );
+    case 'service_interval_km':
+      return (
+        <span className="font-mono text-sm" dir="ltr">
+          {fmtNumHe(v.service_interval_km)}
+        </span>
+      );
+    case 'average_fuel_consumption':
+      return (
+        <span className="font-mono text-sm" dir="ltr">
+          {fmtNumHe(v.average_fuel_consumption, 1)}
+        </span>
+      );
+    case 'tax_year':
+      return <span className="text-sm text-slate-200">{v.tax_year != null ? String(v.tax_year) : '—'}</span>;
+    case 'adjusted_price':
+      return (
+        <span dir="ltr" className="font-mono text-sm">
+          {fmtNumHe(v.adjusted_price, 2)}
+        </span>
+      );
+    case 'vehicle_budget':
+      return (
+        <span dir="ltr" className="font-mono text-sm">
+          {fmtNumHe(v.vehicle_budget, 2)}
+        </span>
+      );
+    case 'upgrade_addition':
+      return (
+        <span dir="ltr" className="font-mono text-sm">
+          {fmtNumHe(v.upgrade_addition, 2)}
+        </span>
+      );
+    case 'mandatory_end_date':
+      return (
+        <span className="text-sm tabular-nums text-slate-200" dir="ltr">
+          {fmtDriverDate(v.mandatory_end_date)}
+        </span>
+      );
+    case 'last_tire_change_date':
+      return (
+        <span className="text-sm tabular-nums text-slate-200" dir="ltr">
+          {fmtDriverDate(v.last_tire_change_date)}
+        </span>
+      );
+    case 'next_tire_change_date':
+      return (
+        <span className="text-sm tabular-nums text-slate-200" dir="ltr">
+          {fmtDriverDate(v.next_tire_change_date)}
+        </span>
+      );
+    default:
+      return <span className="text-slate-500">—</span>;
+  }
+}
+
 export type VehicleStatusFilter = 'all' | 'valid' | 'warning' | 'expired' | 'inactive';
 
 export interface VehiclesHudTableProps {
@@ -357,6 +615,14 @@ export function VehiclesHudTable({
     [pageSlice],
   );
 
+  const vehicleColumnsKey = fleetTableColumnsStorageKey('vehicles');
+  const vehicleColAllowed = useMemo(() => new Set(VEHICLE_HUD_OPTIONAL_IDS), []);
+  const [vehicleOptionalVisible, setVehicleOptionalVisible] = useState(() =>
+    readOptionalColumnIds(vehicleColumnsKey, vehicleColAllowed, [...DEFAULT_VEHICLE_HUD_OPTIONAL_VISIBLE]),
+  );
+  const [vehicleColSheetOpen, setVehicleColSheetOpen] = useState(false);
+  const vehicleTableColSpan = 3 + vehicleOptionalVisible.length;
+
   return (
     <div className="w-full max-w-[100vw] space-y-4 overflow-x-hidden sm:space-y-5">
       <div className="grid grid-cols-2 gap-2 rounded-xl border border-cyan-500/20 bg-[#0a1528]/90 p-3 shadow-[0_0_24px_rgba(6,182,212,0.08)] sm:grid-cols-3 lg:grid-cols-5 sm:gap-3 sm:p-4">
@@ -460,7 +726,7 @@ export function VehiclesHudTable({
         </StatCardButton>
       </div>
 
-      <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-slate-950/80 p-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-start sm:gap-3 sm:p-4">
+      <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-slate-950/80 p-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between sm:gap-3 sm:p-4">
         <div className="min-w-0 sm:max-w-xs sm:flex-1">
           <label className="mb-1 block text-[11px] font-medium text-slate-400">חיפוש</label>
           <Input
@@ -517,21 +783,34 @@ export function VehiclesHudTable({
             </SelectContent>
           </Select>
         </div>
+        <div className="flex w-full shrink-0 items-end sm:w-auto sm:justify-end">
+          <FleetTableColumnsButton onClick={() => setVehicleColSheetOpen(true)} />
+        </div>
       </div>
+
+      <FleetTableColumnsSheet
+        open={vehicleColSheetOpen}
+        onOpenChange={setVehicleColSheetOpen}
+        title="עמודות בטבלת רכבים"
+        description="בחר אילו שדות יוצגו בטבלה לפני עמודת מספר הרישוי (צ׳קבוקס ותפריט פעולות נשארים קבועים). ההעדפה נשמרת בדפדפן."
+        options={VEHICLE_HUD_OPTIONAL_COLUMNS}
+        value={vehicleOptionalVisible}
+        defaultValue={[...DEFAULT_VEHICLE_HUD_OPTIONAL_VISIBLE]}
+        onSave={(next) => {
+          const cleaned = next.filter((id) => vehicleColAllowed.has(id));
+          writeOptionalColumnIds(vehicleColumnsKey, cleaned);
+          setVehicleOptionalVisible(cleaned);
+        }}
+      />
 
       <div className="overflow-hidden rounded-xl border border-cyan-500/20 bg-[#070d18]/95 shadow-[0_0_32px_rgba(6,182,212,0.06)]">
         <div className="overflow-x-auto">
-          <Table className="w-full min-w-[880px] table-fixed border-separate border-spacing-0 text-right">
-            <colgroup>
-              <col style={{ width: 44 }} />
-              <col style={{ width: '22%' }} />
-              <col style={{ width: '12%' }} />
-              <col style={{ width: '14%' }} />
-              <col style={{ width: '11%' }} />
-              <col style={{ width: '14%' }} />
-              <col style={{ width: '12%' }} />
-              <col style={{ width: 48 }} />
-            </colgroup>
+          <Table
+            className={cn(
+              'w-full border-separate border-spacing-0 text-right',
+              vehicleOptionalVisible.length <= 5 ? 'min-w-[720px]' : 'min-w-[960px]',
+            )}
+          >
             <TableHeader>
               <TableRow className="border-cyan-500/15 bg-black/40 hover:bg-black/40">
                 <TableHead className="h-11 w-11 p-0 px-2 text-center align-middle [&:has([role=checkbox])]:pr-2">
@@ -542,39 +821,30 @@ export function VehiclesHudTable({
                     className="border-cyan-400/50 data-[state=checked]:bg-cyan-600"
                   />
                 </TableHead>
-                <TableHead className="p-0 px-3 py-2.5 text-right align-middle text-xs font-semibold text-slate-300">
-                  סוג רכב
-                </TableHead>
-                <TableHead className="p-0 px-3 py-2.5 text-right align-middle text-xs font-semibold text-slate-300">
+                {vehicleOptionalVisible.map((colId) => (
+                  <TableHead
+                    key={colId}
+                    className="p-0 px-3 py-2.5 text-right align-middle text-xs font-semibold text-slate-300 whitespace-nowrap"
+                  >
+                    {VEHICLE_HUD_OPTIONAL_COLUMNS.find((c) => c.id === colId)?.label ?? colId}
+                  </TableHead>
+                ))}
+                <TableHead className="p-0 px-3 py-2.5 text-right align-middle text-xs font-semibold text-slate-300 whitespace-nowrap">
                   מספר רישוי
                 </TableHead>
-                <TableHead className="p-0 px-3 py-2.5 text-right align-middle text-xs font-semibold text-slate-300">
-                  נהג משויך
-                </TableHead>
-                <TableHead className="p-0 px-3 py-2.5 text-right align-middle text-xs font-semibold text-slate-300">
-                  סטטוס
-                </TableHead>
-                <TableHead className="p-0 px-3 py-2.5 text-right align-middle text-xs font-semibold text-slate-300">
-                  בעלות
-                </TableHead>
-                <TableHead className="p-0 px-3 py-2.5 text-right align-middle text-xs font-semibold text-slate-300">
-                  ק״מ
-                </TableHead>
-                <TableHead className="w-12 p-0 px-1 align-middle text-right" />
+                <TableHead className="w-12 min-w-[3rem] p-0 px-1 align-middle text-right" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {pageSlice.length === 0 ? (
                 <TableRow className="border-0 hover:bg-transparent">
-                  <TableCell colSpan={8} className="py-16 text-center text-slate-400">
+                  <TableCell colSpan={vehicleTableColSpan} className="py-16 text-center text-slate-400">
                     אין רכבים להצגה לפי הסינון
                   </TableCell>
                 </TableRow>
               ) : (
                 pageSlice.map((v) => {
                   const driverName = assignedDriverNameByVehicleId.get(v.id)?.trim() || '';
-                  const typeLabel = vehicleTypeLabel(v);
-                  const ownershipLabel = displayOwnershipType(v.ownership_type);
                   return (
                     <TableRow
                       key={v.id}
@@ -592,15 +862,11 @@ export function VehiclesHudTable({
                           className="border-cyan-400/50 data-[state=checked]:bg-cyan-600"
                         />
                       </TableCell>
-                      <TableCell className="p-0 px-3 py-2.5 align-middle">
-                        <Link
-                          to={`/vehicles/${v.id}`}
-                          className="block truncate font-semibold text-slate-100 hover:text-cyan-200 hover:underline"
-                          title={typeLabel}
-                        >
-                          {typeLabel}
-                        </Link>
-                      </TableCell>
+                      {vehicleOptionalVisible.map((colId) => (
+                        <TableCell key={colId} className="max-w-[14rem] p-0 px-3 py-2.5 align-middle">
+                          {renderVehicleHudOptionalCell(colId, v, driverName)}
+                        </TableCell>
+                      ))}
                       <TableCell
                         className="p-0 px-3 py-2.5 align-middle font-mono text-sm font-medium tabular-nums text-cyan-200/90"
                         dir="ltr"
@@ -608,28 +874,6 @@ export function VehiclesHudTable({
                         <Link to={`/vehicles/${v.id}`} className="hover:underline">
                           {v.plate_number}
                         </Link>
-                      </TableCell>
-                      <TableCell className="p-0 px-3 py-2.5 align-middle text-sm text-slate-300">
-                        <span className="block truncate" title={driverName || undefined}>
-                          {driverName || '—'}
-                        </span>
-                      </TableCell>
-                      <TableCell className="p-0 px-3 py-2.5 align-middle">
-                        <div className="flex flex-col items-stretch gap-0">
-                          {vehicleCompliancePill(v)}
-                          <VehicleComplianceDocSubtext v={v} />
-                        </div>
-                      </TableCell>
-                      <TableCell className="p-0 px-3 py-2.5 align-middle text-sm text-slate-300">
-                        <span className="block truncate" title={ownershipLabel || undefined}>
-                          {ownershipLabel || '—'}
-                        </span>
-                      </TableCell>
-                      <TableCell
-                        className="p-0 px-3 py-2.5 align-middle font-mono text-sm tabular-nums text-slate-200"
-                        dir="ltr"
-                      >
-                        {v.current_odometer.toLocaleString('he-IL')}
                       </TableCell>
                       <TableCell className="p-0 px-1 py-2.5 text-center align-middle">
                         <DropdownMenu>

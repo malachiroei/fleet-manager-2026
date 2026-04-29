@@ -141,6 +141,8 @@ export interface Vehicle {
   next_inspection_date: string | null;
   /** קובץ/תמונת טופס ביקורת תקופתית */
   inspection_form_url: string | null;
+  /** תבנית שורות + תוצאה אחרונה — ראו `periodicInspectionChecklist` */
+  periodic_inspection_json?: unknown | null;
 }
 
 export interface Driver {

@@ -13,7 +13,6 @@ import type { PermissionKey } from '@/lib/permissions';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import QuickOdometerDialog from '@/components/QuickOdometerDialog';
 import {
   Car,
   Users,
@@ -177,7 +176,6 @@ export default function Dashboard() {
   const queryClient = useQueryClient();
   const { data: stats, isLoading } = useDashboardStats();
   const { data: alerts } = useComplianceAlerts();
-  const [showOdometerDialog, setShowOdometerDialog] = useState(false);
   const { t } = useTranslation();
   const isMobile = useIsMobile();
   const { user, profile, hasPermission, isAdmin, isManager, isDriver, roles: userRoles, loading, activeOrgId } = useAuth();
@@ -311,13 +309,6 @@ export default function Dashboard() {
       icon: Truck,
       permission: 'vehicle_delivery',
       featureFlagKey: 'qa_vehicle_delivery',
-    },
-    {
-      title: 'רכב חליפי',
-      href: '/handover/replacement',
-      icon: Repeat,
-      permission: 'replacement_car',
-      featureFlagKey: 'qa_replacement_car',
     },
     {
       title: 'ניהול צוות',
@@ -592,26 +583,6 @@ export default function Dashboard() {
                 )
               ) : null}
 
-              {hasPermission('mileage_update') && (
-                <Card className="h-full border-dashed touch-manipulation min-h-[48px] cursor-pointer" style={{ touchAction: 'manipulation' }}>
-                  <CardContent className="p-4 flex items-center gap-3">
-                    <div className="dashboard-qa-icon dashboard-qa-icon--disabled">
-                      <Gauge className="h-4.5 w-4.5" strokeWidth={1.35} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-foreground truncate">{t('navigation.mileageUpdate')}</p>
-                      <Button
-                        variant="link"
-                        className="h-auto p-0 text-xs text-muted-foreground touch-manipulation cursor-pointer min-h-[44px] min-w-[44px] inline-flex items-center"
-                        style={{ touchAction: 'manipulation' }}
-                        onClick={() => setShowOdometerDialog(true)}
-                      >
-                        פתיחה מהירה
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
             </div>
           </section>
         </>
@@ -747,26 +718,6 @@ export default function Dashboard() {
                 )
               ) : null}
 
-              {hasPermission('mileage_update') && (
-                <Card className="h-full border-dashed touch-manipulation min-h-[48px] cursor-pointer" style={{ touchAction: 'manipulation' }}>
-                  <CardContent className="p-4 h-full flex items-center gap-3">
-                    <div className="dashboard-qa-icon dashboard-qa-icon--disabled">
-                      <Gauge className="h-5 w-5" strokeWidth={1.35} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-foreground truncate">{t('navigation.mileageUpdate')}</p>
-                      <Button
-                        variant="link"
-                        className="h-auto p-0 text-xs text-muted-foreground touch-manipulation cursor-pointer min-h-[44px] inline-flex items-center"
-                        style={{ touchAction: 'manipulation' }}
-                        onClick={() => setShowOdometerDialog(true)}
-                      >
-                        פתיחה מהירה
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
             </div>
           </section>
         </>
@@ -774,10 +725,6 @@ export default function Dashboard() {
 
       
 
-      <QuickOdometerDialog
-        open={showOdometerDialog}
-        onOpenChange={setShowOdometerDialog}
-      />
       </div>
     </div>
   );

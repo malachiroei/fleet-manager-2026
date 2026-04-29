@@ -10,6 +10,7 @@ import { isFeatureEnabled, useFeatureFlags } from '@/hooks/useFeatureFlags';
 import { useVehicles, useUpdateVehicle } from '@/hooks/useVehicles';
 import type { Vehicle } from '@/types/fleet';
 import { toast } from '@/hooks/use-toast';
+import { suggestPeriodicInspectionToast } from '@/lib/periodicInspectionSuggestions';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -379,6 +380,13 @@ export default function ServiceUpdatePage() {
         variant: emailProblem ? 'destructive' : 'default',
       });
       navigate(`/vehicles/${resolvedVehicle.id}`);
+      queueMicrotask(() =>
+        suggestPeriodicInspectionToast({
+          vehicleId: resolvedVehicle.id,
+          mode: 'service',
+          onVehicleDetailPage: true,
+        }),
+      );
     } catch (err: unknown) {
       console.error('[ServiceUpdatePage] submit failed', err);
       const raw = err instanceof Error ? err.message : 'נסו שוב';

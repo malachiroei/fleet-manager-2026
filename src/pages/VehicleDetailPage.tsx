@@ -945,7 +945,7 @@ export default function VehicleDetailPage() {
                       <h2 className="font-mono text-4xl font-bold tracking-[0.06em] leading-none text-white sm:text-5xl" dir="ltr">
                         {str(vehicle.plate_number)}
                       </h2>
-                    </div>
+                </div>
 
                     <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1 sm:justify-start">
                       <span className="text-sm text-[#9aa3b2] sm:text-base">נהג משויך</span>
@@ -1007,7 +1007,7 @@ export default function VehicleDetailPage() {
                     ) : (
                       <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
                         הוספת תמונת דגם
-                      </div>
+                  </div>
                     )}
                     <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 bg-black/55 py-1 text-[10px] text-slate-200 opacity-0 transition-opacity group-hover:opacity-100">
                       {isUploadingModelImage ? <Loader2 className="h-3 w-3 animate-spin" /> : <ImagePlus className="h-3 w-3" />}
@@ -1157,7 +1157,7 @@ export default function VehicleDetailPage() {
                       {specSaving ? <Loader2 className="ml-1 h-3.5 w-3.5 animate-spin" /> : null}
                       אישור שינויים
                     </Button>
-                  </div>
+              </div>
                   <h3 className="justify-self-center text-sm font-semibold text-slate-200">מפרט מלא</h3>
                   <div />
                 </div>
@@ -1171,8 +1171,8 @@ export default function VehicleDetailPage() {
                         className="h-9 bg-background/80"
                         value={specForm.manufacturer ?? ''}
                         onChange={(e) => setSpecForm((p) => ({ ...p, manufacturer: e.target.value }))}
-                      />
-                    </div>
+                    />
+                  </div>
                     <div className="flex-1 flex flex-col gap-1">
                       <span className="text-xs font-medium text-muted-foreground">דגם</span>
                       <Input
@@ -1184,21 +1184,21 @@ export default function VehicleDetailPage() {
                   </div>
                   <div className="flex flex-col gap-2 sm:flex-row-reverse">
                     <div className="flex-1 flex flex-col gap-1">
-                      <FleetDatePicker
-                        label="תאריך קניה / תחילת עסקה"
-                        className="[&_input]:h-9"
-                        value={specForm.purchase_date ?? ''}
-                        onChange={(ymd) => setSpecForm((p) => ({ ...p, purchase_date: ymd }))}
-                      />
+                  <FleetDatePicker
+                    label="תאריך קניה / תחילת עסקה"
+                    className="[&_input]:h-9"
+                    value={specForm.purchase_date ?? ''}
+                    onChange={(ymd) => setSpecForm((p) => ({ ...p, purchase_date: ymd }))}
+                  />
                     </div>
                     <div className="flex-1 flex flex-col gap-1">
-                      <FleetDatePicker
-                        label="תאריך מכירה / סיום עסקה"
-                        className="[&_input]:h-9"
-                        value={specForm.sale_date ?? ''}
-                        onChange={(ymd) => setSpecForm((p) => ({ ...p, sale_date: ymd }))}
-                      />
-                    </div>
+                  <FleetDatePicker
+                    label="תאריך מכירה / סיום עסקה"
+                    className="[&_input]:h-9"
+                    value={specForm.sale_date ?? ''}
+                    onChange={(ymd) => setSpecForm((p) => ({ ...p, sale_date: ymd }))}
+                  />
+                </div>
                   </div>
                 </div>
 
@@ -1306,7 +1306,7 @@ export default function VehicleDetailPage() {
                   </div>
                   <div className="flex flex-col gap-2 sm:flex-row-reverse">
                     <div className="flex-1 flex flex-col gap-1">
-                      <span className="text-xs font-medium text-muted-foreground">מספר שלדה</span>
+                    <span className="text-xs font-medium text-muted-foreground">מספר שלדה</span>
                       <Input className="h-9 bg-background/80" dir="ltr" value={specForm.chassis_number ?? ''} onChange={(e) => setSpecForm((p) => ({ ...p, chassis_number: e.target.value }))} placeholder="VIN / מספר שלדה" />
                     </div>
                     <div className="flex-1 flex flex-col gap-1">
@@ -1350,62 +1350,62 @@ export default function VehicleDetailPage() {
                     </div>
                     <div className="flex-1 flex flex-col gap-1">
                       <span className="text-xs font-medium text-muted-foreground">טלפון נהג</span>
-                      <Input
-                        className="h-9 bg-background/80"
-                        dir="ltr"
+                    <Input
+                      className="h-9 bg-background/80"
+                      dir="ltr"
                         value={specForm.assigned_driver_phone ?? ''}
                         placeholder={specForm.assigned_driver_id ? undefined : '—'}
                         readOnly
                         disabled
-                      />
-                    </div>
+                    />
                   </div>
-                  <div className="flex flex-col gap-2 sm:flex-row-reverse">
-                    <div className="flex-1 flex flex-col gap-1">
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                    <div className="flex flex-col gap-1">
                       <span className="text-xs font-medium text-muted-foreground">התקן</span>
-                      <Input
-                        className="h-9 bg-background/80"
+                    <Input
+                      className="h-9 bg-background/80"
                         value={specForm.vehicle_standard ?? ''}
                         onChange={(e) => setSpecForm((p) => ({ ...p, vehicle_standard: e.target.value }))}
                         placeholder="למשל Euro 6"
-                      />
-                    </div>
-                    <div className="flex-1 flex flex-col gap-1">
+                    />
+                  </div>
+                    <div className="flex flex-col gap-1">
                       <span className="text-xs font-medium text-muted-foreground">מע״מ מוכר</span>
-                      <Input
-                        type="number"
-                        min={0}
+                    <Input
+                      type="number"
+                      min={0}
                         step="0.01"
-                        className="h-9 bg-background/80"
-                        dir="ltr"
+                      className="h-9 bg-background/80"
+                      dir="ltr"
                         placeholder="למשל 17"
                         value={specForm.vat_recognized ?? ''}
                         onChange={(e) => setSpecForm((p) => ({ ...p, vat_recognized: e.target.value }))}
-                      />
-                    </div>
-                    <div className="flex-1 flex flex-col gap-1">
+                    />
+                  </div>
+                    <div className="flex flex-col gap-1">
                       <span className="text-xs font-medium text-muted-foreground">קצין בטיחות</span>
-                      <Input
-                        className="h-9 bg-background/80"
+                    <Input
+                      className="h-9 bg-background/80"
                         value={specForm.safety_officer ?? ''}
                         onChange={(e) => setSpecForm((p) => ({ ...p, safety_officer: e.target.value }))}
                         placeholder="שם קצין בטיחות"
-                      />
-                    </div>
-                    <div className="flex-1 flex flex-col gap-1">
+                    />
+                  </div>
+                    <div className="flex flex-col gap-1">
                       <span className="text-xs font-medium text-muted-foreground">עלות ליסינג חודשית</span>
-                      <Input
+                    <Input
                         type="number"
                         min={0}
                         step="0.01"
-                        className="h-9 bg-background/80"
-                        dir="ltr"
+                      className="h-9 bg-background/80"
+                      dir="ltr"
                         placeholder="למשל 3200"
                         value={specForm.monthly_total_cost ?? ''}
                         onChange={(e) => setSpecForm((p) => ({ ...p, monthly_total_cost: e.target.value }))}
-                      />
-                    </div>
-                    <div className="flex-1 flex flex-col gap-1">
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
                       <span className="text-xs font-medium text-muted-foreground">מדד בסיס</span>
                       <Input
                         type="number"
@@ -1417,20 +1417,20 @@ export default function VehicleDetailPage() {
                         value={specForm.base_index ?? ''}
                         onChange={(e) => setSpecForm((p) => ({ ...p, base_index: e.target.value }))}
                       />
-                    </div>
-                    <div className="flex-1 flex flex-col gap-1">
+                  </div>
+                    <div className="flex flex-col gap-1">
                       <span className="text-xs font-medium text-muted-foreground">מרווח טיפול מומלץ (ק״מ)</span>
-                      <Input
+                    <Input
                         type="number"
                         min={0}
-                        className="h-9 bg-background/80"
+                      className="h-9 bg-background/80"
                         dir="ltr"
                         placeholder="למשל 15000"
                         value={specForm.service_interval_km ?? ''}
                         onChange={(e) => setSpecForm((p) => ({ ...p, service_interval_km: e.target.value }))}
                       />
                     </div>
-                    <div className="flex-1 flex flex-col gap-1">
+                    <div className="flex flex-col gap-1">
                       <span className="text-xs font-medium text-muted-foreground">צריכת דלק ממוצעת</span>
                       <Input
                         type="text"
@@ -1685,7 +1685,7 @@ export default function VehicleDetailPage() {
                     const fileUrl = typeof doc?.file_url === 'string' ? doc.file_url.trim() : '';
                     const dt = String(doc?.document_type ?? '').trim();
                     const inferredFocus =
-                      dt === 'annual_license' || dt === 'insurance_policy' || dt === 'tire_change'
+                      dt === 'annual_license' || dt === 'insurance_policy' || dt === 'tire_change' || dt === 'periodic_inspection'
                         ? dt
                         : /רישיון רכב \(טסט\)|טסט/i.test(titleStr)
                           ? 'annual_license'
@@ -1693,6 +1693,8 @@ export default function VehicleDetailPage() {
                             ? 'insurance_policy'
                             : /החלפת צמיג|צמיגים/i.test(titleStr)
                               ? 'tire_change'
+                              : /ביקורת תקופתית|טופס מסומן/i.test(titleStr)
+                                ? 'periodic_inspection'
                               : null;
                     const dataFocus =
                       inferredFocus === 'annual_license'

@@ -15,6 +15,9 @@ export async function sendFleetFieldUpdateNotification(params: {
   rows: FleetFieldUpdateRow[];
   documentUrl?: string | null;
   to?: string;
+  /** כפתור CTA בתחתית המייל (טופס חיצוני) */
+  primaryLinkUrl?: string;
+  primaryLinkLabel?: string;
 }): Promise<{ ok: true } | { ok: false; message: string }> {
   const body: Record<string, unknown> = {
     notificationType: 'fleet_field',
@@ -25,6 +28,8 @@ export async function sendFleetFieldUpdateNotification(params: {
     vehicleLabel: params.vehicleLabel ?? '',
     rows: params.rows,
     documentUrl: params.documentUrl ?? null,
+    primaryLinkUrl: params.primaryLinkUrl,
+    primaryLinkLabel: params.primaryLinkLabel,
   };
 
   try {
