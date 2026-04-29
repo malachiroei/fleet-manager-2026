@@ -30,6 +30,7 @@ import ReplacementVehicleHubPage from "./pages/ReplacementVehicleHubPage";
 import AdminSettingsPage from "./pages/AdminSettingsPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
 import AdminUsersPage from "./pages/AdminUsersPage";
+import AdminCompliancePage from "./pages/AdminCompliancePage";
 import OrgSettingsPage from "./pages/OrgSettingsPage";
 import TeamManagementPage from "./pages/TeamManagementPage";
 import NotFound from "./pages/NotFound";
@@ -167,6 +168,7 @@ function AppRoutes() {
         }
       />
       <Route path="/admin/dashboard" element={<ProtectedRoute><AdminDashboardPage /></ProtectedRoute>} />
+      <Route path="/admin/compliance" element={<ProtectedRoute><AdminCompliancePage /></ProtectedRoute>} />
       <Route path="/admin/users" element={<ProtectedRoute><AdminUsersPage /></ProtectedRoute>} />
       <Route path="/admin/org-settings" element={<ProtectedRoute><OrgSettingsPage /></ProtectedRoute>} />
       <Route path="/team" element={<ProtectedRoute><TeamManagementPage /></ProtectedRoute>} />
