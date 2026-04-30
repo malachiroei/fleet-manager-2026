@@ -1697,14 +1697,14 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
           <DialogHeader>
             <DialogTitle>עדכון שטיפה</DialogTitle>
             <DialogDescription>
-              מצלמה מוטמעת או גלריה (בתוך האפליקציה) — התמונה תישמר במסמכי הרכב. לצילום native מהמייל השתמשו בקישור לעובדים.
+              מצלמה או גלריה מתוך האפליקציה — התמונה תישמר במסמכי הרכב. לצילום native מהמייל השתמשו בקישור לעובדים.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <HudPhotoSlot
-              label="צילום הרכב"
               file={washPhotoFile}
               onFileChange={setWashPhotoFile}
+              imageAlt="רכב אחרי שטיפה"
               required
               disabled={saving}
             />

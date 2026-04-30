@@ -578,14 +578,10 @@ export default function ReportMileagePage() {
 
                 <div className="space-y-2">
                   <Label>צילום לוח השעונים <span className="text-destructive">*</span></Label>
-                  <p className="text-xs text-muted-foreground">
-                    בתוך האפליקציה: <strong className="text-foreground">חלון מצלמה מוטמע</strong> או בחירה מהגלריה (בלי מעבר
-                    למצלמה מלאה של המערכת).
-                  </p>
                   <HudPhotoSlot
-                    label="לוח שעונים — מצלמה או גלריה"
                     file={photoFile}
                     onFileChange={setPhotoFile}
+                    imageAlt="לוח שעונים"
                     required
                     disabled={submitting}
                   />

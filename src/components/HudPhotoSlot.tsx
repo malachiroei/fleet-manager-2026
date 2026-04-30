@@ -9,18 +9,27 @@ import { photoPickerActionButtonClassName } from '@/lib/photoPickerUi';
 import { cn } from '@/lib/utils';
 
 export type HudPhotoSlotProps = {
-  label: string;
   file: File | null;
   onFileChange: (file: File | null) => void;
+  /** טקסט קטן אופציונלי מתחת ל«מצלמה או גלריה» (למשל חזית / צד ימין) */
+  subtitle?: string;
+  /** alt לתצוגת התמונה אחרי צילום */
+  imageAlt?: string;
   required?: boolean;
   disabled?: boolean;
 };
 
 /**
- * צילום לדפים בתוך ה-HUD: מצלמה מוטמעת (WebcamCapture) + בחירה מהגלריה ללא `capture` —
- * נשמר context של האפליקציה. לקישור הציבורי מהמייל השתמשו ב-PhotoUpload (native).
+ * צילום ל-HUD: WebcamCapture + גלריה בלי `capture`. כותרת אחידה: «מצלמה או גלריה».
  */
-export function HudPhotoSlot({ label, file, onFileChange, required, disabled = false }: HudPhotoSlotProps) {
+export function HudPhotoSlot({
+  file,
+  onFileChange,
+  subtitle,
+  imageAlt = 'תמונה',
+  required,
+  disabled = false,
+}: HudPhotoSlotProps) {
   const galleryRef = useRef<HTMLInputElement>(null);
   const onFileChangeRef = useRef(onFileChange);
   onFileChangeRef.current = onFileChange;
@@ -114,8 +123,10 @@ export function HudPhotoSlot({ label, file, onFileChange, required, disabled = f
 
       <div
         className={cn(
-          'relative aspect-video overflow-hidden rounded-lg border-2 border-dashed transition-all',
-          previewUrl ? 'border-success' : 'border-border',
+          'relative min-h-[9rem] overflow-hidden rounded-xl transition-colors sm:aspect-video sm:min-h-0',
+          previewUrl
+            ? 'border border-emerald-500/45 bg-black/30'
+            : 'border border-cyan-400/15 bg-[#061325]/50',
         )}
       >
         {previewUrl ? (
@@ -123,9 +134,9 @@ export function HudPhotoSlot({ label, file, onFileChange, required, disabled = f
             <img
               key={previewUrl}
               src={previewUrl}
-              alt={label}
+              alt={imageAlt}
               decoding="async"
-              className="h-full w-full object-cover"
+              className="h-full w-full max-h-56 object-cover sm:max-h-none sm:min-h-[10rem]"
             />
             <div className="absolute left-2 top-2 rounded-full bg-success p-1 text-success-foreground">
               <Check className="h-4 w-4" />
@@ -145,11 +156,14 @@ export function HudPhotoSlot({ label, file, onFileChange, required, disabled = f
             </Button>
           </>
         ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-3 text-muted-foreground">
-            <Camera className="h-8 w-8" />
-            <span className="text-center text-sm font-medium">{label}</span>
+          <div className="flex min-h-[9rem] flex-col items-center justify-center gap-2.5 p-4 text-muted-foreground sm:min-h-[10rem]">
+            <Camera className="h-7 w-7 opacity-80" />
+            <span className="text-center text-sm font-medium text-foreground/90">מצלמה או גלריה</span>
+            {subtitle ? (
+              <span className="text-center text-xs text-muted-foreground">{subtitle}</span>
+            ) : null}
             {required ? <span className="text-xs text-destructive">*חובה</span> : null}
-            <div className="flex w-full max-w-sm flex-col gap-2 sm:flex-row sm:justify-center">
+            <div className="flex w-full max-w-sm flex-col gap-2 pt-1 sm:flex-row sm:justify-center">
               <Button
                 type="button"
                 variant="outline"
@@ -158,7 +172,7 @@ export function HudPhotoSlot({ label, file, onFileChange, required, disabled = f
                 onClick={() => setWebcamOpen(true)}
               >
                 <Camera className="h-4 w-4 shrink-0" />
-                מצלמה מוטמעת
+                מצלמה
               </Button>
               <Button
                 type="button"
@@ -168,7 +182,7 @@ export function HudPhotoSlot({ label, file, onFileChange, required, disabled = f
                 onClick={() => galleryRef.current?.click()}
               >
                 <ImageIcon className="h-4 w-4 shrink-0" />
-                מהגלריה
+                גלריה
               </Button>
             </div>
           </div>

@@ -565,16 +565,40 @@ export default function VehicleDeliveryPage() {
             <CardContent>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3">
-                  <HudPhotoSlot label="חזית" file={photoFront} onFileChange={setPhotoFront} disabled={isSubmitting} />
+                  <HudPhotoSlot
+                    subtitle="חזית"
+                    imageAlt="חזית"
+                    file={photoFront}
+                    onFileChange={setPhotoFront}
+                    disabled={isSubmitting}
+                  />
                 </div>
                 <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3">
-                  <HudPhotoSlot label="אחור" file={photoBack} onFileChange={setPhotoBack} disabled={isSubmitting} />
+                  <HudPhotoSlot
+                    subtitle="אחור"
+                    imageAlt="אחור"
+                    file={photoBack}
+                    onFileChange={setPhotoBack}
+                    disabled={isSubmitting}
+                  />
                 </div>
                 <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3">
-                  <HudPhotoSlot label="צד ימין" file={photoRight} onFileChange={setPhotoRight} disabled={isSubmitting} />
+                  <HudPhotoSlot
+                    subtitle="צד ימין"
+                    imageAlt="צד ימין"
+                    file={photoRight}
+                    onFileChange={setPhotoRight}
+                    disabled={isSubmitting}
+                  />
                 </div>
                 <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3">
-                  <HudPhotoSlot label="צד שמאל" file={photoLeft} onFileChange={setPhotoLeft} disabled={isSubmitting} />
+                  <HudPhotoSlot
+                    subtitle="צד שמאל"
+                    imageAlt="צד שמאל"
+                    file={photoLeft}
+                    onFileChange={setPhotoLeft}
+                    disabled={isSubmitting}
+                  />
                 </div>
               </div>
             </CardContent>

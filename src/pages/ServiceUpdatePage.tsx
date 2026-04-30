@@ -513,9 +513,10 @@ export default function ServiceUpdatePage() {
               <div className="space-y-2">
                 <Label>צילום חשבונית / טיפול</Label>
                 <HudPhotoSlot
-                  label="חשבונית / טפסי טיפול — מצלמה מוטמעת או גלריה"
                   file={photoFile}
                   onFileChange={setPhotoFile}
+                  subtitle="חשבונית / טפסי טיפול"
+                  imageAlt="חשבונית או טפסי טיפול"
                   required
                   disabled={submitting}
                 />
