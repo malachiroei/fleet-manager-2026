@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Camera, Check, ImageIcon, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { useMobilePhotoIngest } from '@/hooks/useMobilePhotoIngest';
-import { isAndroidUserAgent, shouldAttachDirectCameraCapture } from '@/lib/mobilePhotoIngest';
+import { toast } from '@/hooks/use-toast';
+import {
+  isAndroidUserAgent,
+  shouldAttachDirectCameraCapture,
+  tryMaterializeImageFileFromInput,
+} from '@/lib/mobilePhotoIngest';
 import { photoPickerActionButtonClassName } from '@/lib/photoPickerUi';
 import { cn } from '@/lib/utils';
 
@@ -16,6 +20,10 @@ interface PhotoUploadProps {
   disabled?: boolean;
 }
 
+/**
+ * צילום כמו בדיאלוגי כרטיס הרכב (רישוי/ביטוח): materialize אסינכרוני + blob URL לפריוויו,
+ * בלי useMobilePhotoIngest — פחות עומס state אחרי חזרה מהמצלמה בכרום אנדרואיד.
+ */
 export default function PhotoUpload({
   label,
   onPhotoCapture,
@@ -29,42 +37,93 @@ export default function PhotoUpload({
   const onPhotoCaptureRef = useRef(onPhotoCapture);
   onPhotoCaptureRef.current = onPhotoCapture;
 
-  /** זהות יציבה — מונע ניתוק useMobilePhotoIngest אחרי כל רינדור (מסירה / 4 כפתורי צילום). */
-  const forwardCommitted = useCallback((file: File | null) => {
-    onPhotoCaptureRef.current(file);
-  }, []);
-
-  const {
-    photoPreviewUrl: preview,
-    previewMountKey,
-    isMaterializing,
-    startPhotoIngest,
-    resetPhoto,
-  } = useMobilePhotoIngest({
-    logLabel: '[PhotoUpload]',
-    onCommittedChange: forwardCommitted,
-  });
-
-  const android = isAndroidUserAgent();
-  const controlsDisabled = disabled || isMaterializing;
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const previewRevokeRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const onGoHome = () => {
-      resetPhoto();
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      if (galleryInputRef.current) galleryInputRef.current.value = '';
-      if (cameraInputRef.current) cameraInputRef.current.value = '';
+    return () => {
+      if (previewRevokeRef.current) {
+        URL.revokeObjectURL(previewRevokeRef.current);
+        previewRevokeRef.current = null;
+      }
     };
-    window.addEventListener('app:go-home', onGoHome as EventListener);
-    return () => window.removeEventListener('app:go-home', onGoHome as EventListener);
-  }, [resetPhoto]);
+  }, []);
 
-  const clearPhoto = () => {
-    resetPhoto();
+  const revokePreview = useCallback(() => {
+    if (previewRevokeRef.current) {
+      URL.revokeObjectURL(previewRevokeRef.current);
+      previewRevokeRef.current = null;
+    }
+    setPreviewUrl(null);
+  }, []);
+
+  const applyPickedFile = useCallback(async (file: File | null, clearInput: HTMLInputElement | null) => {
+    revokePreview();
+    onPhotoCaptureRef.current(null);
+
+    if (!file) {
+      if (clearInput) clearInput.value = '';
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const mime = file.type || '';
+      const looksLikeImage =
+        mime.startsWith('image/') || mime === 'application/octet-stream' || mime === '';
+      let normalized = file;
+      if (looksLikeImage) {
+        try {
+          const { file: work } = await tryMaterializeImageFileFromInput(file);
+          normalized = work;
+        } catch (e) {
+          console.warn('[PhotoUpload] materialize failed; using original', e);
+        }
+      }
+      if (!normalized.size) {
+        toast({
+          title: 'הקובץ ריק',
+          description: 'נסו לצלם או לבחור תמונה אחרת.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      const url = URL.createObjectURL(normalized);
+      previewRevokeRef.current = url;
+      setPreviewUrl(url);
+      onPhotoCaptureRef.current(normalized);
+    } catch (err) {
+      console.error('[PhotoUpload] ingest failed', err);
+      toast({
+        title: 'לא ניתן לטעון את התמונה',
+        description: 'נסו שוב או תמונה מהגלריה.',
+        variant: 'destructive',
+      });
+    } finally {
+      setBusy(false);
+      if (clearInput) clearInput.value = '';
+    }
+  }, [revokePreview]);
+
+  const android = isAndroidUserAgent();
+  const controlsDisabled = disabled || busy;
+
+  const clearPhoto = useCallback(() => {
+    revokePreview();
+    onPhotoCaptureRef.current(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (galleryInputRef.current) galleryInputRef.current.value = '';
     if (cameraInputRef.current) cameraInputRef.current.value = '';
-  };
+  }, [revokePreview]);
+
+  useEffect(() => {
+    const onGoHome = () => {
+      clearPhoto();
+    };
+    window.addEventListener('app:go-home', onGoHome as EventListener);
+    return () => window.removeEventListener('app:go-home', onGoHome as EventListener);
+  }, [clearPhoto]);
 
   const openNativePicker = () => {
     fileInputRef.current?.click();
@@ -82,8 +141,7 @@ export default function PhotoUpload({
             className="hidden"
             disabled={controlsDisabled}
             onChange={(e) => {
-              startPhotoIngest(e.target.files?.[0] ?? null, e.target);
-              e.target.value = '';
+              void applyPickedFile(e.target.files?.[0] ?? null, e.target);
             }}
           />
           <input
@@ -93,8 +151,7 @@ export default function PhotoUpload({
             className="hidden"
             disabled={controlsDisabled}
             onChange={(e) => {
-              startPhotoIngest(e.target.files?.[0] ?? null, e.target);
-              e.target.value = '';
+              void applyPickedFile(e.target.files?.[0] ?? null, e.target);
             }}
           />
         </>
@@ -107,8 +164,7 @@ export default function PhotoUpload({
           className="hidden"
           disabled={controlsDisabled}
           onChange={(e) => {
-            startPhotoIngest(e.target.files?.[0] ?? null, e.target);
-            e.target.value = '';
+            void applyPickedFile(e.target.files?.[0] ?? null, e.target);
           }}
         />
       )}
@@ -116,13 +172,13 @@ export default function PhotoUpload({
       <div
         className={cn(
           'relative aspect-video overflow-hidden rounded-lg border-2 border-dashed transition-all',
-          preview ? 'border-success' : 'border-border',
-          !preview && !controlsDisabled && !android && 'cursor-pointer hover:border-primary/50',
-          !preview && !controlsDisabled && android && 'border-border'
+          previewUrl ? 'border-success' : 'border-border',
+          !previewUrl && !controlsDisabled && !android && 'cursor-pointer hover:border-primary/50',
+          !previewUrl && !controlsDisabled && android && 'border-border',
         )}
-        onClick={!preview && !controlsDisabled && !android ? openNativePicker : undefined}
+        onClick={!previewUrl && !controlsDisabled && !android ? openNativePicker : undefined}
         onKeyDown={
-          !preview && !controlsDisabled && !android
+          !previewUrl && !controlsDisabled && !android
             ? (e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
@@ -131,14 +187,14 @@ export default function PhotoUpload({
               }
             : undefined
         }
-        role={!preview && !controlsDisabled && !android ? 'button' : undefined}
-        tabIndex={!preview && !controlsDisabled && !android ? 0 : undefined}
+        role={!previewUrl && !controlsDisabled && !android ? 'button' : undefined}
+        tabIndex={!previewUrl && !controlsDisabled && !android ? 0 : undefined}
       >
-        {preview ? (
+        {previewUrl ? (
           <>
             <img
-              key={previewMountKey}
-              src={preview}
+              key={previewUrl}
+              src={previewUrl}
               alt={label}
               decoding="async"
               className="h-full w-full object-cover"
