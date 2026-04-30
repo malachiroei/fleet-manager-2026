@@ -1685,7 +1685,11 @@ export default function VehicleDetailPage() {
                     const fileUrl = typeof doc?.file_url === 'string' ? doc.file_url.trim() : '';
                     const dt = String(doc?.document_type ?? '').trim();
                     const inferredFocus =
-                      dt === 'annual_license' || dt === 'insurance_policy' || dt === 'tire_change' || dt === 'periodic_inspection'
+                      dt === 'annual_license' ||
+                      dt === 'insurance_policy' ||
+                      dt === 'tire_change' ||
+                      dt === 'periodic_inspection' ||
+                      dt === 'car_wash'
                         ? dt
                         : /רישיון רכב \(טסט\)|טסט/i.test(titleStr)
                           ? 'annual_license'
@@ -1695,7 +1699,9 @@ export default function VehicleDetailPage() {
                               ? 'tire_change'
                               : /ביקורת תקופתית|טופס מסומן/i.test(titleStr)
                                 ? 'periodic_inspection'
-                              : null;
+                                : /שטיפת רכב|שטיפה/i.test(titleStr)
+                                  ? 'car_wash'
+                                  : null;
                     const dataFocus =
                       inferredFocus === 'annual_license'
                         ? dt === 'annual_license'

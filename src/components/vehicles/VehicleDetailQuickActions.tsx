@@ -40,6 +40,7 @@ import {
   Pencil,
   Camera,
   ImageIcon,
+  Droplets,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { fmtDriverDate } from '@/components/DriverCard';
@@ -73,6 +74,7 @@ import {
 import { photoPickerActionButtonClassName } from '@/lib/photoPickerUi';
 import { TireWheelDiagramSelector, TIRE_WHEEL_VALUES } from '@/components/vehicles/TireWheelDiagramSelector';
 import SignaturePad, { type SignaturePadRef } from '@/components/SignaturePad';
+import PhotoUpload from '@/components/PhotoUpload';
 
 const DOCS_BUCKET = 'vehicle-documents';
 
@@ -308,7 +310,7 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
   const { user, profile } = useAuth();
   const updateVehicle = useUpdateVehicle();
   const queryClient = useQueryClient();
-  const [dialog, setDialog] = useState<'license' | 'insurance' | 'tire' | 'periodic' | null>(null);
+  const [dialog, setDialog] = useState<'license' | 'insurance' | 'tire' | 'periodic' | 'car_wash' | null>(null);
   const [saving, setSaving] = useState(false);
 
   const [licenseDate, setLicenseDate] = useState('');
@@ -321,6 +323,7 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
   const [tireFile, setTireFile] = useState<File | null>(null);
   const [periodicDate, setPeriodicDate] = useState('');
   const [periodicFile, setPeriodicFile] = useState<File | null>(null);
+  const [washPhotoFile, setWashPhotoFile] = useState<File | null>(null);
   const [hasInspectorSignature, setHasInspectorSignature] = useState(false);
   const [signatureMountKey, setSignatureMountKey] = useState(0);
   const [periodicKm, setPeriodicKm] = useState('');
@@ -399,6 +402,11 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
     setTireNextDate(vehicle.next_tire_change_date ? String(vehicle.next_tire_change_date).slice(0, 10) : '');
     setTireFile(null);
     setDialog('tire');
+  };
+
+  const openCarWash = () => {
+    setWashPhotoFile(null);
+    setDialog('car_wash');
   };
 
   const openPeriodic = () => {
@@ -726,6 +734,48 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
     }
   };
 
+  const saveCarWash = async () => {
+    if (!washPhotoFile) {
+      toast.error('נא לצלם או לבחור תמונת רכב לפני השמירה');
+      return;
+    }
+    setSaving(true);
+    try {
+      const url = await uploadToVehicleBucket(vehicle.id, 'car_wash', washPhotoFile);
+      await insertVehicleDocument(
+        vehicle.id,
+        `שטיפת רכב — ${todayYmdLocal()}`,
+        url,
+        'car_wash',
+      );
+      const notify = await sendFleetFieldUpdateNotification({
+        subject: `עדכון שטיפה — ${vehicle.plate_number}`,
+        headline: 'תועדה שטיפת רכב (מסמך במערכת)',
+        plateNumber: String(vehicle.plate_number ?? ''),
+        vehicleLabel: `${vehicle.manufacturer ?? ''} ${vehicle.model ?? ''}`.trim(),
+        rows: [{ label: 'צילום רכב', value: 'הועלה למסמכי הרכב' }],
+        documentUrl: url,
+      });
+      toast.success('תמונת השטיפה נשמרה במסמכי הרכב');
+      if (!notify.ok) {
+        console.warn('[VehicleDetailQuickActions] email שטיפה', notify.message);
+        toast.warning('שליחת המייל נכשלה', {
+          description: `${notify.message} — פרסו send-service-update-notification עדכנית ובדקו RESEND_API_KEY ב-Secrets.`,
+        });
+      }
+      setWashPhotoFile(null);
+      setDialog(null);
+      invalidate();
+    } catch (e) {
+      console.error(e);
+      const hint = storageFailureHint(e);
+      if (hint) toast.error('שמירה נכשלה', { description: hint });
+      else toast.error('שמירה נכשלה');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const evaluatePeriodicKmWarning = useCallback(
     (raw: string) => {
       if (dialog !== 'periodic') return;
@@ -979,6 +1029,11 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
             <span className="text-[10px] font-normal text-slate-400">עדכון מד</span>
           </Link>
         )}
+        <button type="button" className={tileClass} onClick={openCarWash}>
+          <Droplets className="h-5 w-5 text-sky-300" />
+          <span>עדכון שטיפה</span>
+          <span className="text-[10px] font-normal text-slate-400">מצלמה / גלריה</span>
+        </button>
       </div>
 
       <Dialog
@@ -1624,6 +1679,50 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
             </Button>
             <Button type="button" onClick={() => void saveTire()} disabled={saving}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'שמירה'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={dialog === 'car_wash'}
+        onOpenChange={(open) => {
+          if (!open) {
+            setWashPhotoFile(null);
+            setDialog(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-md" dir="rtl">
+          <DialogHeader>
+            <DialogTitle>עדכון שטיפה</DialogTitle>
+            <DialogDescription>
+              צלמו את הרכב אחרי השטיפה או בחרו תמונה מהגלריה — אותה חוויית מצלמה כמו בצילום רישיון נהיגה מהקישור לעובדים.
+              התמונה תישמר במסמכי הרכב.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <PhotoUpload
+              label="צילום הרכב"
+              onPhotoCapture={setWashPhotoFile}
+              required
+              disabled={saving}
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setWashPhotoFile(null);
+                setDialog(null);
+              }}
+              disabled={saving}
+            >
+              ביטול
+            </Button>
+            <Button type="button" onClick={() => void saveCarWash()} disabled={saving || !washPhotoFile}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'שמירה במסמכים'}
             </Button>
           </DialogFooter>
         </DialogContent>
