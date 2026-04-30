@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { startTransition, useCallback, useEffect, useRef, useState } from 'react';
 import { Camera, Check, ImageIcon, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -59,13 +59,27 @@ export default function PhotoUpload({
   }, []);
 
   const applyPickedFile = useCallback(async (file: File | null, clearInput: HTMLInputElement | null) => {
-    revokePreview();
-    onPhotoCaptureRef.current(null);
+    const inputEl = clearInput;
 
     if (!file) {
-      if (clearInput) clearInput.value = '';
+      revokePreview();
+      startTransition(() => {
+        onPhotoCaptureRef.current(null);
+      });
+      if (inputEl) {
+        queueMicrotask(() => {
+          try {
+            inputEl.value = '';
+          } catch {
+            /* ignore */
+          }
+        });
+      }
       return;
     }
+
+    /** כמו setDocFile בכרטיס רכב: לא מאפסים את ההורה לפני קובץ חדש — מונע סערת רינדור בכרום אנדרואיד */
+    revokePreview();
 
     setBusy(true);
     try {
@@ -92,7 +106,9 @@ export default function PhotoUpload({
       const url = URL.createObjectURL(normalized);
       previewRevokeRef.current = url;
       setPreviewUrl(url);
-      onPhotoCaptureRef.current(normalized);
+      startTransition(() => {
+        onPhotoCaptureRef.current(normalized);
+      });
     } catch (err) {
       console.error('[PhotoUpload] ingest failed', err);
       toast({
@@ -102,19 +118,38 @@ export default function PhotoUpload({
       });
     } finally {
       setBusy(false);
-      if (clearInput) clearInput.value = '';
+      /** לא לנעול את ה-input בזמן ה-change; ניקוי value רק אחרי סיום המיקרו-משימה */
+      if (inputEl) {
+        queueMicrotask(() => {
+          try {
+            inputEl.value = '';
+          } catch {
+            /* ignore */
+          }
+        });
+      }
     }
   }, [revokePreview]);
 
   const android = isAndroidUserAgent();
+  /** אל תשביתי את ה-file inputs בזמן busy — כרום אנדרואיד רגיש לכך אחרי המצלמה */
+  const inputDisabled = disabled;
   const controlsDisabled = disabled || busy;
 
   const clearPhoto = useCallback(() => {
     revokePreview();
-    onPhotoCaptureRef.current(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-    if (galleryInputRef.current) galleryInputRef.current.value = '';
-    if (cameraInputRef.current) cameraInputRef.current.value = '';
+    startTransition(() => {
+      onPhotoCaptureRef.current(null);
+    });
+    queueMicrotask(() => {
+      try {
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        if (galleryInputRef.current) galleryInputRef.current.value = '';
+        if (cameraInputRef.current) cameraInputRef.current.value = '';
+      } catch {
+        /* ignore */
+      }
+    });
   }, [revokePreview]);
 
   useEffect(() => {
@@ -139,7 +174,7 @@ export default function PhotoUpload({
             accept="image/*"
             capture="environment"
             className="hidden"
-            disabled={controlsDisabled}
+            disabled={inputDisabled}
             onChange={(e) => {
               void applyPickedFile(e.target.files?.[0] ?? null, e.target);
             }}
@@ -149,7 +184,7 @@ export default function PhotoUpload({
             type="file"
             accept="image/*"
             className="hidden"
-            disabled={controlsDisabled}
+            disabled={inputDisabled}
             onChange={(e) => {
               void applyPickedFile(e.target.files?.[0] ?? null, e.target);
             }}
@@ -162,7 +197,7 @@ export default function PhotoUpload({
           accept="image/*"
           {...(shouldAttachDirectCameraCapture() ? ({ capture: 'environment' } as const) : {})}
           className="hidden"
-          disabled={controlsDisabled}
+          disabled={inputDisabled}
           onChange={(e) => {
             void applyPickedFile(e.target.files?.[0] ?? null, e.target);
           }}

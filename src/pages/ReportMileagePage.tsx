@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { startTransition, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Camera, Gauge, ImageIcon, Loader2, Wrench } from 'lucide-react';
 
@@ -197,7 +197,7 @@ export default function ReportMileagePage() {
 
   const applyMileagePhotoFile = async (file: File | null) => {
     if (!file) {
-      setPhotoFile(null);
+      startTransition(() => setPhotoFile(null));
       return;
     }
     const mime = file.type || '';
@@ -211,14 +211,20 @@ export default function ReportMileagePage() {
         normalized = file;
       }
     }
-    setPhotoFile(normalized);
+    startTransition(() => setPhotoFile(normalized));
   };
 
   const clearMileagePhoto = () => {
-    setPhotoFile(null);
-    if (galleryInputRef.current) galleryInputRef.current.value = '';
-    if (cameraInputRef.current) cameraInputRef.current.value = '';
-    if (desktopPhotoInputRef.current) desktopPhotoInputRef.current.value = '';
+    startTransition(() => setPhotoFile(null));
+    queueMicrotask(() => {
+      try {
+        if (galleryInputRef.current) galleryInputRef.current.value = '';
+        if (cameraInputRef.current) cameraInputRef.current.value = '';
+        if (desktopPhotoInputRef.current) desktopPhotoInputRef.current.value = '';
+      } catch {
+        /* ignore */
+      }
+    });
   };
 
   /** Restore draft + detect tab recycle after camera (session flag survives reload). */
@@ -667,8 +673,21 @@ export default function ReportMileagePage() {
                         className="hidden"
                         disabled={submitting}
                         onChange={(e) => {
-                          void applyMileagePhotoFile(e.target.files?.[0] ?? null);
-                          e.target.value = '';
+                          const el = e.target;
+                          const f = el.files?.[0] ?? null;
+                          void (async () => {
+                            try {
+                              await applyMileagePhotoFile(f);
+                            } finally {
+                              queueMicrotask(() => {
+                                try {
+                                  el.value = '';
+                                } catch {
+                                  /* ignore */
+                                }
+                              });
+                            }
+                          })();
                         }}
                       />
                       <input
@@ -678,8 +697,21 @@ export default function ReportMileagePage() {
                         className="hidden"
                         disabled={submitting}
                         onChange={(e) => {
-                          void applyMileagePhotoFile(e.target.files?.[0] ?? null);
-                          e.target.value = '';
+                          const el = e.target;
+                          const f = el.files?.[0] ?? null;
+                          void (async () => {
+                            try {
+                              await applyMileagePhotoFile(f);
+                            } finally {
+                              queueMicrotask(() => {
+                                try {
+                                  el.value = '';
+                                } catch {
+                                  /* ignore */
+                                }
+                              });
+                            }
+                          })();
                         }}
                       />
                       <div className="flex flex-col gap-2 sm:flex-row">
@@ -714,7 +746,22 @@ export default function ReportMileagePage() {
                       disabled={submitting}
                       className="h-12 cursor-pointer"
                       {...(shouldAttachDirectCameraCapture() ? ({ capture: 'environment' } as const) : {})}
-                      onChange={(e) => void applyMileagePhotoFile(e.target.files?.[0] ?? null)}
+                      onChange={(e) => {
+                        const el = e.target;
+                        void (async () => {
+                          try {
+                            await applyMileagePhotoFile(el.files?.[0] ?? null);
+                          } finally {
+                            queueMicrotask(() => {
+                              try {
+                                el.value = '';
+                              } catch {
+                                /* ignore */
+                              }
+                            });
+                          }
+                        })();
+                      }}
                     />
                   )}
                   <MileageOdometerPhotoPreview file={photoFile} onClear={clearMileagePhoto} />
