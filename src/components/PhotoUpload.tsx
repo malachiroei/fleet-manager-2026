@@ -23,10 +23,9 @@ export default function PhotoUpload({
   icon,
   disabled = false,
 }: PhotoUploadProps) {
-  const [webcamOpen, setWebcamOpen] = useState(false);
-  const [webcamMountKey, setWebcamMountKey] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const onCommittedChange = useMemo(() => onPhotoCapture, [onPhotoCapture]);
 

@@ -190,8 +190,7 @@ export default function ReportMileagePage() {
   const [submitting, setSubmitting] = useState(false);
   const [sessionHydrated, setSessionHydrated] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [mileageWebcamOpen, setMileageWebcamOpen] = useState(false);
-  const [mileageWebcamMountKey, setMileageWebcamMountKey] = useState(0);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const desktopPhotoInputRef = useRef<HTMLInputElement>(null);
   const androidUa = useMemo(() => isAndroidUserAgent(), []);
