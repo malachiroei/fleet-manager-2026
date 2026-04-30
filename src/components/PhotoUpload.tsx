@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Camera, Check, ImageIcon, X } from 'lucide-react';
 
-import { WebcamCapture } from '@/components/WebcamCapture';
 import { Button } from '@/components/ui/button';
 import { useMobilePhotoIngest } from '@/hooks/useMobilePhotoIngest';
 import { isAndroidUserAgent, shouldAttachDirectCameraCapture } from '@/lib/mobilePhotoIngest';
+import { photoPickerActionButtonClassName } from '@/lib/photoPickerUi';
 import { cn } from '@/lib/utils';
 
 interface PhotoUploadProps {
@@ -46,10 +46,10 @@ export default function PhotoUpload({
 
   useEffect(() => {
     const onGoHome = () => {
-      setWebcamOpen(false);
       resetPhoto();
       if (fileInputRef.current) fileInputRef.current.value = '';
       if (galleryInputRef.current) galleryInputRef.current.value = '';
+      if (cameraInputRef.current) cameraInputRef.current.value = '';
     };
     window.addEventListener('app:go-home', onGoHome as EventListener);
     return () => window.removeEventListener('app:go-home', onGoHome as EventListener);
@@ -59,6 +59,7 @@ export default function PhotoUpload({
     resetPhoto();
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (galleryInputRef.current) galleryInputRef.current.value = '';
+    if (cameraInputRef.current) cameraInputRef.current.value = '';
   };
 
   const openNativePicker = () => {
@@ -70,12 +71,27 @@ export default function PhotoUpload({
       {android ? (
         <>
           <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            disabled={controlsDisabled}
+            onChange={(e) => {
+              startPhotoIngest(e.target.files?.[0] ?? null, e.target);
+              e.target.value = '';
+            }}
+          />
+          <input
             ref={galleryInputRef}
             type="file"
             accept="image/*"
             className="hidden"
             disabled={controlsDisabled}
-            onChange={(e) => startPhotoIngest(e.target.files?.[0] ?? null, e.target)}
+            onChange={(e) => {
+              startPhotoIngest(e.target.files?.[0] ?? null, e.target);
+              e.target.value = '';
+            }}
           />
         </>
       ) : (
@@ -86,7 +102,10 @@ export default function PhotoUpload({
           {...(shouldAttachDirectCameraCapture() ? ({ capture: 'environment' } as const) : {})}
           className="hidden"
           disabled={controlsDisabled}
-          onChange={(e) => startPhotoIngest(e.target.files?.[0] ?? null, e.target)}
+          onChange={(e) => {
+            startPhotoIngest(e.target.files?.[0] ?? null, e.target);
+            e.target.value = '';
+          }}
         />
       )}
 
@@ -145,27 +164,23 @@ export default function PhotoUpload({
             <div className="flex w-full max-w-sm flex-col gap-2 sm:flex-row sm:justify-center">
               <Button
                 type="button"
-                size="sm"
-                className="h-10 flex-1 gap-2"
+                variant="outline"
+                className={photoPickerActionButtonClassName()}
                 disabled={controlsDisabled}
-                onClick={() => {
-                  setWebcamMountKey((k) => k + 1);
-                  setWebcamOpen(true);
-                }}
+                onClick={() => cameraInputRef.current?.click()}
               >
                 <Camera className="h-4 w-4 shrink-0" />
                 צלם מהמצלמה
               </Button>
               <Button
                 type="button"
-                size="sm"
                 variant="outline"
-                className="h-10 flex-1 gap-2"
+                className={photoPickerActionButtonClassName()}
                 disabled={controlsDisabled}
                 onClick={() => galleryInputRef.current?.click()}
               >
                 <ImageIcon className="h-4 w-4 shrink-0" />
-                מהגלריה
+                בחר מהגלריה
               </Button>
             </div>
           </div>
@@ -178,19 +193,6 @@ export default function PhotoUpload({
           </div>
         )}
       </div>
-
-      {android ? (
-        <WebcamCapture
-          key={webcamMountKey}
-          open={webcamOpen}
-          onOpenChange={setWebcamOpen}
-          onCapture={(f) => {
-            setWebcamOpen(false);
-            startPhotoIngest(f, null);
-          }}
-          disabled={controlsDisabled}
-        />
-      ) : null}
     </div>
   );
 }

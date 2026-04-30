@@ -15,8 +15,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { WebcamCapture } from '@/components/WebcamCapture';
 import { isAndroidUserAgent, shouldAttachDirectCameraCapture, tryMaterializeImageFileFromInput } from '@/lib/mobilePhotoIngest';
+import { photoPickerActionButtonClassName } from '@/lib/photoPickerUi';
 
 const STORAGE_BUCKET = 'mileage-reports';
 
@@ -218,6 +218,7 @@ export default function ReportMileagePage() {
   const clearMileagePhoto = () => {
     setPhotoFile(null);
     if (galleryInputRef.current) galleryInputRef.current.value = '';
+    if (cameraInputRef.current) cameraInputRef.current.value = '';
     if (desktopPhotoInputRef.current) desktopPhotoInputRef.current.value = '';
   };
 
@@ -654,13 +655,23 @@ export default function ReportMileagePage() {
                 <div className="space-y-2">
                   <Label>צילום לוח השעונים <span className="text-destructive">*</span></Label>
                   <p className="text-xs text-muted-foreground">
-                    באנדרואיד ניתן{' '}
-                    <span className="font-medium text-foreground">לצלם מהמצלמה</span> או להעלות{' '}
-                    <span className="font-medium text-foreground">מהגלריה</span> — אותה זרימה כמו בצילום רישיון/טסט
-                    בכרטיס הרכב.
+                    צילום נפתח ב<strong className="text-foreground">אפליקציית המצלמה של המכשיר</strong> (לא חלון מוטמע) —
+                    כמו בהעלאת רישיון מהקישור לעובד.
                   </p>
                   {androidUa ? (
                     <>
+                      <input
+                        ref={cameraInputRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        disabled={submitting}
+                        onChange={(e) => {
+                          void applyMileagePhotoFile(e.target.files?.[0] ?? null);
+                          e.target.value = '';
+                        }}
+                      />
                       <input
                         ref={galleryInputRef}
                         type="file"
@@ -668,8 +679,7 @@ export default function ReportMileagePage() {
                         className="hidden"
                         disabled={submitting}
                         onChange={(e) => {
-                          const f = e.target.files?.[0] ?? null;
-                          void applyMileagePhotoFile(f);
+                          void applyMileagePhotoFile(e.target.files?.[0] ?? null);
                           e.target.value = '';
                         }}
                       />
@@ -677,12 +687,9 @@ export default function ReportMileagePage() {
                         <Button
                           type="button"
                           variant="outline"
-                          className="h-12 flex-1 gap-2 border-cyan-500/40 bg-white/5 text-base font-semibold text-cyan-100 hover:bg-cyan-500/10"
+                          className={photoPickerActionButtonClassName()}
                           disabled={submitting}
-                          onClick={() => {
-                            setMileageWebcamMountKey((k) => k + 1);
-                            setMileageWebcamOpen(true);
-                          }}
+                          onClick={() => cameraInputRef.current?.click()}
                         >
                           <Camera className="h-4 w-4 shrink-0" />
                           צלם מהמצלמה
@@ -690,7 +697,7 @@ export default function ReportMileagePage() {
                         <Button
                           type="button"
                           variant="outline"
-                          className="h-12 flex-1 gap-2 border-cyan-500/40 bg-white/5 text-base font-semibold text-cyan-100 hover:bg-cyan-500/10"
+                          className={photoPickerActionButtonClassName()}
                           disabled={submitting}
                           onClick={() => galleryInputRef.current?.click()}
                         >
@@ -740,19 +747,6 @@ export default function ReportMileagePage() {
           </CardContent>
         </Card>
       </section>
-
-      {androidUa ? (
-        <WebcamCapture
-          key={mileageWebcamMountKey}
-          open={mileageWebcamOpen}
-          onOpenChange={setMileageWebcamOpen}
-          onCapture={(f) => {
-            void applyMileagePhotoFile(f);
-            setMileageWebcamOpen(false);
-          }}
-          disabled={submitting}
-        />
-      ) : null}
 
     </FleetHudPageShell>
   );

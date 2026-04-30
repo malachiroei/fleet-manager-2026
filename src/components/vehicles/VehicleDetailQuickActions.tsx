@@ -38,6 +38,8 @@ import {
   Plus,
   Trash2,
   Pencil,
+  Camera,
+  ImageIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { fmtDriverDate } from '@/components/DriverCard';
@@ -62,13 +64,13 @@ import {
 import { resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
 import { useQueryClient } from '@tanstack/react-query';
 import { sendFleetFieldUpdateNotification } from '@/lib/sendFleetFieldUpdateNotification';
-import { WebcamCapture } from '@/components/WebcamCapture';
 import {
   compressImageFileForUpload,
   isAndroidUserAgent,
   shouldAttachDirectCameraCapture,
   tryMaterializeImageFileFromInput,
 } from '@/lib/mobilePhotoIngest';
+import { photoPickerActionButtonClassName } from '@/lib/photoPickerUi';
 import { TireWheelDiagramSelector, TIRE_WHEEL_VALUES } from '@/components/vehicles/TireWheelDiagramSelector';
 import SignaturePad, { type SignaturePadRef } from '@/components/SignaturePad';
 
@@ -330,16 +332,17 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
   const [piDeletePwd, setPiDeletePwd] = useState('');
   const [piDeleteVerifying, setPiDeleteVerifying] = useState(false);
   const [piDeleteTargetId, setPiDeleteTargetId] = useState<string | null>(null);
-  const [webcamOpen, setWebcamOpen] = useState(false);
-  const [webcamMountKey, setWebcamMountKey] = useState(0);
-  const [captureTarget, setCaptureTarget] = useState<'license' | 'insurance' | 'tire' | 'periodic' | null>(null);
   const [periodicLowKmOpen, setPeriodicLowKmOpen] = useState(false);
   /** ערך מנורמל שאושר בדיאלוג — אם משתמשים בק״מ אחר שנמוך מהבסיס שוב צריך אישור */
   const periodicLowKmAckNormRef = useRef<string | null>(null);
-  const licenseInputRef = useRef<HTMLInputElement>(null);
-  const insuranceInputRef = useRef<HTMLInputElement>(null);
-  const tireInputRef = useRef<HTMLInputElement>(null);
-  const periodicInputRef = useRef<HTMLInputElement>(null);
+  const licenseGalleryRef = useRef<HTMLInputElement>(null);
+  const licenseCameraRef = useRef<HTMLInputElement>(null);
+  const insuranceGalleryRef = useRef<HTMLInputElement>(null);
+  const insuranceCameraRef = useRef<HTMLInputElement>(null);
+  const tireGalleryRef = useRef<HTMLInputElement>(null);
+  const tireCameraRef = useRef<HTMLInputElement>(null);
+  const periodicGalleryRef = useRef<HTMLInputElement>(null);
+  const periodicCameraRef = useRef<HTMLInputElement>(null);
   const inspectorSignatureRef = useRef<SignaturePadRef>(null);
   const android = isAndroidUserAgent();
 
@@ -557,16 +560,17 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
   };
 
   const openGalleryPicker = useCallback((kind: 'license' | 'insurance' | 'tire' | 'periodic') => {
-    if (kind === 'license') licenseInputRef.current?.click();
-    if (kind === 'insurance') insuranceInputRef.current?.click();
-    if (kind === 'tire') tireInputRef.current?.click();
-    if (kind === 'periodic') periodicInputRef.current?.click();
+    if (kind === 'license') licenseGalleryRef.current?.click();
+    if (kind === 'insurance') insuranceGalleryRef.current?.click();
+    if (kind === 'tire') tireGalleryRef.current?.click();
+    if (kind === 'periodic') periodicGalleryRef.current?.click();
   }, []);
 
   const openCameraPicker = useCallback((kind: 'license' | 'insurance' | 'tire' | 'periodic') => {
-    setCaptureTarget(kind);
-    setWebcamMountKey((k) => k + 1);
-    setWebcamOpen(true);
+    if (kind === 'license') licenseCameraRef.current?.click();
+    if (kind === 'insurance') insuranceCameraRef.current?.click();
+    if (kind === 'tire') tireCameraRef.current?.click();
+    if (kind === 'periodic') periodicCameraRef.current?.click();
   }, []);
 
   const saveLicense = async () => {
@@ -1218,18 +1222,48 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
               {android ? (
                 <>
                   <input
-                    ref={periodicInputRef}
+                    ref={periodicCameraRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    disabled={saving}
+                    onChange={(e) => {
+                      void setDocFile('periodic', e.target.files?.[0] ?? null);
+                      e.target.value = '';
+                    }}
+                  />
+                  <input
+                    ref={periodicGalleryRef}
                     id="qd-periodic-file"
                     type="file"
                     accept="image/*,application/pdf"
                     className="hidden"
-                    onChange={(e) => void setDocFile('periodic', e.target.files?.[0] ?? null)}
+                    disabled={saving}
+                    onChange={(e) => {
+                      void setDocFile('periodic', e.target.files?.[0] ?? null);
+                      e.target.value = '';
+                    }}
                   />
-                  <div className="flex gap-2">
-                    <Button type="button" variant="outline" className="flex-1" onClick={() => openCameraPicker('periodic')}>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className={photoPickerActionButtonClassName()}
+                      disabled={saving}
+                      onClick={() => openCameraPicker('periodic')}
+                    >
+                      <Camera className="h-4 w-4 shrink-0" />
                       צלם מהמצלמה
                     </Button>
-                    <Button type="button" variant="outline" className="flex-1" onClick={() => openGalleryPicker('periodic')}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className={photoPickerActionButtonClassName()}
+                      disabled={saving}
+                      onClick={() => openGalleryPicker('periodic')}
+                    >
+                      <ImageIcon className="h-4 w-4 shrink-0" />
                       בחר מהגלריה / קבצים
                     </Button>
                   </div>
@@ -1348,18 +1382,48 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
               {android ? (
                 <>
                   <input
-                    ref={licenseInputRef}
+                    ref={licenseCameraRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    disabled={saving}
+                    onChange={(e) => {
+                      void setDocFile('license', e.target.files?.[0] ?? null);
+                      e.target.value = '';
+                    }}
+                  />
+                  <input
+                    ref={licenseGalleryRef}
                     id="qd-license-file"
                     type="file"
                     accept="image/*,application/pdf"
                     className="hidden"
-                    onChange={(e) => void setDocFile('license', e.target.files?.[0] ?? null)}
+                    disabled={saving}
+                    onChange={(e) => {
+                      void setDocFile('license', e.target.files?.[0] ?? null);
+                      e.target.value = '';
+                    }}
                   />
-                  <div className="flex gap-2">
-                    <Button type="button" variant="outline" className="flex-1" onClick={() => openCameraPicker('license')}>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className={photoPickerActionButtonClassName()}
+                      disabled={saving}
+                      onClick={() => openCameraPicker('license')}
+                    >
+                      <Camera className="h-4 w-4 shrink-0" />
                       צלם מהמצלמה
                     </Button>
-                    <Button type="button" variant="outline" className="flex-1" onClick={() => openGalleryPicker('license')}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className={photoPickerActionButtonClassName()}
+                      disabled={saving}
+                      onClick={() => openGalleryPicker('license')}
+                    >
+                      <ImageIcon className="h-4 w-4 shrink-0" />
                       בחר מהגלריה / קבצים
                     </Button>
                   </div>
@@ -1405,18 +1469,48 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
               {android ? (
                 <>
                   <input
-                    ref={insuranceInputRef}
+                    ref={insuranceCameraRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    disabled={saving}
+                    onChange={(e) => {
+                      void setDocFile('insurance', e.target.files?.[0] ?? null);
+                      e.target.value = '';
+                    }}
+                  />
+                  <input
+                    ref={insuranceGalleryRef}
                     id="qd-ins-file"
                     type="file"
                     accept="image/*,application/pdf"
                     className="hidden"
-                    onChange={(e) => void setDocFile('insurance', e.target.files?.[0] ?? null)}
+                    disabled={saving}
+                    onChange={(e) => {
+                      void setDocFile('insurance', e.target.files?.[0] ?? null);
+                      e.target.value = '';
+                    }}
                   />
-                  <div className="flex gap-2">
-                    <Button type="button" variant="outline" className="flex-1" onClick={() => openCameraPicker('insurance')}>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className={photoPickerActionButtonClassName()}
+                      disabled={saving}
+                      onClick={() => openCameraPicker('insurance')}
+                    >
+                      <Camera className="h-4 w-4 shrink-0" />
                       צלם מהמצלמה
                     </Button>
-                    <Button type="button" variant="outline" className="flex-1" onClick={() => openGalleryPicker('insurance')}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className={photoPickerActionButtonClassName()}
+                      disabled={saving}
+                      onClick={() => openGalleryPicker('insurance')}
+                    >
+                      <ImageIcon className="h-4 w-4 shrink-0" />
                       בחר מהגלריה / קבצים
                     </Button>
                   </div>
@@ -1466,18 +1560,48 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
               {android ? (
                 <>
                   <input
-                    ref={tireInputRef}
+                    ref={tireCameraRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    disabled={saving}
+                    onChange={(e) => {
+                      void setDocFile('tire', e.target.files?.[0] ?? null);
+                      e.target.value = '';
+                    }}
+                  />
+                  <input
+                    ref={tireGalleryRef}
                     id="qd-tire-file"
                     type="file"
                     accept="image/*,application/pdf"
                     className="hidden"
-                    onChange={(e) => void setDocFile('tire', e.target.files?.[0] ?? null)}
+                    disabled={saving}
+                    onChange={(e) => {
+                      void setDocFile('tire', e.target.files?.[0] ?? null);
+                      e.target.value = '';
+                    }}
                   />
-                  <div className="flex gap-2">
-                    <Button type="button" variant="outline" className="flex-1" onClick={() => openCameraPicker('tire')}>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className={photoPickerActionButtonClassName()}
+                      disabled={saving}
+                      onClick={() => openCameraPicker('tire')}
+                    >
+                      <Camera className="h-4 w-4 shrink-0" />
                       צלם מהמצלמה
                     </Button>
-                    <Button type="button" variant="outline" className="flex-1" onClick={() => openGalleryPicker('tire')}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className={photoPickerActionButtonClassName()}
+                      disabled={saving}
+                      onClick={() => openGalleryPicker('tire')}
+                    >
+                      <ImageIcon className="h-4 w-4 shrink-0" />
                       בחר מהגלריה / קבצים
                     </Button>
                   </div>
@@ -1504,19 +1628,6 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      {android ? (
-        <WebcamCapture
-          key={webcamMountKey}
-          open={webcamOpen}
-          onOpenChange={setWebcamOpen}
-          onCapture={(f) => {
-            if (!captureTarget) return;
-            void setDocFile(captureTarget, f);
-            setWebcamOpen(false);
-          }}
-          disabled={saving}
-        />
-      ) : null}
     </>
   );
 }
