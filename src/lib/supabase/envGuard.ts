@@ -231,15 +231,6 @@ export function evaluateSupabaseEnvironmentGuard(
     });
   }
 
-  const urlLower = url.toLowerCase();
-  if (urlLower.indexOf(expectedClean) === -1) {
-    return finish({
-      ok: false,
-      message:
-        '[Supabase] STRICT ENVIRONMENT LOCK: SUPABASE_URL does not contain resolved project ref (alphanumeric). Blocking DB access.',
-    });
-  }
-
   const extracted = extractProjectRefFromSupabaseUrl(url);
   if (!extracted) {
     return finish({
