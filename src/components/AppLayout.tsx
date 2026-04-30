@@ -1013,7 +1013,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
       <main
         key={location.pathname + location.search}
-        className="fleet-app-main-scene relative flex-1 overflow-y-auto bg-transparent px-6 py-6"
+        className="fleet-app-main-scene relative min-w-0 flex-1 overflow-y-auto overflow-x-clip overscroll-x-none bg-transparent px-6 py-6"
       >
         {profile?.status === 'pending_approval' ? (
           <div className="flex min-h-[60vh] items-center justify-center">

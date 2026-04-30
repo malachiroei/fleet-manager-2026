@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FleetHudPageShell } from '@/components/FleetHudPageShell';
@@ -37,6 +37,9 @@ type ComplianceTabKey =
 type TowerViewFilter = 'all' | 'custom_range' | 'expiring_soon' | 'expired';
 type ComplianceSource = 'vehicle' | 'driver';
 const COMPLIANCE_COLUMNS_DEFAULTS_KEY = 'admin_compliance_default_columns_v1';
+
+/** שליחת בקשה זמינה רק עם עד N ימים לפני פקיעה (וכשפג) — למעלה מזה לא לוחצים. */
+const COMPLIANCE_SEND_MAX_DAYS_REMAINING = 60;
 
 const VEHICLE_KEYS: string[] = [
   'id', 'org_id', 'plate_number', 'manufacturer', 'model', 'year', 'current_odometer', 'next_maintenance_km',
@@ -143,6 +146,25 @@ function daysUntil(raw: unknown): number | null {
   const now = toStartOfDay(new Date());
   const targetDay = toStartOfDay(target);
   return Math.round((targetDay.getTime() - now.getTime()) / 86_400_000);
+}
+
+/** סיבה לחסימת שליחה (אימייל / ממתין לחתימה / יותר מדי ימים לפני פקיעה) — null אם מותר לשלוח */
+function complianceRequestSendBarrier(
+  tab: { key: ComplianceTabKey; dueField: string },
+  row: Record<string, unknown>,
+  requestDisabledReason: (row: Record<string, unknown>) => string | null,
+): string | null {
+  const awaitingEmp =
+    tab.key === 'health_declaration' &&
+    Boolean((row as { __awaitingEmployeeSignature?: boolean }).__awaitingEmployeeSignature);
+  const baseBarrier =
+    awaitingEmp ? 'כבר נשלח קישור — ממתין לחתימת העובד' : requestDisabledReason(row);
+  const dueDays = daysUntil(row[tab.dueField]);
+  const farBarrier =
+    dueDays != null && dueDays > COMPLIANCE_SEND_MAX_DAYS_REMAINING
+      ? `שליחה זמינה רק עד ${COMPLIANCE_SEND_MAX_DAYS_REMAINING} יום לפני פקיעה (או אחרי פקיעת תוקף).`
+      : null;
+  return baseBarrier ?? farBarrier;
 }
 
 function dueIsoFromRaw(raw: unknown): string | null {
@@ -450,6 +472,11 @@ type TabTableProps<T extends Record<string, unknown>> = {
   setApproveDateValue: (row: T, next: string) => void;
   isApprovingRow: (row: T) => boolean;
   sendingRowKey: string | null;
+  /** בחירה מרוכזת לשליחה */
+  bulkSendSelectionIds: ReadonlySet<string>;
+  bulkSending: boolean;
+  onBulkToggleRow: (entityId: string, checked: boolean) => void;
+  onBulkHeaderToggle: (eligibleIdsOnScreen: string[], checked: boolean) => void;
 };
 
 function ComplianceTable<T extends Record<string, unknown>>({
@@ -466,14 +493,52 @@ function ComplianceTable<T extends Record<string, unknown>>({
   setApproveDateValue,
   isApprovingRow,
   sendingRowKey,
+  bulkSendSelectionIds,
+  bulkSending,
+  onBulkToggleRow,
+  onBulkHeaderToggle,
 }: TabTableProps<T>) {
   const safeColumns = columns.length > 0 ? columns : [dueField];
 
+  const eligibilityByRow = rows.map((row) => {
+    const dueDays = daysUntil(row[dueField]);
+    const id = String(row.id ?? '').trim();
+    const sendBarrierMerged = complianceRequestSendBarrier(
+      { key: tabKey, dueField },
+      row as Record<string, unknown>,
+      (r) => requestDisabledReason(r as T),
+    );
+    return {
+      id,
+      dueDays,
+      sendBarrierMerged,
+      canSelectBulk: Boolean(id) && !sendBarrierMerged && !bulkSending,
+    };
+  });
+
+  const eligibleBulkIdsOnScreen = eligibilityByRow.filter((x) => x.canSelectBulk).map((x) => x.id);
+  const bulkHeaderFullyChecked =
+    eligibleBulkIdsOnScreen.length > 0 &&
+    eligibleBulkIdsOnScreen.every((kid) => bulkSendSelectionIds.has(kid));
+  const bulkHeaderIndeterminate =
+    eligibleBulkIdsOnScreen.some((kid) => bulkSendSelectionIds.has(kid)) && !bulkHeaderFullyChecked;
+
   return (
     <div className="overflow-x-auto rounded-lg border">
-      <Table>
+      {/* עם dir=rtl: עמודה ראשונה בדא״ף = קצה ימין — בחירה ליד ההקשר הנכון בעברית */}
+      <Table dir="rtl">
         <TableHeader>
           <TableRow>
+            <TableHead className="w-10 px-2 text-center" aria-label="בחר הכל לשליחה מרוכזת">
+              <Checkbox
+                disabled={eligibleBulkIdsOnScreen.length === 0 || bulkSending}
+                checked={bulkHeaderFullyChecked ? true : bulkHeaderIndeterminate ? 'indeterminate' : false}
+                onCheckedChange={(v) => {
+                  const on = v === true;
+                  onBulkHeaderToggle(eligibleBulkIdsOnScreen, on);
+                }}
+              />
+            </TableHead>
             <TableHead className="text-right">ימים נותרו</TableHead>
             <TableHead className="text-right">{prettifyKey(dueField)}</TableHead>
             {safeColumns.map((col) => (
@@ -486,27 +551,41 @@ function ComplianceTable<T extends Record<string, unknown>>({
         <TableBody>
           {rows.length === 0 ? (
             <TableRow>
-              <TableCell className="text-right text-muted-foreground" colSpan={safeColumns.length + 4}>
+              <TableCell className="text-right text-muted-foreground" colSpan={safeColumns.length + 5}>
                 {emptyLabel}
               </TableCell>
             </TableRow>
           ) : (
             rows.map((row, idx) => {
-              const dueDays = daysUntil(row[dueField]);
+              const gate = eligibilityByRow[idx]!;
+              const dueDays = gate.dueDays;
+              const sendBarrierMerged = gate.sendBarrierMerged;
               const isExpired = dueDays != null && dueDays < 0;
               const awaitingEmp =
                 tabKey === 'health_declaration' &&
                 Boolean((row as { __awaitingEmployeeSignature?: boolean }).__awaitingEmployeeSignature);
-              const sendBarrier =
-                awaitingEmp ? 'כבר נשלח קישור — ממתין לחתימת העובד' : requestDisabledReason(row);
               const driverLicPending =
                 tabKey === 'driver_license' &&
                 String(row.status ?? '').trim().toLowerCase() === 'pending_approval';
+              const rowEntityId = String(row.id ?? '').trim();
               return (
                 <TableRow
                   key={String(row.id ?? idx)}
                   className={isExpired ? 'bg-red-500/10 hover:bg-red-500/15' : undefined}
                 >
+                  <TableCell className="px-2 align-middle text-center">
+                    <div className="flex justify-center">
+                      <Checkbox
+                        checked={Boolean(rowEntityId && bulkSendSelectionIds.has(rowEntityId))}
+                        disabled={!gate.canSelectBulk || bulkSending || sendingRowKey === rowEntityId}
+                        onCheckedChange={(v) => {
+                          if (!rowEntityId) return;
+                          onBulkToggleRow(rowEntityId, v === true);
+                        }}
+                        aria-label="בחר שורה לשליחה מרוכזת"
+                      />
+                    </div>
+                  </TableCell>
                   <TableCell className="text-right font-medium">
                     {dueDays == null ? (
                       '—'
@@ -564,15 +643,19 @@ function ComplianceTable<T extends Record<string, unknown>>({
                       <Button
                         type="button"
                         size="sm"
-                        disabled={Boolean(sendBarrier) || sendingRowKey === String(row.id ?? idx)}
+                        disabled={
+                          Boolean(sendBarrierMerged) ||
+                          sendingRowKey === String(row.id ?? idx) ||
+                          bulkSending
+                        }
                         onClick={() => {
-                          if (sendBarrier) {
-                            toast.error(`לא ניתן לשלוח בקשה: ${sendBarrier}`);
+                          if (sendBarrierMerged) {
+                            toast.error(`לא ניתן לשלוח בקשה: ${sendBarrierMerged}`);
                             return;
                           }
                           onSendRequest(row);
                         }}
-                        title={sendBarrier ?? 'שליחת בקשה במייל'}
+                        title={sendBarrierMerged ?? 'שליחת בקשה במייל'}
                       >
                         {sendingRowKey === String(row.id ?? idx) ? (
                           <span className="inline-flex items-center gap-1">
@@ -701,6 +784,8 @@ export default function AdminCompliancePage() {
   const [approvingRowKey, setApprovingRowKey] = useState<string | null>(null);
   const [approveExpiryByDriverId, setApproveExpiryByDriverId] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<ComplianceTabKey>('annual_licensing');
+  const [bulkSendSelectionIds, setBulkSendSelectionIds] = useState<Set<string>>(() => new Set());
+  const [bulkSending, setBulkSending] = useState(false);
   const [visibleByTab, setVisibleByTab] = useState<Record<ComplianceTabKey, string[]>>({
     annual_licensing: [...VEHICLE_DEFAULT_COLUMNS],
     insurance: [...VEHICLE_DEFAULT_COLUMNS],
@@ -726,6 +811,10 @@ export default function AdminCompliancePage() {
   const customToIso = useMemo(() => addDaysToIsoYmd(todayIso, customRangeToDays), [todayIso, customRangeToDays]);
   const customMinIso = customFromIso <= customToIso ? customFromIso : customToIso;
   const customMaxIso = customFromIso <= customToIso ? customToIso : customFromIso;
+
+  useEffect(() => {
+    setBulkSendSelectionIds(new Set());
+  }, [activeTab]);
 
   useEffect(() => {
     if (vehiclesLoading || driversLoading) return;
@@ -931,20 +1020,45 @@ export default function AdminCompliancePage() {
     });
   }, [availableVehicleKeys, availableDriverKeys]);
 
+  const requestDisabledReason = (
+    tab: { source: ComplianceSource },
+    row: Record<string, unknown>,
+  ): string | null => {
+    if (tab.source === 'driver') {
+      const directEmail = String(row.email ?? '').trim();
+      const fallbackById = drivers.find((x) => String(x.id) === String(row.id ?? '').trim());
+      const fallbackByIdentity = drivers.find(
+        (x) =>
+          String(x.full_name ?? '').trim() === String(row.full_name ?? '').trim() &&
+          String(x.id_number ?? '').trim() === String(row.id_number ?? '').trim(),
+      );
+      const email = directEmail || String(fallbackById?.email ?? '').trim() || String(fallbackByIdentity?.email ?? '').trim();
+      return email ? null : 'אין אימייל לנהג';
+    }
+    const assignedDriverId = String(row.assigned_driver_id ?? '').trim();
+    if (!assignedDriverId) return 'לרכב אין נהג משויך';
+    const d = drivers.find((x) => String(x.id) === assignedDriverId);
+    const email = String(d?.email ?? '').trim();
+    if (!email) return 'לנהג המשויך אין אימייל';
+    return null;
+  };
+
   const submitComplianceRequest = async (
     tab: { key: ComplianceTabKey; label: string; source: ComplianceSource; dueField: string },
     row: Record<string, unknown>,
-  ) => {
+    options?: { silent?: boolean },
+  ): Promise<boolean> => {
+    const quiet = options?.silent === true;
     const orgIdRequired = String(orgId ?? '').trim();
     if (!orgIdRequired) {
-      toast.error('לא ניתן לשלוח בקשה: חסר org_id.');
-      return;
+      if (!quiet) toast.error('לא ניתן לשלוח בקשה: חסר org_id.');
+      return false;
     }
 
     const rowKey = String(row.id ?? '');
     if (!rowKey) {
-      toast.error('לא ניתן לשלוח בקשה: רשומה ללא מזהה.');
-      return;
+      if (!quiet) toast.error('לא ניתן לשלוח בקשה: רשומה ללא מזהה.');
+      return false;
     }
 
     let driverEmail = '';
@@ -959,8 +1073,8 @@ export default function AdminCompliancePage() {
     } else {
       const assignedDriverId = String(row.assigned_driver_id ?? '').trim();
       if (!assignedDriverId) {
-        toast.error('לרכב אין נהג משויך ולכן לא ניתן לשלוח בקשה.');
-        return;
+        if (!quiet) toast.error('לרכב אין נהג משויך ולכן לא ניתן לשלוח בקשה.');
+        return false;
       }
       const d = drivers.find((x) => String(x.id) === assignedDriverId);
       driverId = assignedDriverId;
@@ -969,11 +1083,11 @@ export default function AdminCompliancePage() {
     }
 
     if (!driverEmail || !driverEmail.includes('@')) {
-      toast.error('לא נמצא אימייל תקין לנהג עבור שליחת בקשה.');
-      return;
+      if (!quiet) toast.error('לא נמצא אימייל תקין לנהג עבור שליחת בקשה.');
+      return false;
     }
 
-    setSendingRowKey(rowKey);
+    if (!quiet) setSendingRowKey(rowKey);
     try {
       const dueIso = dueIsoFromRaw(row[tab.dueField]);
       const { data, error } = await invokeSupabaseEdgeFunction('send-compliance-request', {
@@ -1029,39 +1143,89 @@ export default function AdminCompliancePage() {
         throw new Error('השרת לא החזיר כתובת נמען תקינה.');
       }
 
-      toast.success('המייל נשלח בהצלחה');
-      await queryClient.invalidateQueries({ queryKey: ['admin-compliance-open-requests', orgIdRequired] });
-      await queryClient.invalidateQueries({ queryKey: ['admin-compliance-drivers', orgIdRequired] });
+      if (!quiet) {
+        toast.success('המייל נשלח בהצלחה');
+        await queryClient.invalidateQueries({ queryKey: ['admin-compliance-open-requests', orgIdRequired] });
+        await queryClient.invalidateQueries({ queryKey: ['admin-compliance-drivers', orgIdRequired] });
+      }
+      return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`שליחת הבקשה נכשלה: ${msg}`);
+      if (!quiet) {
+        toast.error(`שליחת הבקשה נכשלה: ${msg}`);
+      }
+      return false;
     } finally {
-      setSendingRowKey(null);
+      if (!quiet) setSendingRowKey(null);
     }
   };
 
-  const requestDisabledReason = (
-    tab: { source: ComplianceSource },
-    row: Record<string, unknown>,
-  ): string | null => {
-    if (tab.source === 'driver') {
-      const directEmail = String(row.email ?? '').trim();
-      const fallbackById = drivers.find((x) => String(x.id) === String(row.id ?? '').trim());
-      const fallbackByIdentity = drivers.find(
-        (x) =>
-          String(x.full_name ?? '').trim() === String(row.full_name ?? '').trim() &&
-          String(x.id_number ?? '').trim() === String(row.id_number ?? '').trim(),
-      );
-      const email = directEmail || String(fallbackById?.email ?? '').trim() || String(fallbackByIdentity?.email ?? '').trim();
-      return email ? null : 'אין אימייל לנהג';
-    }
-    const assignedDriverId = String(row.assigned_driver_id ?? '').trim();
-    if (!assignedDriverId) return 'לרכב אין נהג משויך';
-    const d = drivers.find((x) => String(x.id) === assignedDriverId);
-    const email = String(d?.email ?? '').trim();
-    if (!email) return 'לנהג המשויך אין אימייל';
-    return null;
-  };
+  const onBulkToggleRow = useCallback((entityId: string, checked: boolean) => {
+    setBulkSendSelectionIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(entityId);
+      else next.delete(entityId);
+      return next;
+    });
+  }, []);
+
+  const onBulkHeaderToggle = useCallback((eligibleIdsOnScreen: string[], checked: boolean) => {
+    setBulkSendSelectionIds((prev) => {
+      const next = new Set(prev);
+      if (checked) eligibleIdsOnScreen.forEach((id) => next.add(id));
+      else eligibleIdsOnScreen.forEach((id) => next.delete(id));
+      return next;
+    });
+  }, []);
+
+  const runBulkComplianceSendForTab = useCallback(
+    async (tab: (typeof TAB_DEFS)[number]) => {
+      const orgIdRequired = String(orgId ?? '').trim();
+      if (!orgIdRequired) {
+        toast.error('לא ניתן לשלוח בקשה: חסר org_id.');
+        return;
+      }
+
+      const rowsToSend = tabData[tab.key].filter((r) => bulkSendSelectionIds.has(String(r.id ?? '').trim()));
+      if (rowsToSend.length === 0) return;
+
+      setBulkSending(true);
+      let ok = 0;
+      let skipped = 0;
+      try {
+        for (const row of rowsToSend) {
+          const barrier = complianceRequestSendBarrier(tab, row, (rrow) => requestDisabledReason(tab, rrow));
+          if (barrier) {
+            skipped += 1;
+            continue;
+          }
+          const success = await submitComplianceRequest(tab, row, { silent: true });
+          if (success) ok += 1;
+        }
+
+        await queryClient.invalidateQueries({ queryKey: ['admin-compliance-open-requests', orgIdRequired] });
+        await queryClient.invalidateQueries({ queryKey: ['admin-compliance-drivers', orgIdRequired] });
+        setBulkSendSelectionIds(new Set());
+
+        const failCount = rowsToSend.length - ok - skipped;
+        if (ok > 0 && skipped === 0 && failCount === 0) {
+          toast.success(`נשלחו ${ok} בקשות בהצלחה`);
+        } else if (ok > 0) {
+          const parts = [`נשלחו בהצלחה: ${ok}`];
+          if (skipped > 0) parts.push(`דילוג (לא זכאי): ${skipped}`);
+          if (failCount > 0) parts.push(`נכשלו: ${failCount}`);
+          toast.message(parts.join(' · '));
+        } else if (skipped > 0 && failCount === 0) {
+          toast.warning('לא נשלחה בקשה — כל הנבחרים חסומים לשליחה (ממתין לחתימה / חלון תאריכים וכו׳)');
+        } else if (skipped === 0 && failCount > 0) {
+          toast.error('שליחה מרוכזת נכשלה (בדוק חיבור או הגדרות)');
+        }
+      } finally {
+        setBulkSending(false);
+      }
+    },
+    [bulkSendSelectionIds, orgId, queryClient, requestDisabledReason, submitComplianceRequest, tabData],
+  );
 
   const saveColumnsDefaults = (next: string[]) => {
     const normalized = next.length > 0 ? next : [activeDef.dueField];
@@ -1241,46 +1405,85 @@ export default function AdminCompliancePage() {
             ))}
           </TabsList>
 
-          {TAB_DEFS.map((tab) => (
-            <TabsContent key={tab.key} value={tab.key}>
-              {loading ? (
-                <Card>
-                  <CardContent className="py-10 text-center text-muted-foreground">טוען נתונים...</CardContent>
-                </Card>
-              ) : (
-                <ComplianceTable
-                  rows={tabData[tab.key]}
-                  columns={visibleByTab[tab.key]}
-                  dueField={tab.dueField}
-                  tabKey={tab.key}
-                  onSendRequest={(row) => void submitComplianceRequest(tab, row)}
-                  requestDisabledReason={(row) => requestDisabledReason(tab, row)}
-                  driverEmailFixHref={(row) => {
-                    if (tab.source === 'driver') {
-                      const id = String(row.id ?? '').trim();
-                      return id ? `/drivers/${id}/edit` : null;
-                    }
-                    const aid = String(row.assigned_driver_id ?? '').trim();
-                    return aid ? `/drivers/${aid}/edit` : null;
-                  }}
-                  onApproveLicense={(row) => void approveLicenseForRow(row)}
-                  getApproveDateValue={(row) => approveDateForRow(row)}
-                  setApproveDateValue={(row, next) => setApproveDateForRow(row, next)}
-                  isApprovingRow={(row) => approvingRowKey === String(row.id ?? '')}
-                  sendingRowKey={sendingRowKey}
-                  emptyLabel={
-                    viewFilter === 'all'
-                      ? `לא נמצאו רשומות עם ${prettifyKey(tab.dueField)}`
-                      : viewFilter === 'expired'
-                        ? `לא נמצאו רשומות שפג תוקפן עבור ${prettifyKey(tab.dueField)}`
-                        : viewFilter === 'expiring_soon'
-                          ? `לא נמצאו רשומות עם ${prettifyKey(tab.dueField)} עד ${daysThreshold} ימים קדימה (כולל פגי תוקף)`
-                          : `לא נמצאו רשומות עם ${prettifyKey(tab.dueField)} בטווח המותאם (${customRangeFromDays} עד ${customRangeToDays} ימים מהיום)`
-                  }
-                />
-              )}
-            </TabsContent>
-          ))}
+          {TAB_DEFS.map((tab) => {
+            const selectedCountForTab = tabData[tab.key].filter((r) =>
+              bulkSendSelectionIds.has(String(r.id ?? '').trim()),
+            ).length;
+            return (
+              <TabsContent key={tab.key} value={tab.key}>
+                {loading ? (
+                  <Card>
+                    <CardContent className="py-10 text-center text-muted-foreground">טוען נתונים...</CardContent>
+                  </Card>
+                ) : (
+                  <>
+                    {selectedCountForTab > 0 ? (
+                      <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={bulkSending}
+                          onClick={() => setBulkSendSelectionIds(new Set())}
+                        >
+                          נקה בחירה
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={bulkSending}
+                          onClick={() => void runBulkComplianceSendForTab(tab)}
+                        >
+                          {bulkSending ? (
+                            <span className="inline-flex items-center gap-2">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              שולח...
+                            </span>
+                          ) : (
+                            <>שלח בקשה ל־{selectedCountForTab} נבחרים</>
+                          )}
+                        </Button>
+                      </div>
+                    ) : null}
+                    <ComplianceTable
+                      rows={tabData[tab.key]}
+                      columns={visibleByTab[tab.key]}
+                      dueField={tab.dueField}
+                      tabKey={tab.key}
+                      onSendRequest={(row) => void submitComplianceRequest(tab, row)}
+                      requestDisabledReason={(row) => requestDisabledReason(tab, row)}
+                      driverEmailFixHref={(row) => {
+                        if (tab.source === 'driver') {
+                          const id = String(row.id ?? '').trim();
+                          return id ? `/drivers/${id}/edit` : null;
+                        }
+                        const aid = String(row.assigned_driver_id ?? '').trim();
+                        return aid ? `/drivers/${aid}/edit` : null;
+                      }}
+                      onApproveLicense={(row) => void approveLicenseForRow(row)}
+                      getApproveDateValue={(row) => approveDateForRow(row)}
+                      setApproveDateValue={(row, next) => setApproveDateForRow(row, next)}
+                      isApprovingRow={(row) => approvingRowKey === String(row.id ?? '')}
+                      sendingRowKey={sendingRowKey}
+                      bulkSendSelectionIds={bulkSendSelectionIds}
+                      bulkSending={bulkSending}
+                      onBulkToggleRow={onBulkToggleRow}
+                      onBulkHeaderToggle={onBulkHeaderToggle}
+                      emptyLabel={
+                        viewFilter === 'all'
+                          ? `לא נמצאו רשומות עם ${prettifyKey(tab.dueField)}`
+                          : viewFilter === 'expired'
+                            ? `לא נמצאו רשומות שפג תוקפן עבור ${prettifyKey(tab.dueField)}`
+                            : viewFilter === 'expiring_soon'
+                              ? `לא נמצאו רשומות עם ${prettifyKey(tab.dueField)} עד ${daysThreshold} ימים קדימה (כולל פגי תוקף)`
+                              : `לא נמצאו רשומות עם ${prettifyKey(tab.dueField)} בטווח המותאם (${customRangeFromDays} עד ${customRangeToDays} ימים מהיום)`
+                      }
+                    />
+                  </>
+                )}
+              </TabsContent>
+            );
+          })}
         </Tabs>
       </div>
     </FleetHudPageShell>

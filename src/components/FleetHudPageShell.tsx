@@ -20,7 +20,8 @@ export function FleetHudPageShell({
   return (
     <div
       className={cn(
-        'dashboard-cyber-page dashboard-page-hud relative isolate z-[1] -mx-6 w-[calc(100%+3rem)] max-w-none shrink-0 px-6 pt-1 pb-8 md:pb-10',
+        // min-w-0 + overflow-x-clip: פחות "הזזה" ובקיעת גלילה אופקית במובייל (עדשות/רקע מאחורי הקצה)
+        'dashboard-cyber-page dashboard-page-hud relative isolate z-[1] min-w-0 max-w-none -mx-6 w-[calc(100%+3rem)] shrink-0 overflow-x-clip px-6 pt-1 pb-8 md:pb-10',
         className,
       )}
     >

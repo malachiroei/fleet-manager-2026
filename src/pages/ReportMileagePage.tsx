@@ -15,9 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { WebcamCapture } from '@/components/WebcamCapture';
-import { useMobilePhotoIngest } from '@/hooks/useMobilePhotoIngest';
-import { isAndroidUserAgent, shouldAttachDirectCameraCapture } from '@/lib/mobilePhotoIngest';
+import PhotoUpload from '@/components/PhotoUpload';
 
 const STORAGE_BUCKET = 'mileage-reports';
 
@@ -275,10 +273,6 @@ export default function ReportMileagePage() {
       toast({ title: 'נא לצרף תמונה של לוח השעונים', variant: 'destructive' });
       return;
     }
-    if (isMaterializing) {
-      toast({ title: 'מעבדים את התמונה…', description: 'המתן רגע לפני השליחה.', variant: 'destructive' });
-      return;
-    }
 
     setSubmitting(true);
     try {
@@ -288,10 +282,10 @@ export default function ReportMileagePage() {
       const safeId = sanitizeStorageSegment(rawId);
       const objectPath = `tmp/${safeUserId}/${safeId}.${sanitizeStorageSegment(ext)}`;
 
-      const contentType = uploadFile.type || 'image/jpeg';
+      const contentType = photoFile.type || 'image/jpeg';
       const { error: uploadError } = await supabase.storage
         .from(STORAGE_BUCKET)
-        .upload(objectPath, uploadFile, { upsert: true, contentType });
+        .upload(objectPath, photoFile, { upsert: true, contentType });
 
       if (uploadError) {
         console.error('[ReportMileagePage] storage upload failed', uploadError);
