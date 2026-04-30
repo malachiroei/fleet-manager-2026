@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { Camera, Check, ImageIcon, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -26,8 +26,13 @@ export default function PhotoUpload({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const onPhotoCaptureRef = useRef(onPhotoCapture);
+  onPhotoCaptureRef.current = onPhotoCapture;
 
-  const onCommittedChange = useMemo(() => onPhotoCapture, [onPhotoCapture]);
+  /** זהות יציבה — מונע ניתוק useMobilePhotoIngest אחרי כל רינדור (מסירה / 4 כפתורי צילום). */
+  const forwardCommitted = useCallback((file: File | null) => {
+    onPhotoCaptureRef.current(file);
+  }, []);
 
   const {
     photoPreviewUrl: preview,
@@ -37,7 +42,7 @@ export default function PhotoUpload({
     resetPhoto,
   } = useMobilePhotoIngest({
     logLabel: '[PhotoUpload]',
-    onCommittedChange,
+    onCommittedChange: forwardCommitted,
   });
 
   const android = isAndroidUserAgent();

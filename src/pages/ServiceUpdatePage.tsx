@@ -521,7 +521,11 @@ export default function ServiceUpdatePage() {
               </div>
 
               <div className="flex gap-3 pt-2">
-                <Button type="submit" className="flex-1" disabled={submitting || !resolvedVehicle || !photoFile || isMaterializing}>
+                <Button
+                  type="submit"
+                  className="flex-1"
+                  disabled={submitting || !resolvedVehicle || !photoFile}
+                >
                   {submitting ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : null}
                   שמור ושלח
                 </Button>

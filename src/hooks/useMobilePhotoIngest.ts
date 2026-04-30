@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { flushSync } from 'react-dom';
 
 import { toast } from '@/hooks/use-toast';
 import {
@@ -17,7 +16,7 @@ export type UseMobilePhotoIngestOptions = {
 };
 
 /**
- * Single pipeline for file inputs + WebcamCapture: materialize to an in-memory `File`, preview URL, stale-gen guard.
+ * Single pipeline for file inputs: materialize ל־File, תצוגה מקדימה, מניעת stale async.
  * Materialization normalizes Android `content://` handles and camera-produced files before preview/upload state.
  */
 export function useMobilePhotoIngest(options?: UseMobilePhotoIngestOptions) {
@@ -105,10 +104,8 @@ export function useMobilePhotoIngest(options?: UseMobilePhotoIngestOptions) {
             blobPreviewRevokeRef.current = null;
           }
 
-          flushSync(() => {
-            setPhotoPreviewUrl(displayUrl ?? null);
-            setPreviewMountKey((k) => k + 1);
-          });
+          setPhotoPreviewUrl(displayUrl ?? null);
+          setPreviewMountKey((k) => k + 1);
 
           if (!displayUrl) {
             toast({
