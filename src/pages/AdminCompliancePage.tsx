@@ -534,9 +534,21 @@ function ComplianceTable<T extends Record<string, unknown>>({
                         <span className="inline-flex items-center rounded-full border border-sky-400/40 bg-sky-500/15 px-2 py-0.5 text-xs font-semibold text-sky-200">
                           ממתין לחתימת עובד
                         </span>
-                      ) : (
+                      ) : dueDays == null ? (
                         <span className="inline-flex items-center rounded-full border border-slate-500/40 bg-slate-700/40 px-2 py-0.5 text-xs font-semibold text-slate-200">
                           ממתין לשליחה
+                        </span>
+                      ) : dueDays < 0 ? (
+                        <span className="inline-flex items-center rounded-full border border-red-400/40 bg-red-500/15 px-2 py-0.5 text-xs font-semibold text-red-300">
+                          פג תוקף
+                        </span>
+                      ) : dueDays > 30 ? (
+                        <span className="inline-flex items-center rounded-full border border-emerald-400/40 bg-emerald-600/20 px-2 py-0.5 text-xs font-semibold text-emerald-200">
+                          תקין
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200">
+                          נותרו {dueDays} ימים
                         </span>
                       )
                     ) : driverLicPending ? (
@@ -1019,6 +1031,7 @@ export default function AdminCompliancePage() {
 
       toast.success('המייל נשלח בהצלחה');
       await queryClient.invalidateQueries({ queryKey: ['admin-compliance-open-requests', orgIdRequired] });
+      await queryClient.invalidateQueries({ queryKey: ['admin-compliance-drivers', orgIdRequired] });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       toast.error(`שליחת הבקשה נכשלה: ${msg}`);

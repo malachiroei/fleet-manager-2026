@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Camera, Gauge, ImageIcon, Loader2, Wrench } from 'lucide-react';
+import { Gauge, Loader2, Wrench } from 'lucide-react';
 
 import { supabase } from '@/integrations/supabase/client';
 import { invokeSupabaseEdgeFunction } from '@/lib/supabase/invokeEdgeFunction';
@@ -146,28 +146,7 @@ export default function ReportMileagePage() {
   const [odometer, setOdometer] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [sessionHydrated, setSessionHydrated] = useState(false);
-  const galleryInputRef = useRef<HTMLInputElement>(null);
-  const fallbackFileInputRef = useRef<HTMLInputElement>(null);
-  const [webcamOpen, setWebcamOpen] = useState(false);
-  /** Remount WebcamCapture on each open — matches a fresh instance per delivery photo slot (clean streamBootId + Android prime). */
-  const [webcamMountKey, setWebcamMountKey] = useState(0);
-
-  const {
-    photoFile,
-    photoPreviewUrl,
-    previewMountKey,
-    isMaterializing,
-    startPhotoIngest,
-  } = useMobilePhotoIngest({
-    logLabel: '[ReportMileagePage]',
-    onIngestBeginWithFile: () => {
-      try {
-        sessionStorage.removeItem(MILEAGE_REPORT_SESSION.cameraPending);
-      } catch {
-        // ignore
-      }
-    },
-  });
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
 
   /** Restore draft + detect tab recycle after camera (session flag survives reload). */
   useEffect(() => {
@@ -270,15 +249,6 @@ export default function ReportMileagePage() {
       selectedVehicle.id === vehicleIdFromQuery.trim(),
   );
 
-  const handleFile = (e: ChangeEvent<HTMLInputElement>) => {
-    startPhotoIngest(e.target.files?.[0] ?? null, e.target);
-  };
-
-  /** קובץ צילום כבר בזיכרון — ingest לא מכפיל arrayBuffer (חוסך זיכרון באנדרואיד). */
-  const handleWebcamCapturedFile = (captured: File) => {
-    startPhotoIngest(captured, null);
-  };
-
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!user) return;
@@ -318,10 +288,10 @@ export default function ReportMileagePage() {
       const safeId = sanitizeStorageSegment(rawId);
       const objectPath = `tmp/${safeUserId}/${safeId}.${sanitizeStorageSegment(ext)}`;
 
-      const contentType = photoFile.type || 'image/jpeg';
+      const contentType = uploadFile.type || 'image/jpeg';
       const { error: uploadError } = await supabase.storage
         .from(STORAGE_BUCKET)
-        .upload(objectPath, photoFile, { upsert: true, contentType });
+        .upload(objectPath, uploadFile, { upsert: true, contentType });
 
       if (uploadError) {
         console.error('[ReportMileagePage] storage upload failed', uploadError);
@@ -613,118 +583,21 @@ export default function ReportMileagePage() {
                 </div>
 
                 <div className="space-y-2">
-                  <span className="text-sm font-medium leading-none">תמונה של לוח השעונים</span>
-                  {isAndroidUserAgent() ? (
-                    <>
-                      <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
-                        <Button
-                          type="button"
-                          className="h-12 flex-1 gap-2 text-base"
-                          disabled={submitting || isMaterializing}
-                          onClick={() => {
-                            setWebcamMountKey((k) => k + 1);
-                            setWebcamOpen(true);
-                          }}
-                        >
-                          <Camera className="h-4 w-4 shrink-0" />
-                          צלם מהמצלמה
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-12 flex-1 gap-2 text-base"
-                          disabled={submitting || isMaterializing}
-                          onClick={() => galleryInputRef.current?.click()}
-                        >
-                          <ImageIcon className="h-4 w-4 shrink-0" />
-                          בחר מהגלריה
-                        </Button>
-                      </div>
-                      <input
-                        ref={galleryInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        disabled={submitting || isMaterializing}
-                        onChange={handleFile}
-                        aria-hidden
-                      />
-                      <button
-                        type="button"
-                        className="text-xs text-muted-foreground underline decoration-muted-foreground/60 underline-offset-2 hover:text-foreground"
-                        disabled={submitting || isMaterializing}
-                        onClick={() => fallbackFileInputRef.current?.click()}
-                      >
-                        או בחר קובץ (חלון המערכת)
-                      </button>
-                      <input
-                        ref={fallbackFileInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        disabled={submitting || isMaterializing}
-                        onChange={handleFile}
-                        aria-hidden
-                      />
-                      <p className="text-xs text-muted-foreground leading-snug">
-                        צילום מהמצלמה נשאר בתוך הדפדפן (מומלץ אם צילום דרך האפליקציה נכשל). מהגלריה או מהמערכת — אם
-                        מופיעה מצלמת מערכת, זה עדיין אפשרי כאן כגיבוי.
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <label
-                        htmlFor="mileage_photo"
-                        className="flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium text-foreground shadow-sm ring-offset-background hover:bg-accent hover:text-accent-foreground has-[:disabled]:pointer-events-none has-[:disabled]:opacity-50"
-                        onPointerDownCapture={() => {
-                          try {
-                            sessionStorage.setItem(MILEAGE_REPORT_SESSION.cameraPending, '1');
-                          } catch {
-                            // ignore
-                          }
-                        }}
-                      >
-                        <input
-                          id="mileage_photo"
-                          name="mileage_photo"
-                          type="file"
-                          accept="image/*"
-                          {...(shouldAttachDirectCameraCapture()
-                            ? ({ capture: 'environment' } as const)
-                            : {})}
-                          className="hidden"
-                          disabled={submitting || isMaterializing}
-                          onChange={handleFile}
-                        />
-                        <Camera className="h-4 w-4 shrink-0" />
-                        {photoFile ? 'החלף תמונה' : 'צלם או בחר תמונה'}
-                      </label>
-                      <p className="text-xs text-muted-foreground leading-snug">
-                        במחשב: בוחרים תמונה או מקור מצלמה דרך חלון הקבצים של המערכת (אם מופיע). אחרי בחירה אמורה
-                        להופיע תצוגה מקדימה.
-                      </p>
-                    </>
-                  )}
-                  {photoPreviewUrl ? (
-                    <div className="aspect-video w-full overflow-hidden rounded-xl border border-border">
-                      <img
-                        key={previewMountKey}
-                        src={photoPreviewUrl}
-                        alt=""
-                        decoding="async"
-                        className="h-full w-full object-cover"
-                      />
-                    </div>
-                  ) : null}
+                  <PhotoUpload
+                    label="צילום לוח שעונים — מצלמה או גלריה"
+                    required
+                    onPhotoCapture={(f) => setPhotoFile(f)}
+                    disabled={submitting}
+                  />
                 </div>
 
                 <div className="flex gap-3">
                   <Button
                     type="submit"
                     className="flex-1 h-12 text-base"
-                    disabled={submitting || isMaterializing || !photoFile}
+                    disabled={submitting || !photoFile}
                   >
-                    {(submitting || isMaterializing) && (
+                    {submitting && (
                       <Loader2 className="ml-2 h-4 w-4 animate-spin" />
                     )}
                     שלח דיווח
@@ -745,13 +618,6 @@ export default function ReportMileagePage() {
         </Card>
       </section>
 
-      <WebcamCapture
-        key={webcamMountKey}
-        open={webcamOpen}
-        onOpenChange={setWebcamOpen}
-        onCapture={handleWebcamCapturedFile}
-        disabled={submitting || isMaterializing}
-      />
     </FleetHudPageShell>
   );
 }

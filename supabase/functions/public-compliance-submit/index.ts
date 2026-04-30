@@ -38,6 +38,15 @@ function ymdOrNull(v: unknown): string | null {
   return /^(\d{4}-\d{2}-\d{2})$/.test(s) ? s : null;
 }
 
+/** הצהרת בריאות: תוקף ברירת־מחדל עם חתימה — 3 שנים מתאריך החתימה (ב־UTC) */
+function addYearsToYmdUtc(ymd: string, years: number): string {
+  const parts = /^(\d{4})-(\d{2})-(\d{2})/.exec(ymd);
+  if (!parts) throw new Error('invalid ymd base');
+  const dt = new Date(Date.UTC(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3])));
+  dt.setUTCFullYear(dt.getUTCFullYear() + years);
+  return dt.toISOString().slice(0, 10);
+}
+
 function parseDataUrl(dataUrl: string): { bytes: Uint8Array; ext: string } {
   const m = /^data:(image\/(?:png|jpeg|jpg));base64,(.+)$/i.exec(dataUrl);
   if (!m) throw new Error('Invalid image payload');
@@ -97,7 +106,10 @@ serve(async (req) => {
       const fileUrl = clean(pub.data.publicUrl);
 
       const declaredHealthYmd = ymdOrNull(body.declared_health_expiry);
-      const healthDateForDriver = declaredHealthYmd ?? nowIsoDate;
+      const healthDateForDriver =
+        declaredHealthYmd ??
+        /* תוקף ההצהרה במערכת: ברירת מחדל 3 שנים מיום החתימה כשלא הוזן תאריך */
+        addYearsToYmdUtc(nowIsoDate, 3);
 
       const { error: updErr } = await admin
         .from('drivers')
@@ -113,6 +125,7 @@ serve(async (req) => {
       const meta = {
         declared_health_expiry: declaredHealthYmd,
         submitted_on_date: nowIsoDate,
+        default_three_year_expiry: declaredHealthYmd == null,
       };
 
       const { error: docErr } = await admin.from('compliance_docs').insert({

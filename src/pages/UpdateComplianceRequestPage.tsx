@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 import { invokeSupabaseEdgeFunction } from '@/lib/supabase/invokeEdgeFunction';
 import SignatureCanvas from 'react-signature-canvas';
 import { Button } from '@/components/ui/button';
@@ -19,7 +20,20 @@ type PublicRequestItem = {
   request_url: string;
 };
 
-const THANKS_EMPLOYEE = 'תודה, הנתונים נקלטו ועברו למחלקת רכב.';
+const THANKS_EMPLOYEE = 'תודה, הנתונים נשלחו למחלקת רכב.';
+
+function todayLocalIsoYmd(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function addYearsToLocalYmd(baseYmd: string, years: number): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(baseYmd.trim());
+  if (!m) return baseYmd;
+  const dt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  dt.setFullYear(dt.getFullYear() + years);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
 
 /** טקסט שגיאה מגוף תשובת Edge (במקום «non-2xx status code» גנרי) */
 async function edgeInvokeFriendlyMessage(invokeErr: unknown): Promise<string> {
@@ -128,10 +142,6 @@ function formatDueUi(ymd: string | null): string {
   }
 }
 
-function tryCloseWindow() {
-  window.close();
-}
-
 export default function UpdateComplianceRequestPage() {
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
@@ -150,6 +160,7 @@ export default function UpdateComplianceRequestPage() {
   const [declaredLicenseExpiry, setDeclaredLicenseExpiry] = useState('');
   const [declaredHealthExpiry, setDeclaredHealthExpiry] = useState('');
   const sigRef = useRef<SignatureCanvas | null>(null);
+  const healthExpiryPresetApplied = useRef(false);
 
   const tokenPreview = useMemo(() => {
     const t = String(token ?? '').trim();
@@ -170,6 +181,18 @@ export default function UpdateComplianceRequestPage() {
       setError(null);
     }
   }, [completedFromUrl]);
+
+  /** תוקף ברירת־מחדל בהצהרת בריאות: 3 שנים קדימה מיום פתיחת הטופס */
+  useEffect(() => {
+    if (completedFromUrl) return;
+    if (!item || item.task_key !== 'health_declaration') {
+      healthExpiryPresetApplied.current = false;
+      return;
+    }
+    if (healthExpiryPresetApplied.current) return;
+    healthExpiryPresetApplied.current = true;
+    setDeclaredHealthExpiry(addYearsToLocalYmd(todayLocalIsoYmd(), 3));
+  }, [item, completedFromUrl]);
 
   useEffect(() => {
     let cancelled = false;
@@ -354,7 +377,7 @@ export default function UpdateComplianceRequestPage() {
               <div className="space-y-3 rounded-lg border border-white/10 bg-slate-950/60 p-3">
                 <div>
                   <Label className="text-xs text-slate-300">
-                    תוקף מעודכן בהצהרה (לא חובה — פורמט YYYY-MM-DD)
+                    תוקף ההצהרה במערכת (ברירת מחדל: 3 שנים — ניתן לערוך, פורמט YYYY-MM-DD)
                   </Label>
                   <Input
                     type="text"
@@ -429,33 +452,26 @@ export default function UpdateComplianceRequestPage() {
               {submitting ? (
                 <span className="inline-flex items-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  מעלה…
+                  שולח…
                 </span>
               ) : (
-                'שלח לאישור'
+                'שליחה'
               )}
             </Button>
           </div>
         )}
 
-        <footer className="mt-8 border-t border-white/10 pt-4 space-y-2">
-          {(done || completedFromUrl || error) && (
-            <p className="text-xs text-slate-500">
-              לאחר הסיום הקישור הזה אינו לשימוש חוזר. לשאלות ניתן לפנות למחלקת הרכב בארגון.
-            </p>
-          )}
-          <Button
-            type="button"
-            variant={showSuccessOnly || error ? 'default' : 'outline'}
-            className="w-full"
-            onClick={() => tryCloseWindow()}
-          >
-            סיום וסגירת הדף
-          </Button>
-          <p className="text-center text-[11px] text-slate-500">
-            אם הדף לא נסגר — סגרו את הלשונית ידנית בדפדפן.
+        {showSuccessOnly ? (
+          <p className="mt-5 text-center text-[11px] text-slate-500">
+            ניתן לסגור את הלשונית. הקישור אינו לשימוש חוזר לפי נהלי הארגון.
           </p>
-        </footer>
+        ) : null}
+
+        {error ? (
+          <p className="mt-6 text-center text-[11px] text-slate-500">
+            אם הבעיה נמשכת, צלמו שוב ברזולוציה נמוכה יותר או פנו למחלקת הרכב.
+          </p>
+        ) : null}
       </section>
     </main>
   );
