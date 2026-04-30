@@ -1,6 +1,6 @@
 /**
  * Shared helpers for mobile photo pickers: Android `content://` files and iOS capture hints.
- * Used by ReportMileagePage and PhotoUpload (handover flows).
+ * Used by HudPhotoSlot, PhotoUpload (public flows), and vehicle quick-action dialogs.
  */
 
 /** Delay after stopping the temporary front-camera stream before opening rear (Android / Samsung). */

@@ -29,7 +29,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import SignaturePad, { SignaturePadRef } from '@/components/SignaturePad';
 import FuelLevelSelector from '@/components/FuelLevelSelector';
-import PhotoUpload from '@/components/PhotoUpload';
+import { HudPhotoSlot } from '@/components/HudPhotoSlot';
 import VehicleDamage3DSelector from '@/components/VehicleDamage3DSelector';
 import { ArrowLeft, Loader2, Truck, Camera } from 'lucide-react';
 import {
@@ -564,10 +564,18 @@ export default function VehicleDeliveryPage() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="חזית" onPhotoCapture={setPhotoFront} disabled={isSubmitting} /></div>
-                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="אחור" onPhotoCapture={setPhotoBack} disabled={isSubmitting} /></div>
-                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="צד ימין" onPhotoCapture={setPhotoRight} disabled={isSubmitting} /></div>
-                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3"><PhotoUpload label="צד שמאל" onPhotoCapture={setPhotoLeft} disabled={isSubmitting} /></div>
+                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3">
+                  <HudPhotoSlot label="חזית" file={photoFront} onFileChange={setPhotoFront} disabled={isSubmitting} />
+                </div>
+                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3">
+                  <HudPhotoSlot label="אחור" file={photoBack} onFileChange={setPhotoBack} disabled={isSubmitting} />
+                </div>
+                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3">
+                  <HudPhotoSlot label="צד ימין" file={photoRight} onFileChange={setPhotoRight} disabled={isSubmitting} />
+                </div>
+                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3">
+                  <HudPhotoSlot label="צד שמאל" file={photoLeft} onFileChange={setPhotoLeft} disabled={isSubmitting} />
+                </div>
               </div>
             </CardContent>
           </Card>

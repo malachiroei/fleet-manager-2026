@@ -11,6 +11,7 @@ import {
 import { photoPickerActionButtonClassName } from '@/lib/photoPickerUi';
 import { cn } from '@/lib/utils';
 
+/** צילום native (מצלמת מערכת / `capture`) — לטפסים ציבוריים מהמייל, למשל `UpdateComplianceRequestPage`. ב-HUD השתמשו ב-`HudPhotoSlot`. */
 interface PhotoUploadProps {
   label: string;
   /** Pass `null` when the user clears the photo. */
@@ -20,10 +21,7 @@ interface PhotoUploadProps {
   disabled?: boolean;
 }
 
-/**
- * צילום כמו בדיאלוגי כרטיס הרכב (רישוי/ביטוח): materialize אסינכרוני + blob URL לפריוויו,
- * בלי useMobilePhotoIngest — פחות עומס state אחרי חזרה מהמצלמה בכרום אנדרואיד.
- */
+/** Native file picker + `capture="environment"` באנדרואיד; לדפי HUD ראו `HudPhotoSlot`. */
 export default function PhotoUpload({
   label,
   onPhotoCapture,

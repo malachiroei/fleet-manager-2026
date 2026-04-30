@@ -74,7 +74,7 @@ import {
 import { photoPickerActionButtonClassName } from '@/lib/photoPickerUi';
 import { TireWheelDiagramSelector, TIRE_WHEEL_VALUES } from '@/components/vehicles/TireWheelDiagramSelector';
 import SignaturePad, { type SignaturePadRef } from '@/components/SignaturePad';
-import PhotoUpload from '@/components/PhotoUpload';
+import { HudPhotoSlot } from '@/components/HudPhotoSlot';
 
 const DOCS_BUCKET = 'vehicle-documents';
 
@@ -1697,14 +1697,14 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
           <DialogHeader>
             <DialogTitle>עדכון שטיפה</DialogTitle>
             <DialogDescription>
-              צלמו את הרכב אחרי השטיפה או בחרו תמונה מהגלריה — אותה חוויית מצלמה כמו בצילום רישיון נהיגה מהקישור לעובדים.
-              התמונה תישמר במסמכי הרכב.
+              מצלמה מוטמעת או גלריה (בתוך האפליקציה) — התמונה תישמר במסמכי הרכב. לצילום native מהמייל השתמשו בקישור לעובדים.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            <PhotoUpload
+            <HudPhotoSlot
               label="צילום הרכב"
-              onPhotoCapture={setWashPhotoFile}
+              file={washPhotoFile}
+              onFileChange={setWashPhotoFile}
               required
               disabled={saving}
             />

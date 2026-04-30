@@ -18,7 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { FleetDatePicker } from '@/components/ui/FleetDatePicker';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import PhotoUpload from '@/components/PhotoUpload';
+import { HudPhotoSlot } from '@/components/HudPhotoSlot';
 import { normalizePlateNumber } from '@/lib/plateNumber';
 import { compressImageFileForUpload } from '@/lib/mobilePhotoIngest';
 
@@ -512,10 +512,11 @@ export default function ServiceUpdatePage() {
 
               <div className="space-y-2">
                 <Label>צילום חשבונית / טיפול</Label>
-                <PhotoUpload
-                  label="מצלמה או גלריה — חשבונית / טפסי טיפול"
+                <HudPhotoSlot
+                  label="חשבונית / טפסי טיפול — מצלמה מוטמעת או גלריה"
+                  file={photoFile}
+                  onFileChange={setPhotoFile}
                   required
-                  onPhotoCapture={(f) => setPhotoFile(f)}
                   disabled={submitting}
                 />
               </div>

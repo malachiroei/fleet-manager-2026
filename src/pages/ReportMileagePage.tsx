@@ -1,6 +1,6 @@
-import { startTransition, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Camera, Gauge, ImageIcon, Loader2, Wrench } from 'lucide-react';
+import { Gauge, Loader2, Wrench } from 'lucide-react';
 
 import { supabase } from '@/integrations/supabase/client';
 import { invokeSupabaseEdgeFunction } from '@/lib/supabase/invokeEdgeFunction';
@@ -15,8 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { isAndroidUserAgent, shouldAttachDirectCameraCapture, tryMaterializeImageFileFromInput } from '@/lib/mobilePhotoIngest';
-import { photoPickerActionButtonClassName } from '@/lib/photoPickerUi';
+import { HudPhotoSlot } from '@/components/HudPhotoSlot';
 
 const STORAGE_BUCKET = 'mileage-reports';
 
@@ -111,50 +110,6 @@ function describeMileageRpcMissingOnProject(): string {
   return 'במסד Supabase של הפרויקט חסרה הפונקציה public.submit_mileage_report (או לא עודכן schema). הריצו את המיגרציות (למשל 20260409120000) או את scripts/sql/prod_submit_mileage_report_bootstrap.sql ב-SQL Editor, ואז Settings → API → Reload schema.';
 }
 
-function MileageOdometerPhotoPreview({ file, onClear }: { file: File | null; onClear: () => void }) {
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  useEffect(() => {
-    if (!file || !(file.type || '').startsWith('image/')) {
-      setPreviewUrl(null);
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
-
-  if (!file) return null;
-  if (!previewUrl) {
-    return (
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-cyan-500/25 bg-slate-900/50 px-3 py-2">
-        <p className="text-xs text-muted-foreground">
-          נבחר קובץ: <span className="font-medium text-foreground">{file.name}</span>
-        </p>
-        <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 text-xs" onClick={onClear}>
-          הסר
-        </Button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-2 rounded-lg border border-cyan-500/25 bg-slate-900/50 p-2">
-      <div className="flex items-start justify-between gap-2 px-1">
-        <span className="text-xs font-medium text-muted-foreground">תצוגה מקדימה — לוח שעונים</span>
-        <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 text-xs" onClick={onClear}>
-          הסר תמונה
-        </Button>
-      </div>
-      <img
-        src={previewUrl}
-        alt="תצוגת לוח שעונים"
-        className="max-h-52 w-full rounded-md border border-white/15 object-contain bg-black/40"
-      />
-      <p className="text-center text-[11px] text-muted-foreground">{file.name}</p>
-    </div>
-  );
-}
-
 export default function ReportMileagePage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -190,42 +145,6 @@ export default function ReportMileagePage() {
   const [submitting, setSubmitting] = useState(false);
   const [sessionHydrated, setSessionHydrated] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-  const galleryInputRef = useRef<HTMLInputElement>(null);
-  const desktopPhotoInputRef = useRef<HTMLInputElement>(null);
-  const androidUa = useMemo(() => isAndroidUserAgent(), []);
-
-  const applyMileagePhotoFile = async (file: File | null) => {
-    if (!file) {
-      startTransition(() => setPhotoFile(null));
-      return;
-    }
-    const mime = file.type || '';
-    const looksLikeImage = mime.startsWith('image/') || mime === 'application/octet-stream' || mime === '';
-    let normalized = file;
-    if (looksLikeImage) {
-      try {
-        const out = await tryMaterializeImageFileFromInput(file);
-        normalized = out.file;
-      } catch {
-        normalized = file;
-      }
-    }
-    startTransition(() => setPhotoFile(normalized));
-  };
-
-  const clearMileagePhoto = () => {
-    startTransition(() => setPhotoFile(null));
-    queueMicrotask(() => {
-      try {
-        if (galleryInputRef.current) galleryInputRef.current.value = '';
-        if (cameraInputRef.current) cameraInputRef.current.value = '';
-        if (desktopPhotoInputRef.current) desktopPhotoInputRef.current.value = '';
-      } catch {
-        /* ignore */
-      }
-    });
-  };
 
   /** Restore draft + detect tab recycle after camera (session flag survives reload). */
   useEffect(() => {
@@ -660,111 +579,16 @@ export default function ReportMileagePage() {
                 <div className="space-y-2">
                   <Label>צילום לוח השעונים <span className="text-destructive">*</span></Label>
                   <p className="text-xs text-muted-foreground">
-                    צילום נפתח ב<strong className="text-foreground">אפליקציית המצלמה של המכשיר</strong> (לא חלון מוטמע) —
-                    כמו בהעלאת רישיון מהקישור לעובד.
+                    בתוך האפליקציה: <strong className="text-foreground">חלון מצלמה מוטמע</strong> או בחירה מהגלריה (בלי מעבר
+                    למצלמה מלאה של המערכת).
                   </p>
-                  {androidUa ? (
-                    <>
-                      <input
-                        ref={cameraInputRef}
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        className="hidden"
-                        disabled={submitting}
-                        onChange={(e) => {
-                          const el = e.target;
-                          const f = el.files?.[0] ?? null;
-                          void (async () => {
-                            try {
-                              await applyMileagePhotoFile(f);
-                            } finally {
-                              queueMicrotask(() => {
-                                try {
-                                  el.value = '';
-                                } catch {
-                                  /* ignore */
-                                }
-                              });
-                            }
-                          })();
-                        }}
-                      />
-                      <input
-                        ref={galleryInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        disabled={submitting}
-                        onChange={(e) => {
-                          const el = e.target;
-                          const f = el.files?.[0] ?? null;
-                          void (async () => {
-                            try {
-                              await applyMileagePhotoFile(f);
-                            } finally {
-                              queueMicrotask(() => {
-                                try {
-                                  el.value = '';
-                                } catch {
-                                  /* ignore */
-                                }
-                              });
-                            }
-                          })();
-                        }}
-                      />
-                      <div className="flex flex-col gap-2 sm:flex-row">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className={photoPickerActionButtonClassName()}
-                          disabled={submitting}
-                          onClick={() => cameraInputRef.current?.click()}
-                        >
-                          <Camera className="h-4 w-4 shrink-0" />
-                          צלם מהמצלמה
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className={photoPickerActionButtonClassName()}
-                          disabled={submitting}
-                          onClick={() => galleryInputRef.current?.click()}
-                        >
-                          <ImageIcon className="h-4 w-4 shrink-0" />
-                          בחר מהגלריה
-                        </Button>
-                      </div>
-                    </>
-                  ) : (
-                    <Input
-                      ref={desktopPhotoInputRef}
-                      id="mileage-dash-photo"
-                      type="file"
-                      accept="image/*"
-                      disabled={submitting}
-                      className="h-12 cursor-pointer"
-                      {...(shouldAttachDirectCameraCapture() ? ({ capture: 'environment' } as const) : {})}
-                      onChange={(e) => {
-                        const el = e.target;
-                        void (async () => {
-                          try {
-                            await applyMileagePhotoFile(el.files?.[0] ?? null);
-                          } finally {
-                            queueMicrotask(() => {
-                              try {
-                                el.value = '';
-                              } catch {
-                                /* ignore */
-                              }
-                            });
-                          }
-                        })();
-                      }}
-                    />
-                  )}
-                  <MileageOdometerPhotoPreview file={photoFile} onClear={clearMileagePhoto} />
+                  <HudPhotoSlot
+                    label="לוח שעונים — מצלמה או גלריה"
+                    file={photoFile}
+                    onFileChange={setPhotoFile}
+                    required
+                    disabled={submitting}
+                  />
                 </div>
 
                 <div className="flex gap-3">
