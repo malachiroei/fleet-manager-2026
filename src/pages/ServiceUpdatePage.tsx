@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Camera, ImageIcon, Loader2, Trash2, Wrench } from 'lucide-react';
+import { Loader2, Wrench } from 'lucide-react';
 
 import { supabase } from '@/integrations/supabase/client';
 import { invokeSupabaseEdgeFunction } from '@/lib/supabase/invokeEdgeFunction';
@@ -18,14 +18,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { FleetDatePicker } from '@/components/ui/FleetDatePicker';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { WebcamCapture } from '@/components/WebcamCapture';
-import { useMobilePhotoIngest } from '@/hooks/useMobilePhotoIngest';
+import PhotoUpload from '@/components/PhotoUpload';
 import { normalizePlateNumber } from '@/lib/plateNumber';
-import {
-  compressImageFileForUpload,
-  isAndroidUserAgent,
-  shouldAttachDirectCameraCapture,
-} from '@/lib/mobilePhotoIngest';
+import { compressImageFileForUpload } from '@/lib/mobilePhotoIngest';
 
 const DOCS_BUCKET = 'vehicle-documents';
 
@@ -98,22 +93,7 @@ export default function ServiceUpdatePage() {
   const [mileageInput, setMileageInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const android = isAndroidUserAgent();
-  const [webcamOpen, setWebcamOpen] = useState(false);
-  const [webcamMountKey, setWebcamMountKey] = useState(0);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const galleryInputRef = useRef<HTMLInputElement>(null);
-
-  const {
-    photoFile,
-    photoPreviewUrl,
-    previewMountKey,
-    isMaterializing,
-    startPhotoIngest,
-    resetPhoto,
-  } = useMobilePhotoIngest({
-    logLabel: '[ServiceUpdatePage]',
-  });
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
 
   useEffect(() => {
     if (!vehicleIdFromUrl || vehicles.length === 0) return;
@@ -167,12 +147,6 @@ export default function ServiceUpdatePage() {
     return mileageNum + interval;
   }, [resolvedVehicle, mileageNum]);
 
-  const clearPhoto = () => {
-    resetPhoto();
-    if (fileInputRef.current) fileInputRef.current.value = '';
-    if (galleryInputRef.current) galleryInputRef.current.value = '';
-  };
-
   const onSelectVehicle = (id: string) => {
     setSelectedVehicleId(id);
     const v = vehicles.find((x) => x.id === id);
@@ -218,11 +192,6 @@ export default function ServiceUpdatePage() {
       toast({ title: 'נא לצרף צילום חשבונית / טיפול', variant: 'destructive' });
       return;
     }
-    if (isMaterializing) {
-      toast({ title: 'מעבדים את התמונה…', description: 'המתן רגע לפני השליחה.', variant: 'destructive' });
-      return;
-    }
-
     if (!serviceDate) {
       toast({ title: 'נא לבחור תאריך טיפול', variant: 'destructive' });
       return;
@@ -543,88 +512,12 @@ export default function ServiceUpdatePage() {
 
               <div className="space-y-2">
                 <Label>צילום חשבונית / טיפול</Label>
-                {android ? (
-                  <>
-                    <input
-                      ref={galleryInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      disabled={submitting || isMaterializing}
-                      onChange={(e) => startPhotoIngest(e.target.files?.[0] ?? null, e.target)}
-                      aria-hidden
-                    />
-                    <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
-                      <Button
-                        type="button"
-                        className="h-12 flex-1 gap-2 text-base"
-                        disabled={submitting || isMaterializing}
-                        onClick={() => {
-                          setWebcamMountKey((k) => k + 1);
-                          setWebcamOpen(true);
-                        }}
-                      >
-                        <Camera className="h-4 w-4 shrink-0" />
-                        צלם מהמצלמה
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-12 flex-1 gap-2 text-base"
-                        disabled={submitting || isMaterializing}
-                        onClick={() => galleryInputRef.current?.click()}
-                      >
-                        <ImageIcon className="h-4 w-4 shrink-0" />
-                        בחר מהגלריה
-                      </Button>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      {...(shouldAttachDirectCameraCapture() ? ({ capture: 'environment' } as const) : {})}
-                      className="hidden"
-                      disabled={submitting || isMaterializing}
-                      onChange={(e) => startPhotoIngest(e.target.files?.[0] ?? null, e.target)}
-                      aria-hidden
-                    />
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="h-12 w-full gap-2 text-base"
-                      disabled={submitting || isMaterializing}
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      <Camera className="ml-2 h-4 w-4" />
-                      מצלמה / גלריה
-                    </Button>
-                  </>
-                )}
-
-                {photoPreviewUrl ? (
-                  <div className="space-y-3 pt-2">
-                    <img
-                      key={previewMountKey}
-                      src={photoPreviewUrl}
-                      alt="תצוגה מקדימה"
-                      className="max-h-56 w-full rounded-lg border border-white/10 object-contain bg-black"
-                      decoding="async"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-11 w-full gap-2"
-                      onClick={clearPhoto}
-                      disabled={submitting || isMaterializing}
-                    >
-                      <Trash2 className="h-4 w-4 shrink-0" />
-                      מחק תמונה
-                    </Button>
-                  </div>
-                ) : null}
+                <PhotoUpload
+                  label="מצלמה או גלריה — חשבונית / טפסי טיפול"
+                  required
+                  onPhotoCapture={(f) => setPhotoFile(f)}
+                  disabled={submitting}
+                />
               </div>
 
               <div className="flex gap-3 pt-2">
@@ -643,18 +536,6 @@ export default function ServiceUpdatePage() {
         </Card>
       </main>
 
-      {android ? (
-        <WebcamCapture
-          key={webcamMountKey}
-          open={webcamOpen}
-          onOpenChange={setWebcamOpen}
-          onCapture={(f) => {
-            setWebcamOpen(false);
-            startPhotoIngest(f, null);
-          }}
-          disabled={submitting || isMaterializing}
-        />
-      ) : null}
     </div>
   );
 }

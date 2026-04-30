@@ -35,9 +35,15 @@ import {
   isVehicleExemptFromAnnualTestNow,
 } from '@/lib/vehicleAnnualTest';
 import { AlertTriangle, ChevronLeft, ChevronRight, MoreHorizontal, Car, IdCard, UserX } from 'lucide-react';
-import { fleetTableColumnsStorageKey, readOptionalColumnIds, writeOptionalColumnIds } from '@/lib/fleetTableColumnPrefs';
+import {
+  fleetTableColumnsStorageKey,
+  readOptionalColumnIds,
+  VEHICLE_HUD_COLUMNS_SAVED_DEFAULT_KEY,
+  writeOptionalColumnIds,
+} from '@/lib/fleetTableColumnPrefs';
 import { FleetTableColumnsButton, FleetTableColumnsSheet } from '@/components/fleet/FleetTableColumnsSheet';
 import {
+  VEHICLE_HUD_FIXED_COLUMN_HINTS,
   VEHICLE_HUD_OPTIONAL_COLUMNS,
   VEHICLE_HUD_OPTIONAL_IDS,
   DEFAULT_VEHICLE_HUD_OPTIONAL_VISIBLE,
@@ -617,9 +623,14 @@ export function VehiclesHudTable({
 
   const vehicleColumnsKey = fleetTableColumnsStorageKey('vehicles');
   const vehicleColAllowed = useMemo(() => new Set(VEHICLE_HUD_OPTIONAL_IDS), []);
-  const [vehicleOptionalVisible, setVehicleOptionalVisible] = useState(() =>
-    readOptionalColumnIds(vehicleColumnsKey, vehicleColAllowed, [...DEFAULT_VEHICLE_HUD_OPTIONAL_VISIBLE]),
-  );
+  const [vehicleOptionalVisible, setVehicleOptionalVisible] = useState(() => {
+    const allowed = new Set(VEHICLE_HUD_OPTIONAL_IDS);
+    const session = readOptionalColumnIds(vehicleColumnsKey, allowed, []);
+    if (session.length > 0) return session;
+    const savedDefault = readOptionalColumnIds(VEHICLE_HUD_COLUMNS_SAVED_DEFAULT_KEY, allowed, []);
+    if (savedDefault.length > 0) return savedDefault;
+    return [...DEFAULT_VEHICLE_HUD_OPTIONAL_VISIBLE];
+  });
   const [vehicleColSheetOpen, setVehicleColSheetOpen] = useState(false);
   const vehicleTableColSpan = 3 + vehicleOptionalVisible.length;
 
@@ -792,10 +803,13 @@ export function VehiclesHudTable({
         open={vehicleColSheetOpen}
         onOpenChange={setVehicleColSheetOpen}
         title="עמודות בטבלת רכבים"
-        description="בחר אילו שדות יוצגו בטבלה לפני עמודת מספר הרישוי (צ׳קבוקס ותפריט פעולות נשארים קבועים). ההעדפה נשמרת בדפדפן."
+        description="בחר אילו שדות יוצגו בטבלה לפני עמודת מספר הרישוי. צ׳קבוקס, רישוי ותפריט פעולות תמיד מוצגים. חיפוש ושמירת ברירת מחדל כמו בדף הציות; ההעדפה נשמרת בדפדפן."
         options={VEHICLE_HUD_OPTIONAL_COLUMNS}
+        fixedColumnHints={VEHICLE_HUD_FIXED_COLUMN_HINTS}
         value={vehicleOptionalVisible}
         defaultValue={[...DEFAULT_VEHICLE_HUD_OPTIONAL_VISIBLE]}
+        savedDefaultsStorageKey={VEHICLE_HUD_COLUMNS_SAVED_DEFAULT_KEY}
+        allowedIds={vehicleColAllowed}
         onSave={(next) => {
           const cleaned = next.filter((id) => vehicleColAllowed.has(id));
           writeOptionalColumnIds(vehicleColumnsKey, cleaned);

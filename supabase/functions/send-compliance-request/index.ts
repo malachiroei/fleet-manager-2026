@@ -9,7 +9,7 @@ const corsHeaders = {
 };
 
 const APP_URL_DEFAULT = 'https://fleet-app.com';
-const FROM_EMAIL = 'Fleet Manager Pro <invites@fleet-manager-pro.com>';
+const FROM_EMAIL = 'מערכת ניהול צי רכבים <invites@fleet-manager-pro.com>';
 
 type ReqBody = {
   org_id?: string;
@@ -49,6 +49,94 @@ function randomToken(): string {
   crypto.getRandomValues(bytes);
   const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
   return `${crypto.randomUUID().replace(/-/g, '')}${hex}`;
+}
+
+function escHtml(s: string): string {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/** תאריך יעד YYYY-MM-DD לתצוגה בעברית */
+function formatDueHebrewUtc(ymd: string | null): string {
+  if (!ymd) return '';
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ymd.trim());
+  if (!m) return escHtml(ymd);
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  try {
+    return new Intl.DateTimeFormat('he-IL', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'UTC',
+    }).format(d);
+  } catch {
+    return `${m[3]}.${m[2]}.${m[1]}`;
+  }
+}
+
+function buildHebrewComplianceEmail(params: {
+  taskKey: string;
+  driverName: string;
+  taskLabel: string;
+  tabLabel: string;
+  dueDateYmd: string | null;
+  primaryHref: string;
+  persistedToken: boolean;
+}): string {
+  const name = escHtml(params.driverName.trim() || 'שלום');
+  const taskLbl = escHtml(params.taskLabel);
+  const tabLbl = escHtml(params.tabLabel);
+  const dueLine = params.dueDateYmd
+    ? `<p style="margin:12px 0;line-height:1.6;"><strong>תאריך התוקף במערכת:</strong> ${formatDueHebrewUtc(params.dueDateYmd)}</p>`
+    : '';
+
+  const licenseBlock =
+    params.taskKey === 'driver_license'
+      ? `
+  <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:14px;margin:18px 0;text-align:right;line-height:1.65;color:#0c4a6e;">
+    <p style="margin:0 0 8px;"><strong>נדרש רישיון נהיגה עדכני</strong></p>
+    <p style="margin:0;">אנא צלמו או הסריקו את <strong>רישיון הנהיגה החדש</strong> באופן <strong>ברור וקריא</strong> (כל הפרטים חייבים להיות גלויים), והעלו את הקובץ דרך כפתור המעקב למטה.</p>
+  </div>`
+      : `
+  <p style="text-align:right;line-height:1.65;color:#334155;margin:14px 0;">נדרש ממך עדכון המסמך עבור: <strong>${tabLbl}</strong>. פרטים מלאים בדף הקישור.</p>`;
+
+  const btnLabel = params.persistedToken ? 'מעבר לטופס העלאה מאובטח' : 'כניסה למערכת';
+  const introNoLink = params.persistedToken
+    ? ''
+    : `<p style="text-align:right;line-height:1.65;color:#b45309;margin:14px 0;padding:12px;background:#fffbeb;border-radius:8px;border:1px solid #fcd34d;">מיגרציית מסד הנתונים לבקשות ציות טרם הופעלה בפרויקט. יש להיכנס למערכת דרך הכפתור למטה ולהשלים את העדכון משם.</p>`;
+
+  return `
+<div dir="rtl" style="font-family:'Segoe UI',Tahoma,Arial,sans-serif;max-width:560px;margin:0 auto;color:#0f172a;text-align:right;">
+  <div style="border-bottom:2px solid #0ea5e9;padding-bottom:12px;margin-bottom:16px;">
+    <h1 style="margin:0;font-size:20px;color:#0369a1;">מערכת ניהול צי רכבים</h1>
+    <p style="margin:6px 0 0;color:#64748b;font-size:14px;">בקשת עדכון מסמכים</p>
+  </div>
+  <p style="font-size:17px;line-height:1.5;"><strong>${name},</strong></p>
+  <p style="line-height:1.65;color:#334155;margin:14px 0;">הוזמנת לעדכן במערכת: <strong>${taskLbl}</strong> (${tabLbl}).</p>
+  ${dueLine}
+  ${licenseBlock}
+  ${introNoLink}
+  <div style="text-align:center;margin:28px 0;">
+    <a href="${params.primaryHref}" style="display:inline-block;background:#0284c7;color:#ffffff;text-decoration:none;padding:14px 22px;border-radius:10px;font-weight:bold;font-size:15px;">
+      ${btnLabel}
+    </a>
+  </div>
+  <p style="font-size:12px;color:#64748b;word-break:break-all;text-align:right;">אם הכפתור לא נפתח, העתיקו את הקישור:<br/><span dir="ltr" style="display:inline-block;margin-top:6px;">${escHtml(params.primaryHref)}</span></p>
+  <p style="font-size:11px;color:#94a3b8;margin-top:24px;text-align:right;">נשלח אוטומטית מהמערכת · אין להשיב להודעה זו</p>
+</div>`.trim();
+}
+
+/** DB migration not applied — PostgREST «schema cache» / missing relation */
+function isMissingComplianceRequestsTable(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes('compliance_requests') &&
+    (m.includes('schema cache') || m.includes('does not exist') || m.includes('could not find'))
+  );
 }
 
 serve(async (req) => {
@@ -140,9 +228,12 @@ serve(async (req) => {
     const baseUrl = clean(Deno.env.get('COMPLIANCE_UPDATE_BASE_URL')) || APP_URL_DEFAULT;
     const appBase = baseUrl.replace(/\/+$/, '');
     const token = randomToken();
-    const requestUrl = `${appBase}/update/${token}`;
+    const magicLinkUrl = `${appBase}/update/${token}`;
 
-    const { data: inserted, error: insErr } = await admin
+    let insertedId: string | null = null;
+    let persistedToken = true;
+
+    const ins = await admin
       .from('compliance_requests')
       .insert({
         org_id: orgId,
@@ -156,7 +247,7 @@ serve(async (req) => {
         due_field: dueField,
         due_date: dueDate,
         request_token: token,
-        request_url: requestUrl,
+        request_url: magicLinkUrl,
         created_by: viewerId,
         metadata: {
           tab_label: tabLabel,
@@ -165,22 +256,33 @@ serve(async (req) => {
       })
       .select('id')
       .single();
-    if (insErr) return json({ error: insErr.message }, 500);
 
-    const html = `
-<div dir="ltr" style="font-family: Inter, Arial, sans-serif; max-width: 560px; margin: 0 auto;">
-  <h2 style="margin: 0 0 12px;">Compliance Update Request</h2>
-  <p>Hello ${driverName || 'Driver'},</p>
-  <p>${ctaText}</p>
-  <p><strong>Task:</strong> ${taskLabel}</p>
-  <p><strong>Section:</strong> ${tabLabel}</p>
-  <p style="margin: 20px 0;">
-    <a href="${requestUrl}" style="display:inline-block;background:#0ea5e9;color:#fff;text-decoration:none;padding:10px 14px;border-radius:8px;">
-      Open update page
-    </a>
-  </p>
-  <p style="color:#64748b;font-size:12px;">If the button does not work, copy this link:<br/>${requestUrl}</p>
-</div>`.trim();
+    if (ins.error) {
+      if (!isMissingComplianceRequestsTable(ins.error.message ?? '')) {
+        return json({ error: ins.error.message }, 500);
+      }
+      console.warn(
+        '[send-compliance-request] compliance_requests table missing / not in schema cache — sending email without persisted token. Apply migration 20260430110000_create_compliance_requests.sql',
+      );
+      persistedToken = false;
+    } else {
+      insertedId = ins.data?.id ?? null;
+    }
+
+    const primaryHref = persistedToken ? magicLinkUrl : `${appBase}/auth`;
+    const html = buildHebrewComplianceEmail({
+      taskKey,
+      driverName,
+      taskLabel,
+      tabLabel,
+      dueDateYmd: dueDate,
+      primaryHref,
+      persistedToken,
+    });
+
+    /** נושא בעברית בלבד */
+    const emailSubject =
+      taskKey === 'driver_license' ? 'נדרש עדכון רישיון נהיגה' : `נדרש עדכון מסמך: ${taskLabel}`;
 
     const resendResp = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -191,7 +293,7 @@ serve(async (req) => {
       body: JSON.stringify({
         from: FROM_EMAIL,
         to: [driverEmail],
-        subject: `Compliance request: ${taskLabel}`,
+        subject: emailSubject,
         html,
       }),
     });
@@ -209,16 +311,24 @@ serve(async (req) => {
       // noop
     }
 
-    if (emailId) {
-      await admin.from('compliance_requests').update({ email_id: emailId }).eq('id', inserted.id);
+    if (!emailId) {
+      return json(
+        { error: `שליחת המייל לא אושרה: לא התקבל מזהה הודעה מ-Resend. פלט: ${resendText.slice(0, 400)}` },
+        502,
+      );
+    }
+
+    if (emailId && insertedId) {
+      await admin.from('compliance_requests').update({ email_id: emailId }).eq('id', insertedId);
     }
 
     return json({
       success: true,
       token,
-      request_url: requestUrl,
+      request_url: persistedToken ? magicLinkUrl : primaryHref,
       email_id: emailId || null,
       sent_to: driverEmail,
+      persisted_token: persistedToken,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

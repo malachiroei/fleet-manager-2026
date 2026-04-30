@@ -35,16 +35,17 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
+    /** בלי consumed_at בעמודה — פרויקטים ללא מיגרציה 20260430122000 נכשלים ב-schema cache */
     const { data, error } = await admin
       .from('compliance_requests')
-      .select('id, driver_id, driver_name, driver_email, task_key, task_label, status, due_date, request_url, consumed_at')
+      .select('id, driver_id, driver_name, driver_email, task_key, task_label, status, due_date, request_url')
       .eq('request_token', token)
       .maybeSingle();
 
     if (error) return json({ error: error.message }, 500);
     if (!data) return json({ error: 'Request not found' }, 404);
-    if (data.status === 'completed' || data.status === 'expired' || data.consumed_at) {
-      return json({ error: 'This request link is no longer active' }, 410);
+    if (data.status === 'completed' || data.status === 'expired') {
+      return json({ error: 'הקישור אינו פעיל עוד או שהבקשה כבר הושלמה' }, 410);
     }
 
     if (data.status === 'sent') {

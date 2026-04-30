@@ -1,5 +1,12 @@
 import type { FleetColumnOption } from '@/components/fleet/FleetTableColumnsSheet';
 
+/** מוצג ברשימת העמודות כקבוע (לא ניתן להסתיר) */
+export const VEHICLE_HUD_FIXED_COLUMN_HINTS: FleetColumnOption[] = [
+  { id: '__hint_select', label: 'בחירת שורות (צ׳קבוקס)' },
+  { id: '__hint_plate', label: 'מספר רישוי' },
+  { id: '__hint_actions', label: 'תפריט פעולות' },
+];
+
 /** עמודות אופציונליות (ללא צ׳קבוקס, מספר רישוי ותפריט פעולות) */
 export const VEHICLE_HUD_OPTIONAL_COLUMNS: FleetColumnOption[] = [
   { id: 'vehicle_type', label: 'סוג רכב' },

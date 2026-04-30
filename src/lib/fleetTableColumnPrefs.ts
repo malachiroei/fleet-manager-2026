@@ -1,5 +1,8 @@
 const PREFIX = 'fleet.table.columns.';
 
+/** ברירת מחדל שנשמרה ידנית לטבלת רכבים (כמו «שמור ברירת מחדל» בדף הציות). */
+export const VEHICLE_HUD_COLUMNS_SAVED_DEFAULT_KEY = `${PREFIX}vehicles.saved_default.v1`;
+
 export function fleetTableColumnsStorageKey(kind: 'vehicles' | 'drivers'): string {
   return `${PREFIX}${kind}`;
 }
