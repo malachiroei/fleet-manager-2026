@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { invokeSupabaseEdgeFunction } from '@/lib/supabase/invokeEdgeFunction';
 import SignatureCanvas from 'react-signature-canvas';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import PhotoUpload from '@/components/PhotoUpload';
 
 type PublicRequestItem = {
   driver_id: string | null;
@@ -17,30 +19,166 @@ type PublicRequestItem = {
   request_url: string;
 };
 
+const THANKS_EMPLOYEE = 'תודה, הנתונים נקלטו ועברו למחלקת רכב.';
+
+/** טקסט שגיאה מגוף תשובת Edge (במקום «non-2xx status code» גנרי) */
+async function edgeInvokeFriendlyMessage(invokeErr: unknown): Promise<string> {
+  const base = invokeErr instanceof Error ? invokeErr.message : '';
+  const ctx = (invokeErr as { context?: Response } | undefined)?.context;
+  if (ctx?.clone) {
+    try {
+      const j = await ctx.clone().json();
+      if (j && typeof j === 'object') {
+        const e = (j as { error?: unknown }).error;
+        if (typeof e === 'string' && e.trim()) return e.trim();
+        const m = (j as { message?: unknown }).message;
+        if (typeof m === 'string' && m.trim()) return m.trim();
+      }
+    } catch {
+      try {
+        const t = await ctx.clone().text();
+        if (t?.trim()) return t.trim().slice(0, 500);
+      } catch {
+        /* מתעלם — גוף שגיאה לא טקסטואלי */
+      }
+    }
+  }
+  const lower = base.toLowerCase();
+  if (lower.includes('non-2xx') || lower.includes('failed to fetch')) {
+    return 'שגיאת רשת או שרת. נסו שוב בעוד רגע; אם הבעיה נמשכת צמצמו את גודל התמונה.';
+  }
+  return base.trim() || 'פעולת השרת נכשלה';
+}
+
+function errorFromInvokeData(data: unknown): string | null {
+  if (!data || typeof data !== 'object') return null;
+  const e = (data as { error?: unknown }).error;
+  if (typeof e === 'string' && e.trim()) return e.trim();
+  return null;
+}
+
+function isInvokeSuccessPayload(data: unknown): data is { success: true; error?: string } {
+  return (
+    !!data &&
+    typeof data === 'object' &&
+    (data as { success?: boolean }).success === true &&
+    !(typeof (data as { error?: unknown }).error === 'string' && String((data as { error: string }).error).trim())
+  );
+}
+
+/** הקטנת תמונה לפני שליחה — גוף JSON גדול עלול לגרום לכשל בשכבת הפונקציה */
+async function compressImageDataUrl(dataUrl: string, maxSide = 1600, quality = 0.82): Promise<string> {
+  if (!dataUrl.startsWith('data:image')) return dataUrl;
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let w = img.naturalWidth || img.width;
+      let h = img.naturalHeight || img.height;
+      if (w <= 0 || h <= 0) {
+        resolve(dataUrl);
+        return;
+      }
+      const scale = Math.min(1, maxSide / Math.max(w, h));
+      w = Math.round(w * scale);
+      h = Math.round(h * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(dataUrl);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, w, h);
+      try {
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      } catch {
+        resolve(dataUrl);
+      }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(typeof r.result === 'string' ? r.result : '');
+    r.onerror = () => reject(new Error('קריאת הקובץ נכשלה'));
+    r.readAsDataURL(file);
+  });
+}
+
+function formatDueUi(ymd: string | null): string {
+  if (!ymd?.trim()) return '';
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ymd.trim());
+  if (!m) return ymd;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  try {
+    return new Intl.DateTimeFormat('he-IL', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'UTC',
+    }).format(d);
+  } catch {
+    return `${m[3]}.${m[2]}.${m[1]}`;
+  }
+}
+
+function tryCloseWindow() {
+  window.close();
+}
+
 export default function UpdateComplianceRequestPage() {
   const { token } = useParams<{ token: string }>();
-  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const completedFromUrl = searchParams.get('completed') === '1';
+
+  const [loading, setLoading] = useState(!completedFromUrl);
   const [submitting, setSubmitting] = useState(false);
-  const [done, setDone] = useState(false);
+  const [done, setDone] = useState(completedFromUrl);
   const [error, setError] = useState<string | null>(null);
-  const [submitMessage, setSubmitMessage] = useState<string | null>(null);
+  const [submitMessage, setSubmitMessage] = useState<string | null>(completedFromUrl ? THANKS_EMPLOYEE : null);
   const [item, setItem] = useState<PublicRequestItem | null>(null);
-  const [licenseDataUrl, setLicenseDataUrl] = useState<string>('');
+  const [licensePhotoFile, setLicensePhotoFile] = useState<File | null>(null);
+  /** פרטים אופציונליים — יישמרו לצורך אישור מנהל ובהמשך OCR */
+  const [declaredLicenseNumber, setDeclaredLicenseNumber] = useState('');
+  const [declaredLicenseExpiry, setDeclaredLicenseExpiry] = useState('');
+  const [declaredHealthExpiry, setDeclaredHealthExpiry] = useState('');
   const sigRef = useRef<SignatureCanvas | null>(null);
 
   const tokenPreview = useMemo(() => {
     const t = String(token ?? '').trim();
     if (!t) return 'missing token';
     if (t.length <= 10) return t;
-    return `${t.slice(0, 6)}...${t.slice(-4)}`;
+    return `${t.slice(0, 6)}…${t.slice(-4)}`;
   }, [token]);
+
+  useEffect(() => {
+    document.title = completedFromUrl ? 'העדכון נקלט' : 'עדכון מסמך נדרש';
+  }, [completedFromUrl]);
+
+  useEffect(() => {
+    if (completedFromUrl) {
+      setDone(true);
+      setSubmitMessage(THANKS_EMPLOYEE);
+      setLoading(false);
+      setError(null);
+    }
+  }, [completedFromUrl]);
 
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
+      if (completedFromUrl) return;
+
       const safeToken = String(token ?? '').trim();
       if (!safeToken) {
-        setError('Invalid link token');
+        setError('קישור לא תקין');
         setLoading(false);
         return;
       }
@@ -49,12 +187,25 @@ export default function UpdateComplianceRequestPage() {
         const { data, error: invokeErr } = await invokeSupabaseEdgeFunction('public-compliance-request', {
           token: safeToken,
         });
-        if (invokeErr) throw new Error(invokeErr.message ?? 'Failed to fetch request');
-        const payload = data as { item?: PublicRequestItem; error?: string } | null;
-        if (!payload?.item) {
-          throw new Error(payload?.error || 'Request not found');
+        const payload = data as { item?: PublicRequestItem; success?: boolean; error?: string } | null;
+        const loadOk =
+          payload &&
+          payload.success === true &&
+          payload.item &&
+          !(typeof payload.error === 'string' && payload.error.trim());
+        if (loadOk) {
+          if (!cancelled) setItem(payload.item!);
+        } else {
+          const dataErrLoad = errorFromInvokeData(data);
+          if (invokeErr) throw new Error(dataErrLoad ?? (await edgeInvokeFriendlyMessage(invokeErr)));
+          const payErr =
+            typeof payload?.error === 'string' && payload.error.trim().length > 0
+              ? payload.error.trim()
+              : null;
+          if (payErr) throw new Error(payErr);
+          if (!payload?.item) throw new Error('הבקשה לא נמצאה');
+          if (!cancelled) setItem(payload.item);
         }
-        if (!cancelled) setItem(payload.item);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (!cancelled) setError(msg);
@@ -66,16 +217,10 @@ export default function UpdateComplianceRequestPage() {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, completedFromUrl]);
 
-  const onLicensePick = (file: File | null) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const out = typeof reader.result === 'string' ? reader.result : '';
-      setLicenseDataUrl(out);
-    };
-    reader.readAsDataURL(file);
+  const onLicensePhoto = (file: File | null) => {
+    setLicensePhotoFile(file);
   };
 
   const submit = async () => {
@@ -86,12 +231,26 @@ export default function UpdateComplianceRequestPage() {
     const taskKey = String(item.task_key || '').trim();
     if (taskKey === 'health_declaration') {
       if (!sigRef.current || sigRef.current.isEmpty()) {
-        setError('Please provide your signature before submitting.');
+        setError('נא לחתום בהצהרה לפני השליחה.');
+        return;
+      }
+      if (
+        declaredHealthExpiry.trim() &&
+        !/^\d{4}-\d{2}-\d{2}$/.test(declaredHealthExpiry.trim())
+      ) {
+        setError('תאריך תוקף מעודכן (אופציונלי) חייב בפורמט YYYY-MM-DD');
         return;
       }
     } else if (taskKey === 'driver_license') {
-      if (!licenseDataUrl) {
-        setError('Please upload a license photo before submitting.');
+      if (!licensePhotoFile) {
+        setError('נא לצלם או להעלות תמונת רישיון ברורה לפני השליחה.');
+        return;
+      }
+      if (
+        declaredLicenseExpiry.trim() &&
+        !/^\d{4}-\d{2}-\d{2}$/.test(declaredLicenseExpiry.trim())
+      ) {
+        setError('תאריך תוקף אופציונלי חייב בפורמט YYYY-MM-DD (למשל 2030-01-15)');
         return;
       }
     }
@@ -104,16 +263,44 @@ export default function UpdateComplianceRequestPage() {
       };
       if (taskKey === 'health_declaration') {
         payload.health_signature_data_url = sigRef.current?.getTrimmedCanvas().toDataURL('image/png');
+        if (declaredHealthExpiry.trim()) {
+          payload.declared_health_expiry = declaredHealthExpiry.trim();
+        }
       }
       if (taskKey === 'driver_license') {
-        payload.license_image_data_url = licenseDataUrl;
+        let dataUrl = await fileToDataUrl(licensePhotoFile!);
+        dataUrl = await compressImageDataUrl(dataUrl);
+        if (JSON.stringify({ ...payload, license_image_data_url: dataUrl }).length > 5_500_000) {
+          const again = await fileToDataUrl(licensePhotoFile!);
+          dataUrl = await compressImageDataUrl(again, 1200, 0.72);
+        }
+        payload.license_image_data_url = dataUrl;
+        if (declaredLicenseNumber.trim()) {
+          payload.declared_license_number = declaredLicenseNumber.trim();
+        }
+        if (declaredLicenseExpiry.trim()) {
+          payload.declared_license_expiry = declaredLicenseExpiry.trim();
+        }
       }
       const { data, error: invokeErr } = await invokeSupabaseEdgeFunction('public-compliance-submit', payload);
-      if (invokeErr) throw new Error(invokeErr.message ?? 'Submit failed');
+
+      const safeTokenSubmit = encodeURIComponent(String(token ?? '').trim());
+      const markDoneNavigate = () => {
+        setSubmitMessage(THANKS_EMPLOYEE);
+        setDone(true);
+        navigate(`/update/${safeTokenSubmit}?completed=1`, { replace: true });
+      };
+
+      if (isInvokeSuccessPayload(data)) {
+        markDoneNavigate();
+        return;
+      }
+
+      const dataErrSubmit = errorFromInvokeData(data);
+      if (invokeErr) throw new Error(dataErrSubmit ?? (await edgeInvokeFriendlyMessage(invokeErr)));
       const response = data as { message?: string; error?: string } | null;
       if (response?.error) throw new Error(response.error);
-      setSubmitMessage(response?.message ?? 'Thank you, your record has been updated!');
-      setDone(true);
+      markDoneNavigate();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);
@@ -122,36 +309,64 @@ export default function UpdateComplianceRequestPage() {
     }
   };
 
-  return (
-    <main className="min-h-screen bg-background px-4 py-6">
-      <section className="mx-auto w-full max-w-md rounded-2xl border border-white/10 bg-slate-900/70 p-5 text-right shadow-xl">
-        <h1 className="text-xl font-bold text-white">Compliance Update Request</h1>
-        <p className="mt-2 text-xs text-slate-400">Link ID: {tokenPreview}</p>
+  const dueFmt = formatDueUi(item?.due_date ?? null);
+  const showSuccessOnly = completedFromUrl || done;
 
-        {loading ? (
+  return (
+    <main dir="rtl" className="min-h-screen bg-background px-4 py-6">
+      <section className="mx-auto w-full max-w-lg rounded-2xl border border-white/10 bg-slate-900/70 p-5 text-right shadow-xl">
+        <h1 className="text-xl font-bold text-white">
+          {showSuccessOnly ? 'העדכון נקלט' : 'עדכון מסמך נדרש'}
+        </h1>
+        <p className="mt-2 text-xs text-slate-400">מזהה קישור: {tokenPreview}</p>
+
+        {loading && !completedFromUrl ? (
           <div className="mt-6 flex items-center justify-center">
             <Loader2 className="h-6 w-6 animate-spin text-cyan-300" />
+          </div>
+        ) : showSuccessOnly ? (
+          <div className="mt-6 space-y-3 rounded-md border border-emerald-400/40 bg-emerald-500/10 p-5 text-sm leading-relaxed text-emerald-100">
+            <p className="text-base font-semibold text-emerald-50">נקלט בהצלחה</p>
+            <p>{submitMessage ?? THANKS_EMPLOYEE}</p>
           </div>
         ) : error ? (
           <p className="mt-6 rounded-md border border-red-400/40 bg-red-500/10 p-3 text-sm text-red-200">{error}</p>
         ) : (
           <div className="mt-6 space-y-4">
             <div className="rounded-lg border border-cyan-400/20 bg-slate-950/60 p-3">
-              <p className="text-xs text-slate-400">Driver</p>
-              <p className="text-base font-semibold text-white">{item?.driver_name || 'Driver'}</p>
+              <p className="text-xs text-slate-400">נהג</p>
+              <p className="text-base font-semibold text-white">{item?.driver_name || '—'}</p>
               {item?.driver_email ? <p className="text-xs text-slate-300">{item.driver_email}</p> : null}
             </div>
 
             <div className="rounded-lg border border-amber-300/20 bg-slate-950/60 p-3">
-              <p className="text-xs text-slate-400">Task</p>
-              <p className="text-base font-semibold text-white">{item?.task_label || 'Update Required Document'}</p>
-              {item?.due_date ? <p className="text-xs text-slate-300">Due date: {item.due_date}</p> : null}
+              <p className="text-xs text-slate-400">נושא</p>
+              <p className="text-base font-semibold text-white">{item?.task_label || 'עדכון נדרש'}</p>
+              {dueFmt ? (
+                <p className="mt-1 text-sm text-slate-200">
+                  <span className="text-slate-400">תוקף במערכת: </span>
+                  {dueFmt}
+                </p>
+              ) : null}
             </div>
 
             {!done && item?.task_key === 'health_declaration' ? (
-              <div className="rounded-lg border border-white/10 bg-slate-950/60 p-3 space-y-2">
+              <div className="space-y-3 rounded-lg border border-white/10 bg-slate-950/60 p-3">
+                <div>
+                  <Label className="text-xs text-slate-300">
+                    תוקף מעודכן בהצהרה (לא חובה — פורמט YYYY-MM-DD)
+                  </Label>
+                  <Input
+                    type="text"
+                    value={declaredHealthExpiry}
+                    onChange={(e) => setDeclaredHealthExpiry(e.target.value.trim())}
+                    placeholder="למשל 2027-12-31"
+                    className="mt-1 border-white/15 bg-black/30 font-mono text-white"
+                    dir="ltr"
+                  />
+                </div>
                 <p className="text-sm text-slate-200">
-                  I declare that my health condition allows safe driving and that I will report any change immediately.
+                  בהצהרה זו אני מאשר שמצבי הבריאות מאפשר נהיגה בטוחה, ואדווח מיד על כל שינוי.
                 </p>
                 <div className="rounded-md border border-cyan-300/20 bg-white">
                   <SignatureCanvas
@@ -159,7 +374,7 @@ export default function UpdateComplianceRequestPage() {
                       sigRef.current = r;
                     }}
                     penColor="black"
-                    canvasProps={{ className: 'w-full h-40' }}
+                    canvasProps={{ className: 'h-40 w-full touch-none' }}
                   />
                 </div>
                 <Button type="button" variant="outline" onClick={() => sigRef.current?.clear()}>
@@ -169,44 +384,78 @@ export default function UpdateComplianceRequestPage() {
             ) : null}
 
             {!done && item?.task_key === 'driver_license' ? (
-              <div className="rounded-lg border border-white/10 bg-slate-950/60 p-3 space-y-2">
-                <p className="text-sm text-slate-200">נא לצלם או להעלות תמונת רישיון עדכנית.</p>
-                <Input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={(e) => onLicensePick(e.target.files?.[0] ?? null)}
-                />
-                {licenseDataUrl ? (
-                  <img src={licenseDataUrl} alt="license preview" className="h-40 w-full rounded-md object-contain bg-black/30" />
-                ) : null}
+              <div className="space-y-3 rounded-lg border border-white/10 bg-slate-950/60 p-3">
+                <p className="text-sm leading-relaxed text-slate-200">
+                  צלמו את <strong>רישיון הנהיגה העדכני</strong> בתאור טוב ובפוקוס חדה, או העלו מהגלריה. כל השדות חייבים
+                  להיות קריאים.
+                </p>
+                <div className="[&_.border-success]:border-emerald-500/60 [&_.border-border]:border-white/20">
+                  <PhotoUpload
+                    label="צילום רישיון — מצלמה או גלריה"
+                    onPhotoCapture={onLicensePhoto}
+                    disabled={submitting}
+                  />
+                </div>
+                <div className="space-y-2 border-t border-white/10 pt-3">
+                  <p className="text-xs text-slate-400">
+                    פרטים אופציונליים לעזר למנהל (בעתיד: חילוץ אוטומטי מתמונה)
+                  </p>
+                  <div>
+                    <Label className="text-xs text-slate-300">מספר רישיון (אופציונלי)</Label>
+                    <Input
+                      value={declaredLicenseNumber}
+                      onChange={(e) => setDeclaredLicenseNumber(e.target.value)}
+                      placeholder="כפי שמופיע ברישיון"
+                      className="mt-1 border-white/15 bg-black/30 text-white"
+                      dir="ltr"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-slate-300">תאריך תוקף חדש (אופציונלי, פורמט YYYY-MM-DD)</Label>
+                    <Input
+                      type="text"
+                      value={declaredLicenseExpiry}
+                      onChange={(e) => setDeclaredLicenseExpiry(e.target.value.trim())}
+                      placeholder="2030-12-31"
+                      className="mt-1 border-white/15 bg-black/30 font-mono text-white"
+                      dir="ltr"
+                    />
+                  </div>
+                </div>
               </div>
             ) : null}
 
-            {!done ? (
-              <Button type="button" className="w-full" onClick={submit} disabled={submitting}>
-                {submitting ? (
-                  <span className="inline-flex items-center gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    שולח עדכון...
-                  </span>
-                ) : (
-                  'שלח עדכון'
-                )}
-              </Button>
-            ) : (
-              <p className="rounded-md border border-emerald-400/40 bg-emerald-500/10 p-3 text-sm text-emerald-200">
-                {submitMessage ?? 'Thank you, your record has been updated!'}
-              </p>
-            )}
+            <Button type="button" className="w-full" onClick={submit} disabled={submitting}>
+              {submitting ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  מעלה…
+                </span>
+              ) : (
+                'שלח לאישור'
+              )}
+            </Button>
           </div>
         )}
 
-        <div className="mt-6">
-          <Link to="/" className="text-sm text-cyan-300 hover:text-cyan-200">
-            חזרה למסך הראשי
-          </Link>
-        </div>
+        <footer className="mt-8 border-t border-white/10 pt-4 space-y-2">
+          {(done || completedFromUrl || error) && (
+            <p className="text-xs text-slate-500">
+              לאחר הסיום הקישור הזה אינו לשימוש חוזר. לשאלות ניתן לפנות למחלקת הרכב בארגון.
+            </p>
+          )}
+          <Button
+            type="button"
+            variant={showSuccessOnly || error ? 'default' : 'outline'}
+            className="w-full"
+            onClick={() => tryCloseWindow()}
+          >
+            סיום וסגירת הדף
+          </Button>
+          <p className="text-center text-[11px] text-slate-500">
+            אם הדף לא נסגר — סגרו את הלשונית ידנית בדפדפן.
+          </p>
+        </footer>
       </section>
     </main>
   );

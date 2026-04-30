@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Navigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { Link, Navigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FleetHudPageShell } from '@/components/FleetHudPageShell';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -65,7 +65,8 @@ const DRIVER_KEYS: string[] = [
 ];
 
 const VEHICLE_DEFAULT_COLUMNS = ['plate_number', 'manufacturer', 'model', 'status'];
-const DRIVER_DEFAULT_COLUMNS = ['full_name', 'id_number', 'phone', 'email', 'status'];
+/** ללא status — תצוגת סטטוס מרוכזת בעמודה הייעודית «סטטוס» (עברית) */
+const DRIVER_DEFAULT_COLUMNS = ['full_name', 'id_number', 'phone', 'email'];
 
 const TAB_DEFS: Array<{ key: ComplianceTabKey; label: string; source: 'vehicle' | 'driver'; dueField: string }> = [
   { key: 'annual_licensing', label: 'רישוי שנתי', source: 'vehicle', dueField: 'test_expiry' },
@@ -274,7 +275,23 @@ function prettifyKey(key: string): string {
   return key.replace(/_/g, ' ');
 }
 
-function renderValue(raw: unknown): string {
+/** סטטוס נהג/מסמך במערכת — תווית בעברית (ולא snake_case מה-DB) */
+function driverSystemStatusLabelHe(raw: unknown): string {
+  const s = String(raw ?? '').trim();
+  if (!s || s === '—') return '—';
+  const map: Record<string, string> = {
+    pending_approval: 'ממתין לאישור מנהל',
+    active: 'פעיל',
+    inactive: 'לא פעיל',
+    expired: 'פג תוקף',
+    valid: 'בתוקף',
+  };
+  const low = s.toLowerCase();
+  return map[low] ?? s;
+}
+
+function renderValue(raw: unknown, col?: string): string {
+  if (col === 'status') return driverSystemStatusLabelHe(raw);
   if (raw == null || raw === '') return '—';
   if (typeof raw === 'boolean') return raw ? 'כן' : 'לא';
   if (typeof raw === 'number') return Number.isFinite(raw) ? raw.toLocaleString('he-IL') : '—';
@@ -288,6 +305,34 @@ function renderValue(raw: unknown): string {
   } catch {
     return String(raw);
   }
+}
+
+/** סטטוס תצוגה לפי תאריך התוקף של הטאב — לא רק `status` מה-DB (שלעיתים לא מסונכרן) */
+function complianceTableStatusNode(dueField: string, row: Record<string, unknown>) {
+  if (String(row.status ?? '').trim().toLowerCase() === 'pending_approval') {
+    return (
+      <span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200">
+        ממתין לאישור מנהל
+      </span>
+    );
+  }
+  const dueDays = daysUntil(row[dueField]);
+  const db = String(row.status ?? '—').trim() || '—';
+  if (dueDays != null && dueDays < 0) {
+    return (
+      <span className="text-xs font-semibold text-red-300" title={`סטטוס במערכת: ${db}`}>
+        פג תוקף (לפי תאריך)
+      </span>
+    );
+  }
+  if (dueDays != null && dueDays <= 30 && dueDays >= 0 && db.toLowerCase() === 'valid') {
+    return (
+      <span className="text-xs font-medium text-amber-200" title={`סטטוס במערכת: ${db}`}>
+        לטיפול (תאריך קרוב)
+      </span>
+    );
+  }
+  return <span className="text-xs text-muted-foreground">{db}</span>;
 }
 
 function SearchableColumnPicker({
@@ -398,6 +443,8 @@ type TabTableProps<T extends Record<string, unknown>> = {
   emptyLabel: string;
   onSendRequest: (row: T) => void;
   requestDisabledReason: (row: T) => string | null;
+  /** כשחסר אימייל — קישור לעריכת נהג למילוי אימייל */
+  driverEmailFixHref?: (row: T) => string | null;
   onApproveLicense: (row: T) => void;
   getApproveDateValue: (row: T) => string;
   setApproveDateValue: (row: T, next: string) => void;
@@ -413,6 +460,7 @@ function ComplianceTable<T extends Record<string, unknown>>({
   emptyLabel,
   onSendRequest,
   requestDisabledReason,
+  driverEmailFixHref,
   onApproveLicense,
   getApproveDateValue,
   setApproveDateValue,
@@ -446,6 +494,14 @@ function ComplianceTable<T extends Record<string, unknown>>({
             rows.map((row, idx) => {
               const dueDays = daysUntil(row[dueField]);
               const isExpired = dueDays != null && dueDays < 0;
+              const awaitingEmp =
+                tabKey === 'health_declaration' &&
+                Boolean((row as { __awaitingEmployeeSignature?: boolean }).__awaitingEmployeeSignature);
+              const sendBarrier =
+                awaitingEmp ? 'כבר נשלח קישור — ממתין לחתימת העובד' : requestDisabledReason(row);
+              const driverLicPending =
+                tabKey === 'driver_license' &&
+                String(row.status ?? '').trim().toLowerCase() === 'pending_approval';
               return (
                 <TableRow
                   key={String(row.id ?? idx)}
@@ -456,7 +512,7 @@ function ComplianceTable<T extends Record<string, unknown>>({
                       '—'
                     ) : isExpired ? (
                       <span className="inline-flex items-center rounded-full border border-red-400/40 bg-red-500/15 px-2 py-0.5 text-xs font-semibold text-red-300">
-                        פג תוקף ({Math.abs(dueDays)} ימים)
+                        פג תוקף — עברו {Math.abs(dueDays)} ימים
                       </span>
                     ) : (
                       <span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200">
@@ -469,16 +525,26 @@ function ComplianceTable<T extends Record<string, unknown>>({
                   </TableCell>
                   {safeColumns.map((col) => (
                     <TableCell key={`${String(row.id ?? idx)}-${col}`} className="text-right">
-                      {renderValue(row[col])}
+                      {renderValue(row[col], col)}
                     </TableCell>
                   ))}
                   <TableCell className="text-right">
-                    {String(row.status ?? '').trim() === 'pending_approval' ? (
+                    {tabKey === 'health_declaration' ? (
+                      awaitingEmp ? (
+                        <span className="inline-flex items-center rounded-full border border-sky-400/40 bg-sky-500/15 px-2 py-0.5 text-xs font-semibold text-sky-200">
+                          ממתין לחתימת עובד
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full border border-slate-500/40 bg-slate-700/40 px-2 py-0.5 text-xs font-semibold text-slate-200">
+                          ממתין לשליחה
+                        </span>
+                      )
+                    ) : driverLicPending ? (
                       <span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200">
-                        Pending Approval
+                        ממתין לאישור מנהל
                       </span>
                     ) : (
-                      <span className="text-xs text-muted-foreground">{String(row.status ?? '—')}</span>
+                      <span className="text-xs text-muted-foreground">{driverSystemStatusLabelHe(row.status)}</span>
                     )}
                   </TableCell>
                   <TableCell className="text-right">
@@ -486,16 +552,15 @@ function ComplianceTable<T extends Record<string, unknown>>({
                       <Button
                         type="button"
                         size="sm"
-                        disabled={sendingRowKey === String(row.id ?? idx)}
+                        disabled={Boolean(sendBarrier) || sendingRowKey === String(row.id ?? idx)}
                         onClick={() => {
-                          const reason = requestDisabledReason(row);
-                          if (reason) {
-                            toast.error(`לא ניתן לשלוח בקשה: ${reason}`);
+                          if (sendBarrier) {
+                            toast.error(`לא ניתן לשלוח בקשה: ${sendBarrier}`);
                             return;
                           }
                           onSendRequest(row);
                         }}
-                        title={requestDisabledReason(row) ?? 'שליחת בקשה במייל'}
+                        title={sendBarrier ?? 'שליחת בקשה במייל'}
                       >
                         {sendingRowKey === String(row.id ?? idx) ? (
                           <span className="inline-flex items-center gap-1">
@@ -506,13 +571,26 @@ function ComplianceTable<T extends Record<string, unknown>>({
                           'שלח בקשה'
                         )}
                       </Button>
-                    {requestDisabledReason(row) ? (
-                      <span className="text-[11px] text-amber-300/90">
-                        {requestDisabledReason(row)}
-                      </span>
-                    ) : null}
+                    {(() => {
+                      const reason = requestDisabledReason(row);
+                      if (!reason) return null;
+                      const fixHref = driverEmailFixHref?.(row) ?? null;
+                      const emailRelated =
+                        reason.includes('אימייל') || reason.includes('מייל') || reason.includes('email');
+                      if (fixHref && emailRelated) {
+                        return (
+                          <Link
+                            to={fixHref}
+                            className="block max-w-[14rem] text-right text-[11px] font-medium text-amber-300 underline decoration-amber-400/60 underline-offset-2 hover:text-amber-200"
+                          >
+                            {reason}
+                          </Link>
+                        );
+                      }
+                      return <span className="text-[11px] text-amber-300/90">{reason}</span>;
+                    })()}
 
-                      {tabKey === 'driver_license' && String(row.status ?? '').trim() === 'pending_approval' ? (
+                      {tabKey === 'driver_license' && String(row.status ?? '').trim().toLowerCase() === 'pending_approval' ? (
                         <>
                           <Button
                             type="button"
@@ -524,21 +602,24 @@ function ComplianceTable<T extends Record<string, unknown>>({
                             }}
                             disabled={!String(row.license_front_url ?? '').trim()}
                           >
-                            Review
+                            לצפיה
                           </Button>
-                          <Input
-                            type="date"
-                            className="h-8 w-40"
-                            value={getApproveDateValue(row)}
-                            onChange={(e) => setApproveDateValue(row, e.target.value)}
-                          />
+                          <div className="flex min-w-[10rem] flex-col items-end gap-1">
+                            <span className="text-[11px] font-medium text-muted-foreground">תוקף</span>
+                            <Input
+                              type="date"
+                              className="h-10 w-full min-w-[10.5rem] sm:w-44"
+                              value={getApproveDateValue(row)}
+                              onChange={(e) => setApproveDateValue(row, e.target.value)}
+                            />
+                          </div>
                           <Button
                             type="button"
                             size="sm"
                             onClick={() => onApproveLicense(row)}
                             disabled={!getApproveDateValue(row).trim() || isApprovingRow(row)}
                           >
-                            {isApprovingRow(row) ? 'מאשר...' : 'Approve'}
+                            {isApprovingRow(row) ? 'מאשר…' : 'אישור'}
                           </Button>
                         </>
                       ) : null}
@@ -555,7 +636,8 @@ function ComplianceTable<T extends Record<string, unknown>>({
 }
 
 export default function AdminCompliancePage() {
-  const { isAdmin, activeOrgId, profile } = useAuth();
+  const { isAdmin, activeOrgId, profile, user } = useAuth();
+  const queryClient = useQueryClient();
   const orgId = activeOrgId ?? profile?.org_id ?? null;
   const { data: vehicles = [], isLoading: vehiclesLoading } = useVehicles();
   const { data: drivers = [], isLoading: driversLoading, refetch: refetchDrivers } = useQuery({
@@ -572,6 +654,32 @@ export default function AdminCompliancePage() {
       return (data ?? []) as Driver[];
     },
   });
+
+  type OpenComplianceRow = { driver_id: string | null; task_key: string | null };
+  const { data: openComplianceRequests = [] } = useQuery({
+    queryKey: ['admin-compliance-open-requests', orgId],
+    enabled: Boolean(isAdmin && orgId),
+    queryFn: async (): Promise<OpenComplianceRow[]> => {
+      if (!orgId) return [];
+      const { data, error } = await supabase
+        .from('compliance_requests')
+        .select('driver_id, task_key')
+        .eq('org_id', orgId)
+        .in('status', ['sent', 'opened']);
+      if (error) throw error;
+      return (data ?? []) as OpenComplianceRow[];
+    },
+  });
+
+  const openComplianceAwaitingSignature = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of openComplianceRequests) {
+      const d = String(r.driver_id ?? '').trim();
+      const t = String(r.task_key ?? '').trim();
+      if (d && t) set.add(`${d}::${t}`);
+    }
+    return set;
+  }, [openComplianceRequests]);
 
   const [daysThreshold, setDaysThreshold] = useState(30);
   const [viewFilter, setViewFilter] = useState<TowerViewFilter>('expiring_soon');
@@ -673,7 +781,7 @@ export default function AdminCompliancePage() {
     const out = {} as Record<ComplianceTabKey, Array<Record<string, unknown>>>;
     for (const tab of TAB_DEFS) {
       const sourceRows = tab.source === 'vehicle' ? (vehicles as Array<Record<string, unknown>>) : (drivers as Array<Record<string, unknown>>);
-      out[tab.key] = sourceRows
+      let rows = sourceRows
         .filter((row) => {
           const dueIso = dueIsoFromRaw(row[tab.dueField]);
           if (!dueIso) return false;
@@ -690,11 +798,30 @@ export default function AdminCompliancePage() {
           const bIso = dueIsoFromRaw(b[tab.dueField]) ?? '9999-12-31';
           return aIso.localeCompare(bIso);
         });
+
+      if (tab.key === 'health_declaration') {
+        rows = rows.map((row) => {
+          const id = String(row.id ?? '').trim();
+          const awaiting = Boolean(
+            id && openComplianceAwaitingSignature.has(`${id}::health_declaration`),
+          );
+          return { ...row, __awaitingEmployeeSignature: awaiting };
+        });
+      }
+
+      out[tab.key] = rows;
     }
     return out;
-  }, [daysThreshold, drivers, vehicles, todayIso, maxIso, viewFilter, customMinIso, customMaxIso]);
-
-  if (!isAdmin) return <Navigate to="/" replace />;
+  }, [
+    drivers,
+    vehicles,
+    todayIso,
+    maxIso,
+    viewFilter,
+    customMinIso,
+    customMaxIso,
+    openComplianceAwaitingSignature,
+  ]);
 
   const loading = vehiclesLoading || driversLoading;
   const activeDef = TAB_DEFS.find((t) => t.key === activeTab) ?? TAB_DEFS[0];
@@ -748,13 +875,20 @@ export default function AdminCompliancePage() {
   }, []);
 
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
     const missingVehicle = VEHICLE_KEYS.filter((k) => !availableVehicleKeys.has(k));
     const missingDriver = DRIVER_KEYS.filter((k) => !availableDriverKeys.has(k));
     if (missingVehicle.length > 0) {
-      console.warn('[AdminCompliancePage] Missing vehicle columns in current Supabase schema/data', missingVehicle);
+      console.debug(
+        '[AdminCompliancePage] Vehicle field keys not present on loaded rows (older DB schema or omitted columns):',
+        missingVehicle,
+      );
     }
     if (missingDriver.length > 0) {
-      console.warn('[AdminCompliancePage] Missing driver columns in current Supabase schema/data', missingDriver);
+      console.debug(
+        '[AdminCompliancePage] Driver field keys not present on loaded rows (older DB schema or omitted columns):',
+        missingDriver,
+      );
     }
   }, [availableVehicleKeys, availableDriverKeys]);
 
@@ -864,8 +998,27 @@ export default function AdminCompliancePage() {
         throw new Error(detailed);
       }
 
-      const sentTo = String((data as { sent_to?: string } | null)?.sent_to ?? driverEmail);
-      toast.success(`בקשת עדכון נשלחה בהצלחה אל ${sentTo}`);
+      const payload = data as { success?: boolean; error?: string; sent_to?: string } | null | undefined;
+      const bodyErr =
+        payload && typeof payload.error === 'string' && payload.error.trim().length > 0
+          ? payload.error.trim()
+          : null;
+      if (bodyErr) {
+        throw new Error(bodyErr);
+      }
+      if (payload?.success !== true && !payload?.sent_to) {
+        throw new Error(
+          'תשובת שרת לא תקינה לשליחת מייל. ודא ש־Edge Function send-compliance-request מעודכנת.',
+        );
+      }
+
+      const sentTo = String(payload?.sent_to ?? driverEmail).trim().toLowerCase();
+      if (!sentTo.includes('@')) {
+        throw new Error('השרת לא החזיר כתובת נמען תקינה.');
+      }
+
+      toast.success('המייל נשלח בהצלחה');
+      await queryClient.invalidateQueries({ queryKey: ['admin-compliance-open-requests', orgIdRequired] });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       toast.error(`שליחת הבקשה נכשלה: ${msg}`);
@@ -981,6 +1134,10 @@ export default function AdminCompliancePage() {
     }
   };
 
+  if (!isAdmin) {
+    return <Navigate to="/" replace />;
+  }
+
   return (
     <FleetHudPageShell
       title="Compliance Tower"
@@ -1085,6 +1242,14 @@ export default function AdminCompliancePage() {
                   tabKey={tab.key}
                   onSendRequest={(row) => void submitComplianceRequest(tab, row)}
                   requestDisabledReason={(row) => requestDisabledReason(tab, row)}
+                  driverEmailFixHref={(row) => {
+                    if (tab.source === 'driver') {
+                      const id = String(row.id ?? '').trim();
+                      return id ? `/drivers/${id}/edit` : null;
+                    }
+                    const aid = String(row.assigned_driver_id ?? '').trim();
+                    return aid ? `/drivers/${aid}/edit` : null;
+                  }}
                   onApproveLicense={(row) => void approveLicenseForRow(row)}
                   getApproveDateValue={(row) => approveDateForRow(row)}
                   setApproveDateValue={(row, next) => setApproveDateForRow(row, next)}

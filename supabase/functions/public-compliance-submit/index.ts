@@ -13,7 +13,12 @@ type SubmitBody = {
   token?: string;
   task_key?: string;
   health_signature_data_url?: string;
+  /** תאריך תוקף הצהרה מוצהר מהעובד — אופציונלי, YYYY-MM-DD */
+  declared_health_expiry?: string;
   license_image_data_url?: string;
+  /** השלמה ידנית לפני OCR */
+  declared_license_number?: string;
+  declared_license_expiry?: string;
 };
 
 function json(body: unknown, status = 200): Response {
@@ -25,6 +30,12 @@ function json(body: unknown, status = 200): Response {
 
 function clean(v: unknown): string {
   return typeof v === 'string' ? v.trim() : '';
+}
+
+function ymdOrNull(v: unknown): string | null {
+  const s = clean(v);
+  if (!s) return null;
+  return /^(\d{4}-\d{2}-\d{2})$/.test(s) ? s : null;
 }
 
 function parseDataUrl(dataUrl: string): { bytes: Uint8Array; ext: string } {
@@ -85,16 +96,24 @@ serve(async (req) => {
       const pub = admin.storage.from(DOC_BUCKET).getPublicUrl(path);
       const fileUrl = clean(pub.data.publicUrl);
 
+      const declaredHealthYmd = ymdOrNull(body.declared_health_expiry);
+      const healthDateForDriver = declaredHealthYmd ?? nowIsoDate;
+
       const { error: updErr } = await admin
         .from('drivers')
         .update({
-          health_declaration_date: nowIsoDate,
+          health_declaration_date: healthDateForDriver,
           health_declaration_url: fileUrl,
           status: 'active',
         })
         .eq('id', requestRow.driver_id)
         .eq('org_id', requestRow.org_id);
       if (updErr) return json({ error: updErr.message }, 500);
+
+      const meta = {
+        declared_health_expiry: declaredHealthYmd,
+        submitted_on_date: nowIsoDate,
+      };
 
       const { error: docErr } = await admin.from('compliance_docs').insert({
         request_id: requestRow.id,
@@ -103,14 +122,16 @@ serve(async (req) => {
         task_key: requestRow.task_key,
         file_url: fileUrl,
         file_kind: 'signature',
+        metadata: meta,
       });
       if (docErr) return json({ error: docErr.message }, 500);
 
-      await admin.from('driver_documents').insert({
+      const { error: ddErr } = await admin.from('driver_documents').insert({
         driver_id: requestRow.driver_id,
         title: 'הצהרת בריאות - חתימה',
         file_url: fileUrl,
       });
+      if (ddErr) return json({ error: ddErr.message }, 500);
     } else if (requestRow.task_key === 'driver_license') {
       const licenseUrl = clean(body.license_image_data_url);
       if (!licenseUrl) return json({ error: 'Missing license image' }, 400);
@@ -144,26 +165,60 @@ serve(async (req) => {
       });
       if (docErr) return json({ error: docErr.message }, 500);
 
-      await admin.from('driver_documents').insert({
+      const { error: ddLicenseErr } = await admin.from('driver_documents').insert({
         driver_id: requestRow.driver_id,
         title: 'רישיון נהיגה - ממתין לאישור',
         file_url: fileUrl,
       });
+      if (ddLicenseErr) return json({ error: ddLicenseErr.message }, 500);
     } else {
       return json({ error: 'This task is not yet supported in public submit flow' }, 400);
     }
 
-    const { error: closeErr } = await admin
-      .from('compliance_requests')
-      .update({
-        status: 'completed',
-        completed_at: new Date().toISOString(),
-        consumed_at: new Date().toISOString(),
-      })
-      .eq('id', requestRow.id);
-    if (closeErr) return json({ error: closeErr.message }, 500);
+    let closeErr = (
+      await admin
+        .from('compliance_requests')
+        .update({
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+          consumed_at: new Date().toISOString(),
+        })
+        .eq('id', requestRow.id)
+    ).error;
+    const closeMsg = closeErr?.message ?? '';
+    if (
+      closeErr &&
+      (/completed_at|consumed_at|column/i.test(closeMsg) || /schema cache/i.test(closeMsg))
+    ) {
+      closeErr = (await admin.from('compliance_requests').update({ status: 'completed' }).eq('id', requestRow.id)).error;
+    }
+    if (closeErr) {
+      console.error('[public-compliance-submit] compliance_requests close failed after successful upload:', closeErr);
+      const thankByTaskPartial: Record<string, string> = {
+        driver_license:
+          'הרישיון הועלה בהצלחה. העדכון הועבר לאישור מנהל בארגון — רק לאחר האישור יעודכנו הצילום ותאריך התוקף בכרטיס הנהג.',
+        health_declaration: 'הצהרת הבריאות נשמרה בהצלחה. תודה.',
+      };
+      const messagePartial =
+        thankByTaskPartial[String(requestRow.task_key) ?? ''] ?? 'העדכון נקלט בהצלחה. תודה.';
+      return json({
+        success: true,
+        message: messagePartial,
+        warning:
+          'הנתונים נשמרו; סגירת הקישור במערכת נכשלה — אם מתקבלת הודעת שגיאה בצד הטלפון, אפשר לסגור את הדף. הקישור אינו בשימוש.',
+      });
+    }
 
-    return json({ success: true, message: 'Thank you, your record has been updated!' });
+    const thankByTask: Record<string, string> = {
+      driver_license:
+        'הרישיון הועלה בהצלחה. העדכון הועבר לאישור מנהל בארגון — רק לאחר האישור יעודכנו הצילום ותאריך התוקף בכרטיס הנהג.',
+      health_declaration: 'הצהרת הבריאות נשמרה בהצלחה. תודה.',
+    };
+    const message =
+      thankByTask[String(requestRow.task_key) ?? ''] ??
+      'העדכון נקלט בהצלחה. תודה.';
+
+    return json({ success: true, message });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return json({ error: message }, 500);
