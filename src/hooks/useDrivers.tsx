@@ -7,6 +7,36 @@ import { useAuth } from '@/hooks/useAuth';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
 import { fleetManagerVisibilityOrFilter } from '@/lib/fleetManagerScope';
 
+function isMissingSafetyOfficerColumnError(error: unknown): boolean {
+  const e = error as { code?: string; message?: string; details?: string; hint?: string } | null;
+  const blob = `${e?.message ?? ''} ${e?.details ?? ''} ${e?.hint ?? ''}`.toLowerCase();
+  return (e?.code === 'PGRST204' || blob.includes('pgrst204')) && blob.includes('safety_officer');
+}
+
+async function insertDriverWithCompat(row: Record<string, unknown>) {
+  const first = await supabase.from('drivers').insert(row).select().single();
+  if (!first.error) return first;
+  if (!isMissingSafetyOfficerColumnError(first.error) || !Object.prototype.hasOwnProperty.call(row, 'safety_officer')) {
+    return first;
+  }
+  const fallbackRow = { ...row };
+  delete (fallbackRow as Record<string, unknown>).safety_officer;
+  console.warn('[useCreateDriver] safety_officer column missing; retrying without it');
+  return supabase.from('drivers').insert(fallbackRow).select().single();
+}
+
+async function updateDriverWithCompat(id: string, payload: Partial<Driver>) {
+  const first = await supabase.from('drivers').update(payload).eq('id', id).select();
+  if (!first.error) return first;
+  if (!isMissingSafetyOfficerColumnError(first.error) || !Object.prototype.hasOwnProperty.call(payload, 'safety_officer')) {
+    return first;
+  }
+  const fallbackPayload = { ...payload } as Record<string, unknown>;
+  delete fallbackPayload.safety_officer;
+  console.warn('[useUpdateDriver] safety_officer column missing; retrying without it');
+  return supabase.from('drivers').update(fallbackPayload as Partial<Driver>).eq('id', id).select();
+}
+
 export function useDrivers() {
   const {
     effectiveOrgId,
@@ -193,11 +223,7 @@ export function useCreateDriver() {
       if (ownerId != null && row.managed_by_user_id === undefined) {
         row.managed_by_user_id = ownerId;
       }
-      const { data, error } = await supabase
-        .from('drivers')
-        .insert(row)
-        .select()
-        .single();
+      const { data, error } = await insertDriverWithCompat(row);
 
       if (error) throw error;
       return data;
@@ -260,11 +286,7 @@ export function useUpdateDriver() {
 
       // Do NOT use .single() after update — if RLS returns 0 rows, single() throws
       // "Cannot coerce the result to a single JSON object"
-      const { data, error } = await supabase
-        .from('drivers')
-        .update(payload)
-        .eq('id', id)
-        .select();
+      const { data, error } = await updateDriverWithCompat(id, payload);
 
       if (error) throw error;
       if (!data || data.length === 0) {

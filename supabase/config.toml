@@ -24,5 +24,11 @@ verify_jwt = false
 [functions.remove-team-member]
 verify_jwt = false
 
+[functions.send-compliance-request]
+verify_jwt = false
+
 [functions.public-compliance-request]
+verify_jwt = false
+
+[functions.public-compliance-submit]
 verify_jwt = false

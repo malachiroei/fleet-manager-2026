@@ -43,6 +43,7 @@ export function resolveLogicalBackTarget(pathname: string): string {
     p === '/admin/settings' ||
     p === '/admin-settings' ||
     p === '/admin/dashboard' ||
+    p === '/admin/compliance' ||
     p === '/admin/org-settings' ||
     p === '/team'
   ) {

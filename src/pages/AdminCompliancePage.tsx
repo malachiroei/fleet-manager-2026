@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { FleetHudPageShell } from '@/components/FleetHudPageShell';
@@ -20,8 +20,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/hooks/useAuth';
 import { useVehicles } from '@/hooks/useVehicles';
 import { supabase } from '@/integrations/supabase/client';
+import { invokeSupabaseEdgeFunction } from '@/lib/supabase/invokeEdgeFunction';
 import type { Driver, Vehicle } from '@/types/fleet';
-import { Columns3 } from 'lucide-react';
+import { Columns3, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 type ComplianceTabKey =
   | 'annual_licensing'
@@ -31,6 +33,10 @@ type ComplianceTabKey =
   | 'driver_license'
   | 'health_declaration'
   | 'regulation_585';
+
+type TowerViewFilter = 'all' | 'custom_range' | 'expiring_soon' | 'expired';
+type ComplianceSource = 'vehicle' | 'driver';
+const COMPLIANCE_COLUMNS_DEFAULTS_KEY = 'admin_compliance_default_columns_v1';
 
 const VEHICLE_KEYS: string[] = [
   'id', 'org_id', 'plate_number', 'manufacturer', 'model', 'year', 'current_odometer', 'next_maintenance_km',
@@ -58,8 +64,8 @@ const DRIVER_KEYS: string[] = [
   'birth_date', 'family_permit_date', 'driving_permit', 'is_field_person', 'practical_driving_test_date',
 ];
 
-const VEHICLE_DEFAULT_COLUMNS = ['plate_number', 'manufacturer', 'model'];
-const DRIVER_DEFAULT_COLUMNS = ['full_name', 'id_number', 'phone'];
+const VEHICLE_DEFAULT_COLUMNS = ['plate_number', 'manufacturer', 'model', 'status'];
+const DRIVER_DEFAULT_COLUMNS = ['full_name', 'id_number', 'phone', 'email', 'status'];
 
 const TAB_DEFS: Array<{ key: ComplianceTabKey; label: string; source: 'vehicle' | 'driver'; dueField: string }> = [
   { key: 'annual_licensing', label: 'רישוי שנתי', source: 'vehicle', dueField: 'test_expiry' },
@@ -71,14 +77,63 @@ const TAB_DEFS: Array<{ key: ComplianceTabKey; label: string; source: 'vehicle' 
   { key: 'regulation_585', label: 'תקנה 585', source: 'driver', dueField: 'regulation_585b_date' },
 ];
 
+const REQUEST_CTA_BY_TAB: Record<ComplianceTabKey, string> = {
+  annual_licensing: 'Your annual vehicle license is overdue. Please click to update the required document.',
+  insurance: 'Vehicle insurance is overdue. Please click and upload updated insurance.',
+  periodic_inspection: 'Periodic inspection is due. Please click and upload the new inspection proof.',
+  maintenance: 'Scheduled maintenance is due. Please click and update the maintenance confirmation.',
+  driver_license: 'Your license is overdue, please click here to upload a new photo.',
+  health_declaration: 'Your health declaration requires an update. Please click and upload the updated document.',
+  regulation_585: 'Regulation 585 documentation is due. Please click and upload the required update.',
+};
+
+function availableKeysFromRows(rows: Array<Record<string, unknown>>): Set<string> {
+  const out = new Set<string>();
+  for (const r of rows) {
+    for (const k of Object.keys(r)) out.add(k);
+  }
+  return out;
+}
+
+function filterKeysByAvailable(keys: string[], available: Set<string>): string[] {
+  return keys.filter((k) => available.has(k));
+}
+
 function toStartOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
+function isoYmdTodayLocal(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function addDaysToIsoYmd(isoYmd: string, days: number): string {
+  const d = parseIsoDate(isoYmd);
+  if (!d) return isoYmd;
+  d.setDate(d.getDate() + days);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function parseIsoDate(raw: unknown): Date | null {
   if (typeof raw !== 'string' || !raw.trim()) return null;
-  const d = new Date(raw);
-  return Number.isNaN(d.getTime()) ? null : d;
+  const text = raw.trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(text);
+  if (m) {
+    const year = Number(m[1]);
+    const month = Number(m[2]);
+    const day = Number(m[3]);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+    return new Date(year, month - 1, day);
+  }
+  const d = new Date(text);
+  return Number.isNaN(d.getTime()) ? null : toStartOfDay(d);
 }
 
 function daysUntil(raw: unknown): number | null {
@@ -89,6 +144,17 @@ function daysUntil(raw: unknown): number | null {
   return Math.round((targetDay.getTime() - now.getTime()) / 86_400_000);
 }
 
+function dueIsoFromRaw(raw: unknown): string | null {
+  const d = parseIsoDate(raw);
+  if (!d) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function isExpiredRaw(raw: unknown): boolean {
+  const d = daysUntil(raw);
+  return d != null && d < 0;
+}
+
 function formatDate(raw: unknown): string {
   const d = parseIsoDate(raw);
   return d ? d.toLocaleDateString('he-IL') : '—';
@@ -96,18 +162,113 @@ function formatDate(raw: unknown): string {
 
 function prettifyKey(key: string): string {
   const dict: Record<string, string> = {
+    id: 'מזהה',
+    org_id: 'מזהה ארגון',
+    user_id: 'מזהה משתמש',
+    managed_by_user_id: 'מנוהל על ידי',
     plate_number: 'מספר רישוי',
     manufacturer: 'יצרן',
     model: 'דגם',
+    year: 'שנת ייצור',
+    full_name: 'שם מלא',
+    id_number: 'ת.ז.',
+    phone: 'טלפון',
+    email: 'אימייל',
+    status: 'סטטוס',
     test_expiry: 'תוקף רישוי',
     insurance_expiry: 'תוקף ביטוח',
     next_inspection_date: 'ביקורת תקופתית הבאה',
     next_maintenance_date: 'טיפול הבא',
-    full_name: 'שם מלא',
-    id_number: 'ת.ז.',
+    assigned_driver_id: 'מזהה נהג משויך',
+    license_number: 'מספר רישיון',
+    license_front_url: 'קובץ רישיון חזית',
+    license_back_url: 'קובץ רישיון גב',
+    health_declaration_url: 'קובץ הצהרת בריאות',
     license_expiry: 'תוקף רישיון',
     health_declaration_date: 'הצהרת בריאות',
+    safety_training_date: 'הדרכת בטיחות',
     regulation_585b_date: 'תקנה 585',
+    safety_officer: 'קצין בטיחות',
+    address: 'כתובת',
+    job_title: 'תפקיד',
+    department: 'מחלקה',
+    city: 'עיר',
+    created_at: 'נוצר בתאריך',
+    updated_at: 'עודכן בתאריך',
+    current_odometer: 'מד אוץ נוכחי',
+    next_maintenance_km: 'ק"מ לטיפול הבא',
+    license_image_url: 'קובץ רישוי',
+    insurance_pdf_url: 'קובץ ביטוח',
+    engine_volume: 'נפח מנוע',
+    color: 'צבע',
+    ignition_code: 'קוד הנעה',
+    is_active: 'פעיל',
+    pickup_date: 'תאריך עלייה לכביש',
+    road_ascent_year: 'שנת עלייה לכביש',
+    road_ascent_month: 'חודש עלייה לכביש',
+    ownership_type: 'סוג בעלות',
+    leasing_company_name: 'חברת ליסינג',
+    last_odometer_date: 'תאריך אוץ אחרון',
+    manufacturer_code: 'קוד יצרן',
+    model_code: 'קוד דגם',
+    tax_value_price: 'שווי מס',
+    tax_year: 'שנת מס',
+    adjusted_price: 'מחיר מתואם',
+    chassis_number: 'מספר שלדה',
+    average_fuel_consumption: 'צריכת דלק ממוצעת',
+    monthly_total_cost: 'עלות חודשית כוללת',
+    purchase_date: 'תאריך רכישה',
+    sale_date: 'תאריך מכירה',
+    group_name: 'קבוצת שיוך',
+    internal_number: 'מספר פנימי',
+    vehicle_budget: 'תקציב רכב',
+    upgrade_addition: 'תוספת שדרוג',
+    vehicle_type_name: 'סוג רכב',
+    base_index: 'מדד בסיס',
+    driver_code: 'קוד נהג',
+    pascal: 'פסקל',
+    next_alert_km: 'התראה הבאה בק"מ',
+    mandatory_end_date: 'סיום חובה',
+    odometer_diff_maintenance: 'פער אוץ לטיפול',
+    vehicle_type_code: 'קוד סוג רכב',
+    model_description: 'תיאור דגם',
+    fuel_type: 'סוג דלק',
+    vehicle_standard: 'תקן רכב',
+    vat_recognized: 'מע"מ מוכר',
+    commercial_name: 'שם מסחרי',
+    is_automatic: 'אוטומטי',
+    drive_type: 'סוג הנעה',
+    green_score: 'ציון ירוק',
+    pollution_level: 'רמת זיהום',
+    weight: 'משקל',
+    list_price: 'מחיר מחירון',
+    effective_date: 'תאריך תחולה',
+    last_service_date: 'תאריך טיפול אחרון',
+    last_service_km: 'ק"מ טיפול אחרון',
+    service_interval_km: 'מרווח טיפול בק"מ',
+    last_tire_change_date: 'תאריך החלפת צמיגים אחרון',
+    next_tire_change_date: 'תאריך החלפת צמיגים הבא',
+    tire_change_date_front_right: 'החלפת צמיג קדמי ימין',
+    tire_change_date_front_left: 'החלפת צמיג קדמי שמאל',
+    tire_change_date_rear_right: 'החלפת צמיג אחורי ימין',
+    tire_change_date_rear_left: 'החלפת צמיג אחורי שמאל',
+    last_inspection_date: 'תאריך ביקורת אחרון',
+    inspection_form_url: 'קובץ ביקורת',
+    periodic_inspection_json: 'נתוני ביקורת תקופתית',
+    employee_number: 'מספר עובד',
+    work_start_date: 'תאריך תחילת עבודה',
+    note1: 'הערה 1',
+    note2: 'הערה 2',
+    rating: 'דירוג',
+    division: 'חטיבה',
+    eligibility: 'זכאות',
+    area: 'אזור',
+    group_code: 'קוד קבוצה',
+    birth_date: 'תאריך לידה',
+    family_permit_date: 'תאריך היתר משפחה',
+    driving_permit: 'היתר נהיגה',
+    is_field_person: 'עובד שטח',
+    practical_driving_test_date: 'תאריך מבחן נהיגה מעשי',
   };
   if (dict[key]) return dict[key];
   return key.replace(/_/g, ' ');
@@ -132,14 +293,26 @@ function renderValue(raw: unknown): string {
 function SearchableColumnPicker({
   allKeys,
   selected,
-  onChange,
+  onSaveSession,
+  onSaveDefault,
+  onRestoreDefault,
+  selectedCount,
 }: {
   allKeys: string[];
   selected: string[];
-  onChange: (next: string[]) => void;
+  onSaveSession: (next: string[]) => void;
+  onSaveDefault: (next: string[]) => void;
+  onRestoreDefault: () => void;
+  selectedCount: number;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [draftSelected, setDraftSelected] = useState<string[]>(selected);
+
+  useEffect(() => {
+    if (!open) setDraftSelected(selected);
+  }, [selected, open]);
+
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return allKeys;
@@ -147,11 +320,11 @@ function SearchableColumnPicker({
   }, [allKeys, query]);
 
   const toggle = (key: string) => {
-    if (selected.includes(key)) {
-      onChange(selected.filter((x) => x !== key));
+    if (draftSelected.includes(key)) {
+      setDraftSelected(draftSelected.filter((x) => x !== key));
       return;
     }
-    onChange([...selected, key]);
+    setDraftSelected([...draftSelected, key]);
   };
 
   return (
@@ -159,7 +332,7 @@ function SearchableColumnPicker({
       <PopoverTrigger asChild>
         <Button type="button" variant="outline" className="h-9 gap-2">
           <Columns3 className="h-4 w-4" />
-          עמודות ({selected.length})
+          עמודות ({selectedCount})
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[360px] p-3" dir="rtl">
@@ -170,13 +343,42 @@ function SearchableColumnPicker({
             placeholder="חיפוש שדה..."
           />
           <div className="flex gap-2">
-            <Button type="button" size="sm" variant="secondary" onClick={() => onChange([...allKeys])}>בחר הכל</Button>
-            <Button type="button" size="sm" variant="secondary" onClick={() => onChange([])}>נקה הכל</Button>
+            <Button type="button" size="sm" variant="secondary" onClick={() => setDraftSelected([...allKeys])}>בחר הכל</Button>
+            <Button type="button" size="sm" variant="secondary" onClick={() => setDraftSelected([])}>נקה הכל</Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                onRestoreDefault();
+                setDraftSelected(selected);
+              }}
+            >
+              שחזר ברירת מחדל
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => onSaveDefault(draftSelected)}
+            >
+              שמור ברירת מחדל
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                onSaveSession(draftSelected);
+                setOpen(false);
+              }}
+            >
+              רק שמור
+            </Button>
           </div>
           <div className="max-h-72 overflow-auto rounded-md border p-2">
             {shown.map((key) => (
               <label key={key} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-muted">
-                <Checkbox checked={selected.includes(key)} onCheckedChange={() => toggle(key)} />
+                <Checkbox checked={draftSelected.includes(key)} onCheckedChange={() => toggle(key)} />
                 <span className="text-sm">{prettifyKey(key)}</span>
               </label>
             ))}
@@ -192,10 +394,31 @@ type TabTableProps<T extends Record<string, unknown>> = {
   rows: T[];
   columns: string[];
   dueField: string;
+  tabKey: ComplianceTabKey;
   emptyLabel: string;
+  onSendRequest: (row: T) => void;
+  requestDisabledReason: (row: T) => string | null;
+  onApproveLicense: (row: T) => void;
+  getApproveDateValue: (row: T) => string;
+  setApproveDateValue: (row: T, next: string) => void;
+  isApprovingRow: (row: T) => boolean;
+  sendingRowKey: string | null;
 };
 
-function ComplianceTable<T extends Record<string, unknown>>({ rows, columns, dueField, emptyLabel }: TabTableProps<T>) {
+function ComplianceTable<T extends Record<string, unknown>>({
+  rows,
+  columns,
+  dueField,
+  tabKey,
+  emptyLabel,
+  onSendRequest,
+  requestDisabledReason,
+  onApproveLicense,
+  getApproveDateValue,
+  setApproveDateValue,
+  isApprovingRow,
+  sendingRowKey,
+}: TabTableProps<T>) {
   const safeColumns = columns.length > 0 ? columns : [dueField];
 
   return (
@@ -208,27 +431,122 @@ function ComplianceTable<T extends Record<string, unknown>>({ rows, columns, due
             {safeColumns.map((col) => (
               <TableHead key={col} className="text-right">{prettifyKey(col)}</TableHead>
             ))}
+            <TableHead className="text-right">סטטוס</TableHead>
+            <TableHead className="text-right">פעולות</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.length === 0 ? (
             <TableRow>
-              <TableCell className="text-right text-muted-foreground" colSpan={safeColumns.length + 2}>
+              <TableCell className="text-right text-muted-foreground" colSpan={safeColumns.length + 4}>
                 {emptyLabel}
               </TableCell>
             </TableRow>
           ) : (
-            rows.map((row, idx) => (
-              <TableRow key={String(row.id ?? idx)}>
-                <TableCell className="text-right font-medium">{daysUntil(row[dueField]) ?? '—'}</TableCell>
-                <TableCell className="text-right">{formatDate(row[dueField])}</TableCell>
-                {safeColumns.map((col) => (
-                  <TableCell key={`${String(row.id ?? idx)}-${col}`} className="text-right">
-                    {renderValue(row[col])}
+            rows.map((row, idx) => {
+              const dueDays = daysUntil(row[dueField]);
+              const isExpired = dueDays != null && dueDays < 0;
+              return (
+                <TableRow
+                  key={String(row.id ?? idx)}
+                  className={isExpired ? 'bg-red-500/10 hover:bg-red-500/15' : undefined}
+                >
+                  <TableCell className="text-right font-medium">
+                    {dueDays == null ? (
+                      '—'
+                    ) : isExpired ? (
+                      <span className="inline-flex items-center rounded-full border border-red-400/40 bg-red-500/15 px-2 py-0.5 text-xs font-semibold text-red-300">
+                        פג תוקף ({Math.abs(dueDays)} ימים)
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200">
+                        נותרו {dueDays} ימים
+                      </span>
+                    )}
                   </TableCell>
-                ))}
-              </TableRow>
-            ))
+                  <TableCell className={`text-right ${isExpired ? 'text-red-400 font-semibold' : ''}`}>
+                    {formatDate(row[dueField])}
+                  </TableCell>
+                  {safeColumns.map((col) => (
+                    <TableCell key={`${String(row.id ?? idx)}-${col}`} className="text-right">
+                      {renderValue(row[col])}
+                    </TableCell>
+                  ))}
+                  <TableCell className="text-right">
+                    {String(row.status ?? '').trim() === 'pending_approval' ? (
+                      <span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200">
+                        Pending Approval
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">{String(row.status ?? '—')}</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={sendingRowKey === String(row.id ?? idx)}
+                        onClick={() => {
+                          const reason = requestDisabledReason(row);
+                          if (reason) {
+                            toast.error(`לא ניתן לשלוח בקשה: ${reason}`);
+                            return;
+                          }
+                          onSendRequest(row);
+                        }}
+                        title={requestDisabledReason(row) ?? 'שליחת בקשה במייל'}
+                      >
+                        {sendingRowKey === String(row.id ?? idx) ? (
+                          <span className="inline-flex items-center gap-1">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            שולח...
+                          </span>
+                        ) : (
+                          'שלח בקשה'
+                        )}
+                      </Button>
+                    {requestDisabledReason(row) ? (
+                      <span className="text-[11px] text-amber-300/90">
+                        {requestDisabledReason(row)}
+                      </span>
+                    ) : null}
+
+                      {tabKey === 'driver_license' && String(row.status ?? '').trim() === 'pending_approval' ? (
+                        <>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              const url = String(row.license_front_url ?? '').trim();
+                              if (url) window.open(url, '_blank', 'noopener,noreferrer');
+                            }}
+                            disabled={!String(row.license_front_url ?? '').trim()}
+                          >
+                            Review
+                          </Button>
+                          <Input
+                            type="date"
+                            className="h-8 w-40"
+                            value={getApproveDateValue(row)}
+                            onChange={(e) => setApproveDateValue(row, e.target.value)}
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => onApproveLicense(row)}
+                            disabled={!getApproveDateValue(row).trim() || isApprovingRow(row)}
+                          >
+                            {isApprovingRow(row) ? 'מאשר...' : 'Approve'}
+                          </Button>
+                        </>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })
           )}
         </TableBody>
       </Table>
@@ -240,7 +558,7 @@ export default function AdminCompliancePage() {
   const { isAdmin, activeOrgId, profile } = useAuth();
   const orgId = activeOrgId ?? profile?.org_id ?? null;
   const { data: vehicles = [], isLoading: vehiclesLoading } = useVehicles();
-  const { data: drivers = [], isLoading: driversLoading } = useQuery({
+  const { data: drivers = [], isLoading: driversLoading, refetch: refetchDrivers } = useQuery({
     queryKey: ['admin-compliance-drivers', orgId],
     enabled: isAdmin && orgId != null,
     queryFn: async () => {
@@ -256,6 +574,12 @@ export default function AdminCompliancePage() {
   });
 
   const [daysThreshold, setDaysThreshold] = useState(30);
+  const [viewFilter, setViewFilter] = useState<TowerViewFilter>('expiring_soon');
+  const [customRangeFromDays, setCustomRangeFromDays] = useState(-30);
+  const [customRangeToDays, setCustomRangeToDays] = useState(30);
+  const [sendingRowKey, setSendingRowKey] = useState<string | null>(null);
+  const [approvingRowKey, setApprovingRowKey] = useState<string | null>(null);
+  const [approveExpiryByDriverId, setApproveExpiryByDriverId] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<ComplianceTabKey>('annual_licensing');
   const [visibleByTab, setVisibleByTab] = useState<Record<ComplianceTabKey, string[]>>({
     annual_licensing: [...VEHICLE_DEFAULT_COLUMNS],
@@ -266,6 +590,84 @@ export default function AdminCompliancePage() {
     health_declaration: [...DRIVER_DEFAULT_COLUMNS],
     regulation_585: [...DRIVER_DEFAULT_COLUMNS],
   });
+  const [defaultVisibleByTab, setDefaultVisibleByTab] = useState<Record<ComplianceTabKey, string[]>>({
+    annual_licensing: [...VEHICLE_DEFAULT_COLUMNS],
+    insurance: [...VEHICLE_DEFAULT_COLUMNS],
+    periodic_inspection: [...VEHICLE_DEFAULT_COLUMNS],
+    maintenance: [...VEHICLE_DEFAULT_COLUMNS],
+    driver_license: [...DRIVER_DEFAULT_COLUMNS],
+    health_declaration: [...DRIVER_DEFAULT_COLUMNS],
+    regulation_585: [...DRIVER_DEFAULT_COLUMNS],
+  });
+
+  const todayIso = useMemo(() => isoYmdTodayLocal(), []);
+  const maxIso = useMemo(() => addDaysToIsoYmd(todayIso, daysThreshold), [todayIso, daysThreshold]);
+  const customFromIso = useMemo(() => addDaysToIsoYmd(todayIso, customRangeFromDays), [todayIso, customRangeFromDays]);
+  const customToIso = useMemo(() => addDaysToIsoYmd(todayIso, customRangeToDays), [todayIso, customRangeToDays]);
+  const customMinIso = customFromIso <= customToIso ? customFromIso : customToIso;
+  const customMaxIso = customFromIso <= customToIso ? customToIso : customFromIso;
+
+  useEffect(() => {
+    if (vehiclesLoading || driversLoading) return;
+    const vehiclePreview = (vehicles as Array<Record<string, unknown>>).slice(0, 5).map((v) => ({
+      id: v.id,
+      plate_number: v.plate_number,
+      test_expiry: v.test_expiry,
+      insurance_expiry: v.insurance_expiry,
+      next_inspection_date: v.next_inspection_date,
+      next_maintenance_date: v.next_maintenance_date,
+      org_id: v.org_id,
+    }));
+    const driverPreview = (drivers as Array<Record<string, unknown>>).slice(0, 5).map((d) => ({
+      id: d.id,
+      full_name: d.full_name,
+      license_expiry: d.license_expiry,
+      health_declaration_date: d.health_declaration_date,
+      regulation_585b_date: d.regulation_585b_date,
+      org_id: d.org_id,
+    }));
+
+    console.log('[AdminCompliancePage] Raw Supabase rows before filtering', {
+      orgId,
+      daysThreshold,
+      range: { todayIso, maxIso },
+      viewFilter,
+      customRange: {
+        fromDays: customRangeFromDays,
+        toDays: customRangeToDays,
+        minIso: customMinIso,
+        maxIso: customMaxIso,
+      },
+      vehiclesCount: vehicles.length,
+      driversCount: drivers.length,
+      vehiclePreview,
+      driverPreview,
+    });
+
+    if (!orgId) {
+      console.warn('[AdminCompliancePage] Missing orgId - this may prevent org-scoped rows from appearing.');
+    }
+    if (vehicles.length === 0 || drivers.length === 0) {
+      console.warn('[AdminCompliancePage] One or more sources are empty; check RLS policies and table data.', {
+        vehiclesCount: vehicles.length,
+        driversCount: drivers.length,
+      });
+    }
+  }, [
+    vehiclesLoading,
+    driversLoading,
+    vehicles,
+    drivers,
+    orgId,
+    daysThreshold,
+    todayIso,
+    maxIso,
+    viewFilter,
+    customRangeFromDays,
+    customRangeToDays,
+    customMinIso,
+    customMaxIso,
+  ]);
 
   const tabData = useMemo(() => {
     const out = {} as Record<ComplianceTabKey, Array<Record<string, unknown>>>;
@@ -273,19 +675,311 @@ export default function AdminCompliancePage() {
       const sourceRows = tab.source === 'vehicle' ? (vehicles as Array<Record<string, unknown>>) : (drivers as Array<Record<string, unknown>>);
       out[tab.key] = sourceRows
         .filter((row) => {
-          const d = daysUntil(row[tab.dueField]);
-          return d != null && d >= 0 && d <= daysThreshold;
+          const dueIso = dueIsoFromRaw(row[tab.dueField]);
+          if (!dueIso) return false;
+          if (viewFilter === 'all') return true;
+          if (viewFilter === 'expired') return dueIso < todayIso;
+          if (viewFilter === 'expiring_soon') {
+            // Align with "Exception Alerts": include expired + upcoming until threshold.
+            return dueIso <= maxIso;
+          }
+          return dueIso >= customMinIso && dueIso <= customMaxIso;
         })
-        .sort((a, b) => (daysUntil(a[tab.dueField]) ?? 9999) - (daysUntil(b[tab.dueField]) ?? 9999));
+        .sort((a, b) => {
+          const aIso = dueIsoFromRaw(a[tab.dueField]) ?? '9999-12-31';
+          const bIso = dueIsoFromRaw(b[tab.dueField]) ?? '9999-12-31';
+          return aIso.localeCompare(bIso);
+        });
     }
     return out;
-  }, [daysThreshold, drivers, vehicles]);
+  }, [daysThreshold, drivers, vehicles, todayIso, maxIso, viewFilter, customMinIso, customMaxIso]);
 
   if (!isAdmin) return <Navigate to="/" replace />;
 
   const loading = vehiclesLoading || driversLoading;
   const activeDef = TAB_DEFS.find((t) => t.key === activeTab) ?? TAB_DEFS[0];
-  const currentAllColumns = activeDef.source === 'vehicle' ? VEHICLE_KEYS : DRIVER_KEYS;
+  const availableVehicleKeys = useMemo(
+    () => availableKeysFromRows(vehicles as Array<Record<string, unknown>>),
+    [vehicles],
+  );
+  const availableDriverKeys = useMemo(
+    () => availableKeysFromRows(drivers as Array<Record<string, unknown>>),
+    [drivers],
+  );
+  const filteredVehicleColumns = useMemo(
+    () => filterKeysByAvailable(VEHICLE_KEYS, availableVehicleKeys),
+    [availableVehicleKeys],
+  );
+  const filteredDriverColumns = useMemo(
+    () => filterKeysByAvailable(DRIVER_KEYS, availableDriverKeys),
+    [availableDriverKeys],
+  );
+  const currentAllColumns = activeDef.source === 'vehicle' ? filteredVehicleColumns : filteredDriverColumns;
+  const currentSelectedForTab = visibleByTab[activeTab] ?? [];
+  const effectiveSelectedCount = currentSelectedForTab.length > 0 ? currentSelectedForTab.length : 1;
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(COMPLIANCE_COLUMNS_DEFAULTS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Partial<Record<ComplianceTabKey, string[]>>;
+      const merged = {
+        annual_licensing: parsed.annual_licensing ?? VEHICLE_DEFAULT_COLUMNS,
+        insurance: parsed.insurance ?? VEHICLE_DEFAULT_COLUMNS,
+        periodic_inspection: parsed.periodic_inspection ?? VEHICLE_DEFAULT_COLUMNS,
+        maintenance: parsed.maintenance ?? VEHICLE_DEFAULT_COLUMNS,
+        driver_license: parsed.driver_license ?? DRIVER_DEFAULT_COLUMNS,
+        health_declaration: parsed.health_declaration ?? DRIVER_DEFAULT_COLUMNS,
+        regulation_585: parsed.regulation_585 ?? DRIVER_DEFAULT_COLUMNS,
+      } as Record<ComplianceTabKey, string[]>;
+      setDefaultVisibleByTab((prev) => ({
+        annual_licensing: parsed.annual_licensing ?? prev.annual_licensing,
+        insurance: parsed.insurance ?? prev.insurance,
+        periodic_inspection: parsed.periodic_inspection ?? prev.periodic_inspection,
+        maintenance: parsed.maintenance ?? prev.maintenance,
+        driver_license: parsed.driver_license ?? prev.driver_license,
+        health_declaration: parsed.health_declaration ?? prev.health_declaration,
+        regulation_585: parsed.regulation_585 ?? prev.regulation_585,
+      }));
+      setVisibleByTab(merged);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    const missingVehicle = VEHICLE_KEYS.filter((k) => !availableVehicleKeys.has(k));
+    const missingDriver = DRIVER_KEYS.filter((k) => !availableDriverKeys.has(k));
+    if (missingVehicle.length > 0) {
+      console.warn('[AdminCompliancePage] Missing vehicle columns in current Supabase schema/data', missingVehicle);
+    }
+    if (missingDriver.length > 0) {
+      console.warn('[AdminCompliancePage] Missing driver columns in current Supabase schema/data', missingDriver);
+    }
+  }, [availableVehicleKeys, availableDriverKeys]);
+
+  useEffect(() => {
+    setVisibleByTab((prev) => ({
+      ...prev,
+      annual_licensing: filterKeysByAvailable(prev.annual_licensing, availableVehicleKeys),
+      insurance: filterKeysByAvailable(prev.insurance, availableVehicleKeys),
+      periodic_inspection: filterKeysByAvailable(prev.periodic_inspection, availableVehicleKeys),
+      maintenance: filterKeysByAvailable(prev.maintenance, availableVehicleKeys),
+      driver_license: filterKeysByAvailable(prev.driver_license, availableDriverKeys),
+      health_declaration: filterKeysByAvailable(prev.health_declaration, availableDriverKeys),
+      regulation_585: filterKeysByAvailable(prev.regulation_585, availableDriverKeys),
+    }));
+  }, [availableVehicleKeys, availableDriverKeys]);
+
+  useEffect(() => {
+    setVisibleByTab((prev) => {
+      const next = { ...prev };
+      if (next.annual_licensing.length === 0) next.annual_licensing = filterKeysByAvailable(VEHICLE_DEFAULT_COLUMNS, availableVehicleKeys);
+      if (next.insurance.length === 0) next.insurance = filterKeysByAvailable(VEHICLE_DEFAULT_COLUMNS, availableVehicleKeys);
+      if (next.periodic_inspection.length === 0) next.periodic_inspection = filterKeysByAvailable(VEHICLE_DEFAULT_COLUMNS, availableVehicleKeys);
+      if (next.maintenance.length === 0) next.maintenance = filterKeysByAvailable(VEHICLE_DEFAULT_COLUMNS, availableVehicleKeys);
+      if (next.driver_license.length === 0) next.driver_license = filterKeysByAvailable(DRIVER_DEFAULT_COLUMNS, availableDriverKeys);
+      if (next.health_declaration.length === 0) next.health_declaration = filterKeysByAvailable(DRIVER_DEFAULT_COLUMNS, availableDriverKeys);
+      if (next.regulation_585.length === 0) next.regulation_585 = filterKeysByAvailable(DRIVER_DEFAULT_COLUMNS, availableDriverKeys);
+      return next;
+    });
+  }, [availableVehicleKeys, availableDriverKeys]);
+
+  const submitComplianceRequest = async (
+    tab: { key: ComplianceTabKey; label: string; source: ComplianceSource; dueField: string },
+    row: Record<string, unknown>,
+  ) => {
+    const orgIdRequired = String(orgId ?? '').trim();
+    if (!orgIdRequired) {
+      toast.error('לא ניתן לשלוח בקשה: חסר org_id.');
+      return;
+    }
+
+    const rowKey = String(row.id ?? '');
+    if (!rowKey) {
+      toast.error('לא ניתן לשלוח בקשה: רשומה ללא מזהה.');
+      return;
+    }
+
+    let driverEmail = '';
+    let driverId = '';
+    let driverName = '';
+    const entityType = tab.source;
+
+    if (entityType === 'driver') {
+      driverId = String(row.id ?? '');
+      driverEmail = String(row.email ?? '').trim().toLowerCase();
+      driverName = String(row.full_name ?? '').trim();
+    } else {
+      const assignedDriverId = String(row.assigned_driver_id ?? '').trim();
+      if (!assignedDriverId) {
+        toast.error('לרכב אין נהג משויך ולכן לא ניתן לשלוח בקשה.');
+        return;
+      }
+      const d = drivers.find((x) => String(x.id) === assignedDriverId);
+      driverId = assignedDriverId;
+      driverEmail = String(d?.email ?? '').trim().toLowerCase();
+      driverName = String(d?.full_name ?? '').trim();
+    }
+
+    if (!driverEmail || !driverEmail.includes('@')) {
+      toast.error('לא נמצא אימייל תקין לנהג עבור שליחת בקשה.');
+      return;
+    }
+
+    setSendingRowKey(rowKey);
+    try {
+      const dueIso = dueIsoFromRaw(row[tab.dueField]);
+      const { data, error } = await invokeSupabaseEdgeFunction('send-compliance-request', {
+        org_id: orgIdRequired,
+        entity_type: entityType,
+        entity_id: rowKey,
+        task_key: tab.key,
+        task_label: tab.label,
+        tab_label: tab.label,
+        due_field: tab.dueField,
+        due_date: dueIso,
+        driver_id: driverId,
+        driver_email: driverEmail,
+        driver_name: driverName,
+        cta_text: REQUEST_CTA_BY_TAB[tab.key],
+      });
+
+      if (error) {
+        let detailed = error.message ?? 'שגיאה בשליחת הבקשה';
+        const context = (error as unknown as { context?: Response }).context;
+        if (context) {
+          try {
+            const body = (await context.json()) as { error?: string; message?: string };
+            detailed = body.error || body.message || detailed;
+          } catch {
+            try {
+              const txt = await context.text();
+              if (txt?.trim()) detailed = txt;
+            } catch {
+              // noop
+            }
+          }
+        }
+        throw new Error(detailed);
+      }
+
+      const sentTo = String((data as { sent_to?: string } | null)?.sent_to ?? driverEmail);
+      toast.success(`בקשת עדכון נשלחה בהצלחה אל ${sentTo}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`שליחת הבקשה נכשלה: ${msg}`);
+    } finally {
+      setSendingRowKey(null);
+    }
+  };
+
+  const requestDisabledReason = (
+    tab: { source: ComplianceSource },
+    row: Record<string, unknown>,
+  ): string | null => {
+    if (tab.source === 'driver') {
+      const directEmail = String(row.email ?? '').trim();
+      const fallbackById = drivers.find((x) => String(x.id) === String(row.id ?? '').trim());
+      const fallbackByIdentity = drivers.find(
+        (x) =>
+          String(x.full_name ?? '').trim() === String(row.full_name ?? '').trim() &&
+          String(x.id_number ?? '').trim() === String(row.id_number ?? '').trim(),
+      );
+      const email = directEmail || String(fallbackById?.email ?? '').trim() || String(fallbackByIdentity?.email ?? '').trim();
+      return email ? null : 'אין אימייל לנהג';
+    }
+    const assignedDriverId = String(row.assigned_driver_id ?? '').trim();
+    if (!assignedDriverId) return 'לרכב אין נהג משויך';
+    const d = drivers.find((x) => String(x.id) === assignedDriverId);
+    const email = String(d?.email ?? '').trim();
+    if (!email) return 'לנהג המשויך אין אימייל';
+    return null;
+  };
+
+  const saveColumnsDefaults = (next: string[]) => {
+    const normalized = next.length > 0 ? next : [activeDef.dueField];
+    const nextDefaults = { ...defaultVisibleByTab, [activeTab]: normalized };
+    setDefaultVisibleByTab(nextDefaults);
+    try {
+      localStorage.setItem(COMPLIANCE_COLUMNS_DEFAULTS_KEY, JSON.stringify(nextDefaults));
+      toast.success('ברירת המחדל נשמרה');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`שמירת ברירת מחדל נכשלה: ${msg}`);
+    }
+  };
+
+  const saveColumnsSessionOnly = (next: string[]) => {
+    const normalized = next.length > 0 ? next : [activeDef.dueField];
+    setVisibleByTab((prev) => ({ ...prev, [activeTab]: normalized }));
+    toast.success('התצוגה נשמרה לסשן הנוכחי');
+  };
+
+  const restoreDefaultForActiveTab = () => {
+    const fallback = [activeDef.dueField];
+    const restored = (defaultVisibleByTab[activeTab] ?? fallback).length > 0 ? defaultVisibleByTab[activeTab] : fallback;
+    setVisibleByTab((prev) => ({ ...prev, [activeTab]: restored }));
+    toast.success('שוחזרה ברירת המחדל');
+  };
+
+  const saveColumnsPrefs = () => {
+    try {
+      localStorage.setItem(COMPLIANCE_COLUMNS_DEFAULTS_KEY, JSON.stringify(defaultVisibleByTab));
+      toast.success('ברירות המחדל נשמרו');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`שמירת תצוגה נכשלה: ${msg}`);
+    }
+  };
+
+  const approveDateForRow = (row: Record<string, unknown>): string => {
+    const id = String(row.id ?? '').trim();
+    if (!id) return '';
+    if (approveExpiryByDriverId[id]) return approveExpiryByDriverId[id];
+    const existing = String(row.license_expiry ?? '').trim();
+    return existing.length >= 10 ? existing.slice(0, 10) : existing;
+  };
+
+  const setApproveDateForRow = (row: Record<string, unknown>, next: string) => {
+    const id = String(row.id ?? '').trim();
+    if (!id) return;
+    setApproveExpiryByDriverId((prev) => ({ ...prev, [id]: next }));
+  };
+
+  const approveLicenseForRow = async (row: Record<string, unknown>) => {
+    const driverId = String(row.id ?? '').trim();
+    const orgIdRequired = String(orgId ?? '').trim();
+    const nextExpiry = approveDateForRow(row).trim();
+    if (!driverId || !orgIdRequired) {
+      toast.error('לא ניתן לאשר ללא מזהי נהג/ארגון');
+      return;
+    }
+    if (!nextExpiry) {
+      toast.error('יש לבחור תאריך תוקף רישיון חדש לפני אישור');
+      return;
+    }
+
+    setApprovingRowKey(driverId);
+    try {
+      const { error } = await supabase
+        .from('drivers')
+        .update({
+          license_expiry: nextExpiry,
+          status: 'active',
+        })
+        .eq('id', driverId)
+        .eq('org_id', orgIdRequired);
+      if (error) throw error;
+      void refetchDrivers();
+      toast.success('הרישיון אושר ותוקף הרישיון עודכן');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`אישור נכשל: ${msg}`);
+    } finally {
+      setApprovingRowKey(null);
+    }
+  };
 
   return (
     <FleetHudPageShell
@@ -299,8 +993,25 @@ export default function AdminCompliancePage() {
             <CardDescription>הנתונים בטבלאות מתעדכנים מיידית לפי סף הימים שתבחרי</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap items-end gap-3">
+            <div className="w-full space-y-2">
+              <Label>תצוגה</Label>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant={viewFilter === 'all' ? 'default' : 'outline'} onClick={() => setViewFilter('all')}>
+                  הכל
+                </Button>
+                <Button type="button" variant={viewFilter === 'custom_range' ? 'default' : 'outline'} onClick={() => setViewFilter('custom_range')}>
+                  טווח מותאם אישית
+                </Button>
+                <Button type="button" variant={viewFilter === 'expiring_soon' ? 'default' : 'outline'} onClick={() => setViewFilter('expiring_soon')}>
+                  קרובים לפקיעה
+                </Button>
+                <Button type="button" variant={viewFilter === 'expired' ? 'default' : 'outline'} onClick={() => setViewFilter('expired')}>
+                  פג תוקף
+                </Button>
+              </div>
+            </div>
             <div className="w-48 space-y-1">
-              <Label htmlFor="days-threshold">Days Threshold</Label>
+              <Label htmlFor="days-threshold">סף ימים קדימה</Label>
               <Input
                 id="days-threshold"
                 type="number"
@@ -312,10 +1023,41 @@ export default function AdminCompliancePage() {
                 }}
               />
             </div>
+            {viewFilter === 'custom_range' && (
+              <>
+                <div className="w-48 space-y-1">
+                  <Label htmlFor="custom-range-from">מיום (ימים מהיום)</Label>
+                  <Input
+                    id="custom-range-from"
+                    type="number"
+                    value={customRangeFromDays}
+                    onChange={(e) => {
+                      const next = Number(e.target.value);
+                      setCustomRangeFromDays(Number.isFinite(next) ? next : -30);
+                    }}
+                  />
+                </div>
+                <div className="w-48 space-y-1">
+                  <Label htmlFor="custom-range-to">עד יום (ימים מהיום)</Label>
+                  <Input
+                    id="custom-range-to"
+                    type="number"
+                    value={customRangeToDays}
+                    onChange={(e) => {
+                      const next = Number(e.target.value);
+                      setCustomRangeToDays(Number.isFinite(next) ? next : 30);
+                    }}
+                  />
+                </div>
+              </>
+            )}
             <SearchableColumnPicker
               allKeys={currentAllColumns}
               selected={visibleByTab[activeTab]}
-              onChange={(next) => setVisibleByTab((prev) => ({ ...prev, [activeTab]: next }))}
+              onSaveSession={saveColumnsSessionOnly}
+              onSaveDefault={saveColumnsDefaults}
+              onRestoreDefault={restoreDefaultForActiveTab}
+              selectedCount={effectiveSelectedCount}
             />
           </CardContent>
         </Card>
@@ -340,7 +1082,23 @@ export default function AdminCompliancePage() {
                   rows={tabData[tab.key]}
                   columns={visibleByTab[tab.key]}
                   dueField={tab.dueField}
-                  emptyLabel={`לא נמצאו רשומות עם ${prettifyKey(tab.dueField)} בטווח ${daysThreshold} הימים הקרובים`}
+                  tabKey={tab.key}
+                  onSendRequest={(row) => void submitComplianceRequest(tab, row)}
+                  requestDisabledReason={(row) => requestDisabledReason(tab, row)}
+                  onApproveLicense={(row) => void approveLicenseForRow(row)}
+                  getApproveDateValue={(row) => approveDateForRow(row)}
+                  setApproveDateValue={(row, next) => setApproveDateForRow(row, next)}
+                  isApprovingRow={(row) => approvingRowKey === String(row.id ?? '')}
+                  sendingRowKey={sendingRowKey}
+                  emptyLabel={
+                    viewFilter === 'all'
+                      ? `לא נמצאו רשומות עם ${prettifyKey(tab.dueField)}`
+                      : viewFilter === 'expired'
+                        ? `לא נמצאו רשומות שפג תוקפן עבור ${prettifyKey(tab.dueField)}`
+                        : viewFilter === 'expiring_soon'
+                          ? `לא נמצאו רשומות עם ${prettifyKey(tab.dueField)} עד ${daysThreshold} ימים קדימה (כולל פגי תוקף)`
+                          : `לא נמצאו רשומות עם ${prettifyKey(tab.dueField)} בטווח המותאם (${customRangeFromDays} עד ${customRangeToDays} ימים מהיום)`
+                  }
                 />
               )}
             </TabsContent>

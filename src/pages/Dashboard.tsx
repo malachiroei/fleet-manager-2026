@@ -326,6 +326,13 @@ export default function Dashboard() {
       permission: 'admin_access',
       featureFlagKey: 'qa_users',
     },
+    {
+      title: 'מגדל ציות (אדמין)',
+      href: '/admin/compliance',
+      icon: ClipboardList,
+      permission: 'compliance',
+      featureFlagKey: 'qa_admin_compliance_tower',
+    },
   ];
 
   // Keep "Mileage Report" behind permission, but add a forced override to unblock staging:
@@ -359,6 +366,7 @@ export default function Dashboard() {
   const quickLinks = visibleQuickLinksByFlags.filter((a) => {
     if (a.href === '/report-mileage') return canReportMileage;
     if (a.href === '/team') return canManageTeamUi;
+    if (a.href === '/admin/compliance') return Boolean(isAdmin);
     if (a.adminOnly && !isMainAdmin) return false;
     return true;
   });

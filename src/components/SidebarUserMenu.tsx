@@ -2,7 +2,17 @@ import React, { useRef, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
-  Moon, Sun, LogOut, Building2, Globe, ChevronRight, ChevronLeft, X, LayoutDashboard, UserCog
+  Moon,
+  Sun,
+  LogOut,
+  Building2,
+  Globe,
+  ChevronRight,
+  ChevronLeft,
+  X,
+  LayoutDashboard,
+  UserCog,
+  ClipboardList,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/useTheme';
@@ -11,6 +21,7 @@ import { cn } from '@/lib/utils';
 
 export function SidebarUserMenu() {
   const { user, signOut, isAdmin, isManager, isDriver, profile, activeOrgId } = useAuth();
+  const showAdminComplianceLink = Boolean(isAdmin);
   const isDriverOnly = Boolean(isDriver && !isManager && !isAdmin);
   const { theme, toggleTheme } = useTheme();
   const { i18n } = useTranslation();
@@ -149,6 +160,21 @@ export function SidebarUserMenu() {
               >
                 <LayoutDashboard className="h-4 w-4 text-cyan-300 sidebar-menu-icon" />
                 <span className={cn('sidebar-menu-label flex-1', isRtl ? 'text-right' : 'text-left')}>לוח ארגונים</span>
+                <CaretIcon className="h-3.5 w-3.5 opacity-40 sidebar-menu-caret" />
+              </Link>
+            )}
+
+            {showAdminComplianceLink && (
+              <Link
+                to="/admin/compliance"
+                onClick={() => setOpen(false)}
+                className={cn(
+                  'sidebar-menu-item w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors',
+                  isRtl ? 'flex-row-reverse text-right' : 'text-left'
+                )}
+              >
+                <ClipboardList className="h-4 w-4 text-cyan-300 sidebar-menu-icon" />
+                <span className={cn('sidebar-menu-label flex-1', isRtl ? 'text-right' : 'text-left')}>מגדל ציות (אדמין)</span>
                 <CaretIcon className="h-3.5 w-3.5 opacity-40 sidebar-menu-caret" />
               </Link>
             )}

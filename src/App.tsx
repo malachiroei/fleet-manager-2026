@@ -38,6 +38,7 @@ import ScanReportPage from "./pages/ScanReportPage";
 import ReportsPage from "./pages/ReportsPage";
 import FormsPage from "./pages/FormsPage";
 import EmployeeComplianceFormPage from "./pages/employee/EmployeeComplianceFormPage";
+import UpdateComplianceRequestPage from "./pages/UpdateComplianceRequestPage";
 import VehicleHandoverWizard from './pages/VehicleHandoverWizard';
 import TransfersPage from './pages/TransfersPage';
 import ReportMileagePage from "./pages/ReportMileagePage";
@@ -176,6 +177,7 @@ function AppRoutes() {
       <Route path="/reports/scan" element={<ProtectedRoute><PermissionGuard permission="reports"><ScanReportPage /></PermissionGuard></ProtectedRoute>} />
       <Route path="/forms" element={<ProtectedRoute><PermissionGuard permission="forms"><FormsPage /></PermissionGuard></ProtectedRoute>} />
       <Route path="/employee/forms/:token" element={<EmployeeComplianceFormPage />} />
+      <Route path="/update/:token" element={<UpdateComplianceRequestPage />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );

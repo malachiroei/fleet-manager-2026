@@ -82,10 +82,14 @@ function complianceDedupeSlotFromDb(
   if (type === 'vehicle') {
     if (/טסט|test/i.test(at)) return `v:${entityId}:test`;
     if (/ביטוח|insurance/i.test(at)) return `v:${entityId}:ins`;
+    if (/ביקורת|inspection/i.test(at)) return `v:${entityId}:inspection`;
+    if (/טיפול|maintenance|service/i.test(at)) return `v:${entityId}:maintenance`;
     return null;
   }
   if (type === 'driver') {
     if (/רישיון|license/i.test(at)) return `d:${entityId}:license`;
+    if (/בריאות|health/i.test(at)) return `d:${entityId}:health`;
+    if (/585/.test(at)) return `d:${entityId}:r585`;
     return `d:${entityId}:t:${at}`;
   }
   return null;
@@ -120,6 +124,8 @@ async function appendDerivedComplianceFromFleetDates(
     road_ascent_year: number | null;
     test_expiry: string | null;
     insurance_expiry: string | null;
+    next_inspection_date: string | null;
+    next_maintenance_date: string | null;
   };
   type DRow = {
     id: string;
@@ -127,6 +133,8 @@ async function appendDerivedComplianceFromFleetDates(
     org_id: string | null;
     managed_by_user_id: string | null;
     license_expiry: string | null;
+    health_declaration_date: string | null;
+    regulation_585b_date: string | null;
   };
 
   let vRows: VRow[] = [];
@@ -134,7 +142,7 @@ async function appendDerivedComplianceFromFleetDates(
     const { data, error } = await supabase
       .from('vehicles')
       .select(
-        'id, plate_number, org_id, managed_by_user_id, assigned_driver_id, road_ascent_month, road_ascent_year, test_expiry, insurance_expiry',
+        'id, plate_number, org_id, managed_by_user_id, assigned_driver_id, road_ascent_month, road_ascent_year, test_expiry, insurance_expiry, next_inspection_date, next_maintenance_date',
       )
       .eq('org_id', effectiveOrgId)
       .eq('assigned_driver_id', scopedDriverId);
@@ -146,7 +154,7 @@ async function appendDerivedComplianceFromFleetDates(
   } else {
     let vq = supabase
       .from('vehicles')
-      .select('id, plate_number, org_id, managed_by_user_id, assigned_driver_id, road_ascent_month, road_ascent_year, test_expiry, insurance_expiry')
+      .select('id, plate_number, org_id, managed_by_user_id, assigned_driver_id, road_ascent_month, road_ascent_year, test_expiry, insurance_expiry, next_inspection_date, next_maintenance_date')
       .eq('org_id', effectiveOrgId);
     if (applyFleetManagerSlice && fleetManagerListUserId) {
       vq = vq.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
@@ -163,7 +171,7 @@ async function appendDerivedComplianceFromFleetDates(
   if (isDriverContextOnly && scopedDriverId) {
     const { data, error } = await supabase
       .from('drivers')
-      .select('id, full_name, org_id, managed_by_user_id, license_expiry')
+      .select('id, full_name, org_id, managed_by_user_id, license_expiry, health_declaration_date, regulation_585b_date')
       .eq('id', scopedDriverId)
       .maybeSingle();
     if (error) {
@@ -174,7 +182,7 @@ async function appendDerivedComplianceFromFleetDates(
   } else {
     let dq = supabase
       .from('drivers')
-      .select('id, full_name, org_id, managed_by_user_id, license_expiry')
+      .select('id, full_name, org_id, managed_by_user_id, license_expiry, health_declaration_date, regulation_585b_date')
       .eq('org_id', effectiveOrgId);
     if (applyFleetManagerSlice && fleetManagerListUserId) {
       dq = dq.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
@@ -190,7 +198,7 @@ async function appendDerivedComplianceFromFleetDates(
   const tryPushVehicle = (
     vid: string,
     plateLabel: string,
-    slot: 'test' | 'insurance',
+    slot: 'test' | 'insurance' | 'inspection' | 'maintenance',
     rawExpiry: string | null,
     alertLabel: string,
   ) => {
@@ -214,23 +222,36 @@ async function appendDerivedComplianceFromFleetDates(
     const plate = v.plate_number?.trim() || 'רכב';
     tryPushVehicle(v.id, plate, 'test', v.test_expiry, 'תוקף טסט');
     tryPushVehicle(v.id, plate, 'insurance', v.insurance_expiry, 'תוקף ביטוח');
+    tryPushVehicle(v.id, plate, 'inspection', v.next_inspection_date, 'ביקורת תקופתית');
+    tryPushVehicle(v.id, plate, 'maintenance', v.next_maintenance_date, 'טיפול');
   }
 
-  for (const d of dRows) {
-    const level = complianceAlertLevelFromExpiry(d.license_expiry);
-    if (!level) continue;
-    const slotKey = `d:${d.id}:license`;
-    if (occupiedSlots.has(slotKey)) continue;
+  const tryPushDriver = (
+    d: DRow,
+    slot: 'license' | 'health' | 'r585',
+    rawExpiry: string | null,
+    alertType: string,
+  ) => {
+    const level = complianceAlertLevelFromExpiry(rawExpiry);
+    if (!level) return;
+    const slotKey = `d:${d.id}:${slot}`;
+    if (occupiedSlots.has(slotKey)) return;
     occupiedSlots.add(slotKey);
     out.push({
-      id: `derived:d:${d.id}:license`,
+      id: `derived:d:${d.id}:${slot}`,
       entityId: d.id,
       type: 'driver',
       name: d.full_name?.trim() || 'נהג',
-      alertType: 'רישיון נהג',
-      expiryDate: complianceExpiryIsoDate(d.license_expiry),
+      alertType,
+      expiryDate: complianceExpiryIsoDate(rawExpiry),
       status: level,
     });
+  };
+
+  for (const d of dRows) {
+    tryPushDriver(d, 'license', d.license_expiry, 'רישיון נהג');
+    tryPushDriver(d, 'health', d.health_declaration_date, 'הצהרת בריאות');
+    tryPushDriver(d, 'r585', d.regulation_585b_date, 'תקנה 585');
   }
 }
 

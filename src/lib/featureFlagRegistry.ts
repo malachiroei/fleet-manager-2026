@@ -159,6 +159,13 @@ export const FEATURE_FLAG_REGISTRY: FeatureFlagRegistryEntry[] = [
     category: 'quick_actions',
   },
   {
+    key: 'qa_admin_compliance_tower',
+    display_name_he: 'מגדל ציות אדמין',
+    description: 'קישור מהיר — טבלאות ציות מורחבות לאדמין ארגון',
+    ui_mapping: 'Dashboard quick actions + תפריט משתמש -> מגדל ציות אדמין',
+    category: 'quick_actions',
+  },
+  {
     key: 'form_delivery',
     display_name_he: 'טופס מסירה',
     description: 'הצגת טפסים המסומנים לשימוש במסירה (במרכז הטפסים)',
