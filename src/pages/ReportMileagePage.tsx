@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Gauge, Loader2, Wrench } from 'lucide-react';
+import { Camera, Gauge, ImageIcon, Loader2, Wrench } from 'lucide-react';
 
 import { supabase } from '@/integrations/supabase/client';
 import { invokeSupabaseEdgeFunction } from '@/lib/supabase/invokeEdgeFunction';
@@ -15,7 +15,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import PhotoUpload from '@/components/PhotoUpload';
+import { WebcamCapture } from '@/components/WebcamCapture';
+import { isAndroidUserAgent, shouldAttachDirectCameraCapture, tryMaterializeImageFileFromInput } from '@/lib/mobilePhotoIngest';
 
 const STORAGE_BUCKET = 'mileage-reports';
 
@@ -110,6 +111,50 @@ function describeMileageRpcMissingOnProject(): string {
   return 'במסד Supabase של הפרויקט חסרה הפונקציה public.submit_mileage_report (או לא עודכן schema). הריצו את המיגרציות (למשל 20260409120000) או את scripts/sql/prod_submit_mileage_report_bootstrap.sql ב-SQL Editor, ואז Settings → API → Reload schema.';
 }
 
+function MileageOdometerPhotoPreview({ file, onClear }: { file: File | null; onClear: () => void }) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!file || !(file.type || '').startsWith('image/')) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  if (!file) return null;
+  if (!previewUrl) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-cyan-500/25 bg-slate-900/50 px-3 py-2">
+        <p className="text-xs text-muted-foreground">
+          נבחר קובץ: <span className="font-medium text-foreground">{file.name}</span>
+        </p>
+        <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 text-xs" onClick={onClear}>
+          הסר
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 rounded-lg border border-cyan-500/25 bg-slate-900/50 p-2">
+      <div className="flex items-start justify-between gap-2 px-1">
+        <span className="text-xs font-medium text-muted-foreground">תצוגה מקדימה — לוח שעונים</span>
+        <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 text-xs" onClick={onClear}>
+          הסר תמונה
+        </Button>
+      </div>
+      <img
+        src={previewUrl}
+        alt="תצוגת לוח שעונים"
+        className="max-h-52 w-full rounded-md border border-white/15 object-contain bg-black/40"
+      />
+      <p className="text-center text-[11px] text-muted-foreground">{file.name}</p>
+    </div>
+  );
+}
+
 export default function ReportMileagePage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -145,6 +190,36 @@ export default function ReportMileagePage() {
   const [submitting, setSubmitting] = useState(false);
   const [sessionHydrated, setSessionHydrated] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [mileageWebcamOpen, setMileageWebcamOpen] = useState(false);
+  const [mileageWebcamMountKey, setMileageWebcamMountKey] = useState(0);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const desktopPhotoInputRef = useRef<HTMLInputElement>(null);
+  const androidUa = useMemo(() => isAndroidUserAgent(), []);
+
+  const applyMileagePhotoFile = async (file: File | null) => {
+    if (!file) {
+      setPhotoFile(null);
+      return;
+    }
+    const mime = file.type || '';
+    const looksLikeImage = mime.startsWith('image/') || mime === 'application/octet-stream' || mime === '';
+    let normalized = file;
+    if (looksLikeImage) {
+      try {
+        const out = await tryMaterializeImageFileFromInput(file);
+        normalized = out.file;
+      } catch {
+        normalized = file;
+      }
+    }
+    setPhotoFile(normalized);
+  };
+
+  const clearMileagePhoto = () => {
+    setPhotoFile(null);
+    if (galleryInputRef.current) galleryInputRef.current.value = '';
+    if (desktopPhotoInputRef.current) desktopPhotoInputRef.current.value = '';
+  };
 
   /** Restore draft + detect tab recycle after camera (session flag survives reload). */
   useEffect(() => {
@@ -577,12 +652,66 @@ export default function ReportMileagePage() {
                 </div>
 
                 <div className="space-y-2">
-                  <PhotoUpload
-                    label="צילום לוח שעונים — מצלמה או גלריה"
-                    required
-                    onPhotoCapture={(f) => setPhotoFile(f)}
-                    disabled={submitting}
-                  />
+                  <Label>צילום לוח השעונים <span className="text-destructive">*</span></Label>
+                  <p className="text-xs text-muted-foreground">
+                    באנדרואיד ניתן{' '}
+                    <span className="font-medium text-foreground">לצלם מהמצלמה</span> או להעלות{' '}
+                    <span className="font-medium text-foreground">מהגלריה</span> — אותה זרימה כמו בצילום רישיון/טסט
+                    בכרטיס הרכב.
+                  </p>
+                  {androidUa ? (
+                    <>
+                      <input
+                        ref={galleryInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={submitting}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0] ?? null;
+                          void applyMileagePhotoFile(f);
+                          e.target.value = '';
+                        }}
+                      />
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-12 flex-1 gap-2 border-cyan-500/40 bg-white/5 text-base font-semibold text-cyan-100 hover:bg-cyan-500/10"
+                          disabled={submitting}
+                          onClick={() => {
+                            setMileageWebcamMountKey((k) => k + 1);
+                            setMileageWebcamOpen(true);
+                          }}
+                        >
+                          <Camera className="h-4 w-4 shrink-0" />
+                          צלם מהמצלמה
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-12 flex-1 gap-2 border-cyan-500/40 bg-white/5 text-base font-semibold text-cyan-100 hover:bg-cyan-500/10"
+                          disabled={submitting}
+                          onClick={() => galleryInputRef.current?.click()}
+                        >
+                          <ImageIcon className="h-4 w-4 shrink-0" />
+                          בחר מהגלריה
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <Input
+                      ref={desktopPhotoInputRef}
+                      id="mileage-dash-photo"
+                      type="file"
+                      accept="image/*"
+                      disabled={submitting}
+                      className="h-12 cursor-pointer"
+                      {...(shouldAttachDirectCameraCapture() ? ({ capture: 'environment' } as const) : {})}
+                      onChange={(e) => void applyMileagePhotoFile(e.target.files?.[0] ?? null)}
+                    />
+                  )}
+                  <MileageOdometerPhotoPreview file={photoFile} onClear={clearMileagePhoto} />
                 </div>
 
                 <div className="flex gap-3">
@@ -611,6 +740,19 @@ export default function ReportMileagePage() {
           </CardContent>
         </Card>
       </section>
+
+      {androidUa ? (
+        <WebcamCapture
+          key={mileageWebcamMountKey}
+          open={mileageWebcamOpen}
+          onOpenChange={setMileageWebcamOpen}
+          onCapture={(f) => {
+            void applyMileagePhotoFile(f);
+            setMileageWebcamOpen(false);
+          }}
+          disabled={submitting}
+        />
+      ) : null}
 
     </FleetHudPageShell>
   );
