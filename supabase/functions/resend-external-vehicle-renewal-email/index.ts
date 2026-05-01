@@ -21,6 +21,13 @@ function clean(v: unknown): string {
   return typeof v === 'string' ? v.trim() : '';
 }
 
+function ymdOrNullFromDb(v: unknown): string | null {
+  const s = clean(String(v ?? ''));
+  if (!s) return null;
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(s);
+  return m?.[1] ?? null;
+}
+
 function escHtml(s: string): string {
   return String(s ?? '')
     .replace(/&/g, '&amp;')
@@ -29,39 +36,63 @@ function escHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function buildResendHtml(params: {
+function formatDueHebrew(ymd: string | null): string {
+  if (!ymd) return '—';
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ymd.trim());
+  if (!m) return escHtml(ymd);
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  try {
+    return new Intl.DateTimeFormat('he-IL', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'UTC',
+    }).format(d);
+  } catch {
+    return `${m[3]}.${m[2]}.${m[1]}`;
+  }
+}
+
+/** זהה ל־send-external-vehicle-renewal + בלוק הערת מנהל לפני פרטי הרכב */
+function buildLeasingEmailHtmlWithOptionalNote(params: {
   taskLabel: string;
   plate: string;
-  magicLink: string;
+  manufacturer: string;
+  model: string;
+  dueYmd: string | null;
+  primaryHref: string;
   adminNote: string;
 }): string {
+  const lbl = escHtml(params.taskLabel);
   const noteBlock =
     params.adminNote.trim().length > 0
-      ? `<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:14px;margin:18px 0;">
-    <p style="margin:0 0 8px;font-weight:bold;color:#9a3412;">הודעה מהמנהל:</p>
-    <p style="margin:0;line-height:1.65;color:#431407;white-space:pre-wrap;">${escHtml(params.adminNote.trim())}</p>
+      ? `<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:14px;margin:18px 0;">
+    <p style="margin:0 0 8px;font-weight:bold;color:#92400e;">הערת מנהל:</p>
+    <p style="margin:0;line-height:1.65;color:#451a03;white-space:pre-wrap;">${escHtml(params.adminNote.trim())}</p>
   </div>`
       : '';
 
-  const lbl = escHtml(params.taskLabel);
   return `
 <div dir="rtl" style="font-family:'Segoe UI',Tahoma,Arial,sans-serif;max-width:560px;margin:0 auto;color:#0f172a;text-align:right;">
-  <div style="border-bottom:2px solid #ea580c;padding-bottom:12px;margin-bottom:16px;">
-    <h1 style="margin:0;font-size:20px;color:#c2410c;">נדרשת סריקה מחדש · ${lbl}</h1>
+  <div style="border-bottom:2px solid #0ea5e9;padding-bottom:12px;margin-bottom:16px;">
+    <h1 style="margin:0;font-size:20px;color:#0369a1;">עדכון ${lbl}</h1>
     <p style="margin:6px 0 0;color:#64748b;font-size:14px;">מערכת ניהול צי רכבים</p>
   </div>
   <p style="line-height:1.7;color:#334155;">שלום,</p>
-  <p style="line-height:1.75;color:#1e293b;">המסמך שהועלה אינו מאושר או אינו ברור די הצורך. נא <strong>לצלם מחדש</strong> את הרישיון / הפוליסה <strong>בבהירות</strong> ולהגיש שוב דרך הקישור המאובטח.</p>
+  <p style="line-height:1.75;color:#1e293b;">רישוי הרכב שלהלן <strong>עומד לפקוע / פג תוקף</strong> במערכת. נא לסרוק רישיון (או פוליס ביטוח, לפי העניין) <strong>בתוקף</strong>, לצרף בתמונה ברורה ולעדכן <strong>תאריך תוקף חדש</strong> בטופס המאובטח.</p>
   ${noteBlock}
   <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin:18px 0;">
-    <p style="margin:0;"><strong>מספר רישוי:</strong> ${escHtml(params.plate)}</p>
+    <p style="margin:0 0 8px;"><strong>מספר רישוי:</strong> ${escHtml(params.plate)}</p>
+    <p style="margin:0 0 8px;"><strong>יצרן:</strong> ${escHtml(params.manufacturer)}</p>
+    <p style="margin:0 0 8px;"><strong>דגם:</strong> ${escHtml(params.model)}</p>
+    <p style="margin:8px 0 0;"><strong>תוקף נוכחי במערכת:</strong> ${formatDueHebrew(params.dueYmd)}</p>
   </div>
   <div style="text-align:center;margin:28px 0;">
-    <a href="${params.magicLink}" style="display:inline-block;background:#ea580c;color:#ffffff;text-decoration:none;padding:14px 22px;border-radius:10px;font-weight:bold;font-size:15px;">
+    <a href="${params.primaryHref}" style="display:inline-block;background:#0284c7;color:#ffffff;text-decoration:none;padding:14px 22px;border-radius:10px;font-weight:bold;font-size:15px;">
       מעבר לטופס סריקה ועדכון תוקף
     </a>
   </div>
-  <p style="font-size:12px;color:#64748b;word-break:break-all;">אם הכפתור לא נפתח:<br/><span dir="ltr">${escHtml(params.magicLink)}</span></p>
+  <p style="font-size:12px;color:#64748b;word-break:break-all;">אם הכפתור לא נפתח:<br/><span dir="ltr">${escHtml(params.primaryHref)}</span></p>
   <p style="font-size:11px;color:#94a3b8;margin-top:24px;">נשלח אוטומטית · אין להשיב להודעה</p>
 </div>`.trim();
 }
@@ -108,9 +139,7 @@ serve(async (req) => {
 
     const { data: reqRow, error: qErr } = await admin
       .from('compliance_requests')
-      .select(
-        'id, org_id, entity_id, task_key, task_label, status, external_recipient_email, request_url',
-      )
+      .select('id, org_id, entity_id, task_key, task_label, status, external_recipient_email, request_url')
       .eq('id', requestId)
       .eq('org_id', orgId)
       .maybeSingle();
@@ -135,24 +164,39 @@ serve(async (req) => {
       return json({ error: 'חסר קישור בקשה במערכת' }, 500);
     }
 
-    const { data: v } = await admin
+    const { data: v, error: vErr } = await admin
       .from('vehicles')
-      .select('plate_number')
+      .select('plate_number, manufacturer, model, test_expiry, insurance_expiry')
       .eq('id', reqRow.entity_id)
       .eq('org_id', orgId)
       .maybeSingle();
+    if (vErr) return json({ error: vErr.message }, 500);
+    if (!v) return json({ error: 'Vehicle not found' }, 404);
 
-    const plate = clean(String(v?.plate_number ?? '')) || '—';
+    const plate = clean(String(v.plate_number ?? '')) || '—';
+    const manufacturer = clean(String(v.manufacturer ?? '')) || '—';
+    const model = clean(String(v.model ?? '')) || '—';
+    const dueYmd =
+      taskKey === 'insurance'
+        ? ymdOrNullFromDb(v.insurance_expiry)
+        : ymdOrNullFromDb(v.test_expiry);
+
     const taskLabel = clean(String(reqRow.task_label ?? '')) || 'עדכון מסמך';
 
-    const html = buildResendHtml({
+    const html = buildLeasingEmailHtmlWithOptionalNote({
       taskLabel,
       plate,
-      magicLink,
+      manufacturer,
+      model,
+      dueYmd,
+      primaryHref: magicLink,
       adminNote,
     });
 
-    const subject = `סריקה מחדש נדרשת — ${taskLabel} · רכב ${plate}`.trim();
+    const subject =
+      taskKey === 'insurance'
+        ? `בקשת עדכון ביטוח — רכב ${plate}`.trim()
+        : `בקשת עדכון רישוי שנתי — רכב ${plate}`.trim();
 
     const resendResp = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -181,9 +225,14 @@ serve(async (req) => {
       !Array.isArray((curRow as { metadata?: unknown }).metadata)
         ? ({ ...((curRow as { metadata: Record<string, unknown> }).metadata as Record<string, unknown>) })
         : ({} as Record<string, unknown>);
-    await admin
+
+    /** מחזיר את הנציג לשליחה מחדש — טופס ציבורי יקבל שוב (לא pending_admin_review) */
+    const { error: updErr } = await admin
       .from('compliance_requests')
       .update({
+        status: 'sent',
+        proposed_expiry_date: null,
+        submitted_document_url: null,
         metadata: {
           ...prevMeta,
           last_admin_resend_note: adminNote || null,
@@ -191,6 +240,8 @@ serve(async (req) => {
         },
       })
       .eq('id', requestId);
+
+    if (updErr) return json({ error: updErr.message }, 500);
 
     return json({ success: true, sent_to: externalTo });
   } catch (err) {

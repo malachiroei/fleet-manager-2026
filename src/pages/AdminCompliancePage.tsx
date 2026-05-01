@@ -1929,10 +1929,12 @@ export default function AdminCompliancePage() {
       const payload = normalizeInvokePayload(data);
       if (payload?.error) throw new Error(String(payload.error));
       if (payload?.success !== true) throw new Error('תשובת שרת לא תקינה');
-      toast.success('נשלח מייל לנציג הליסינג עם הקישור וההערה');
+      toast.success('המייל נשלח. הבקשה הוסרה מרשימת הממתינים; אפשר שוב «שלח בקשה» בטבלה עד הגשה חדשה.');
       setResendLeasingDialog(null);
       setResendNote('');
       await queryClient.invalidateQueries({ queryKey: ['admin-pending-vehicle-renewals', orgIdRequired] });
+      await queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+      await queryClient.invalidateQueries({ queryKey: ['admin-compliance-open-requests', orgIdRequired] });
       void refetchPendingVehicleRenewals();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -2239,103 +2241,101 @@ export default function AdminCompliancePage() {
       </Dialog>
 
       <Dialog open={leasingApprovalsOpen} onOpenChange={setLeasingApprovalsOpen}>
-        <DialogContent dir="rtl" className="max-h-[90vh] max-w-3xl overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>ממתינים לאישור — נציג ליסינג</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            רישוי שנתי וביטוח: הגשות הממתינות לאישורך לפני עדכון כרטיס הרכב.
-          </p>
+        <DialogContent
+          dir="rtl"
+          className="flex max-h-[min(92vh,880px)] w-[calc(100vw-1.5rem)] max-w-5xl flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl"
+        >
+          <div className="shrink-0 space-y-1 border-b border-border/70 px-4 py-3 pr-12 sm:px-5 sm:pr-14">
+            <DialogHeader className="space-y-0 text-right">
+              <DialogTitle className="text-base sm:text-lg">ממתינים לאישור — נציג ליסינג</DialogTitle>
+            </DialogHeader>
+            <p className="text-xs leading-snug text-muted-foreground sm:text-sm">
+              רישוי שנתי וביטוח: הגשות לפני עדכון כרטיס הרכב. גלילה לרשימות ארוכות.
+            </p>
+          </div>
           {pendingRenewalsDialogRows.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">אין בקשות ממתינות כרגע.</p>
+            <p className="shrink-0 py-8 text-center text-sm text-muted-foreground">אין בקשות ממתינות כרגע.</p>
           ) : (
-            <div className="overflow-x-auto rounded-lg border">
-              <Table dir="rtl">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-right">פעולות</TableHead>
-                    <TableHead className="text-right">נציג (מייל)</TableHead>
-                    <TableHead className="text-right">תוקף מוצע</TableHead>
-                    <TableHead className="text-right">נושא</TableHead>
-                    <TableHead className="text-right">לוחית</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {pendingRenewalsDialogRows.map((row) => {
-                    const docUrl = String(row.submitted_document_url ?? '').trim();
-                    const formUrl = String(row.request_url ?? '').trim();
-                    const rep = String(row.external_recipient_email ?? '').trim();
-                    return (
-                      <TableRow key={row.id}>
-                        <TableCell className="align-top">
-                          <div className="flex max-w-[14rem] flex-col items-end gap-1.5">
-                            {docUrl ? (
+            <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2 sm:px-4 sm:py-3">
+              <div className="overflow-x-auto rounded-md border">
+                <Table dir="rtl">
+                  <TableHeader className="sticky top-0 z-20 bg-card shadow-[0_1px_0_0_hsl(var(--border))]">
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">פעולות</TableHead>
+                      <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">נציג (מייל)</TableHead>
+                      <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">תוקף מוצע</TableHead>
+                      <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">נושא</TableHead>
+                      <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">לוחית</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {pendingRenewalsDialogRows.map((row) => {
+                      const docUrl = String(row.submitted_document_url ?? '').trim();
+                      const rep = String(row.external_recipient_email ?? '').trim();
+                      return (
+                        <TableRow key={row.id} className="align-middle">
+                          <TableCell className="py-2">
+                            <div className="flex max-w-[220px] flex-wrap justify-end gap-1 sm:max-w-none">
+                              {docUrl ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 px-2 text-[11px]"
+                                  onClick={() => window.open(docUrl, '_blank', 'noopener,noreferrer')}
+                                >
+                                  צפייה
+                                </Button>
+                              ) : null}
                               <Button
                                 type="button"
                                 size="sm"
-                                variant="outline"
-                                className="w-full"
-                                onClick={() => window.open(docUrl, '_blank', 'noopener,noreferrer')}
+                                variant="secondary"
+                                className="h-7 px-2 text-[11px]"
+                                onClick={() => {
+                                  setResendLeasingDialog({ requestId: row.id });
+                                  setResendNote('');
+                                }}
                               >
-                                צפייה במסמך
+                                מייל חזרה
                               </Button>
-                            ) : null}
-                            {formUrl ? (
                               <Button
                                 type="button"
                                 size="sm"
-                                variant="outline"
-                                className="w-full"
-                                onClick={() => window.open(formUrl, '_blank', 'noopener,noreferrer')}
+                                className="h-7 px-2 text-[11px]"
+                                onClick={() => void approveVehicleRenewalForRequest(row.id)}
+                                disabled={approvingRenewalId === row.id}
                               >
-                                פתיחת טופס הנציג
+                                {approvingRenewalId === row.id ? (
+                                  <span className="inline-flex items-center gap-1">
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                    מאשר…
+                                  </span>
+                                ) : (
+                                  'אישור'
+                                )}
                               </Button>
-                            ) : null}
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="secondary"
-                              className="w-full"
-                              onClick={() => {
-                                setResendLeasingDialog({ requestId: row.id });
-                                setResendNote('');
-                              }}
-                            >
-                              מייל חזרה לנציג
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              className="w-full"
-                              onClick={() => void approveVehicleRenewalForRequest(row.id)}
-                              disabled={approvingRenewalId === row.id}
-                            >
-                              {approvingRenewalId === row.id ? (
-                                <span className="inline-flex items-center gap-1">
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                  מאשר…
-                                </span>
-                              ) : (
-                                'אישור והחלה'
-                              )}
-                            </Button>
-                          </div>
-                        </TableCell>
-                        <TableCell className="max-w-[10rem] text-right text-xs break-all" dir="ltr">
-                          {rep || '—'}
-                        </TableCell>
-                        <TableCell className="tabular-nums" dir="ltr">
-                          {row.proposed_expiry_date
-                            ? String(row.proposed_expiry_date).slice(0, 10)
-                            : '—'}
-                        </TableCell>
-                        <TableCell className="text-right text-sm">{row.task_label ?? '—'}</TableCell>
-                        <TableCell className="text-right font-medium">{row.plate}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+                            </div>
+                          </TableCell>
+                          <TableCell
+                            className="max-w-[7rem] py-2 text-right text-[11px] leading-tight break-all sm:max-w-[10rem]"
+                            dir="ltr"
+                          >
+                            {rep || '—'}
+                          </TableCell>
+                          <TableCell className="py-2 tabular-nums text-xs" dir="ltr">
+                            {row.proposed_expiry_date
+                              ? String(row.proposed_expiry_date).slice(0, 10)
+                              : '—'}
+                          </TableCell>
+                          <TableCell className="py-2 text-right text-xs">{row.task_label ?? '—'}</TableCell>
+                          <TableCell className="py-2 text-right text-xs font-medium">{row.plate}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           )}
         </DialogContent>
@@ -2355,7 +2355,8 @@ export default function AdminCompliancePage() {
             <DialogTitle>מייל חזרה לנציג ליסינג</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            הנציג יקבל שוב את קישור הטופס להעלאת צילום חדש. ניתן להוסיף הסבר קצר למשל כשהסריקה לא ברורה.
+            יישלח <strong>אותו מייל כמו בשליחה הראשונית</strong> (עיצוב וניסוח), עם בלוק «הערת מנהל» אם מילאת. לאחר השליחה
+            הבקשה תוסר מממתינים והנציג יוכל להגיש מחדש מהקישור.
           </p>
           <div className="space-y-2">
             <Label htmlFor="resend-note">הערה לנציג (אופציונלי)</Label>
