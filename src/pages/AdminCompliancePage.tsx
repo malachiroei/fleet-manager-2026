@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FleetHudPageShell } from '@/components/FleetHudPageShell';
@@ -931,7 +931,7 @@ export default function AdminCompliancePage() {
       return (data ?? []) as Driver[];
     },
     refetchOnWindowFocus: true,
-    refetchInterval: 8000,
+    refetchInterval: 3000,
   });
 
   type OpenComplianceRow = {
@@ -940,10 +940,15 @@ export default function AdminCompliancePage() {
     status: string;
     sent_at: string;
   };
-  const { data: openComplianceRequests = [] } = useQuery({
+  const {
+    data: openComplianceRequests = [],
+    error: openComplianceRequestsError,
+    isError: openComplianceRequestsIsError,
+  } = useQuery({
     queryKey: ['admin-compliance-open-requests', orgId],
     enabled: Boolean(isAdmin && orgId),
     staleTime: 0,
+    retry: 2,
     queryFn: async (): Promise<OpenComplianceRow[]> => {
       if (!orgId) return [];
       const { data, error } = await supabase
@@ -955,8 +960,41 @@ export default function AdminCompliancePage() {
       return (data ?? []) as OpenComplianceRow[];
     },
     refetchOnWindowFocus: true,
-    refetchInterval: 8000,
+    refetchInterval: 3000,
   });
+
+  /** מוצג מיד אחרי «שלח בקשה» עד שהשרת מחזיר שורה ב־compliance_requests (מונע תחושה ש«כלום לא קרה») */
+  const [optimisticCompliancePending, setOptimisticCompliancePending] = useState<
+    Record<string, { sentAt: string }>
+  >({});
+
+  const openComplianceLoadErrShown = useRef(false);
+  useEffect(() => {
+    if (openComplianceRequestsIsError && openComplianceRequestsError) {
+      if (!openComplianceLoadErrShown.current) {
+        openComplianceLoadErrShown.current = true;
+        toast.error(
+          `לא נטענו בקשות ציות מהמסד (סטטוס «ממתין» עלול לא להופיע): ${openComplianceRequestsError.message}`,
+          { duration: 14_000 },
+        );
+      }
+    } else {
+      openComplianceLoadErrShown.current = false;
+    }
+  }, [openComplianceRequestsIsError, openComplianceRequestsError]);
+
+  useEffect(() => {
+    setOptimisticCompliancePending((prev) => {
+      if (Object.keys(prev).length === 0) return prev;
+      const next = { ...prev };
+      for (const r of openComplianceRequests) {
+        const d = String(r.driver_id ?? '').trim();
+        const t = String(r.task_key ?? '').trim();
+        if (d && t) delete next[`${d}::${t}`];
+      }
+      return next;
+    });
+  }, [openComplianceRequests]);
 
   /** עדכון מיידי כשעובד חותם בטופס ציבורי — בלי רענון ידני */
   useEffect(() => {
@@ -1010,8 +1048,13 @@ export default function AdminCompliancePage() {
         status: String(r.status ?? '').trim() || 'sent',
       });
     }
+    for (const [k, v] of Object.entries(optimisticCompliancePending)) {
+      if (!m.has(k) && v?.sentAt) {
+        m.set(k, { sentAt: v.sentAt, status: 'sent' });
+      }
+    }
     return m;
-  }, [openComplianceRequests]);
+  }, [openComplianceRequests, optimisticCompliancePending]);
 
   const [viewFilter, setViewFilter] = useState<TowerViewFilter>('urgent');
   const [customRangeFromDays, setCustomRangeFromDays] = useState(-30);
@@ -1078,6 +1121,7 @@ export default function AdminCompliancePage() {
 
   useEffect(() => {
     if (vehiclesLoading || driversLoading) return;
+    if (!import.meta.env.DEV) return;
     const vehiclePreview = (vehicles as Array<Record<string, unknown>>).slice(0, 5).map((v) => ({
       id: v.id,
       plate_number: v.plate_number,
@@ -1096,7 +1140,7 @@ export default function AdminCompliancePage() {
       org_id: d.org_id,
     }));
 
-    console.log('[AdminCompliancePage] Raw Supabase rows before filtering', {
+    console.debug('[AdminCompliancePage] Raw Supabase rows before filtering', {
       orgId,
       range: { todayIso },
       viewFilter,
@@ -1409,6 +1453,13 @@ export default function AdminCompliancePage() {
       }
 
       const persisted = (payload as { persisted_token?: boolean }).persisted_token !== false;
+      const pendingKey = `${driverId}::${tab.key}`;
+      if (persisted) {
+        setOptimisticCompliancePending((prev) => ({
+          ...prev,
+          [pendingKey]: { sentAt: new Date().toISOString() },
+        }));
+      }
       if (!persisted) {
         toast.warning(
           'המייל נשלח, אך הבקשה לא נשמרה במסד — הסטטוס במגדל הציות לא יתעדכן עד שמיגרציית compliance_requests תופעל.',
