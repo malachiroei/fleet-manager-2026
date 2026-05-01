@@ -455,13 +455,17 @@ export default function Dashboard() {
                   : card.getValue(stats);
                 const title =
                   card.titleKey === 'dashboard.replacementVehicle' ? 'רכב חליפי' : t(card.titleKey);
+                const link =
+                  card.titleKey === 'navigation.exceptionAlerts' && effectiveIsAdmin
+                    ? '/admin/compliance'
+                    : card.link;
                 return (
                   <StatusCard
                     key={card.link}
                     title={title}
                     value={value}
                     icon={Icon}
-                    link={card.link}
+                    link={link}
                     theme={card.theme}
                   />
                 );

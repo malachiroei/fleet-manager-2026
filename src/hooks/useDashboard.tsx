@@ -44,7 +44,7 @@ function normalizeComplianceAlertDbRow(raw: Record<string, unknown>): {
   return null;
 }
 
-interface ComplianceItem {
+export interface ComplianceItem {
   id: string;
   type: 'vehicle' | 'driver';
   name: string;

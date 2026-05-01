@@ -1,4 +1,8 @@
-import { useComplianceAlerts } from '@/hooks/useDashboard';
+import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
+import { useComplianceAlerts, type ComplianceItem } from '@/hooks/useDashboard';
+import { useAuth } from '@/hooks/useAuth';
+import { complianceAdminDeepLink } from '@/lib/complianceAdminDeepLink';
 import { ComplianceTower } from '@/components/compliance/ComplianceTower';
 import { FleetHudPageShell } from '@/components/FleetHudPageShell';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -6,6 +10,47 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertTriangle, Car, User, CheckCircle } from 'lucide-react';
 import type { ComplianceStatus } from '@/types/fleet';
+
+function complianceAlertAdminHref(alert: ComplianceItem, isAdmin: boolean): string | null {
+  if (!isAdmin) return null;
+  const entityId = alert.entityId?.trim();
+  if (!entityId) return null;
+  return complianceAdminDeepLink({
+    id: alert.id,
+    type: alert.type,
+    entityId,
+    alertType: alert.alertType,
+  });
+}
+
+function AlertListRow({
+  alert,
+  variant,
+  children,
+}: {
+  alert: ComplianceItem;
+  variant: 'expired' | 'warning';
+  children: ReactNode;
+}) {
+  const { isAdmin } = useAuth();
+  const href = complianceAlertAdminHref(alert, Boolean(isAdmin));
+  const shell =
+    variant === 'expired'
+      ? 'flex w-full items-center justify-between p-3 rounded-lg bg-destructive/5 border border-destructive/20'
+      : 'flex w-full items-center justify-between p-3 rounded-lg bg-amber-500/5 border border-amber-500/20';
+  const interactive =
+    variant === 'expired'
+      ? 'cursor-pointer transition-colors hover:bg-destructive/12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60'
+      : 'cursor-pointer transition-colors hover:bg-amber-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60';
+  if (href) {
+    return (
+      <Link to={href} className={`${shell} ${interactive}`}>
+        {children}
+      </Link>
+    );
+  }
+  return <div className={shell}>{children}</div>;
+}
 
 function StatusBadge({ status }: { status: ComplianceStatus }) {
   const config = {
@@ -73,8 +118,8 @@ export default function CompliancePage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {expiredAlerts.map(alert => (
-                    <div key={alert.id} className="flex items-center justify-between p-3 rounded-lg bg-destructive/5 border border-destructive/20">
+                  {expiredAlerts.map((alert) => (
+                    <AlertListRow key={alert.id} alert={alert} variant="expired">
                       <div className="flex items-center gap-3">
                         <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${alert.type === 'vehicle' ? 'bg-primary/10' : 'bg-accent/10'}`}>
                           {alert.type === 'vehicle' ? (
@@ -94,7 +139,7 @@ export default function CompliancePage() {
                           {alert.expiryDate && new Date(alert.expiryDate).toLocaleDateString('he-IL')}
                         </div>
                       </div>
-                    </div>
+                    </AlertListRow>
                   ))}
                 </CardContent>
               </Card>
@@ -110,8 +155,8 @@ export default function CompliancePage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {warningAlerts.map(alert => (
-                    <div key={alert.id} className="flex items-center justify-between p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
+                  {warningAlerts.map((alert) => (
+                    <AlertListRow key={alert.id} alert={alert} variant="warning">
                       <div className="flex items-center gap-3">
                         <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${alert.type === 'vehicle' ? 'bg-primary/10' : 'bg-accent/10'}`}>
                           {alert.type === 'vehicle' ? (
@@ -131,7 +176,7 @@ export default function CompliancePage() {
                           {alert.expiryDate && new Date(alert.expiryDate).toLocaleDateString('he-IL')}
                         </div>
                       </div>
-                    </div>
+                    </AlertListRow>
                   ))}
                 </CardContent>
               </Card>
