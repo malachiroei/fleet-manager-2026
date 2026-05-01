@@ -30,8 +30,8 @@
     <meta name="twitter:site" content="@FleetManagerPro" />
     <meta name="twitter:image" content="https://fleet-manager-pro.com/og-image.png" />
 
-    <!-- PWA Meta -->
-    <meta name="theme-color" content="#1e40af" />
+    <!-- PWA Meta — רקע כהה עקבי עם האפליקציה (ללא «מסגרת» כחולה בטעינה) -->
+    <meta name="theme-color" content="#02040a" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -40,7 +40,45 @@
   </head>
 
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- מסך ראשון לפני React: יוסר אוטומטית כשהאפליקציה נטענת -->
+      <div id="fleet-boot-splash" class="fleet-boot-splash" aria-hidden="true">
+        <img
+          class="fleet-boot-splash__img"
+          src="/carnew.png"
+          alt=""
+          width="1200"
+          height="800"
+          decoding="async"
+          fetchpriority="high"
+        />
+      </div>
+    </div>
+    <style>
+      .fleet-boot-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483646;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0;
+        padding: 0;
+        min-height: 100dvh;
+        min-width: 100%;
+        background: linear-gradient(165deg, #0f172a 0%, #02040a 55%, #00040a 100%);
+      }
+      .fleet-boot-splash__img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        max-height: 100dvh;
+        object-fit: contain;
+        object-position: center;
+        padding: clamp(8px, 3vmin, 28px);
+        box-sizing: border-box;
+      }
+    </style>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

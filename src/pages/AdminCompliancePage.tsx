@@ -649,7 +649,7 @@ function ComplianceTable<T extends Record<string, unknown>>({
       (r) => requestDisabledReason(r as T),
     );
     if (pendingRen) {
-      sendBarrierMerged = 'יש הגשה מליסינג הממתינה לאישור — השתמש ב«אישור והחלה»';
+      sendBarrierMerged = 'יש הגשה הממתינה לאישור מנהל — השתמש ב«אישור והחלה»';
     }
     return {
       id,
@@ -2115,7 +2115,7 @@ export default function AdminCompliancePage() {
               </p>
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 <Button type="button" variant="secondary" size="sm" onClick={() => setLeasingApprovalsOpen(true)}>
-                  ממתינים לאישור ליסינג ({pendingVehicleRenewalsRaw.length})
+                  ממתין לאישור מנהל ({pendingVehicleRenewalsRaw.length})
                 </Button>
               </div>
             </div>
@@ -2345,14 +2345,14 @@ export default function AdminCompliancePage() {
         >
           <div className="shrink-0 space-y-1 border-b border-border/70 px-4 py-3 pr-12 sm:px-5 sm:pr-14">
             <DialogHeader className="space-y-0 text-right">
-              <DialogTitle className="text-base sm:text-lg">ממתינים לאישור — נציג ליסינג</DialogTitle>
+              <DialogTitle className="text-base sm:text-lg">ממתין לאישור מנהל</DialogTitle>
             </DialogHeader>
             <p className="text-xs leading-snug text-muted-foreground sm:text-sm">
               רישוי שנתי וביטוח: הגשות לפני עדכון כרטיס הרכב. גלילה לרשימות ארוכות.
             </p>
           </div>
           {pendingRenewalsDialogRows.length === 0 ? (
-            <p className="shrink-0 py-8 text-center text-sm text-muted-foreground">אין בקשות ממתינות כרגע.</p>
+            <p className="shrink-0 py-8 text-center text-sm text-muted-foreground">אין הגשות ממתינות לאישור מנהל.</p>
           ) : (
             <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2 sm:px-4 sm:py-3">
               <div className="overflow-x-auto rounded-md border">
