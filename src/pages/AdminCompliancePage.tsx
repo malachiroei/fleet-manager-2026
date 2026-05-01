@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Table,
@@ -447,14 +448,14 @@ function complianceTableStatusNode(dueField: string, row: Record<string, unknown
   if (dueDays != null && dueDays < 0) {
     return (
       <span className="text-xs font-semibold text-red-300" title={`סטטוס במערכת: ${db}`}>
-        פג תוקף (לפי תאריך)
+        פג תוקף
       </span>
     );
   }
   if (dueDays != null && dueDays <= 30 && dueDays >= 0 && db.toLowerCase() === 'valid') {
     return (
       <span className="text-xs font-medium text-amber-200" title={`סטטוס במערכת: ${db}`}>
-        לטיפול (תאריך קרוב)
+        לטיפול
       </span>
     );
   }
@@ -597,6 +598,8 @@ type TabTableProps<T extends Record<string, unknown>> = {
   } | null;
   onApproveVehicleRenewal?: (requestId: string) => void;
   approvingVehicleRenewalId?: string | null;
+  /** כשמציגים פעולות ממתינות ברשימה נפרדת — מסתיר צפייה/אישור בשורה */
+  hideLeasingPendingInlineActions?: boolean;
 };
 
 function ComplianceTable<T extends Record<string, unknown>>({
@@ -622,6 +625,7 @@ function ComplianceTable<T extends Record<string, unknown>>({
   getPendingVehicleRenewal,
   onApproveVehicleRenewal,
   approvingVehicleRenewalId,
+  hideLeasingPendingInlineActions,
 }: TabTableProps<T>) {
   /** עמודת «סטטוס» ייעודית קיימת — לא לשכפל את שדה status מהרכב בעמודות הנתונים */
   const baseCols = columns.length > 0 ? columns : [dueField];
@@ -949,13 +953,14 @@ function ComplianceTable<T extends Record<string, unknown>>({
                           </Button>
                         </>
                       ) : null}
-                      {pendingVehicleRen && onApproveVehicleRenewal ? (
+                      {pendingVehicleRen && onApproveVehicleRenewal && !hideLeasingPendingInlineActions ? (
                         <>
                           <Button
                             type="button"
                             size="sm"
                             variant="outline"
                             onClick={() => window.open(pendingVehicleRen.previewUrl, '_blank', 'noopener,noreferrer')}
+                            disabled={!String(pendingVehicleRen.previewUrl ?? '').trim()}
                           >
                             צפייה במסמך
                           </Button>
@@ -1003,6 +1008,10 @@ export default function AdminCompliancePage() {
   } | null>(null);
   const [leasingEmail, setLeasingEmail] = useState('');
   const [leasingSending, setLeasingSending] = useState(false);
+  const [leasingApprovalsOpen, setLeasingApprovalsOpen] = useState(false);
+  const [resendLeasingDialog, setResendLeasingDialog] = useState<{ requestId: string } | null>(null);
+  const [resendNote, setResendNote] = useState('');
+  const [resendSending, setResendSending] = useState(false);
   const [approvingRenewalId, setApprovingRenewalId] = useState<string | null>(null);
   const { data: vehicles = [], isLoading: vehiclesLoading } = useVehicles();
   const { data: drivers = [], isLoading: driversLoading, refetch: refetchDrivers } = useQuery({
@@ -1056,8 +1065,11 @@ export default function AdminCompliancePage() {
     id: string;
     entity_id: string;
     task_key: string;
+    task_label: string | null;
     proposed_expiry_date: string | null;
     submitted_document_url: string | null;
+    external_recipient_email: string | null;
+    request_url: string | null;
   };
   const {
     data: pendingVehicleRenewalsRaw = [],
@@ -1071,7 +1083,9 @@ export default function AdminCompliancePage() {
       if (!orgId) return [];
       const { data, error } = await supabase
         .from('compliance_requests')
-        .select('id, entity_id, task_key, proposed_expiry_date, submitted_document_url')
+        .select(
+          'id, entity_id, task_key, task_label, proposed_expiry_date, submitted_document_url, external_recipient_email, request_url',
+        )
         .eq('org_id', orgId)
         .eq('entity_type', 'vehicle')
         .eq('status', 'pending_admin_review')
@@ -1088,16 +1102,23 @@ export default function AdminCompliancePage() {
     for (const r of pendingVehicleRenewalsRaw) {
       const vid = String(r.entity_id ?? '').trim();
       const tk = String(r.task_key ?? '').trim();
-      const url = String(r.submitted_document_url ?? '').trim();
-      if (!vid || !tk || !url) continue;
+      if (!vid || !tk) continue;
       m.set(`${vid}::${tk}`, {
         requestId: r.id,
-        previewUrl: url,
+        previewUrl: String(r.submitted_document_url ?? '').trim(),
         proposedExpiry: String(r.proposed_expiry_date ?? '').slice(0, 10),
       });
     }
     return m;
   }, [pendingVehicleRenewalsRaw]);
+
+  const pendingRenewalsDialogRows = useMemo(() => {
+    const plateById = new Map(vehicles.map((v) => [String(v.id), String(v.plate_number ?? '')]));
+    return pendingVehicleRenewalsRaw.map((r) => ({
+      ...r,
+      plate: plateById.get(String(r.entity_id ?? '').trim()) ?? '—',
+    }));
+  }, [pendingVehicleRenewalsRaw, vehicles]);
 
   /** מוצג מיד אחרי «שלח בקשה» עד שהשרת מחזיר שורה ב־compliance_requests (מונע תחושה ש«כלום לא קרה») */
   const [optimisticCompliancePending, setOptimisticCompliancePending] = useState<
@@ -1873,6 +1894,54 @@ export default function AdminCompliancePage() {
     }
   };
 
+  const submitResendLeasingEmail = async () => {
+    const rid = String(resendLeasingDialog?.requestId ?? '').trim();
+    const orgIdRequired = String(orgId ?? '').trim();
+    if (!rid || !orgIdRequired) return;
+    setResendSending(true);
+    try {
+      const { data, error } = await invokeSupabaseEdgeFunction('resend-external-vehicle-renewal-email', {
+        org_id: orgIdRequired,
+        request_id: rid,
+        admin_note: resendNote.trim(),
+      });
+      const earlyPayload = normalizeInvokePayload(data);
+      if (!error && earlyPayload) {
+        const earlyErr =
+          typeof earlyPayload.error === 'string' && earlyPayload.error.trim().length > 0
+            ? earlyPayload.error.trim()
+            : null;
+        if (earlyErr && earlyPayload.success !== true) throw new Error(earlyErr);
+      }
+      if (error) {
+        let detailed = error.message ?? 'שגיאה';
+        const context = (error as unknown as { context?: Response }).context;
+        if (context) {
+          try {
+            const body = (await context.json()) as { error?: string };
+            if (body.error) detailed = body.error;
+          } catch {
+            /* ignore */
+          }
+        }
+        throw new Error(detailed);
+      }
+      const payload = normalizeInvokePayload(data);
+      if (payload?.error) throw new Error(String(payload.error));
+      if (payload?.success !== true) throw new Error('תשובת שרת לא תקינה');
+      toast.success('נשלח מייל לנציג הליסינג עם הקישור וההערה');
+      setResendLeasingDialog(null);
+      setResendNote('');
+      await queryClient.invalidateQueries({ queryKey: ['admin-pending-vehicle-renewals', orgIdRequired] });
+      void refetchPendingVehicleRenewals();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`שליחה נכשלה: ${msg}`);
+    } finally {
+      setResendSending(false);
+    }
+  };
+
   const approveLicenseForRow = async (row: Record<string, unknown>) => {
     const driverId = String(row.id ?? '').trim();
     const orgIdRequired = String(orgId ?? '').trim();
@@ -1941,10 +2010,15 @@ export default function AdminCompliancePage() {
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                צבעי שורות: אדום — פג תוקף או עד {COMPLIANCE_RED_MAX_DAYS_REMAINING} ימים נותרים; צהוב —{' '}
+                צבעי שורות: אדום — פג תוקף עד {COMPLIANCE_RED_MAX_DAYS_REMAINING} ימים נותרים; צהוב —{' '}
                 {COMPLIANCE_RED_MAX_DAYS_REMAINING + 1}–{COMPLIANCE_YELLOW_MAX_DAYS_REMAINING} ימים; ירוק — מעל{' '}
                 {COMPLIANCE_YELLOW_MAX_DAYS_REMAINING} ימים.
               </p>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <Button type="button" variant="secondary" size="sm" onClick={() => setLeasingApprovalsOpen(true)}>
+                  ממתינים לאישור ליסינג ({pendingVehicleRenewalsRaw.length})
+                </Button>
+              </div>
             </div>
             {viewFilter === 'custom_range' && (
               <>
@@ -2086,11 +2160,12 @@ export default function AdminCompliancePage() {
                       }
                       onApproveVehicleRenewal={(rid) => void approveVehicleRenewalForRequest(rid)}
                       approvingVehicleRenewalId={approvingRenewalId}
+                      hideLeasingPendingInlineActions={tab.key === 'annual_licensing' || tab.key === 'insurance'}
                       emptyLabel={
                         viewFilter === 'all'
                           ? `לא נמצאו רשומות עם ${prettifyKey(tab.dueField)}`
                           : viewFilter === 'urgent'
-                            ? `לא נמצאו רשומות בטווח טיפול דחוף (פג תוקף או עד ${COMPLIANCE_RED_MAX_DAYS_REMAINING} ימים) עבור ${prettifyKey(tab.dueField)}`
+                            ? `לא נמצאו רשומות בטווח טיפול דחוף עבור ${prettifyKey(tab.dueField)}`
                             : viewFilter === 'expiring_soon'
                               ? `לא נמצאו רשומות בטווח «קרוב לפקיעה» (${COMPLIANCE_RED_MAX_DAYS_REMAINING + 1}–${COMPLIANCE_YELLOW_MAX_DAYS_REMAINING} ימים נותרים) עבור ${prettifyKey(tab.dueField)}`
                               : `לא נמצאו רשומות עם ${prettifyKey(tab.dueField)} בטווח המותאם (${customRangeFromDays} עד ${customRangeToDays} ימים מהיום)`
@@ -2151,6 +2226,162 @@ export default function AdminCompliancePage() {
             </Button>
             <Button type="button" onClick={() => void submitLeasingRenewalFromModal()} disabled={leasingSending}>
               {leasingSending ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  שולח…
+                </span>
+              ) : (
+                'שלח מייל'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={leasingApprovalsOpen} onOpenChange={setLeasingApprovalsOpen}>
+        <DialogContent dir="rtl" className="max-h-[90vh] max-w-3xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>ממתינים לאישור — נציג ליסינג</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            רישוי שנתי וביטוח: הגשות הממתינות לאישורך לפני עדכון כרטיס הרכב.
+          </p>
+          {pendingRenewalsDialogRows.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">אין בקשות ממתינות כרגע.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-lg border">
+              <Table dir="rtl">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-right">פעולות</TableHead>
+                    <TableHead className="text-right">נציג (מייל)</TableHead>
+                    <TableHead className="text-right">תוקף מוצע</TableHead>
+                    <TableHead className="text-right">נושא</TableHead>
+                    <TableHead className="text-right">לוחית</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pendingRenewalsDialogRows.map((row) => {
+                    const docUrl = String(row.submitted_document_url ?? '').trim();
+                    const formUrl = String(row.request_url ?? '').trim();
+                    const rep = String(row.external_recipient_email ?? '').trim();
+                    return (
+                      <TableRow key={row.id}>
+                        <TableCell className="align-top">
+                          <div className="flex max-w-[14rem] flex-col items-end gap-1.5">
+                            {docUrl ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="w-full"
+                                onClick={() => window.open(docUrl, '_blank', 'noopener,noreferrer')}
+                              >
+                                צפייה במסמך
+                              </Button>
+                            ) : null}
+                            {formUrl ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="w-full"
+                                onClick={() => window.open(formUrl, '_blank', 'noopener,noreferrer')}
+                              >
+                                פתיחת טופס הנציג
+                              </Button>
+                            ) : null}
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              className="w-full"
+                              onClick={() => {
+                                setResendLeasingDialog({ requestId: row.id });
+                                setResendNote('');
+                              }}
+                            >
+                              מייל חזרה לנציג
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="w-full"
+                              onClick={() => void approveVehicleRenewalForRequest(row.id)}
+                              disabled={approvingRenewalId === row.id}
+                            >
+                              {approvingRenewalId === row.id ? (
+                                <span className="inline-flex items-center gap-1">
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  מאשר…
+                                </span>
+                              ) : (
+                                'אישור והחלה'
+                              )}
+                            </Button>
+                          </div>
+                        </TableCell>
+                        <TableCell className="max-w-[10rem] text-right text-xs break-all" dir="ltr">
+                          {rep || '—'}
+                        </TableCell>
+                        <TableCell className="tabular-nums" dir="ltr">
+                          {row.proposed_expiry_date
+                            ? String(row.proposed_expiry_date).slice(0, 10)
+                            : '—'}
+                        </TableCell>
+                        <TableCell className="text-right text-sm">{row.task_label ?? '—'}</TableCell>
+                        <TableCell className="text-right font-medium">{row.plate}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={resendLeasingDialog != null}
+        onOpenChange={(o) => {
+          if (!o) {
+            setResendLeasingDialog(null);
+            setResendNote('');
+          }
+        }}
+      >
+        <DialogContent dir="rtl" className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>מייל חזרה לנציג ליסינג</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            הנציג יקבל שוב את קישור הטופס להעלאת צילום חדש. ניתן להוסיף הסבר קצר למשל כשהסריקה לא ברורה.
+          </p>
+          <div className="space-y-2">
+            <Label htmlFor="resend-note">הערה לנציג (אופציונלי)</Label>
+            <Textarea
+              id="resend-note"
+              dir="rtl"
+              rows={4}
+              value={resendNote}
+              onChange={(e) => setResendNote(e.target.value)}
+              placeholder="לדוגמה: הצילום חשוך — נא לצלם מחדש את שני צדי הרישיון."
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setResendLeasingDialog(null);
+                setResendNote('');
+              }}
+              disabled={resendSending}
+            >
+              ביטול
+            </Button>
+            <Button type="button" onClick={() => void submitResendLeasingEmail()} disabled={resendSending}>
+              {resendSending ? (
                 <span className="inline-flex items-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   שולח…
