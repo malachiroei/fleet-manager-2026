@@ -189,22 +189,29 @@ serve(async (req) => {
       return json({ error: 'This task is not yet supported in public submit flow' }, 400);
     }
 
-    let closeErr = (
-      await admin
-        .from('compliance_requests')
-        .update({
-          status: 'completed',
-          completed_at: new Date().toISOString(),
-          consumed_at: new Date().toISOString(),
-        })
-        .eq('id', requestRow.id)
-    ).error;
-    const closeMsg = closeErr?.message ?? '';
-    if (
-      closeErr &&
-      (/completed_at|consumed_at|column/i.test(closeMsg) || /schema cache/i.test(closeMsg))
-    ) {
-      closeErr = (await admin.from('compliance_requests').update({ status: 'completed' }).eq('id', requestRow.id)).error;
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    let closeErr: { message?: string } | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await sleep(120 * attempt);
+      closeErr = (
+        await admin
+          .from('compliance_requests')
+          .update({
+            status: 'completed',
+            completed_at: new Date().toISOString(),
+            consumed_at: new Date().toISOString(),
+          })
+          .eq('id', requestRow.id)
+      ).error;
+      const closeMsg = closeErr?.message ?? '';
+      if (
+        closeErr &&
+        (/completed_at|consumed_at|column/i.test(closeMsg) || /schema cache/i.test(closeMsg))
+      ) {
+        closeErr = (await admin.from('compliance_requests').update({ status: 'completed' }).eq('id', requestRow.id)).error;
+      }
+      if (!closeErr) break;
     }
     if (closeErr) {
       console.error('[public-compliance-submit] compliance_requests close failed after successful upload:', closeErr);

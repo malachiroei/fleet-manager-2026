@@ -225,6 +225,15 @@ serve(async (req) => {
       return json({ error: 'Driver has no valid email' }, 400);
     }
 
+    /** מונע מצב שבו נשארות שתי בקשות sent/opened לאותו נהג+משימה — חתימה סוגרת רק אחת והמגדל נשאר «ממתין» */
+    await admin
+      .from('compliance_requests')
+      .update({ status: 'expired' })
+      .eq('org_id', orgId)
+      .eq('driver_id', driverId)
+      .eq('task_key', taskKey)
+      .in('status', ['sent', 'opened']);
+
     const baseUrl = clean(Deno.env.get('COMPLIANCE_UPDATE_BASE_URL')) || APP_URL_DEFAULT;
     const appBase = baseUrl.replace(/\/+$/, '');
     const token = randomToken();

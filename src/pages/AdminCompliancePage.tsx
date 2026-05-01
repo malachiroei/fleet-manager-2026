@@ -1223,12 +1223,18 @@ export default function AdminCompliancePage() {
         rows = rows.map((row) => {
           const id = String(row.id ?? '').trim();
           const pendingMeta = id ? pendingComplianceByDriverTask.get(`${id}::health_declaration`) : undefined;
-          /** בקשה פתוחה ב־compliance_requests — תמיד «ממתין» גם אם יש קובץ הצהרה ישן במסד (תאריך יכול להיות פג). סגירת הבקשה אחרי חתימה מטפלת ב־completed בשרת */
-          const awaiting = Boolean(id && pendingMeta);
+          const dueDaysHealth = daysUntil(row.health_declaration_date);
+          const hasHealthUrl = Boolean(
+            String((row as Record<string, unknown>).health_declaration_url ?? '').trim(),
+          );
+          /** נחשב «הושלם מבחינת נהג» כשיש תאריך תקף וקישור — גם אם בקשת ציות נשארה stat=sent בגלל כשל סגירה בשרת או בקשה כפולה */
+          const healthLooksComplete =
+            hasHealthUrl && dueDaysHealth != null && dueDaysHealth >= 0;
+          const awaiting = Boolean(id && pendingMeta && !healthLooksComplete);
           return {
             ...row,
             __awaitingEmployeeSignature: awaiting,
-            __compliancePendingMeta: pendingMeta ?? null,
+            __compliancePendingMeta: awaiting ? (pendingMeta ?? null) : null,
           };
         });
       }
