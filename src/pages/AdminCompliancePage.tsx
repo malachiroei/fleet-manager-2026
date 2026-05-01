@@ -195,6 +195,13 @@ function formatDate(raw: unknown): string {
   return d ? d.toLocaleDateString('he-IL') : '—';
 }
 
+/** תאריך ושעת שליחת בקשת ציות (ISO מהשרת) */
+function formatComplianceSentAt(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' });
+}
+
 function prettifyKey(key: string): string {
   const dict: Record<string, string> = {
     id: 'מזהה',
@@ -761,9 +768,31 @@ function ComplianceTable<T extends Record<string, unknown>>({
                   <TableCell className="text-right">
                     {tabKey === 'health_declaration' ? (
                       awaitingEmp ? (
-                        <span className="inline-flex items-center rounded-full border border-sky-400/40 bg-sky-500/15 px-2 py-0.5 text-xs font-semibold text-sky-200">
-                          ממתין להשלמת חתימה
-                        </span>
+                        <div className="flex flex-col items-end gap-0.5 text-right">
+                          <span className="inline-flex items-center rounded-full border border-sky-400/40 bg-sky-500/15 px-2 py-0.5 text-xs font-semibold text-sky-200">
+                            {(() => {
+                              const meta = (row as Record<string, unknown>).__compliancePendingMeta as
+                                | { sentAt?: string; status?: string }
+                                | null
+                                | undefined;
+                              return meta?.status === 'opened'
+                                ? 'ממתין לחתימת העובד (הקישור נפתח)'
+                                : 'ממתין לחתימת העובד';
+                            })()}
+                          </span>
+                          {(() => {
+                            const meta = (row as Record<string, unknown>).__compliancePendingMeta as
+                              | { sentAt?: string }
+                              | null
+                              | undefined;
+                            const sa = meta?.sentAt?.trim();
+                            return sa ? (
+                              <span className="max-w-[14rem] text-[10px] leading-snug text-muted-foreground tabular-nums">
+                                נשלח {formatComplianceSentAt(sa)}
+                              </span>
+                            ) : null;
+                          })()}
+                        </div>
                       ) : dueDays == null ? (
                         <span className="inline-flex items-center rounded-full border border-slate-500/40 bg-slate-700/40 px-2 py-0.5 text-xs font-semibold text-slate-200">
                           ממתין לשליחה
@@ -890,6 +919,7 @@ export default function AdminCompliancePage() {
   const { data: drivers = [], isLoading: driversLoading, refetch: refetchDrivers } = useQuery({
     queryKey: ['admin-compliance-drivers', orgId],
     enabled: isAdmin && orgId != null,
+    staleTime: 0,
     queryFn: async () => {
       if (!orgId) return [] as Driver[];
       const { data, error } = await supabase
@@ -900,24 +930,32 @@ export default function AdminCompliancePage() {
       if (error) throw error;
       return (data ?? []) as Driver[];
     },
+    refetchOnWindowFocus: true,
+    refetchInterval: 8000,
   });
 
-  type OpenComplianceRow = { driver_id: string | null; task_key: string | null };
+  type OpenComplianceRow = {
+    driver_id: string | null;
+    task_key: string | null;
+    status: string;
+    sent_at: string;
+  };
   const { data: openComplianceRequests = [] } = useQuery({
     queryKey: ['admin-compliance-open-requests', orgId],
     enabled: Boolean(isAdmin && orgId),
+    staleTime: 0,
     queryFn: async (): Promise<OpenComplianceRow[]> => {
       if (!orgId) return [];
       const { data, error } = await supabase
         .from('compliance_requests')
-        .select('driver_id, task_key')
+        .select('driver_id, task_key, status, sent_at')
         .eq('org_id', orgId)
         .in('status', ['sent', 'opened']);
       if (error) throw error;
       return (data ?? []) as OpenComplianceRow[];
     },
     refetchOnWindowFocus: true,
-    refetchInterval: 45_000,
+    refetchInterval: 8000,
   });
 
   /** עדכון מיידי כשעובד חותם בטופס ציבורי — בלי רענון ידני */
@@ -960,14 +998,19 @@ export default function AdminCompliancePage() {
     };
   }, [isAdmin, orgId, queryClient]);
 
-  const openComplianceAwaitingSignature = useMemo(() => {
-    const set = new Set<string>();
+  /** בקשות פתוחות לפי נהג+משימה — לתצוגת «ממתין לחתימה» ותאריך שליחה */
+  const pendingComplianceByDriverTask = useMemo(() => {
+    const m = new Map<string, { sentAt: string; status: string }>();
     for (const r of openComplianceRequests) {
       const d = String(r.driver_id ?? '').trim();
       const t = String(r.task_key ?? '').trim();
-      if (d && t) set.add(`${d}::${t}`);
+      if (!d || !t) continue;
+      m.set(`${d}::${t}`, {
+        sentAt: String(r.sent_at ?? ''),
+        status: String(r.status ?? '').trim() || 'sent',
+      });
     }
-    return set;
+    return m;
   }, [openComplianceRequests]);
 
   const [viewFilter, setViewFilter] = useState<TowerViewFilter>('urgent');
@@ -1122,13 +1165,14 @@ export default function AdminCompliancePage() {
           const hasSignedUpload = Boolean(
             String((row as Record<string, unknown>).health_declaration_url ?? '').trim(),
           );
+          const pendingMeta = id ? pendingComplianceByDriverTask.get(`${id}::health_declaration`) : undefined;
           /** בקשה פתוחה אך כבר יש קובץ חתימה בנהג — לא מציגים «ממתין» (למשל אם סגירת הבקשה בשרת נכשלה חלקית) */
-          const awaiting = Boolean(
-            id &&
-              openComplianceAwaitingSignature.has(`${id}::health_declaration`) &&
-              !hasSignedUpload,
-          );
-          return { ...row, __awaitingEmployeeSignature: awaiting };
+          const awaiting = Boolean(id && pendingMeta && !hasSignedUpload);
+          return {
+            ...row,
+            __awaitingEmployeeSignature: awaiting,
+            __compliancePendingMeta: pendingMeta ?? null,
+          };
         });
       }
 
@@ -1142,7 +1186,7 @@ export default function AdminCompliancePage() {
     viewFilter,
     customMinIso,
     customMaxIso,
-    openComplianceAwaitingSignature,
+    pendingComplianceByDriverTask,
   ]);
 
   const loading = vehiclesLoading || driversLoading;
@@ -1364,11 +1408,20 @@ export default function AdminCompliancePage() {
         throw new Error('השרת לא החזיר כתובת נמען תקינה.');
       }
 
-      if (!quiet) {
+      const persisted = (payload as { persisted_token?: boolean }).persisted_token !== false;
+      if (!persisted) {
+        toast.warning(
+          'המייל נשלח, אך הבקשה לא נשמרה במסד — הסטטוס במגדל הציות לא יתעדכן עד שמיגרציית compliance_requests תופעל.',
+          { duration: 12_000 },
+        );
+      } else if (!quiet) {
         toast.success('המייל נשלח בהצלחה');
-        await queryClient.invalidateQueries({ queryKey: ['admin-compliance-open-requests', orgIdRequired] });
-        await queryClient.invalidateQueries({ queryKey: ['admin-compliance-drivers', orgIdRequired] });
       }
+
+      await queryClient.invalidateQueries({ queryKey: ['admin-compliance-open-requests', orgIdRequired] });
+      await queryClient.invalidateQueries({ queryKey: ['admin-compliance-drivers', orgIdRequired] });
+      await queryClient.refetchQueries({ queryKey: ['admin-compliance-open-requests', orgIdRequired] });
+      await queryClient.refetchQueries({ queryKey: ['admin-compliance-drivers', orgIdRequired] });
       return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
