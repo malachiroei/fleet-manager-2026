@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, Navigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useSearchParams, type To } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FleetHudPageShell } from '@/components/FleetHudPageShell';
 import { Button } from '@/components/ui/button';
@@ -215,12 +215,6 @@ function normalizeInvokePayload(raw: unknown): Record<string, unknown> | null {
     }
   }
   return null;
-}
-
-/** קישור ל«כרטיס נהג» ברשימת הנהגים (גלילה לכרטיס), לא לדף המינימלי /edit */
-function driverCardListHref(driverId: string): string {
-  const id = String(driverId ?? '').trim();
-  return id ? `/drivers?highlightDriver=${encodeURIComponent(id)}` : '/drivers';
 }
 
 function prettifyKey(key: string): string {
@@ -572,7 +566,7 @@ type TabTableProps<T extends Record<string, unknown>> = {
   onSendRequest: (row: T) => void;
   requestDisabledReason: (row: T) => string | null;
   /** כשחסר אימייל — קישור לעריכת נהג למילוי אימייל */
-  driverEmailFixHref?: (row: T) => string | null;
+  driverEmailFixHref?: (row: T) => To | null;
   onApproveLicense: (row: T) => void;
   getApproveDateValue: (row: T) => string;
   setApproveDateValue: (row: T, next: string) => void;
@@ -761,9 +755,10 @@ function ComplianceTable<T extends Record<string, unknown>>({
                           })()
                         ) : (
                           <Link
-                            to={driverCardListHref(String(row.id ?? '').trim())}
+                            to={{ pathname: `/drivers/${String(row.id ?? '').trim()}/edit` }}
+                            state={{ complianceReturnTo: complianceReturnUrl }}
                             className="font-medium text-primary underline-offset-4 hover:underline"
-                            title="פתיחת כרטיס נהג ברשימת הנהגים"
+                            title="עריכת פרטי נהג"
                           >
                             {renderValue(row[col], col)}
                           </Link>
@@ -1227,12 +1222,9 @@ export default function AdminCompliancePage() {
       if (tab.key === 'health_declaration') {
         rows = rows.map((row) => {
           const id = String(row.id ?? '').trim();
-          const hasSignedUpload = Boolean(
-            String((row as Record<string, unknown>).health_declaration_url ?? '').trim(),
-          );
           const pendingMeta = id ? pendingComplianceByDriverTask.get(`${id}::health_declaration`) : undefined;
-          /** בקשה פתוחה אך כבר יש קובץ חתימה בנהג — לא מציגים «ממתין» (למשל אם סגירת הבקשה בשרת נכשלה חלקית) */
-          const awaiting = Boolean(id && pendingMeta && !hasSignedUpload);
+          /** בקשה פתוחה ב־compliance_requests — תמיד «ממתין» גם אם יש קובץ הצהרה ישן במסד (תאריך יכול להיות פג). סגירת הבקשה אחרי חתימה מטפלת ב־completed בשרת */
+          const awaiting = Boolean(id && pendingMeta);
           return {
             ...row,
             __awaitingEmployeeSignature: awaiting,
@@ -1434,6 +1426,17 @@ export default function AdminCompliancePage() {
         driver_name: driverName,
         cta_text: REQUEST_CTA_BY_TAB[tab.key],
       });
+
+      const earlyPayload = normalizeInvokePayload(data);
+      if (!error && earlyPayload) {
+        const earlyErr =
+          typeof earlyPayload.error === 'string' && earlyPayload.error.trim().length > 0
+            ? earlyPayload.error.trim()
+            : null;
+        if (earlyErr && earlyPayload.success !== true) {
+          throw new Error(earlyErr);
+        }
+      }
 
       if (error) {
         let detailed = error.message ?? 'שגיאה בשליחת הבקשה';
@@ -1812,12 +1815,13 @@ export default function AdminCompliancePage() {
                       onSendRequest={(row) => void submitComplianceRequest(tab, row)}
                       requestDisabledReason={(row) => requestDisabledReason(tab, row)}
                       driverEmailFixHref={(row) => {
+                        const state = { complianceReturnTo: complianceReturnUrl };
                         if (tab.source === 'driver') {
                           const id = String(row.id ?? '').trim();
-                          return id ? `/drivers/${id}/edit` : null;
+                          return id ? { pathname: `/drivers/${id}/edit`, state } : null;
                         }
                         const aid = String(row.assigned_driver_id ?? '').trim();
-                        return aid ? `/drivers/${aid}/edit` : null;
+                        return aid ? { pathname: `/drivers/${aid}/edit`, state } : null;
                       }}
                       onApproveLicense={(row) => void approveLicenseForRow(row)}
                       getApproveDateValue={(row) => approveDateForRow(row)}
