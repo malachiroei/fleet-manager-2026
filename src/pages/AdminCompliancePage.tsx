@@ -86,7 +86,8 @@ const DRIVER_KEYS: string[] = [
   'birth_date', 'family_permit_date', 'driving_permit', 'is_field_person', 'practical_driving_test_date',
 ];
 
-const VEHICLE_DEFAULT_COLUMNS = ['plate_number', 'manufacturer', 'model', 'status'];
+/** ללא status — סטטוס ציות מוצג בעמודה אחת לפי תאריך התוקף (לא שדה status מה-DB שלעיתים לא מסונכרן) */
+const VEHICLE_DEFAULT_COLUMNS = ['plate_number', 'manufacturer', 'model'];
 /** ללא status — תצוגת סטטוס מרוכזת בעמודה הייעודית «סטטוס» (עברית) */
 const DRIVER_DEFAULT_COLUMNS = ['full_name', 'id_number', 'phone', 'email'];
 
@@ -457,7 +458,11 @@ function complianceTableStatusNode(dueField: string, row: Record<string, unknown
       </span>
     );
   }
-  return <span className="text-xs text-muted-foreground">{db}</span>;
+  return (
+    <span className="text-xs text-muted-foreground" title={`ערך גולמי במערכת: ${db}`}>
+      {driverSystemStatusLabelHe(row.status)}
+    </span>
+  );
 }
 
 function SearchableColumnPicker({
@@ -618,7 +623,10 @@ function ComplianceTable<T extends Record<string, unknown>>({
   onApproveVehicleRenewal,
   approvingVehicleRenewalId,
 }: TabTableProps<T>) {
-  const safeColumns = columns.length > 0 ? columns : [dueField];
+  /** עמודת «סטטוס» ייעודית קיימת — לא לשכפל את שדה status מהרכב בעמודות הנתונים */
+  const baseCols = columns.length > 0 ? columns : [dueField];
+  const filteredCols = baseCols.filter((c) => !(rowSource === 'vehicle' && c === 'status'));
+  const safeColumns = filteredCols.length > 0 ? filteredCols : [dueField];
 
   const eligibilityByRow = rows.map((row) => {
     const dueDays = daysUntil(row[dueField]);
@@ -858,7 +866,7 @@ function ComplianceTable<T extends Record<string, unknown>>({
                         ממתין לאישור מנהל
                       </span>
                     ) : (
-                      <span className="text-xs text-muted-foreground">{driverSystemStatusLabelHe(row.status)}</span>
+                      complianceTableStatusNode(dueField, row as Record<string, unknown>)
                     )}
                   </TableCell>
                   <TableCell className="text-right">
@@ -1494,6 +1502,12 @@ export default function AdminCompliancePage() {
     options?: { silent?: boolean },
   ): Promise<boolean> => {
     const quiet = options?.silent === true;
+    if (tab.key === 'annual_licensing' || tab.key === 'insurance') {
+      if (!quiet) {
+        toast.error('רישוי שנתי וביטוח נשלחים דרך נציג ליסינג: לחצו «שלח בקשה», הזינו מייל בחלון ואשרו.');
+      }
+      return false;
+    }
     const orgIdRequired = String(orgId ?? '').trim();
     if (!orgIdRequired) {
       if (!quiet) toast.error('לא ניתן לשלוח בקשה: חסר org_id.');
