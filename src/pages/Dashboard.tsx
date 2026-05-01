@@ -185,7 +185,8 @@ export default function Dashboard() {
   const showDashboardTreatmentCard = false;
   const showDashboardTestCard = false;
   const showMaintenanceFormCard = false;
-  const totalAlerts = (alerts?.filter(a => a.status === 'expired' || a.status === 'warning').length) ?? 0;
+  /** כרטיס «התראות חריגה» + מרכז ציות: רק פג תוקף (ללא אזהרת 30 יום) */
+  const totalAlerts = (alerts?.filter((a) => a.status === 'expired').length) ?? 0;
   const isStatsLoading = isLoading || !stats;
   const isInitialUiLoading = loading || flagsPending;
 
@@ -214,7 +215,6 @@ export default function Dashboard() {
   const email = user?.email || '';
   const isMainAdmin = email.toLowerCase() === 'malachiroei@gmail.com';
   const isOwner = isMainAdmin;
-  const effectiveIsAdmin = isOwner || isAdmin;
   const { data: pendingUsersCount = 0 } = useQuery({
     queryKey: ['pending-users-count'],
     enabled: isMainAdmin,
@@ -455,17 +455,13 @@ export default function Dashboard() {
                   : card.getValue(stats);
                 const title =
                   card.titleKey === 'dashboard.replacementVehicle' ? 'רכב חליפי' : t(card.titleKey);
-                const link =
-                  card.titleKey === 'navigation.exceptionAlerts' && effectiveIsAdmin
-                    ? '/admin/compliance'
-                    : card.link;
                 return (
                   <StatusCard
                     key={card.link}
                     title={title}
                     value={value}
                     icon={Icon}
-                    link={link}
+                    link={card.link}
                     theme={card.theme}
                   />
                 );

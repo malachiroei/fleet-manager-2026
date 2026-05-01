@@ -9,7 +9,12 @@ import SignatureCanvas from 'react-signature-canvas';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { FleetDatePicker } from '@/components/ui/FleetDatePicker';
 import PhotoUpload from '@/components/PhotoUpload';
+
+/** התאמה לרקע כהה בעמוד הציבורי — כמו שדות תאריך בשאר המערכת */
+const publicFormDatePickerClass =
+  '[&_label]:text-slate-300 [&_input]:border-white/15 [&_input]:bg-black/30 [&_input]:text-white [&_input]:placeholder:text-slate-500';
 
 type PublicRequestItem = {
   driver_id: string | null;
@@ -264,7 +269,7 @@ export default function UpdateComplianceRequestPage() {
         declaredHealthExpiry.trim() &&
         !/^\d{4}-\d{2}-\d{2}$/.test(declaredHealthExpiry.trim())
       ) {
-        setError('תאריך תוקף מעודכן (אופציונלי) חייב בפורמט YYYY-MM-DD');
+        setError('תאריך תוקף ההצהרה — נא למלא תאריך מלא או למחוק את השדה.');
         return;
       }
     } else if (taskKey === 'driver_license') {
@@ -276,7 +281,7 @@ export default function UpdateComplianceRequestPage() {
         declaredLicenseExpiry.trim() &&
         !/^\d{4}-\d{2}-\d{2}$/.test(declaredLicenseExpiry.trim())
       ) {
-        setError('תאריך תוקף אופציונלי חייב בפורמט YYYY-MM-DD (למשל 2030-01-15)');
+        setError('תאריך תוקף הרישיון — נא למלא תאריך מלא או למחוק את השדה.');
         return;
       }
     }
@@ -436,19 +441,13 @@ export default function UpdateComplianceRequestPage() {
                   <div className="max-h-[min(52vh,480px)] overflow-y-auto rounded-md border border-white/10 bg-white p-4 text-black">
                     <HealthDeclarationLegalContent driverName={item?.driver_name ?? ''} />
                   </div>
-                  <div>
-                    <Label className="text-xs text-slate-300">
-                      תוקף ההצהרה במערכת (ברירת מחדל: 3 שנים — ניתן לערוך, פורמט YYYY-MM-DD)
-                    </Label>
-                    <Input
-                      type="text"
-                      value={declaredHealthExpiry}
-                      onChange={(e) => setDeclaredHealthExpiry(e.target.value.trim())}
-                      placeholder="למשל 2027-12-31"
-                      className="mt-1 border-white/15 bg-black/30 font-mono text-white"
-                      dir="ltr"
-                    />
-                  </div>
+                  <FleetDatePicker
+                    id="public-health-decl-expiry"
+                    label="תוקף ההצהרה במערכת (ברירת מחדל: 3 שנים — ניתן לערוך)"
+                    value={declaredHealthExpiry}
+                    onChange={setDeclaredHealthExpiry}
+                    className={publicFormDatePickerClass}
+                  />
                   <p className="text-xs text-slate-400">
                     לאחר השליחה יישמר קובץ תמונה אחד הכולל את הנוסח, שמך והחתימה — כפי שיוצג בכרטיס הנהג.
                   </p>
@@ -496,17 +495,13 @@ export default function UpdateComplianceRequestPage() {
                       dir="ltr"
                     />
                   </div>
-                  <div>
-                    <Label className="text-xs text-slate-300">תאריך תוקף חדש (אופציונלי, פורמט YYYY-MM-DD)</Label>
-                    <Input
-                      type="text"
-                      value={declaredLicenseExpiry}
-                      onChange={(e) => setDeclaredLicenseExpiry(e.target.value.trim())}
-                      placeholder="2030-12-31"
-                      className="mt-1 border-white/15 bg-black/30 font-mono text-white"
-                      dir="ltr"
-                    />
-                  </div>
+                  <FleetDatePicker
+                    id="public-license-expiry"
+                    label="תאריך תוקף רישיון חדש (אופציונלי)"
+                    value={declaredLicenseExpiry}
+                    onChange={setDeclaredLicenseExpiry}
+                    className={publicFormDatePickerClass}
+                  />
                 </div>
               </div>
             ) : null}
