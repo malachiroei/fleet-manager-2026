@@ -189,6 +189,7 @@ export function useDriver(id: string) {
   return useQuery({
     queryKey: ['driver', id, orgId],
     enabled: !!id && orgId != null && fleetListReady,
+    refetchOnMount: 'always',
     queryFn: async () => {
       if (orgId == null) return null;
       // בלי .or(managed_by…) כאן — שילוב עם .eq('id') שובר PostgREST (400). הרשאות: RLS + org_id.

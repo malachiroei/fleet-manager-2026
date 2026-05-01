@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FleetHudPageShell } from '@/components/FleetHudPageShell';
 import { Button } from '@/components/ui/button';
@@ -170,7 +170,7 @@ function complianceRequestSendBarrier(
     tab.key === 'health_declaration' &&
     Boolean((row as { __awaitingEmployeeSignature?: boolean }).__awaitingEmployeeSignature);
   const baseBarrier =
-    awaitingEmp ? 'כבר נשלח קישור — ממתין לחתימת העובד' : requestDisabledReason(row);
+    awaitingEmp ? 'כבר נשלח קישור — ממתין להשלמת חתימה במערכת' : requestDisabledReason(row);
   const dueDays = daysUntil(row[tab.dueField]);
   const farBarrier =
     dueDays != null && dueDays > COMPLIANCE_SEND_MAX_DAYS_REMAINING
@@ -324,6 +324,68 @@ function driverSystemStatusLabelHe(raw: unknown): string {
   return map[low] ?? s;
 }
 
+/** ערך חסר בטבלת ציות — מאפשר קישור לטופס השלמה */
+function complianceRawMissing(raw: unknown): boolean {
+  if (raw == null) return true;
+  const s = String(raw).trim();
+  return s === '' || s.toLowerCase() === 'null';
+}
+
+/** מזהה אלמנט ל־hash בלי # — לפי React Router */
+function vehicleDueFieldHash(dueField: string): string {
+  const map: Record<string, string> = {
+    test_expiry: 'test_expiry',
+    insurance_expiry: 'insurance_expiry',
+    next_maintenance_date: 'next_maintenance_date',
+    next_inspection_date: 'next_inspection_date',
+  };
+  const id = map[dueField];
+  return id ?? 'test_expiry';
+}
+
+function driverDueFieldHash(dueField: string): string {
+  const map: Record<string, string> = {
+    license_expiry: 'license_expiry',
+    health_declaration_date: 'health_declaration_date',
+    regulation_585b_date: 'regulation_585b_date',
+  };
+  const id = map[dueField];
+  return id ?? 'license_expiry';
+}
+
+function columnFieldHash(rowSource: ComplianceSource, col: string): string | null {
+  if (rowSource === 'vehicle') {
+    const allowed = new Set(['plate_number', 'manufacturer', 'model']);
+    return allowed.has(col) ? col : null;
+  }
+  const allowed = new Set(['full_name', 'id_number', 'phone', 'email']);
+  return allowed.has(col) ? col : null;
+}
+
+function complianceEditLinkProps(
+  rowSource: ComplianceSource,
+  dueField: string,
+  row: Record<string, unknown>,
+  returnUrl: string,
+  mode: 'due' | 'column',
+  col?: string,
+): { to: { pathname: string; hash?: string }; state: { complianceReturnTo: string } } | null {
+  const id = String(row.id ?? '').trim();
+  if (!id) return null;
+  const state = { complianceReturnTo: returnUrl };
+  if (mode === 'due') {
+    if (rowSource === 'vehicle') {
+      return { to: { pathname: `/vehicles/${id}/edit`, hash: vehicleDueFieldHash(dueField) }, state };
+    }
+    return { to: { pathname: `/drivers/${id}/edit`, hash: driverDueFieldHash(dueField) }, state };
+  }
+  if (!col) return null;
+  const h = columnFieldHash(rowSource, col);
+  if (!h) return null;
+  const pathname = rowSource === 'vehicle' ? `/vehicles/${id}/edit` : `/drivers/${id}/edit`;
+  return { to: { pathname, hash: h }, state };
+}
+
 function renderValue(raw: unknown, col?: string): string {
   if (col === 'status') return driverSystemStatusLabelHe(raw);
   if (raw == null || raw === '') return '—';
@@ -474,6 +536,10 @@ type TabTableProps<T extends Record<string, unknown>> = {
   columns: string[];
   dueField: string;
   tabKey: ComplianceTabKey;
+  /** רכבים או נהגים — לקישור עמודת שם מלא */
+  rowSource: ComplianceSource;
+  /** חזרה ממסכי עריכה אחרי השלמת שדות חסרים */
+  complianceReturnUrl: string;
   emptyLabel: string;
   onSendRequest: (row: T) => void;
   requestDisabledReason: (row: T) => string | null;
@@ -496,6 +562,8 @@ function ComplianceTable<T extends Record<string, unknown>>({
   columns,
   dueField,
   tabKey,
+  rowSource,
+  complianceReturnUrl,
   emptyLabel,
   onSendRequest,
   requestDisabledReason,
@@ -585,7 +653,11 @@ function ComplianceTable<T extends Record<string, unknown>>({
               return (
                 <TableRow
                   key={String(row.id ?? idx)}
-                  className={rowUrgent ? 'bg-red-500/10 hover:bg-red-500/15' : undefined}
+                  className={
+                    rowUrgent
+                      ? 'bg-red-500/10 transition-colors hover:bg-red-500/15'
+                      : 'transition-colors hover:bg-red-500/12'
+                  }
                 >
                   <TableCell className="px-2 align-middle text-center">
                     <div className="flex justify-center">
@@ -626,18 +698,71 @@ function ComplianceTable<T extends Record<string, unknown>>({
                       rowUrgent ? 'text-red-400 font-semibold' : band === 'yellow' ? 'text-amber-200/95' : band === 'green' ? 'text-emerald-200/90' : ''
                     }`}
                   >
-                    {formatDate(row[dueField])}
+                    {(() => {
+                      const dueRaw = row[dueField];
+                      if (complianceRawMissing(dueRaw)) {
+                        const lp = complianceEditLinkProps(rowSource, dueField, row, complianceReturnUrl, 'due');
+                        return lp ? (
+                          <Link
+                            {...lp}
+                            className="font-medium text-primary underline-offset-4 hover:underline"
+                            title="מעבר לעריכה להשלמת תאריך התוקף"
+                          >
+                            {formatDate(dueRaw)}
+                          </Link>
+                        ) : (
+                          formatDate(dueRaw)
+                        );
+                      }
+                      return formatDate(dueRaw);
+                    })()}
                   </TableCell>
                   {safeColumns.map((col) => (
                     <TableCell key={`${String(row.id ?? idx)}-${col}`} className="text-right">
-                      {renderValue(row[col], col)}
+                      {rowSource === 'driver' && col === 'full_name' && String(row.id ?? '').trim() ? (
+                        complianceRawMissing(row[col]) ? (
+                          (() => {
+                            const lp = complianceEditLinkProps(rowSource, dueField, row, complianceReturnUrl, 'column', 'full_name');
+                            return lp ? (
+                              <Link {...lp} className="font-medium text-primary underline-offset-4 hover:underline" title="השלמת שם מלא בעריכת נהג">
+                                {renderValue(row[col], col)}
+                              </Link>
+                            ) : (
+                              renderValue(row[col], col)
+                            );
+                          })()
+                        ) : (
+                          <Link
+                            to={`/drivers/${String(row.id ?? '').trim()}`}
+                            className="font-medium text-primary underline-offset-4 hover:underline"
+                            title="פתיחת כרטיס נהג"
+                          >
+                            {renderValue(row[col], col)}
+                          </Link>
+                        )
+                      ) : complianceRawMissing(row[col]) &&
+                        columnFieldHash(rowSource, col) &&
+                        String(row.id ?? '').trim() ? (
+                        (() => {
+                          const lp = complianceEditLinkProps(rowSource, dueField, row, complianceReturnUrl, 'column', col);
+                          return lp ? (
+                            <Link {...lp} className="font-medium text-primary underline-offset-4 hover:underline" title="מעבר לעריכה להשלמת השדה">
+                              {renderValue(row[col], col)}
+                            </Link>
+                          ) : (
+                            renderValue(row[col], col)
+                          );
+                        })()
+                      ) : (
+                        renderValue(row[col], col)
+                      )}
                     </TableCell>
                   ))}
                   <TableCell className="text-right">
                     {tabKey === 'health_declaration' ? (
                       awaitingEmp ? (
                         <span className="inline-flex items-center rounded-full border border-sky-400/40 bg-sky-500/15 px-2 py-0.5 text-xs font-semibold text-sky-200">
-                          ממתין לחתימת עובד
+                          ממתין להשלמת חתימה
                         </span>
                       ) : dueDays == null ? (
                         <span className="inline-flex items-center rounded-full border border-slate-500/40 bg-slate-700/40 px-2 py-0.5 text-xs font-semibold text-slate-200">
@@ -759,6 +884,7 @@ function ComplianceTable<T extends Record<string, unknown>>({
 export default function AdminCompliancePage() {
   const { isAdmin, activeOrgId, profile, user } = useAuth();
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const orgId = activeOrgId ?? profile?.org_id ?? null;
   const { data: vehicles = [], isLoading: vehiclesLoading } = useVehicles();
   const { data: drivers = [], isLoading: driversLoading, refetch: refetchDrivers } = useQuery({
@@ -790,7 +916,49 @@ export default function AdminCompliancePage() {
       if (error) throw error;
       return (data ?? []) as OpenComplianceRow[];
     },
+    refetchOnWindowFocus: true,
+    refetchInterval: 45_000,
   });
+
+  /** עדכון מיידי כשעובד חותם בטופס ציבורי — בלי רענון ידני */
+  useEffect(() => {
+    if (!isAdmin || !orgId) return;
+
+    const invalidateTower = () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin-compliance-drivers', orgId] });
+      void queryClient.invalidateQueries({ queryKey: ['admin-compliance-open-requests', orgId] });
+      void queryClient.invalidateQueries({ queryKey: ['drivers'] });
+      void queryClient.invalidateQueries({ queryKey: ['driver'] });
+    };
+
+    const channel = supabase
+      .channel(`admin-compliance-realtime-${orgId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'drivers',
+          filter: `org_id=eq.${orgId}`,
+        },
+        invalidateTower,
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'compliance_requests',
+          filter: `org_id=eq.${orgId}`,
+        },
+        invalidateTower,
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [isAdmin, orgId, queryClient]);
 
   const openComplianceAwaitingSignature = useMemo(() => {
     const set = new Set<string>();
@@ -809,6 +977,31 @@ export default function AdminCompliancePage() {
   const [approvingRowKey, setApprovingRowKey] = useState<string | null>(null);
   const [approveExpiryByDriverId, setApproveExpiryByDriverId] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<ComplianceTabKey>('annual_licensing');
+  const complianceReturnUrl = useMemo(
+    () => `/admin/compliance?tab=${encodeURIComponent(activeTab)}`,
+    [activeTab],
+  );
+
+  useEffect(() => {
+    const t = searchParams.get('tab');
+    if (t && TAB_DEFS.some((x) => x.key === t)) {
+      setActiveTab(t as ComplianceTabKey);
+    }
+  }, [searchParams]);
+
+  const handleComplianceTabChange = (v: string) => {
+    const key = v as ComplianceTabKey;
+    setActiveTab(key);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('tab', key);
+        return next;
+      },
+      { replace: true },
+    );
+  };
+
   const [bulkSendSelectionIds, setBulkSendSelectionIds] = useState<Set<string>>(() => new Set());
   const [bulkSending, setBulkSending] = useState(false);
   const [visibleByTab, setVisibleByTab] = useState<Record<ComplianceTabKey, string[]>>({
@@ -926,8 +1119,14 @@ export default function AdminCompliancePage() {
       if (tab.key === 'health_declaration') {
         rows = rows.map((row) => {
           const id = String(row.id ?? '').trim();
+          const hasSignedUpload = Boolean(
+            String((row as Record<string, unknown>).health_declaration_url ?? '').trim(),
+          );
+          /** בקשה פתוחה אך כבר יש קובץ חתימה בנהג — לא מציגים «ממתין» (למשל אם סגירת הבקשה בשרת נכשלה חלקית) */
           const awaiting = Boolean(
-            id && openComplianceAwaitingSignature.has(`${id}::health_declaration`),
+            id &&
+              openComplianceAwaitingSignature.has(`${id}::health_declaration`) &&
+              !hasSignedUpload,
           );
           return { ...row, __awaitingEmployeeSignature: awaiting };
         });
@@ -1323,6 +1522,7 @@ export default function AdminCompliancePage() {
         .eq('id', driverId)
         .eq('org_id', orgIdRequired);
       if (error) throw error;
+      void queryClient.invalidateQueries({ queryKey: ['admin-compliance-open-requests', orgIdRequired] });
       void refetchDrivers();
       toast.success('הרישיון אושר ותוקף הרישיון עודכן');
     } catch (err) {
@@ -1339,14 +1539,14 @@ export default function AdminCompliancePage() {
 
   return (
     <FleetHudPageShell
-      title="Compliance Tower"
-      subtitle="מרכז בקרה לפקיעות כלי רכב ונהגים לפי סף ימים דינמי"
+      title="מגדל ציות"
+      subtitle="מרכז בקרה לתאריכי תוקף: רישוי רכב, ביטוח, טיפולים, ביקורות ותוקפי נהגים"
     >
       <div className="mx-auto max-w-[1400px] space-y-4 pb-8" dir="rtl">
         <Card>
           <CardHeader className="pb-3">
             <CardTitle>הגדרות תצוגה</CardTitle>
-            <CardDescription>הנתונים בטבלאות מתעדכנים מיידית לפי סף הימים שתבחרי</CardDescription>
+            <CardDescription>הנתונים בטבלאות מתעדכנים לפי סינון התצוגה והטאב הנבחר</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap items-end gap-3">
             <div className="w-full space-y-2">
@@ -1410,14 +1610,26 @@ export default function AdminCompliancePage() {
           </CardContent>
         </Card>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as ComplianceTabKey)}>
+        <Tabs value={activeTab} onValueChange={handleComplianceTabChange}>
           <TabsList className="flex h-auto flex-wrap justify-start gap-2 bg-transparent p-0">
             {TAB_DEFS.map((tab) => (
-              <TabsTrigger key={tab.key} value={tab.key} className="rounded-md border bg-card data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <TabsTrigger
+                key={tab.key}
+                value={tab.key}
+                className="rounded-lg border border-border/70 bg-muted/40 px-3 py-2 text-sm shadow-sm transition-all data-[state=active]:border-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md data-[state=inactive]:opacity-75 hover:data-[state=inactive]:opacity-100"
+              >
                 {tab.label}
               </TabsTrigger>
             ))}
           </TabsList>
+          <div className="mt-3 w-full rounded-lg border border-primary/35 bg-primary/10 px-3 py-2.5 text-right text-sm">
+            <span className="text-muted-foreground">מציג כעת: </span>
+            <span className="font-semibold text-foreground">{activeDef.label}</span>
+            <span className="mx-1.5 text-muted-foreground">·</span>
+            <span className="text-muted-foreground">
+              {activeDef.source === 'vehicle' ? 'נתוני רכבים' : 'נתוני נהגים'}
+            </span>
+          </div>
 
           {TAB_DEFS.map((tab) => {
             const selectedCountForTab = tabData[tab.key].filter((r) =>
@@ -1464,6 +1676,8 @@ export default function AdminCompliancePage() {
                       columns={visibleByTab[tab.key]}
                       dueField={tab.dueField}
                       tabKey={tab.key}
+                      rowSource={tab.source}
+                      complianceReturnUrl={complianceReturnUrl}
                       onSendRequest={(row) => void submitComplianceRequest(tab, row)}
                       requestDisabledReason={(row) => requestDisabledReason(tab, row)}
                       driverEmailFixHref={(row) => {

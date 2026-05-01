@@ -111,23 +111,13 @@ serve(async (req) => {
         /* תוקף ההצהרה במערכת: ברירת מחדל 3 שנים מיום החתימה כשלא הוזן תאריך */
         addYearsToYmdUtc(nowIsoDate, 3);
 
-      const { error: updErr } = await admin
-        .from('drivers')
-        .update({
-          health_declaration_date: healthDateForDriver,
-          health_declaration_url: fileUrl,
-          status: 'active',
-        })
-        .eq('id', requestRow.driver_id)
-        .eq('org_id', requestRow.org_id);
-      if (updErr) return json({ error: updErr.message }, 500);
-
       const meta = {
         declared_health_expiry: declaredHealthYmd,
         submitted_on_date: nowIsoDate,
         default_three_year_expiry: declaredHealthYmd == null,
       };
 
+      /** מסמכים לפני עדכון נהג — כדי שלא יישמר תאריך/URL בנהג אם רישום המסמכים נכשל */
       const { error: docErr } = await admin.from('compliance_docs').insert({
         request_id: requestRow.id,
         org_id: requestRow.org_id,
@@ -145,6 +135,17 @@ serve(async (req) => {
         file_url: fileUrl,
       });
       if (ddErr) return json({ error: ddErr.message }, 500);
+
+      const { error: updErr } = await admin
+        .from('drivers')
+        .update({
+          health_declaration_date: healthDateForDriver,
+          health_declaration_url: fileUrl,
+          status: 'active',
+        })
+        .eq('id', requestRow.driver_id)
+        .eq('org_id', requestRow.org_id);
+      if (updErr) return json({ error: updErr.message }, 500);
     } else if (requestRow.task_key === 'driver_license') {
       const licenseUrl = clean(body.license_image_data_url);
       if (!licenseUrl) return json({ error: 'Missing license image' }, 400);

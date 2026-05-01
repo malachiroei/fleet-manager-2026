@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   useVehicleSpecDirty,
   DIRTY_SOURCE_DRIVER_EDIT,
@@ -31,6 +31,8 @@ import { formatSupabaseError } from '@/lib/supabaseError';
 export default function EditDriverPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const complianceReturnTo = (location.state as { complianceReturnTo?: string } | null)?.complianceReturnTo?.trim() ?? '';
   const { data: driver, isLoading } = useDriver(id || '');
   const updateDriver = useUpdateDriver();
   const deleteDriver = useDeleteDriver();
@@ -74,6 +76,14 @@ export default function EditDriverPage() {
   useEffect(() => {
     return () => setDirty(DIRTY_SOURCE_DRIVER_EDIT, false);
   }, [setDirty]);
+
+  useEffect(() => {
+    const h = window.location.hash.replace(/^#/, '').trim();
+    if (!h || !driver?.id) return;
+    requestAnimationFrame(() => {
+      document.getElementById(h)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }, [driver?.id, location.hash]);
 
   useEffect(() => {
     if (!driver?.id) return;
@@ -182,7 +192,9 @@ export default function EditDriverPage() {
 
       toast.success('הנהג עודכן בהצלחה');
       setDirty(DIRTY_SOURCE_DRIVER_EDIT, false);
-      navigate('/drivers', { replace: true });
+      if (!complianceReturnTo) {
+        navigate('/drivers', { replace: true });
+      }
     } catch (error) {
       // מציג את השגיאה המדויקת מה-DB (RLS, constraint, עמודה חסרה וכו')
       const description = formatSupabaseError(error);
@@ -214,7 +226,18 @@ export default function EditDriverPage() {
     <div className="fleet-screen-page text-white">
       <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="container py-4">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            {complianceReturnTo ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                onClick={() => navigate(complianceReturnTo)}
+              >
+                חזרה למגדל ציות
+              </Button>
+            ) : null}
             <h1 className="font-bold text-xl">עריכת נהג - {driver.full_name}</h1>
           </div>
         </div>

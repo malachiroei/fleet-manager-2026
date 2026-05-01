@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   useVehicleSpecDirty,
   DIRTY_SOURCE_VEHICLE_EDIT,
@@ -24,6 +24,8 @@ import { normalizePlateNumber } from '@/lib/plateNumber';
 export default function EditVehiclePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const complianceReturnTo = (location.state as { complianceReturnTo?: string } | null)?.complianceReturnTo?.trim() ?? '';
   const { data: vehicle, isLoading } = useVehicle(id || '');
   const { data: drivers } = useDrivers();
   const { data: activeAssignments } = useActiveDriverVehicleAssignments();
@@ -48,6 +50,7 @@ export default function EditVehiclePage() {
   const [vehTest, setVehTest] = useState('');
   const [vehIns, setVehIns] = useState('');
   const [vehNextMaint, setVehNextMaint] = useState('');
+  const [vehNextInspection, setVehNextInspection] = useState('');
   const [vehLastService, setVehLastService] = useState('');
   const datesInitForId = useRef<string | null>(null);
 
@@ -82,8 +85,17 @@ export default function EditVehiclePage() {
     setVehTest(slice10(vehicle.test_expiry));
     setVehIns(slice10(vehicle.insurance_expiry));
     setVehNextMaint(slice10(vehicle.next_maintenance_date));
+    setVehNextInspection(slice10(vehicle.next_inspection_date));
     setVehLastService(slice10(vehicle.last_service_date));
   }, [vehicle]);
+
+  useEffect(() => {
+    const h = location.hash.replace(/^#/, '').trim();
+    if (!h || !vehicle?.id) return;
+    requestAnimationFrame(() => {
+      document.getElementById(h)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }, [vehicle?.id, location.hash]);
 
   useEffect(() => {
     if (!pricingData) return;
@@ -188,6 +200,7 @@ export default function EditVehiclePage() {
         is_active: activeValue,
         test_expiry: vehTest,
         insurance_expiry: vehIns,
+        next_inspection_date: vehNextInspection.trim() || null,
         next_maintenance_km: formData.get('next_maintenance_km') ? parseInt(formData.get('next_maintenance_km') as string) : null,
         next_maintenance_date: vehNextMaint.trim() || null,
         last_service_date: vehLastService.trim() || null,
@@ -237,7 +250,9 @@ export default function EditVehiclePage() {
 
       toast.success('הרכב עודכן בהצלחה');
       setDirty(DIRTY_SOURCE_VEHICLE_EDIT, false);
-      navigate(`/vehicles/${vehicle.id}`);
+      if (!complianceReturnTo) {
+        navigate(`/vehicles/${vehicle.id}`);
+      }
     } catch (error) {
       toast.error('שגיאה בעדכון הרכב');
       setIsSubmitting(false);
@@ -370,6 +385,15 @@ export default function EditVehiclePage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FleetDatePicker id="test_expiry" label="תוקף טסט *" value={vehTest} onChange={setVehTest} />
                 <FleetDatePicker id="insurance_expiry" label="תוקף ביטוח *" value={vehIns} onChange={setVehIns} />
+                <FleetDatePicker
+                  id="next_inspection_date"
+                  label="ביקורת תקופתית הבאה (6 חודשים)"
+                  value={vehNextInspection}
+                  onChange={(v) => {
+                    markVehicleEditDirty();
+                    setVehNextInspection(v);
+                  }}
+                />
                 <div><Label htmlFor="next_maintenance_km">ק"מ לטיפול הבא</Label><Input id="next_maintenance_km" name="next_maintenance_km" type="number" defaultValue={vehicle.next_maintenance_km || ''} dir="ltr" /></div>
                 <FleetDatePicker id="next_maintenance_date" label="תאריך טיפול הבא" value={vehNextMaint} onChange={setVehNextMaint} />
                 <FleetDatePicker id="last_service_date" label="תאריך טיפול אחרון" value={vehLastService} onChange={setVehLastService} />
