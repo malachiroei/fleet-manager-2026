@@ -202,6 +202,27 @@ function formatComplianceSentAt(iso: string): string {
   return d.toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' });
 }
 
+/** תשובת Edge לפעמים מחרוזת JSON או אובייקט — נרמול לשדות כמו persisted_token */
+function normalizeInvokePayload(raw: unknown): Record<string, unknown> | null {
+  if (raw == null) return null;
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
+  if (typeof raw === 'string') {
+    try {
+      const p = JSON.parse(raw) as unknown;
+      return typeof p === 'object' && p !== null && !Array.isArray(p) ? (p as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/** קישור ל«כרטיס נהג» ברשימת הנהגים (גלילה לכרטיס), לא לדף המינימלי /edit */
+function driverCardListHref(driverId: string): string {
+  const id = String(driverId ?? '').trim();
+  return id ? `/drivers?highlightDriver=${encodeURIComponent(id)}` : '/drivers';
+}
+
 function prettifyKey(key: string): string {
   const dict: Record<string, string> = {
     id: 'מזהה',
@@ -740,9 +761,9 @@ function ComplianceTable<T extends Record<string, unknown>>({
                           })()
                         ) : (
                           <Link
-                            to={`/drivers/${String(row.id ?? '').trim()}`}
+                            to={driverCardListHref(String(row.id ?? '').trim())}
                             className="font-medium text-primary underline-offset-4 hover:underline"
-                            title="פתיחת כרטיס נהג"
+                            title="פתיחת כרטיס נהג ברשימת הנהגים"
                           >
                             {renderValue(row[col], col)}
                           </Link>
@@ -1433,34 +1454,40 @@ export default function AdminCompliancePage() {
         throw new Error(detailed);
       }
 
-      const payload = data as { success?: boolean; error?: string; sent_to?: string } | null | undefined;
+      const payload = normalizeInvokePayload(data);
+      if (!payload) {
+        throw new Error('תשובת שרת ריקה או לא תקינה לשליחת מייל.');
+      }
       const bodyErr =
-        payload && typeof payload.error === 'string' && payload.error.trim().length > 0
-          ? payload.error.trim()
-          : null;
+        typeof payload.error === 'string' && payload.error.trim().length > 0 ? payload.error.trim() : null;
       if (bodyErr) {
         throw new Error(bodyErr);
       }
-      if (payload?.success !== true && !payload?.sent_to) {
+      const sendLooksOk =
+        payload.success === true ||
+        Boolean(payload.sent_to) ||
+        (typeof payload.token === 'string' && payload.token.length > 0);
+      if (!sendLooksOk) {
         throw new Error(
           'תשובת שרת לא תקינה לשליחת מייל. ודא ש־Edge Function send-compliance-request מעודכנת.',
         );
       }
 
-      const sentTo = String(payload?.sent_to ?? driverEmail).trim().toLowerCase();
+      const sentTo = String(payload.sent_to ?? driverEmail).trim().toLowerCase();
       if (!sentTo.includes('@')) {
         throw new Error('השרת לא החזיר כתובת נמען תקינה.');
       }
 
-      const persisted = (payload as { persisted_token?: boolean }).persisted_token !== false;
+      /** רק אם השרת מחזיר במפורש false — אין שמירת בקשה במסד */
+      const persistedExplicitFalse = payload?.persisted_token === false;
       const pendingKey = `${driverId}::${tab.key}`;
-      if (persisted) {
+      if (!persistedExplicitFalse) {
         setOptimisticCompliancePending((prev) => ({
           ...prev,
           [pendingKey]: { sentAt: new Date().toISOString() },
         }));
       }
-      if (!persisted) {
+      if (persistedExplicitFalse) {
         toast.warning(
           'המייל נשלח, אך הבקשה לא נשמרה במסד — הסטטוס במגדל הציות לא יתעדכן עד שמיגרציית compliance_requests תופעל.',
           { duration: 12_000 },

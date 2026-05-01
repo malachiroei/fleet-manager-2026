@@ -43,6 +43,7 @@ export default function EditDriverPage() {
   const [licenseFront, setLicenseFront] = useState<File | null>(null);
   const [licenseBack, setLicenseBack] = useState<File | null>(null);
   const [healthDeclaration, setHealthDeclaration] = useState<File | null>(null);
+  const [healthDeclarationImgBroken, setHealthDeclarationImgBroken] = useState(false);
 
   const slice10 = (x: string | null | undefined) =>
     x && String(x).length >= 10 ? String(x).slice(0, 10) : '';
@@ -95,6 +96,10 @@ export default function EditDriverPage() {
     setSafetyTrainDate(slice10(driver.safety_training_date));
     setReg585Date(slice10(driver.regulation_585b_date));
   }, [driver]);
+
+  useEffect(() => {
+    setHealthDeclarationImgBroken(false);
+  }, [driver?.health_declaration_url]);
 
   if (isLoading) {
     return (
@@ -370,9 +375,30 @@ export default function EditDriverPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>הצהרת בריאות</Label>
-                  {driver.health_declaration_url && (
-                    <img src={driver.health_declaration_url} alt="הצהרת בריאות" className="w-full h-32 object-contain rounded border border-border/40 bg-black/20" />
-                  )}
+                  {driver.health_declaration_url ? (
+                    <>
+                      {!healthDeclarationImgBroken ? (
+                        <img
+                          src={driver.health_declaration_url}
+                          alt="הצהרת בריאות"
+                          className="w-full h-32 object-contain rounded border border-border/40 bg-black/20"
+                          onError={() => setHealthDeclarationImgBroken(true)}
+                        />
+                      ) : (
+                        <p className="text-xs text-amber-300/90">
+                          לא ניתן להציג תצוגה מקדימה (הקובץ בשרת — ייתכן שהאחסון לא ציבורי). פתחי את הקישור למטה.
+                        </p>
+                      )}
+                      <a
+                        href={driver.health_declaration_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-block text-xs font-medium text-primary underline underline-offset-2"
+                      >
+                        פתיחת קובץ החתימה / הצהרה בלשונית חדשה
+                      </a>
+                    </>
+                  ) : null}
                   <Input
                     type="file"
                     accept="image/*,application/pdf"
