@@ -78,6 +78,34 @@ function formatDueHebrewUtc(ymd: string | null): string {
   }
 }
 
+/** יישור עם `src/lib/healthDeclarationLegalHe.tsx` — טקסט ההצהרה במייל */
+function healthDeclarationEmailLegalHtml(driverName: string): string {
+  const signer = escHtml(driverName.trim() || '________________');
+  const paragraphs: string[] = [
+    'מצהיר בזה כי לא נתגלו אצלי, למיטב ידיעתי, מגבלות במערכת העצבים, העצמות, הראיה או השמיעה ומצב בריאותי הנוכחי כשיר לנהיגה.',
+    '1. לא נפסלתי מלהחזיק ברישיון נהיגה מבית משפט רשות הרישוי או קצין משטרה, ולחלופין רישיון הנהיגה אשר ברשותי לא הושעה על ידי גורמים כאמור.',
+    '2. אין לי כל מגבלה בריאותית או רפואית המונעת ממני להחזיק ברישיון נהיגה.',
+    '3. אינני צורך סמים.',
+    '4. אינני צורך אלכוהול מעבר לכמות המותרת על פי דין בעת נהיגה. אני מתחייב/ת כי במידה ויוטלו הגבלות איזה שהן על רישיון הנהיגה אשר ברשותי ולחלופין, במידה יחול שינוי במצב בריאותי באופן המונע ממני מלהמשיך ולנהוג, אדווח על כך מיידית לקצין הבטיחות.',
+    '5. הנני מצהיר/ה בזאת כי קיבלתי הדרכה לצורך תפעול וההפעלה של הרכב.',
+    'ידוע לי שלפי תקנה 585א קצין הבטיחות בתעבורה בחברה מחויב לבדוק את נתוני רישיון הנהיגה שלי במשרד הרישוי.',
+    'אני מצהיר בזה כי הצהרתי הנ״ל אמת.',
+  ];
+  const inner = paragraphs
+    .map(
+      (t) =>
+        `<p style="margin:10px 0;line-height:1.75;color:#1e293b;font-size:14px;">${escHtml(t)}</p>`,
+    )
+    .join('');
+  return `
+  <div style="border:1px solid #e2e8f0;border-radius:12px;padding:20px;margin:18px 0;background:#f8fafc;text-align:right;">
+    <p style="margin:0 0 14px;font-size:16px;font-weight:bold;color:#0f172a;">אני החתום מטה: ${signer}</p>
+    ${inner}
+    <p style="margin:18px 0 6px;font-weight:bold;color:#0f172a;font-size:14px;">חתימה:</p>
+    <p style="margin:0;font-size:13px;color:#64748b;line-height:1.65;">במסך הבא תחתמו בעט דיגיטלי; לאחר השליחה יישמר במערכת קובץ תמונה הכולל את נוסח ההצהרה, את שמכם ואת החתימה בעמוד אחד.</p>
+  </div>`;
+}
+
 function buildHebrewComplianceEmail(params: {
   taskKey: string;
   driverName: string;
@@ -94,14 +122,16 @@ function buildHebrewComplianceEmail(params: {
     ? `<p style="margin:12px 0;line-height:1.6;"><strong>תאריך התוקף במערכת:</strong> ${formatDueHebrewUtc(params.dueDateYmd)}</p>`
     : '';
 
-  const licenseBlock =
+  const middleSection =
     params.taskKey === 'driver_license'
       ? `
   <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:14px;margin:18px 0;text-align:right;line-height:1.65;color:#0c4a6e;">
     <p style="margin:0 0 8px;"><strong>נדרש רישיון נהיגה עדכני</strong></p>
     <p style="margin:0;">אנא צלמו או הסריקו את <strong>רישיון הנהיגה החדש</strong> באופן <strong>ברור וקריא</strong> (כל הפרטים חייבים להיות גלויים), והעלו את הקובץ דרך כפתור המעקב למטה.</p>
   </div>`
-      : `
+      : params.taskKey === 'health_declaration'
+        ? healthDeclarationEmailLegalHtml(params.driverName)
+        : `
   <p style="text-align:right;line-height:1.65;color:#334155;margin:14px 0;">נדרש ממך עדכון המסמך עבור: <strong>${tabLbl}</strong>. פרטים מלאים בדף הקישור.</p>`;
 
   const btnLabel = params.persistedToken ? 'מעבר לטופס העלאה מאובטח' : 'כניסה למערכת';
@@ -118,7 +148,7 @@ function buildHebrewComplianceEmail(params: {
   <p style="font-size:17px;line-height:1.5;"><strong>${name},</strong></p>
   <p style="line-height:1.65;color:#334155;margin:14px 0;">הוזמנת לעדכן במערכת: <strong>${taskLbl}</strong> (${tabLbl}).</p>
   ${dueLine}
-  ${licenseBlock}
+  ${middleSection}
   ${introNoLink}
   <div style="text-align:center;margin:28px 0;">
     <a href="${params.primaryHref}" style="display:inline-block;background:#0284c7;color:#ffffff;text-decoration:none;padding:14px 22px;border-radius:10px;font-weight:bold;font-size:15px;">

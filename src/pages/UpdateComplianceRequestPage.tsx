@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { captureHealthDeclarationFullPage } from '@/lib/captureHealthDeclarationPage';
+import { HealthDeclarationLegalContent } from '@/lib/healthDeclarationLegalHe';
 import { invokeSupabaseEdgeFunction } from '@/lib/supabase/invokeEdgeFunction';
 import SignatureCanvas from 'react-signature-canvas';
 import { Button } from '@/components/ui/button';
@@ -160,6 +162,7 @@ export default function UpdateComplianceRequestPage() {
   const [declaredLicenseExpiry, setDeclaredLicenseExpiry] = useState('');
   const [declaredHealthExpiry, setDeclaredHealthExpiry] = useState('');
   const sigRef = useRef<SignatureCanvas | null>(null);
+  const healthDocPrintRef = useRef<HTMLDivElement | null>(null);
   const healthExpiryPresetApplied = useRef(false);
 
   const tokenPreview = useMemo(() => {
@@ -285,7 +288,15 @@ export default function UpdateComplianceRequestPage() {
         task_key: taskKey,
       };
       if (taskKey === 'health_declaration') {
-        payload.health_signature_data_url = sigRef.current?.getTrimmedCanvas().toDataURL('image/png');
+        const sigDataUrl = sigRef.current?.getTrimmedCanvas().toDataURL('image/png') ?? '';
+        const printRoot = healthDocPrintRef.current;
+        if (!printRoot) {
+          throw new Error('מסמך ההצהרה לא נטען — רענן את הדף ונסה שוב.');
+        }
+        let docDataUrl = await captureHealthDeclarationFullPage(printRoot, sigDataUrl);
+        docDataUrl = await compressImageDataUrl(docDataUrl, 1800, 0.82);
+        payload.health_declaration_document_data_url = docDataUrl;
+        payload.health_signature_data_url = sigDataUrl;
         if (declaredHealthExpiry.trim()) {
           payload.declared_health_expiry = declaredHealthExpiry.trim();
         }
@@ -374,36 +385,59 @@ export default function UpdateComplianceRequestPage() {
             </div>
 
             {!done && item?.task_key === 'health_declaration' ? (
-              <div className="space-y-3 rounded-lg border border-white/10 bg-slate-950/60 p-3">
-                <div>
-                  <Label className="text-xs text-slate-300">
-                    תוקף ההצהרה במערכת (ברירת מחדל: 3 שנים — ניתן לערוך, פורמט YYYY-MM-DD)
-                  </Label>
-                  <Input
-                    type="text"
-                    value={declaredHealthExpiry}
-                    onChange={(e) => setDeclaredHealthExpiry(e.target.value.trim())}
-                    placeholder="למשל 2027-12-31"
-                    className="mt-1 border-white/15 bg-black/30 font-mono text-white"
-                    dir="ltr"
+              <>
+                <div
+                  ref={healthDocPrintRef}
+                  className="pointer-events-none fixed top-0 left-[-12000px] z-0 w-[794px] max-w-[794px] bg-white p-8 text-black"
+                  dir="rtl"
+                  style={{
+                    fontFamily: "'Segoe UI','Noto Sans Hebrew','Arial Hebrew',Tahoma,Arial,sans-serif",
+                  }}
+                  aria-hidden
+                >
+                  <HealthDeclarationLegalContent driverName={item?.driver_name ?? ''} />
+                  <p className="mt-6 text-base font-bold text-black">חתימה:</p>
+                  <div
+                    data-health-sig-slot
+                    className="mt-2 flex min-h-[100px] items-end border-t border-slate-300 pt-3"
                   />
                 </div>
-                <p className="text-sm text-slate-200">
-                  בהצהרה זו אני מאשר שמצבי הבריאות מאפשר נהיגה בטוחה, ואדווח מיד על כל שינוי.
-                </p>
-                <div className="rounded-md border border-cyan-300/20 bg-white">
-                  <SignatureCanvas
-                    ref={(r) => {
-                      sigRef.current = r;
-                    }}
-                    penColor="black"
-                    canvasProps={{ className: 'h-40 w-full touch-none' }}
-                  />
+                <div className="space-y-3 rounded-lg border border-white/10 bg-slate-950/60 p-3">
+                  <p className="text-sm font-semibold text-slate-100">נוסח ההצהרה</p>
+                  <div className="max-h-[min(52vh,480px)] overflow-y-auto rounded-md border border-white/10 bg-white p-4 text-black">
+                    <HealthDeclarationLegalContent driverName={item?.driver_name ?? ''} />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-slate-300">
+                      תוקף ההצהרה במערכת (ברירת מחדל: 3 שנים — ניתן לערוך, פורמט YYYY-MM-DD)
+                    </Label>
+                    <Input
+                      type="text"
+                      value={declaredHealthExpiry}
+                      onChange={(e) => setDeclaredHealthExpiry(e.target.value.trim())}
+                      placeholder="למשל 2027-12-31"
+                      className="mt-1 border-white/15 bg-black/30 font-mono text-white"
+                      dir="ltr"
+                    />
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    לאחר השליחה יישמר קובץ תמונה אחד הכולל את הנוסח, שמך והחתימה — כפי שיוצג בכרטיס הנהג.
+                  </p>
+                  <p className="text-sm font-medium text-slate-200">חתימה דיגיטלית</p>
+                  <div className="rounded-md border border-cyan-300/20 bg-white">
+                    <SignatureCanvas
+                      ref={(r) => {
+                        sigRef.current = r;
+                      }}
+                      penColor="black"
+                      canvasProps={{ className: 'h-40 w-full touch-none' }}
+                    />
+                  </div>
+                  <Button type="button" variant="outline" onClick={() => sigRef.current?.clear()}>
+                    נקה חתימה
+                  </Button>
                 </div>
-                <Button type="button" variant="outline" onClick={() => sigRef.current?.clear()}>
-                  נקה חתימה
-                </Button>
-              </div>
+              </>
             ) : null}
 
             {!done && item?.task_key === 'driver_license' ? (

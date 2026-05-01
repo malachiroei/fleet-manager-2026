@@ -12,6 +12,8 @@ const DOC_BUCKET = 'vehicle-documents';
 type SubmitBody = {
   token?: string;
   task_key?: string;
+  /** תמונת עמוד מלאה: נוסח + שם + חתימה (JPEG/PNG) */
+  health_declaration_document_data_url?: string;
   health_signature_data_url?: string;
   /** תאריך תוקף הצהרה מוצהר מהעובד — אופציונלי, YYYY-MM-DD */
   declared_health_expiry?: string;
@@ -93,10 +95,13 @@ serve(async (req) => {
     const nowIsoDate = new Date().toISOString().slice(0, 10);
 
     if (requestRow.task_key === 'health_declaration') {
+      const fullPageUrl = clean(body.health_declaration_document_data_url);
       const sigUrl = clean(body.health_signature_data_url);
-      if (!sigUrl) return json({ error: 'Missing signature' }, 400);
-      const parsed = parseDataUrl(sigUrl);
-      const path = `compliance-requests/${requestRow.org_id}/${requestRow.driver_id}/${requestRow.id}-health-signature.${parsed.ext}`;
+      const primaryUrl = fullPageUrl || sigUrl;
+      if (!primaryUrl) return json({ error: 'Missing declaration document or signature' }, 400);
+      const parsed = parseDataUrl(primaryUrl);
+      const fileStem = fullPageUrl ? 'health-declaration-full' : 'health-signature';
+      const path = `compliance-requests/${requestRow.org_id}/${requestRow.driver_id}/${requestRow.id}-${fileStem}.${parsed.ext}`;
       const up = await admin.storage.from(DOC_BUCKET).upload(path, parsed.bytes, {
         contentType: parsed.ext === 'png' ? 'image/png' : 'image/jpeg',
         upsert: true,
@@ -115,6 +120,7 @@ serve(async (req) => {
         declared_health_expiry: declaredHealthYmd,
         submitted_on_date: nowIsoDate,
         default_three_year_expiry: declaredHealthYmd == null,
+        full_declaration_page: Boolean(fullPageUrl),
       };
 
       /** מסמכים לפני עדכון נהג — כדי שלא יישמר תאריך/URL בנהג אם רישום המסמכים נכשל */
@@ -131,7 +137,7 @@ serve(async (req) => {
 
       const { error: ddErr } = await admin.from('driver_documents').insert({
         driver_id: requestRow.driver_id,
-        title: 'הצהרת בריאות - חתימה',
+        title: fullPageUrl ? 'הצהרת בריאות - מסמך מלא (נוסח וחתימה)' : 'הצהרת בריאות - חתימה',
         file_url: fileUrl,
       });
       if (ddErr) return json({ error: ddErr.message }, 500);
