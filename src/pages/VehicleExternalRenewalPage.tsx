@@ -5,7 +5,7 @@ import PhotoUpload from '@/components/PhotoUpload';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { invokeSupabaseEdgeFunction } from '@/lib/supabase/invokeEdgeFunction';
+import { invokeSupabaseEdgeFunctionDirect } from '@/lib/supabase/invokeEdgeFunction';
 
 type VehicleRenewalVehicle = {
   plate_number: string | null;
@@ -131,7 +131,7 @@ export default function VehicleExternalRenewalPage() {
         return;
       }
       try {
-        const { data, error: invokeErr } = await invokeSupabaseEdgeFunction('public-vehicle-renewal-request', {
+        const { data, error: invokeErr } = await invokeSupabaseEdgeFunctionDirect('public-vehicle-renewal-request', {
           token: safeToken,
         });
         if (cancelled) return;
@@ -173,7 +173,7 @@ export default function VehicleExternalRenewalPage() {
     try {
       let dataUrl = await fileToDataUrl(photoFile);
       dataUrl = await compressImageDataUrl(dataUrl, 2000, 0.8);
-      const { data, error: invokeErr } = await invokeSupabaseEdgeFunction('public-vehicle-renewal-submit', {
+      const { data, error: invokeErr } = await invokeSupabaseEdgeFunctionDirect('public-vehicle-renewal-submit', {
         token: String(token).trim(),
         document_image_data_url: dataUrl,
         proposed_expiry: expiryYmd.trim(),
