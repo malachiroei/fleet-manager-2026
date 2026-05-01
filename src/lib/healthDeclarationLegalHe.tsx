@@ -1,3 +1,5 @@
+import type { CSSProperties } from 'react';
+
 /**
  * טקסט הצהרת הבריאות — זהה במייל (Edge), בטופס הציבורי ובמסמך התמונה הממוזער.
  */
@@ -35,6 +37,49 @@ export function HealthDeclarationLegalContent({ driverName, className }: HealthD
           </p>
         ))}
       </div>
+    </div>
+  );
+}
+
+const plainP: CSSProperties = {
+  margin: '0 0 12px 0',
+  fontSize: '14px',
+  lineHeight: 1.75,
+  color: '#000000',
+  textAlign: 'justify',
+  backgroundColor: 'transparent',
+};
+
+const plainTitle: CSSProperties = {
+  margin: '0 0 14px 0',
+  fontSize: '16px',
+  fontWeight: 700,
+  lineHeight: 1.5,
+  color: '#000000',
+  backgroundColor: 'transparent',
+};
+
+/**
+ * אותו נוסח בלי מחלקות Tailwind — html2canvas נכשל על `oklch()` מ־Tailwind v4.
+ * משמש רק ללכידת תמונת המסמך.
+ */
+export function HealthDeclarationLegalPlain({ driverName }: { driverName: string }) {
+  return (
+    <div
+      dir="rtl"
+      style={{
+        color: '#000000',
+        backgroundColor: '#ffffff',
+        fontSize: '14px',
+        lineHeight: 1.75,
+      }}
+    >
+      <p style={plainTitle}>{healthDeclarationSignerLine(driverName)}</p>
+      {HEALTH_DECLARATION_PARAGRAPHS.map((t, i) => (
+        <p key={i} style={plainP}>
+          {t}
+        </p>
+      ))}
     </div>
   );
 }

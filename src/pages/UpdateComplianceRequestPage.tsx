@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { captureHealthDeclarationFullPage } from '@/lib/captureHealthDeclarationPage';
-import { HealthDeclarationLegalContent } from '@/lib/healthDeclarationLegalHe';
+import { HealthDeclarationLegalContent, HealthDeclarationLegalPlain } from '@/lib/healthDeclarationLegalHe';
 import { invokeSupabaseEdgeFunction } from '@/lib/supabase/invokeEdgeFunction';
 import SignatureCanvas from 'react-signature-canvas';
 import { Button } from '@/components/ui/button';
@@ -388,18 +388,47 @@ export default function UpdateComplianceRequestPage() {
               <>
                 <div
                   ref={healthDocPrintRef}
-                  className="pointer-events-none fixed top-0 left-[-12000px] z-0 w-[794px] max-w-[794px] bg-white p-8 text-black"
+                  data-health-print-root
+                  aria-hidden
                   dir="rtl"
                   style={{
+                    position: 'fixed',
+                    left: -12000,
+                    top: 0,
+                    zIndex: 0,
+                    width: 794,
+                    maxWidth: 794,
+                    padding: 32,
+                    pointerEvents: 'none',
+                    backgroundColor: '#ffffff',
+                    color: '#000000',
                     fontFamily: "'Segoe UI','Noto Sans Hebrew','Arial Hebrew',Tahoma,Arial,sans-serif",
                   }}
-                  aria-hidden
                 >
-                  <HealthDeclarationLegalContent driverName={item?.driver_name ?? ''} />
-                  <p className="mt-6 text-base font-bold text-black">חתימה:</p>
+                  <HealthDeclarationLegalPlain driverName={item?.driver_name ?? ''} />
+                  <p
+                    style={{
+                      marginTop: 24,
+                      marginBottom: 0,
+                      fontSize: 16,
+                      fontWeight: 700,
+                      color: '#000000',
+                      backgroundColor: '#ffffff',
+                    }}
+                  >
+                    חתימה:
+                  </p>
                   <div
                     data-health-sig-slot
-                    className="mt-2 flex min-h-[100px] items-end border-t border-slate-300 pt-3"
+                    style={{
+                      marginTop: 8,
+                      minHeight: 100,
+                      borderTop: '1px solid #cbd5e1',
+                      paddingTop: 12,
+                      display: 'flex',
+                      alignItems: 'flex-end',
+                      backgroundColor: '#ffffff',
+                    }}
                   />
                 </div>
                 <div className="space-y-3 rounded-lg border border-white/10 bg-slate-950/60 p-3">
