@@ -34,12 +34,24 @@ type ComplianceTabKey =
   | 'health_declaration'
   | 'regulation_585';
 
-type TowerViewFilter = 'all' | 'custom_range' | 'expiring_soon' | 'expired';
+type TowerViewFilter = 'all' | 'custom_range' | 'expiring_soon' | 'urgent';
 type ComplianceSource = 'vehicle' | 'driver';
 const COMPLIANCE_COLUMNS_DEFAULTS_KEY = 'admin_compliance_default_columns_v1';
 
 /** שליחת בקשה זמינה רק עם עד N ימים לפני פקיעה (וכשפג) — למעלה מזה לא לוחצים. */
 const COMPLIANCE_SEND_MAX_DAYS_REMAINING = 60;
+
+/** תצוגת צבעים וביטוי «טיפול דחוף»: פג תוקף או עד כמה ימים נותרים כולל */
+const COMPLIANCE_RED_MAX_DAYS_REMAINING = 5;
+/** צהוב: מעל האדום ועד כמה ימים נותרים כולל */
+const COMPLIANCE_YELLOW_MAX_DAYS_REMAINING = 30;
+
+function complianceDueBand(dueDays: number | null): 'red' | 'yellow' | 'green' | null {
+  if (dueDays == null) return null;
+  if (dueDays < 0 || dueDays <= COMPLIANCE_RED_MAX_DAYS_REMAINING) return 'red';
+  if (dueDays <= COMPLIANCE_YELLOW_MAX_DAYS_REMAINING) return 'yellow';
+  return 'green';
+}
 
 const VEHICLE_KEYS: string[] = [
   'id', 'org_id', 'plate_number', 'manufacturer', 'model', 'year', 'current_odometer', 'next_maintenance_km',
@@ -561,6 +573,8 @@ function ComplianceTable<T extends Record<string, unknown>>({
               const dueDays = gate.dueDays;
               const sendBarrierMerged = gate.sendBarrierMerged;
               const isExpired = dueDays != null && dueDays < 0;
+              const band = complianceDueBand(dueDays);
+              const rowUrgent = band === 'red';
               const awaitingEmp =
                 tabKey === 'health_declaration' &&
                 Boolean((row as { __awaitingEmployeeSignature?: boolean }).__awaitingEmployeeSignature);
@@ -571,7 +585,7 @@ function ComplianceTable<T extends Record<string, unknown>>({
               return (
                 <TableRow
                   key={String(row.id ?? idx)}
-                  className={isExpired ? 'bg-red-500/10 hover:bg-red-500/15' : undefined}
+                  className={rowUrgent ? 'bg-red-500/10 hover:bg-red-500/15' : undefined}
                 >
                   <TableCell className="px-2 align-middle text-center">
                     <div className="flex justify-center">
@@ -593,13 +607,25 @@ function ComplianceTable<T extends Record<string, unknown>>({
                       <span className="inline-flex items-center rounded-full border border-red-400/40 bg-red-500/15 px-2 py-0.5 text-xs font-semibold text-red-300">
                         פג תוקף — עברו {Math.abs(dueDays)} ימים
                       </span>
-                    ) : (
+                    ) : band === 'red' ? (
+                      <span className="inline-flex items-center rounded-full border border-red-400/40 bg-red-500/15 px-2 py-0.5 text-xs font-semibold text-red-300">
+                        נותרו {dueDays} ימים
+                      </span>
+                    ) : band === 'yellow' ? (
                       <span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200">
+                        נותרו {dueDays} ימים
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full border border-emerald-400/40 bg-emerald-600/20 px-2 py-0.5 text-xs font-semibold text-emerald-200">
                         נותרו {dueDays} ימים
                       </span>
                     )}
                   </TableCell>
-                  <TableCell className={`text-right ${isExpired ? 'text-red-400 font-semibold' : ''}`}>
+                  <TableCell
+                    className={`text-right ${
+                      rowUrgent ? 'text-red-400 font-semibold' : band === 'yellow' ? 'text-amber-200/95' : band === 'green' ? 'text-emerald-200/90' : ''
+                    }`}
+                  >
                     {formatDate(row[dueField])}
                   </TableCell>
                   {safeColumns.map((col) => (
@@ -617,17 +643,17 @@ function ComplianceTable<T extends Record<string, unknown>>({
                         <span className="inline-flex items-center rounded-full border border-slate-500/40 bg-slate-700/40 px-2 py-0.5 text-xs font-semibold text-slate-200">
                           ממתין לשליחה
                         </span>
-                      ) : dueDays < 0 ? (
+                      ) : complianceDueBand(dueDays) === 'red' ? (
                         <span className="inline-flex items-center rounded-full border border-red-400/40 bg-red-500/15 px-2 py-0.5 text-xs font-semibold text-red-300">
-                          פג תוקף
+                          {dueDays < 0 ? 'פג תוקף' : 'דחוף'}
                         </span>
-                      ) : dueDays > 30 ? (
-                        <span className="inline-flex items-center rounded-full border border-emerald-400/40 bg-emerald-600/20 px-2 py-0.5 text-xs font-semibold text-emerald-200">
-                          תקין
+                      ) : complianceDueBand(dueDays) === 'yellow' ? (
+                        <span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200">
+                          קרוב לפקיעה
                         </span>
                       ) : (
-                        <span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200">
-                          נותרו {dueDays} ימים
+                        <span className="inline-flex items-center rounded-full border border-emerald-400/40 bg-emerald-600/20 px-2 py-0.5 text-xs font-semibold text-emerald-200">
+                          תקין
                         </span>
                       )
                     ) : driverLicPending ? (
@@ -776,8 +802,7 @@ export default function AdminCompliancePage() {
     return set;
   }, [openComplianceRequests]);
 
-  const [daysThreshold, setDaysThreshold] = useState(30);
-  const [viewFilter, setViewFilter] = useState<TowerViewFilter>('expiring_soon');
+  const [viewFilter, setViewFilter] = useState<TowerViewFilter>('urgent');
   const [customRangeFromDays, setCustomRangeFromDays] = useState(-30);
   const [customRangeToDays, setCustomRangeToDays] = useState(30);
   const [sendingRowKey, setSendingRowKey] = useState<string | null>(null);
@@ -806,7 +831,6 @@ export default function AdminCompliancePage() {
   });
 
   const todayIso = useMemo(() => isoYmdTodayLocal(), []);
-  const maxIso = useMemo(() => addDaysToIsoYmd(todayIso, daysThreshold), [todayIso, daysThreshold]);
   const customFromIso = useMemo(() => addDaysToIsoYmd(todayIso, customRangeFromDays), [todayIso, customRangeFromDays]);
   const customToIso = useMemo(() => addDaysToIsoYmd(todayIso, customRangeToDays), [todayIso, customRangeToDays]);
   const customMinIso = customFromIso <= customToIso ? customFromIso : customToIso;
@@ -838,8 +862,7 @@ export default function AdminCompliancePage() {
 
     console.log('[AdminCompliancePage] Raw Supabase rows before filtering', {
       orgId,
-      daysThreshold,
-      range: { todayIso, maxIso },
+      range: { todayIso },
       viewFilter,
       customRange: {
         fromDays: customRangeFromDays,
@@ -868,9 +891,7 @@ export default function AdminCompliancePage() {
     vehicles,
     drivers,
     orgId,
-    daysThreshold,
     todayIso,
-    maxIso,
     viewFilter,
     customRangeFromDays,
     customRangeToDays,
@@ -886,11 +907,13 @@ export default function AdminCompliancePage() {
         .filter((row) => {
           const dueIso = dueIsoFromRaw(row[tab.dueField]);
           if (!dueIso) return false;
+          const d = daysUntil(row[tab.dueField]);
           if (viewFilter === 'all') return true;
-          if (viewFilter === 'expired') return dueIso < todayIso;
+          if (viewFilter === 'urgent') {
+            return d != null && complianceDueBand(d) === 'red';
+          }
           if (viewFilter === 'expiring_soon') {
-            // Align with "Exception Alerts": include expired + upcoming until threshold.
-            return dueIso <= maxIso;
+            return d != null && complianceDueBand(d) === 'yellow';
           }
           return dueIso >= customMinIso && dueIso <= customMaxIso;
         })
@@ -917,7 +940,6 @@ export default function AdminCompliancePage() {
     drivers,
     vehicles,
     todayIso,
-    maxIso,
     viewFilter,
     customMinIso,
     customMaxIso,
@@ -1328,7 +1350,7 @@ export default function AdminCompliancePage() {
           </CardHeader>
           <CardContent className="flex flex-wrap items-end gap-3">
             <div className="w-full space-y-2">
-              <Label>תצוגה</Label>
+              <Label>סינון תצוגה</Label>
               <div className="flex flex-wrap gap-2">
                 <Button type="button" variant={viewFilter === 'all' ? 'default' : 'outline'} onClick={() => setViewFilter('all')}>
                   הכל
@@ -1339,23 +1361,15 @@ export default function AdminCompliancePage() {
                 <Button type="button" variant={viewFilter === 'expiring_soon' ? 'default' : 'outline'} onClick={() => setViewFilter('expiring_soon')}>
                   קרובים לפקיעה
                 </Button>
-                <Button type="button" variant={viewFilter === 'expired' ? 'default' : 'outline'} onClick={() => setViewFilter('expired')}>
-                  פג תוקף
+                <Button type="button" variant={viewFilter === 'urgent' ? 'default' : 'outline'} onClick={() => setViewFilter('urgent')}>
+                  טיפול דחוף
                 </Button>
               </div>
-            </div>
-            <div className="w-48 space-y-1">
-              <Label htmlFor="days-threshold">סף ימים קדימה</Label>
-              <Input
-                id="days-threshold"
-                type="number"
-                min={1}
-                value={daysThreshold}
-                onChange={(e) => {
-                  const next = Number(e.target.value);
-                  setDaysThreshold(Number.isFinite(next) && next > 0 ? next : 30);
-                }}
-              />
+              <p className="text-xs text-muted-foreground">
+                צבעי שורות: אדום — פג תוקף או עד {COMPLIANCE_RED_MAX_DAYS_REMAINING} ימים נותרים; צהוב —{' '}
+                {COMPLIANCE_RED_MAX_DAYS_REMAINING + 1}–{COMPLIANCE_YELLOW_MAX_DAYS_REMAINING} ימים; ירוק — מעל{' '}
+                {COMPLIANCE_YELLOW_MAX_DAYS_REMAINING} ימים.
+              </p>
             </div>
             {viewFilter === 'custom_range' && (
               <>
@@ -1472,10 +1486,10 @@ export default function AdminCompliancePage() {
                       emptyLabel={
                         viewFilter === 'all'
                           ? `לא נמצאו רשומות עם ${prettifyKey(tab.dueField)}`
-                          : viewFilter === 'expired'
-                            ? `לא נמצאו רשומות שפג תוקפן עבור ${prettifyKey(tab.dueField)}`
+                          : viewFilter === 'urgent'
+                            ? `לא נמצאו רשומות בטווח טיפול דחוף (פג תוקף או עד ${COMPLIANCE_RED_MAX_DAYS_REMAINING} ימים) עבור ${prettifyKey(tab.dueField)}`
                             : viewFilter === 'expiring_soon'
-                              ? `לא נמצאו רשומות עם ${prettifyKey(tab.dueField)} עד ${daysThreshold} ימים קדימה (כולל פגי תוקף)`
+                              ? `לא נמצאו רשומות בטווח «קרוב לפקיעה» (${COMPLIANCE_RED_MAX_DAYS_REMAINING + 1}–${COMPLIANCE_YELLOW_MAX_DAYS_REMAINING} ימים נותרים) עבור ${prettifyKey(tab.dueField)}`
                               : `לא נמצאו רשומות עם ${prettifyKey(tab.dueField)} בטווח המותאם (${customRangeFromDays} עד ${customRangeToDays} ימים מהיום)`
                       }
                     />
