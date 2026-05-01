@@ -47,7 +47,8 @@ async function main() {
   const files = await fs.readdir(publicDir).catch(() => []);
   const sourcePath = await resolveSourcePath(publicDir, files);
 
-  const themeColor = '#1e40af';
+  /** עקבי עם theme-color ב-index.html — רקע כהה בטעינת PWA/כרום (לא כחול) */
+  const themeColor = '#02040a';
 
   const outOg = path.join(publicDir, 'og-image.png');
   const out192 = path.join(publicDir, 'app-icon-192.png');

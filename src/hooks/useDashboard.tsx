@@ -132,6 +132,7 @@ async function appendDerivedComplianceFromFleetDates(
     full_name: string | null;
     org_id: string | null;
     managed_by_user_id: string | null;
+    status: string | null;
     license_expiry: string | null;
     health_declaration_date: string | null;
     regulation_585b_date: string | null;
@@ -171,7 +172,7 @@ async function appendDerivedComplianceFromFleetDates(
   if (isDriverContextOnly && scopedDriverId) {
     const { data, error } = await supabase
       .from('drivers')
-      .select('id, full_name, org_id, managed_by_user_id, license_expiry, health_declaration_date, regulation_585b_date')
+      .select('id, full_name, org_id, managed_by_user_id, status, license_expiry, health_declaration_date, regulation_585b_date')
       .eq('id', scopedDriverId)
       .maybeSingle();
     if (error) {
@@ -182,7 +183,7 @@ async function appendDerivedComplianceFromFleetDates(
   } else {
     let dq = supabase
       .from('drivers')
-      .select('id, full_name, org_id, managed_by_user_id, license_expiry, health_declaration_date, regulation_585b_date')
+      .select('id, full_name, org_id, managed_by_user_id, status, license_expiry, health_declaration_date, regulation_585b_date')
       .eq('org_id', effectiveOrgId);
     if (applyFleetManagerSlice && fleetManagerListUserId) {
       dq = dq.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
@@ -195,6 +196,39 @@ async function appendDerivedComplianceFromFleetDates(
     }
   }
 
+  /** התאמת סוג התראה נגזרת ל-task_key ב-compliance_requests */
+  const slotToComplianceTaskKey: Record<
+    'test' | 'insurance' | 'inspection' | 'maintenance',
+    string
+  > = {
+    test: 'annual_licensing',
+    insurance: 'insurance',
+    inspection: 'periodic_inspection',
+    maintenance: 'maintenance',
+  };
+
+  /** רכב עם הגשה ממתינה לאישור מנהל — לא מופיע בהתראות למטה */
+  const pendingVehicleAdminKeys = new Set<string>();
+  if (effectiveOrgId) {
+    try {
+      const { data: pvRows } = await supabase
+        .from('compliance_requests')
+        .select('entity_id, task_key')
+        .eq('org_id', effectiveOrgId)
+        .eq('entity_type', 'vehicle')
+        .eq('status', 'pending_admin_review')
+        .in('task_key', ['annual_licensing', 'insurance', 'periodic_inspection', 'maintenance']);
+      for (const row of pvRows ?? []) {
+        const er = row as { entity_id?: string; task_key?: string };
+        const eid = String(er.entity_id ?? '').trim();
+        const tk = String(er.task_key ?? '').trim();
+        if (eid && tk) pendingVehicleAdminKeys.add(`${eid}::${tk}`);
+      }
+    } catch {
+      /* מתעלם — רק התראות נגזרות */
+    }
+  }
+
   const tryPushVehicle = (
     vid: string,
     plateLabel: string,
@@ -204,6 +238,8 @@ async function appendDerivedComplianceFromFleetDates(
   ) => {
     const level = complianceAlertLevelFromExpiry(rawExpiry);
     if (!level) return;
+    const cmpTk = slotToComplianceTaskKey[slot];
+    if (pendingVehicleAdminKeys.has(`${vid}::${cmpTk}`)) return;
     const slotKey = `v:${vid}:${slot}`;
     if (occupiedSlots.has(slotKey)) return;
     occupiedSlots.add(slotKey);
@@ -249,6 +285,7 @@ async function appendDerivedComplianceFromFleetDates(
   };
 
   for (const d of dRows) {
+    if (String(d.status ?? '').trim().toLowerCase() === 'pending_approval') continue;
     tryPushDriver(d, 'license', d.license_expiry, 'רישיון נהג');
     tryPushDriver(d, 'health', d.health_declaration_date, 'הצהרת בריאות');
     tryPushDriver(d, 'r585', d.regulation_585b_date, 'תקנה 585');
@@ -470,12 +507,17 @@ export function useComplianceAlerts() {
 
         const driverById = new Map<
           string,
-          { full_name: string | null; org_id: string | null; managed_by_user_id: string | null }
+          {
+            full_name: string | null;
+            org_id: string | null;
+            managed_by_user_id: string | null;
+            status: string | null;
+          }
         >();
         for (const part of chunkIds(driverIds, COMPLIANCE_IN_CHUNK)) {
           const { data: drows, error: derr } = await supabase
             .from('drivers')
-            .select('id, full_name, org_id, managed_by_user_id')
+            .select('id, full_name, org_id, managed_by_user_id, status')
             .in('id', part);
           if (derr) {
             console.warn('[useComplianceAlerts] drivers chunk failed — skipping chunk', derr.message);
@@ -486,6 +528,7 @@ export function useComplianceAlerts() {
               full_name: d.full_name ?? null,
               org_id: d.org_id ?? null,
               managed_by_user_id: d.managed_by_user_id ?? null,
+              status: (d as { status?: string | null }).status ?? null,
             });
           }
         }
@@ -526,6 +569,7 @@ export function useComplianceAlerts() {
           } else {
             const d = driverById.get(r.entity_id);
             if (!d) continue;
+            if (String(d.status ?? '').trim().toLowerCase() === 'pending_approval') continue;
 
             if (isDriverContextOnly) {
               if (!scopedDriverId) continue;

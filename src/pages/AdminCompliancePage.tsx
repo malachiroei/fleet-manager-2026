@@ -651,12 +651,15 @@ function ComplianceTable<T extends Record<string, unknown>>({
     if (pendingRen) {
       sendBarrierMerged = 'יש הגשה הממתינה לאישור מנהל — השתמש ב«אישור והחלה»';
     }
+    const pendingMgrDriverQueue =
+      tabKey === 'driver_license' && String(row.status ?? '').trim().toLowerCase() === 'pending_approval';
     return {
       id,
       dueDays,
       sendBarrierMerged,
       pendingRen,
-      canSelectBulk: Boolean(id) && !sendBarrierMerged && !bulkSending,
+      canSelectBulk:
+        Boolean(id) && !sendBarrierMerged && !bulkSending && !pendingMgrDriverQueue,
     };
   });
 
@@ -906,50 +909,54 @@ function ComplianceTable<T extends Record<string, unknown>>({
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex flex-wrap justify-end gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={
-                          Boolean(sendBarrierMerged) ||
-                          sendingRowKey === String(row.id ?? idx) ||
-                          bulkSending
-                        }
-                        onClick={() => {
-                          if (sendBarrierMerged) {
-                            toast.error(`לא ניתן לשלוח בקשה: ${sendBarrierMerged}`);
-                            return;
-                          }
-                          onSendRequest(row);
-                        }}
-                        title={sendBarrierMerged ?? 'שליחת בקשה במייל'}
-                      >
-                        {sendingRowKey === String(row.id ?? idx) ? (
-                          <span className="inline-flex items-center gap-1">
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            שולח...
-                          </span>
-                        ) : (
-                          'שלח בקשה'
-                        )}
-                      </Button>
-                    {(() => {
-                      const reason = requestDisabledReason(row);
-                      if (!reason) return null;
-                      const fixHref = driverEmailFixHref?.(row) ?? null;
-                      const emailRelated =
-                        reason.includes('אימייל') || reason.includes('מייל') || reason.includes('email');
-                      if (fixHref && emailRelated) {
-                        return (
-                          <Link
-                            to={fixHref}
-                            className="block max-w-[14rem] text-right text-[11px] font-medium text-amber-300 underline decoration-amber-400/60 underline-offset-2 hover:text-amber-200"
+                      {!driverLicPending ? (
+                        <>
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={
+                              Boolean(sendBarrierMerged) ||
+                              sendingRowKey === String(row.id ?? idx) ||
+                              bulkSending
+                            }
+                            onClick={() => {
+                              if (sendBarrierMerged) {
+                                toast.error(`לא ניתן לשלוח בקשה: ${sendBarrierMerged}`);
+                                return;
+                              }
+                              onSendRequest(row);
+                            }}
+                            title={sendBarrierMerged ?? 'שליחת בקשה במייל'}
                           >
-                            {reason}
-                          </Link>
-                        );
-                      }
-                      return <span className="text-[11px] text-amber-300/90">{reason}</span>;
-                    })()}
+                            {sendingRowKey === String(row.id ?? idx) ? (
+                              <span className="inline-flex items-center gap-1">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                שולח...
+                              </span>
+                            ) : (
+                              'שלח בקשה'
+                            )}
+                          </Button>
+                          {(() => {
+                            const reason = requestDisabledReason(row);
+                            if (!reason) return null;
+                            const fixHref = driverEmailFixHref?.(row) ?? null;
+                            const emailRelated =
+                              reason.includes('אימייל') || reason.includes('מייל') || reason.includes('email');
+                            if (fixHref && emailRelated) {
+                              return (
+                                <Link
+                                  to={fixHref}
+                                  className="block max-w-[14rem] text-right text-[11px] font-medium text-amber-300 underline decoration-amber-400/60 underline-offset-2 hover:text-amber-200"
+                                >
+                                  {reason}
+                                </Link>
+                              );
+                            }
+                            return <span className="text-[11px] text-amber-300/90">{reason}</span>;
+                          })()}
+                        </>
+                      ) : null}
 
                       {tabKey === 'driver_license' && String(row.status ?? '').trim().toLowerCase() === 'pending_approval' ? (
                         <>
@@ -1043,6 +1050,8 @@ export default function AdminCompliancePage() {
   const [resendLeasingDialog, setResendLeasingDialog] = useState<{ requestId: string } | null>(null);
   const [resendNote, setResendNote] = useState('');
   const [resendSending, setResendSending] = useState(false);
+  const [resendDriverLicenseDialog, setResendDriverLicenseDialog] = useState<string | null>(null);
+  const [resendDriverSending, setResendDriverSending] = useState(false);
   const [approvingRenewalId, setApprovingRenewalId] = useState<string | null>(null);
   const { data: vehicles = [], isLoading: vehiclesLoading } = useVehicles();
   const { data: drivers = [], isLoading: driversLoading, refetch: refetchDrivers } = useQuery({
@@ -1152,6 +1161,15 @@ export default function AdminCompliancePage() {
       plate: plateById.get(String(r.entity_id ?? '').trim()) ?? '—',
     }));
   }, [pendingVehicleRenewalsRaw, vehicles]);
+
+  /** תואם תג «ממתין לאישור מנהל» בטבלאות נהגים — לא רק הגשות טסט/ביטוח מליסינג */
+  const driversPendingManagerApproval = useMemo(
+    () => drivers.filter((d) => String(d.status ?? '').trim().toLowerCase() === 'pending_approval'),
+    [drivers],
+  );
+
+  const pendingManagerApprovalTotal =
+    pendingVehicleRenewalsRaw.length + driversPendingManagerApproval.length;
 
   /** מוצג מיד אחרי «שלח בקשה» עד שהשרת מחזיר שורה ב־compliance_requests (מונע תחושה ש«כלום לא קרה») */
   const [optimisticCompliancePending, setOptimisticCompliancePending] = useState<
@@ -2041,6 +2059,25 @@ export default function AdminCompliancePage() {
     }
   };
 
+  const submitResendDriverLicenseEmail = async () => {
+    const driverId = String(resendDriverLicenseDialog ?? '').trim();
+    const orgIdRequired = String(orgId ?? '').trim();
+    if (!driverId || !orgIdRequired) return;
+    const row = drivers.find((x) => String(x.id) === driverId);
+    const tab = TAB_DEFS.find((t) => t.key === 'driver_license');
+    if (!row || !tab) {
+      toast.error('נהג לא נמצא');
+      return;
+    }
+    setResendDriverSending(true);
+    try {
+      const ok = await submitComplianceRequest(tab, row as Record<string, unknown>);
+      if (ok) setResendDriverLicenseDialog(null);
+    } finally {
+      setResendDriverSending(false);
+    }
+  };
+
   const approveLicenseForRow = async (row: Record<string, unknown>) => {
     const driverId = String(row.id ?? '').trim();
     const orgIdRequired = String(orgId ?? '').trim();
@@ -2115,7 +2152,7 @@ export default function AdminCompliancePage() {
               </p>
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 <Button type="button" variant="secondary" size="sm" onClick={() => setLeasingApprovalsOpen(true)}>
-                  ממתין לאישור מנהל ({pendingVehicleRenewalsRaw.length})
+                  ממתין לאישור מנהל ({pendingManagerApprovalTotal})
                 </Button>
               </div>
             </div>
@@ -2348,92 +2385,191 @@ export default function AdminCompliancePage() {
               <DialogTitle className="text-base sm:text-lg">ממתין לאישור מנהל</DialogTitle>
             </DialogHeader>
             <p className="text-xs leading-snug text-muted-foreground sm:text-sm">
-              רישוי שנתי וביטוח: הגשות לפני עדכון כרטיס הרכב. גלילה לרשימות ארוכות.
+              טסט וביטוח שהגיעו מנציג חיצוני לפני עדכון כרטיס הרכב, ונהגים בסטטוס «ממתין לאישור מנהל» (למשל אחרי העלאת רישיון).
             </p>
           </div>
-          {pendingRenewalsDialogRows.length === 0 ? (
-            <p className="shrink-0 py-8 text-center text-sm text-muted-foreground">אין הגשות ממתינות לאישור מנהל.</p>
+          {pendingRenewalsDialogRows.length === 0 && driversPendingManagerApproval.length === 0 ? (
+            <p className="shrink-0 py-8 text-center text-sm text-muted-foreground">אין פריטים ממתינים לאישור מנהל.</p>
           ) : (
-            <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2 sm:px-4 sm:py-3">
-              <div className="overflow-x-auto rounded-md border">
-                <Table dir="rtl">
-                  <TableHeader className="sticky top-0 z-20 bg-card shadow-[0_1px_0_0_hsl(var(--border))]">
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">פעולות</TableHead>
-                      <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">נציג (מייל)</TableHead>
-                      <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">תוקף מוצע</TableHead>
-                      <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">נושא</TableHead>
-                      <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">לוחית</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {pendingRenewalsDialogRows.map((row) => {
-                      const docUrl = String(row.submitted_document_url ?? '').trim();
-                      const rep = String(row.external_recipient_email ?? '').trim();
-                      return (
-                        <TableRow key={row.id} className="align-middle">
-                          <TableCell className="py-2">
-                            <div className="flex max-w-[220px] flex-wrap justify-end gap-1 sm:max-w-none">
-                              {docUrl ? (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-7 px-2 text-[11px]"
-                                  onClick={() => window.open(docUrl, '_blank', 'noopener,noreferrer')}
-                                >
-                                  צפייה
-                                </Button>
-                              ) : null}
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="secondary"
-                                className="h-7 px-2 text-[11px]"
-                                onClick={() => {
-                                  setResendLeasingDialog({ requestId: row.id });
-                                  setResendNote('');
-                                }}
-                              >
-                                מייל חזרה
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                className="h-7 px-2 text-[11px]"
-                                onClick={() => void approveVehicleRenewalForRequest(row.id)}
-                                disabled={approvingRenewalId === row.id}
-                              >
-                                {approvingRenewalId === row.id ? (
-                                  <span className="inline-flex items-center gap-1">
-                                    <Loader2 className="h-3 w-3 animate-spin" />
-                                    מאשר…
-                                  </span>
-                                ) : (
-                                  'אישור'
-                                )}
-                              </Button>
-                            </div>
-                          </TableCell>
-                          <TableCell
-                            className="max-w-[7rem] py-2 text-right text-[11px] leading-tight break-all sm:max-w-[10rem]"
-                            dir="ltr"
-                          >
-                            {rep || '—'}
-                          </TableCell>
-                          <TableCell className="py-2 tabular-nums text-xs" dir="ltr">
-                            {row.proposed_expiry_date
-                              ? String(row.proposed_expiry_date).slice(0, 10)
-                              : '—'}
-                          </TableCell>
-                          <TableCell className="py-2 text-right text-xs">{row.task_label ?? '—'}</TableCell>
-                          <TableCell className="py-2 text-right text-xs font-medium">{row.plate}</TableCell>
+            <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-2 py-2 sm:px-4 sm:py-3">
+              {pendingRenewalsDialogRows.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground">טסט וביטוח — הגשות מנציג</p>
+                  <div className="overflow-x-auto rounded-md border">
+                    <Table dir="rtl">
+                      <TableHeader className="sticky top-0 z-20 bg-card shadow-[0_1px_0_0_hsl(var(--border))]">
+                        <TableRow className="hover:bg-transparent">
+                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">פעולות</TableHead>
+                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">נציג (מייל)</TableHead>
+                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">תוקף מוצע</TableHead>
+                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">נושא</TableHead>
+                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">לוחית</TableHead>
                         </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+                      </TableHeader>
+                      <TableBody>
+                        {pendingRenewalsDialogRows.map((row) => {
+                          const docUrl = String(row.submitted_document_url ?? '').trim();
+                          const rep = String(row.external_recipient_email ?? '').trim();
+                          return (
+                            <TableRow key={row.id} className="align-middle">
+                              <TableCell className="py-2">
+                                <div className="flex max-w-[220px] flex-wrap justify-end gap-1 sm:max-w-none">
+                                  {docUrl ? (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 px-2 text-[11px]"
+                                      onClick={() => window.open(docUrl, '_blank', 'noopener,noreferrer')}
+                                    >
+                                      צפייה
+                                    </Button>
+                                  ) : null}
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="secondary"
+                                    className="h-7 px-2 text-[11px]"
+                                    onClick={() => {
+                                      setResendLeasingDialog({ requestId: row.id });
+                                      setResendNote('');
+                                    }}
+                                  >
+                                    מייל חזרה
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    className="h-7 px-2 text-[11px]"
+                                    onClick={() => void approveVehicleRenewalForRequest(row.id)}
+                                    disabled={approvingRenewalId === row.id}
+                                  >
+                                    {approvingRenewalId === row.id ? (
+                                      <span className="inline-flex items-center gap-1">
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                        מאשר…
+                                      </span>
+                                    ) : (
+                                      'אישור'
+                                    )}
+                                  </Button>
+                                </div>
+                              </TableCell>
+                              <TableCell
+                                className="max-w-[7rem] py-2 text-right text-[11px] leading-tight break-all sm:max-w-[10rem]"
+                                dir="ltr"
+                              >
+                                {rep || '—'}
+                              </TableCell>
+                              <TableCell className="py-2 tabular-nums text-xs" dir="ltr">
+                                {row.proposed_expiry_date
+                                  ? String(row.proposed_expiry_date).slice(0, 10)
+                                  : '—'}
+                              </TableCell>
+                              <TableCell className="py-2 text-right text-xs">{row.task_label ?? '—'}</TableCell>
+                              <TableCell className="py-2 text-right text-xs font-medium">{row.plate}</TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              ) : null}
+              {driversPendingManagerApproval.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground">
+                    רישיון נהיגה — ממתינים לאישור במערכת
+                  </p>
+                  <div className="overflow-x-auto rounded-md border">
+                    <Table dir="rtl">
+                      <TableHeader className="bg-card">
+                        <TableRow className="hover:bg-transparent">
+                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">פעולות</TableHead>
+                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">מייל נהג</TableHead>
+                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">תוקף נוכחי</TableHead>
+                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">נושא</TableHead>
+                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">שם</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {driversPendingManagerApproval.map((d) => {
+                          const id = String(d.id ?? '').trim();
+                          const docUrl = String(d.license_front_url ?? '').trim();
+                          const asRow = d as unknown as Record<string, unknown>;
+                          return (
+                            <TableRow key={id} className="align-middle">
+                              <TableCell className="py-2">
+                                <div className="flex max-w-[240px] flex-wrap justify-end gap-1 sm:max-w-none">
+                                  {docUrl ? (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 px-2 text-[11px]"
+                                      onClick={() => window.open(docUrl, '_blank', 'noopener,noreferrer')}
+                                    >
+                                      צפייה
+                                    </Button>
+                                  ) : null}
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="secondary"
+                                    className="h-7 px-2 text-[11px]"
+                                    onClick={() => setResendDriverLicenseDialog(id)}
+                                  >
+                                    מייל חזרה
+                                  </Button>
+                                  <Input
+                                    type="date"
+                                    className="h-7 w-[9.75rem] min-w-[9rem] text-[11px]"
+                                    value={approveDateForRow(asRow)}
+                                    onChange={(e) => setApproveDateForRow(asRow, e.target.value)}
+                                  />
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    className="h-7 px-2 text-[11px]"
+                                    onClick={() => void approveLicenseForRow(asRow)}
+                                    disabled={
+                                      !approveDateForRow(asRow).trim() || approvingRowKey === id
+                                    }
+                                  >
+                                    {approvingRowKey === id ? (
+                                      <span className="inline-flex items-center gap-1">
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                        מאשר…
+                                      </span>
+                                    ) : (
+                                      'אישור'
+                                    )}
+                                  </Button>
+                                </div>
+                              </TableCell>
+                              <TableCell
+                                className="max-w-[7rem] py-2 text-right text-[11px] leading-tight break-all sm:max-w-[10rem]"
+                                dir="ltr"
+                              >
+                                {d.email?.trim() || '—'}
+                              </TableCell>
+                              <TableCell className="py-2 tabular-nums text-xs" dir="ltr">
+                                {d.license_expiry
+                                  ? String(d.license_expiry).slice(0, 10)
+                                  : '—'}
+                              </TableCell>
+                              <TableCell className="py-2 text-right text-xs">רישיון נהיגה</TableCell>
+                              <TableCell className="py-2 text-right text-xs font-medium">
+                                {d.full_name?.trim() || '—'}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              ) : null}
             </div>
           )}
         </DialogContent>
@@ -2481,6 +2617,43 @@ export default function AdminCompliancePage() {
             </Button>
             <Button type="button" onClick={() => void submitResendLeasingEmail()} disabled={resendSending}>
               {resendSending ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  שולח…
+                </span>
+              ) : (
+                'שלח מייל'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={resendDriverLicenseDialog != null}
+        onOpenChange={(o) => {
+          if (!o) setResendDriverLicenseDialog(null);
+        }}
+      >
+        <DialogContent dir="rtl" className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>מייל חזרה לנהג</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            יישלח לנהג <strong>אותו מייל כמו «שלח בקשה»</strong> במגדל הציות (עם קישור לעדכון רישיון נהיגה). אם הנהג
+            עדיין ממתין לאישור, קישור זה עדיין רלוונטי.
+          </p>
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setResendDriverLicenseDialog(null)}
+              disabled={resendDriverSending}
+            >
+              ביטול
+            </Button>
+            <Button type="button" onClick={() => void submitResendDriverLicenseEmail()} disabled={resendDriverSending}>
+              {resendDriverSending ? (
                 <span className="inline-flex items-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   שולח…

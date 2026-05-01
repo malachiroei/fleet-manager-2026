@@ -3,8 +3,8 @@
   "short_name": "Fleet",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#1e40af",
-  "theme_color": "#1e40af",
+  "background_color": "#02040a",
+  "theme_color": "#02040a",
   "icons": [
     {
       "src": "/app-icon-192.png",
