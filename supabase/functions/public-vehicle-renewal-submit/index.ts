@@ -79,10 +79,12 @@ serve(async (req) => {
     }
 
     const parsed = parseDataUrl(docUrl);
-    const path = `vehicle-external-renewal/${reqRow.org_id}/${reqRow.entity_id}/${reqRow.id}-doc.${parsed.ext}`;
+    /** URL ייחודי בכל העלאה — אחרת אותו נתיב + getPublicUrl גורמים לדפדפן/CDN להציג תמונה ישנה ממטמון אחרי שליחה מחדש */
+    const unique = `${Date.now()}-${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
+    const path = `vehicle-external-renewal/${reqRow.org_id}/${reqRow.entity_id}/${reqRow.id}/${unique}.${parsed.ext}`;
     const up = await admin.storage.from(DOC_BUCKET).upload(path, parsed.bytes, {
       contentType: parsed.ext === 'png' ? 'image/png' : 'image/jpeg',
-      upsert: true,
+      upsert: false,
     });
     if (up.error) return json({ error: up.error.message }, 500);
 
