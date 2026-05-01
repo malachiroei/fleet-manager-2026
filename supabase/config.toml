@@ -32,3 +32,15 @@ verify_jwt = false
 
 [functions.public-compliance-submit]
 verify_jwt = false
+
+[functions.send-external-vehicle-renewal]
+verify_jwt = false
+
+[functions.public-vehicle-renewal-request]
+verify_jwt = false
+
+[functions.public-vehicle-renewal-submit]
+verify_jwt = false
+
+[functions.approve-vehicle-renewal]
+verify_jwt = false

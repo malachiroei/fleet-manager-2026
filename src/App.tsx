@@ -39,6 +39,7 @@ import ReportsPage from "./pages/ReportsPage";
 import FormsPage from "./pages/FormsPage";
 import EmployeeComplianceFormPage from "./pages/employee/EmployeeComplianceFormPage";
 import UpdateComplianceRequestPage from "./pages/UpdateComplianceRequestPage";
+import VehicleExternalRenewalPage from "./pages/VehicleExternalRenewalPage";
 import VehicleHandoverWizard from './pages/VehicleHandoverWizard';
 import TransfersPage from './pages/TransfersPage';
 import ReportMileagePage from "./pages/ReportMileagePage";
@@ -178,6 +179,7 @@ function AppRoutes() {
       <Route path="/forms" element={<ProtectedRoute><PermissionGuard permission="forms"><FormsPage /></PermissionGuard></ProtectedRoute>} />
       <Route path="/employee/forms/:token" element={<EmployeeComplianceFormPage />} />
       <Route path="/update/:token" element={<UpdateComplianceRequestPage />} />
+      <Route path="/vehicle-renewal/:token" element={<VehicleExternalRenewalPage />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );

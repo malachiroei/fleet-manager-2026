@@ -17,6 +17,13 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useAuth } from '@/hooks/useAuth';
 import { useVehicles } from '@/hooks/useVehicles';
 import { supabase } from '@/integrations/supabase/client';
@@ -577,6 +584,14 @@ type TabTableProps<T extends Record<string, unknown>> = {
   bulkSending: boolean;
   onBulkToggleRow: (entityId: string, checked: boolean) => void;
   onBulkHeaderToggle: (eligibleIdsOnScreen: string[], checked: boolean) => void;
+  /** זרימת ליסינג — רישוי שנתי / ביטוח */
+  getPendingVehicleRenewal?: (vehicleId: string) => {
+    requestId: string;
+    previewUrl: string;
+    proposedExpiry: string;
+  } | null;
+  onApproveVehicleRenewal?: (requestId: string) => void;
+  approvingVehicleRenewalId?: string | null;
 };
 
 function ComplianceTable<T extends Record<string, unknown>>({
@@ -599,21 +614,32 @@ function ComplianceTable<T extends Record<string, unknown>>({
   bulkSending,
   onBulkToggleRow,
   onBulkHeaderToggle,
+  getPendingVehicleRenewal,
+  onApproveVehicleRenewal,
+  approvingVehicleRenewalId,
 }: TabTableProps<T>) {
   const safeColumns = columns.length > 0 ? columns : [dueField];
 
   const eligibilityByRow = rows.map((row) => {
     const dueDays = daysUntil(row[dueField]);
     const id = String(row.id ?? '').trim();
-    const sendBarrierMerged = complianceRequestSendBarrier(
+    const pendingRen =
+      rowSource === 'vehicle' && (tabKey === 'annual_licensing' || tabKey === 'insurance') && id
+        ? getPendingVehicleRenewal?.(id) ?? null
+        : null;
+    let sendBarrierMerged = complianceRequestSendBarrier(
       { key: tabKey, dueField },
       row as Record<string, unknown>,
       (r) => requestDisabledReason(r as T),
     );
+    if (pendingRen) {
+      sendBarrierMerged = 'יש הגשה מליסינג הממתינה לאישור — השתמש ב«אישור והחלה»';
+    }
     return {
       id,
       dueDays,
       sendBarrierMerged,
+      pendingRen,
       canSelectBulk: Boolean(id) && !sendBarrierMerged && !bulkSending,
     };
   });
@@ -662,6 +688,7 @@ function ComplianceTable<T extends Record<string, unknown>>({
               const gate = eligibilityByRow[idx]!;
               const dueDays = gate.dueDays;
               const sendBarrierMerged = gate.sendBarrierMerged;
+              const pendingVehicleRen = gate.pendingRen;
               const isExpired = dueDays != null && dueDays < 0;
               const band = complianceDueBand(dueDays);
               const rowUrgent = band === 'red';
@@ -914,6 +941,36 @@ function ComplianceTable<T extends Record<string, unknown>>({
                           </Button>
                         </>
                       ) : null}
+                      {pendingVehicleRen && onApproveVehicleRenewal ? (
+                        <>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => window.open(pendingVehicleRen.previewUrl, '_blank', 'noopener,noreferrer')}
+                          >
+                            צפייה במסמך
+                          </Button>
+                          <span className="max-w-[10rem] text-right text-[10px] text-amber-200/95">
+                            ממתין לאישור · תוקף מוצע {pendingVehicleRen.proposedExpiry}
+                          </span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => onApproveVehicleRenewal(pendingVehicleRen.requestId)}
+                            disabled={approvingVehicleRenewalId === pendingVehicleRen.requestId}
+                          >
+                            {approvingVehicleRenewalId === pendingVehicleRen.requestId ? (
+                              <span className="inline-flex items-center gap-1">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                מאשר…
+                              </span>
+                            ) : (
+                              'אישור והחלה'
+                            )}
+                          </Button>
+                        </>
+                      ) : null}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -931,6 +988,14 @@ export default function AdminCompliancePage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const orgId = activeOrgId ?? profile?.org_id ?? null;
+  const [leasingOpen, setLeasingOpen] = useState(false);
+  const [leasingContext, setLeasingContext] = useState<{
+    row: Record<string, unknown>;
+    tab: (typeof TAB_DEFS)[number];
+  } | null>(null);
+  const [leasingEmail, setLeasingEmail] = useState('');
+  const [leasingSending, setLeasingSending] = useState(false);
+  const [approvingRenewalId, setApprovingRenewalId] = useState<string | null>(null);
   const { data: vehicles = [], isLoading: vehiclesLoading } = useVehicles();
   const { data: drivers = [], isLoading: driversLoading, refetch: refetchDrivers } = useQuery({
     queryKey: ['admin-compliance-drivers', orgId],
@@ -979,6 +1044,53 @@ export default function AdminCompliancePage() {
     refetchInterval: 3000,
   });
 
+  type PendingVehicleRenewalRow = {
+    id: string;
+    entity_id: string;
+    task_key: string;
+    proposed_expiry_date: string | null;
+    submitted_document_url: string | null;
+  };
+  const {
+    data: pendingVehicleRenewalsRaw = [],
+    refetch: refetchPendingVehicleRenewals,
+  } = useQuery({
+    queryKey: ['admin-pending-vehicle-renewals', orgId],
+    enabled: Boolean(isAdmin && orgId),
+    staleTime: 0,
+    retry: 1,
+    queryFn: async (): Promise<PendingVehicleRenewalRow[]> => {
+      if (!orgId) return [];
+      const { data, error } = await supabase
+        .from('compliance_requests')
+        .select('id, entity_id, task_key, proposed_expiry_date, submitted_document_url')
+        .eq('org_id', orgId)
+        .eq('entity_type', 'vehicle')
+        .eq('status', 'pending_admin_review')
+        .in('task_key', ['annual_licensing', 'insurance']);
+      if (error) throw error;
+      return (data ?? []) as PendingVehicleRenewalRow[];
+    },
+    refetchOnWindowFocus: true,
+    refetchInterval: 5000,
+  });
+
+  const pendingRenewalByVehicleTask = useMemo(() => {
+    const m = new Map<string, { requestId: string; previewUrl: string; proposedExpiry: string }>();
+    for (const r of pendingVehicleRenewalsRaw) {
+      const vid = String(r.entity_id ?? '').trim();
+      const tk = String(r.task_key ?? '').trim();
+      const url = String(r.submitted_document_url ?? '').trim();
+      if (!vid || !tk || !url) continue;
+      m.set(`${vid}::${tk}`, {
+        requestId: r.id,
+        previewUrl: url,
+        proposedExpiry: String(r.proposed_expiry_date ?? '').slice(0, 10),
+      });
+    }
+    return m;
+  }, [pendingVehicleRenewalsRaw]);
+
   /** מוצג מיד אחרי «שלח בקשה» עד שהשרת מחזיר שורה ב־compliance_requests (מונע תחושה ש«כלום לא קרה») */
   const [optimisticCompliancePending, setOptimisticCompliancePending] = useState<
     Record<string, { sentAt: string }>
@@ -1019,8 +1131,10 @@ export default function AdminCompliancePage() {
     const invalidateTower = () => {
       void queryClient.invalidateQueries({ queryKey: ['admin-compliance-drivers', orgId] });
       void queryClient.invalidateQueries({ queryKey: ['admin-compliance-open-requests', orgId] });
+      void queryClient.invalidateQueries({ queryKey: ['admin-pending-vehicle-renewals', orgId] });
       void queryClient.invalidateQueries({ queryKey: ['drivers'] });
       void queryClient.invalidateQueries({ queryKey: ['driver'] });
+      void queryClient.invalidateQueries({ queryKey: ['vehicles'] });
     };
 
     const channel = supabase
@@ -1349,7 +1463,7 @@ export default function AdminCompliancePage() {
   }, [availableVehicleKeys, availableDriverKeys]);
 
   const requestDisabledReason = (
-    tab: { source: ComplianceSource },
+    tab: { source: ComplianceSource; key: ComplianceTabKey },
     row: Record<string, unknown>,
   ): string | null => {
     if (tab.source === 'driver') {
@@ -1362,6 +1476,9 @@ export default function AdminCompliancePage() {
       );
       const email = directEmail || String(fallbackById?.email ?? '').trim() || String(fallbackByIdentity?.email ?? '').trim();
       return email ? null : 'אין אימייל לנהג';
+    }
+    if (tab.key === 'annual_licensing' || tab.key === 'insurance') {
+      return null;
     }
     const assignedDriverId = String(row.assigned_driver_id ?? '').trim();
     if (!assignedDriverId) return 'לרכב אין נהג משויך';
@@ -1638,6 +1755,110 @@ export default function AdminCompliancePage() {
     setApproveExpiryByDriverId((prev) => ({ ...prev, [id]: next }));
   };
 
+  const approveVehicleRenewalForRequest = async (requestId: string) => {
+    const orgIdRequired = String(orgId ?? '').trim();
+    setApprovingRenewalId(requestId);
+    try {
+      const { data, error } = await invokeSupabaseEdgeFunction('approve-vehicle-renewal', {
+        request_id: requestId,
+      });
+      const earlyPayload = normalizeInvokePayload(data);
+      if (!error && earlyPayload) {
+        const earlyErr =
+          typeof earlyPayload.error === 'string' && earlyPayload.error.trim().length > 0
+            ? earlyPayload.error.trim()
+            : null;
+        if (earlyErr && earlyPayload.success !== true) throw new Error(earlyErr);
+      }
+      if (error) {
+        let detailed = error.message ?? 'שגיאה';
+        const context = (error as unknown as { context?: Response }).context;
+        if (context) {
+          try {
+            const body = (await context.json()) as { error?: string };
+            if (body.error) detailed = body.error;
+          } catch {
+            /* ignore */
+          }
+        }
+        throw new Error(detailed);
+      }
+      const payload = normalizeInvokePayload(data);
+      if (payload?.error) throw new Error(String(payload.error));
+      if (payload?.success !== true) throw new Error('תשובת שרת לא תקינה');
+      toast.success('הרכב עודכן; המסמך נרשם בכרטיס הרכב; נשלח מייל לנהג (אם מוגדר).');
+      await queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+      await queryClient.invalidateQueries({ queryKey: ['admin-pending-vehicle-renewals', orgIdRequired] });
+      await queryClient.invalidateQueries({ queryKey: ['admin-compliance-open-requests', orgIdRequired] });
+      void refetchPendingVehicleRenewals();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`אישור נכשל: ${msg}`);
+    } finally {
+      setApprovingRenewalId(null);
+    }
+  };
+
+  const submitLeasingRenewalFromModal = async () => {
+    if (!leasingContext || !orgId) return;
+    const email = leasingEmail.trim().toLowerCase();
+    if (!email.includes('@')) {
+      toast.error('נא להזין כתובת מייל תקינה לנציג הליסינג');
+      return;
+    }
+    const { row, tab } = leasingContext;
+    const vid = String(row.id ?? '').trim();
+    if (!vid) return;
+    setLeasingSending(true);
+    try {
+      const dueIso = dueIsoFromRaw(row[tab.dueField]);
+      const { data, error } = await invokeSupabaseEdgeFunction('send-external-vehicle-renewal', {
+        org_id: orgId,
+        vehicle_id: vid,
+        task_key: tab.key,
+        task_label: tab.label,
+        due_field: tab.dueField,
+        due_date: dueIso,
+        external_recipient_email: email,
+      });
+      const earlyPayload = normalizeInvokePayload(data);
+      if (!error && earlyPayload) {
+        const earlyErr =
+          typeof earlyPayload.error === 'string' && earlyPayload.error.trim().length > 0
+            ? earlyPayload.error.trim()
+            : null;
+        if (earlyErr && earlyPayload.success !== true) throw new Error(earlyErr);
+      }
+      if (error) {
+        let detailed = error.message ?? 'שגיאה';
+        const context = (error as unknown as { context?: Response }).context;
+        if (context) {
+          try {
+            const body = (await context.json()) as { error?: string };
+            if (body.error) detailed = body.error;
+          } catch {
+            /* ignore */
+          }
+        }
+        throw new Error(detailed);
+      }
+      const payload = normalizeInvokePayload(data);
+      if (payload?.error) throw new Error(String(payload.error));
+      if (payload?.success !== true) throw new Error('תשובת שרת לא תקינה');
+      toast.success('המייל נשלח לנציג הליסינג');
+      setLeasingOpen(false);
+      setLeasingContext(null);
+      setLeasingEmail('');
+      await queryClient.invalidateQueries({ queryKey: ['admin-compliance-open-requests', orgId] });
+      void refetchPendingVehicleRenewals();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`שליחה נכשלה: ${msg}`);
+    } finally {
+      setLeasingSending(false);
+    }
+  };
+
   const approveLicenseForRow = async (row: Record<string, unknown>) => {
     const driverId = String(row.id ?? '').trim();
     const orgIdRequired = String(orgId ?? '').trim();
@@ -1783,7 +2004,7 @@ export default function AdminCompliancePage() {
                   </Card>
                 ) : (
                   <>
-                    {selectedCountForTab > 0 ? (
+                    {selectedCountForTab > 0 && tab.key !== 'annual_licensing' && tab.key !== 'insurance' ? (
                       <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
                         <Button
                           type="button"
@@ -1818,7 +2039,15 @@ export default function AdminCompliancePage() {
                       tabKey={tab.key}
                       rowSource={tab.source}
                       complianceReturnUrl={complianceReturnUrl}
-                      onSendRequest={(row) => void submitComplianceRequest(tab, row)}
+                      onSendRequest={(row) => {
+                        if (tab.key === 'annual_licensing' || tab.key === 'insurance') {
+                          setLeasingContext({ row: row as Record<string, unknown>, tab });
+                          setLeasingEmail('');
+                          setLeasingOpen(true);
+                          return;
+                        }
+                        void submitComplianceRequest(tab, row);
+                      }}
                       requestDisabledReason={(row) => requestDisabledReason(tab, row)}
                       driverEmailFixHref={(row) => {
                         const state = { complianceReturnTo: complianceReturnUrl };
@@ -1838,6 +2067,11 @@ export default function AdminCompliancePage() {
                       bulkSending={bulkSending}
                       onBulkToggleRow={onBulkToggleRow}
                       onBulkHeaderToggle={onBulkHeaderToggle}
+                      getPendingVehicleRenewal={(vehicleId) =>
+                        pendingRenewalByVehicleTask.get(`${vehicleId}::${tab.key}`) ?? null
+                      }
+                      onApproveVehicleRenewal={(rid) => void approveVehicleRenewalForRequest(rid)}
+                      approvingVehicleRenewalId={approvingRenewalId}
                       emptyLabel={
                         viewFilter === 'all'
                           ? `לא נמצאו רשומות עם ${prettifyKey(tab.dueField)}`
@@ -1855,6 +2089,65 @@ export default function AdminCompliancePage() {
           })}
         </Tabs>
       </div>
+
+      <Dialog
+        open={leasingOpen}
+        onOpenChange={(o) => {
+          setLeasingOpen(o);
+          if (!o) setLeasingContext(null);
+        }}
+      >
+        <DialogContent dir="rtl" className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>שליחה לנציג ליסינג</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            לאחר השליחה הנציג יקבל קישור להעלאת צילום מסמך ולציון תאריך תוקף חדש. התוצאה תחזור למגדל הציות לאישורך;
+            לאחר האישור המסמך יישמר בכרטיס הרכב (טסט / ביטוח) ויישלח מייל לנהג המשויך.
+          </p>
+          {leasingContext ? (
+            <p className="rounded-md border border-border/60 bg-muted/30 px-2 py-1.5 text-xs text-muted-foreground">
+              רכב:{' '}
+              <span className="font-medium text-foreground">{String(leasingContext.row.plate_number ?? '')}</span> ·{' '}
+              {leasingContext.tab.label}
+            </p>
+          ) : null}
+          <div className="space-y-2">
+            <Label htmlFor="leasing-email">מייל נציג ליסינג</Label>
+            <Input
+              id="leasing-email"
+              type="email"
+              dir="ltr"
+              value={leasingEmail}
+              onChange={(e) => setLeasingEmail(e.target.value)}
+              placeholder="rep@leasing.example"
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setLeasingOpen(false);
+                setLeasingContext(null);
+              }}
+              disabled={leasingSending}
+            >
+              ביטול
+            </Button>
+            <Button type="button" onClick={() => void submitLeasingRenewalFromModal()} disabled={leasingSending}>
+              {leasingSending ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  שולח…
+                </span>
+              ) : (
+                'שלח מייל'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </FleetHudPageShell>
   );
 }
