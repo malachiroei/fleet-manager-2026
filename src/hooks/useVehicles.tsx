@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
 import { fleetManagerVisibilityOrFilter } from '@/lib/fleetManagerScope';
 import { normalizePlateNumber } from '@/lib/plateNumber';
+import { isMissingSafetyOfficerColumnError } from '@/lib/supabaseError';
 
 function vehicleWithNormalizedPlate<T extends { plate_number: string }>(v: T): T {
   const p = normalizePlateNumber(v.plate_number);
@@ -157,6 +158,36 @@ export function useVehicle(id: string) {
   });
 }
 
+async function insertVehicleWithCompat(row: Record<string, unknown>) {
+  const first = await supabase.from('vehicles').insert(row as any).select().single();
+  if (!first.error) return first;
+  if (
+    !isMissingSafetyOfficerColumnError(first.error) ||
+    !Object.prototype.hasOwnProperty.call(row, 'safety_officer')
+  ) {
+    return first;
+  }
+  const fallbackRow = { ...row };
+  delete (fallbackRow as Record<string, unknown>).safety_officer;
+  console.warn('[useCreateVehicle] safety_officer column missing on vehicles; retrying without it');
+  return supabase.from('vehicles').insert(fallbackRow as any).select().single();
+}
+
+async function updateVehicleWithCompat(id: string, payload: Partial<Vehicle>) {
+  const first = await supabase.from('vehicles').update(payload).eq('id', id).select();
+  if (!first.error) return first;
+  if (
+    !isMissingSafetyOfficerColumnError(first.error) ||
+    !Object.prototype.hasOwnProperty.call(payload, 'safety_officer')
+  ) {
+    return first;
+  }
+  const fallbackPayload = { ...payload } as Record<string, unknown>;
+  delete fallbackPayload.safety_officer;
+  console.warn('[useUpdateVehicle] safety_officer column missing; retrying without it');
+  return supabase.from('vehicles').update(fallbackPayload as Partial<Vehicle>).eq('id', id).select();
+}
+
 export function useCreateVehicle() {
   const queryClient = useQueryClient();
   const { activeOrgId, profile, user } = useAuth();
@@ -175,11 +206,7 @@ export function useCreateVehicle() {
       if (ownerId != null && row.managed_by_user_id === undefined) {
         row.managed_by_user_id = ownerId;
       }
-      const { data, error } = await supabase
-        .from('vehicles')
-        .insert(row as any)
-        .select()
-        .single();
+      const { data, error } = await insertVehicleWithCompat(row);
 
       if (error) throw error;
       return vehicleWithNormalizedPlate(data as Vehicle);
@@ -203,11 +230,7 @@ export function useUpdateVehicle() {
       if (typeof payload.plate_number === 'string') {
         payload.plate_number = normalizePlateNumber(payload.plate_number);
       }
-      const { data, error } = await supabase
-        .from('vehicles')
-        .update(payload)
-        .eq('id', id)
-        .select();
+      const { data, error } = await updateVehicleWithCompat(id, payload);
 
       if (error) throw error;
       const rows = Array.isArray(data) ? data : [];

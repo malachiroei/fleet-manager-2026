@@ -4,13 +4,12 @@ import { useTranslation } from 'react-i18next';
 import { useDrivers, useDriver } from '@/hooks/useDrivers';
 import type { DriverSummary, ComplianceStatus } from '@/types/fleet';
 
-import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Plus, Search, User, FolderOpen } from 'lucide-react';
+import { Plus, Search, User } from 'lucide-react';
 import { FleetHudPageShell } from '@/components/FleetHudPageShell';
 import DriverFolders from '@/components/DriverFolders';
 import { DriversHudTable, type StatusFilter } from '@/components/drivers/DriversHudTable';
@@ -46,7 +45,6 @@ export default function DriverListPage() {
   const { data: drivers, isLoading, isError, error, refetch } = useDrivers();
   const { data: vehicles = [] } = useVehicles();
   const { data: activeAssignments = [] } = useActiveDriverVehicleAssignments();
-  const { isManager } = useAuth();
   const { t } = useTranslation();
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<StatusFilter>('all');
@@ -268,20 +266,10 @@ export default function DriverListPage() {
                 licenseTypeOptions={licenseTypeOptions}
                 operationOptions={operationOptions}
                 assignedVehicleByDriverId={assignedVehicleByDriverId}
-                showNotificationSettingsLink={isManager}
               />
             </>
           )}
         </div>
-
-        {!foldersDriver && filteredDrivers.length > 0 && (
-          <div className="rounded-xl border border-dashed border-border/60 bg-muted/5 p-4 text-center">
-            <FolderOpen className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">
-              לפתיחת <strong className="text-foreground">תיקיות ניהול נהג</strong> — היכנסו לכרטיס/עריכת הנהג
-            </p>
-          </div>
-        )}
       </section>
     </FleetHudPageShell>
   );

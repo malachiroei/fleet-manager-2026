@@ -2,18 +2,28 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { Driver, DriverSummary } from '@/types/fleet';
 import { toast } from '@/hooks/use-toast';
-import { formatSupabaseError } from '@/lib/supabaseError';
+import { formatSupabaseError, isMissingSafetyOfficerColumnError } from '@/lib/supabaseError';
 import { useAuth } from '@/hooks/useAuth';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
 import { fleetManagerVisibilityOrFilter } from '@/lib/fleetManagerScope';
 
-function isMissingSafetyOfficerColumnError(error: unknown): boolean {
-  const e = error as { code?: string; message?: string; details?: string; hint?: string } | null;
-  const blob = `${e?.message ?? ''} ${e?.details ?? ''} ${e?.hint ?? ''}`.toLowerCase();
-  return (e?.code === 'PGRST204' || blob.includes('pgrst204')) && blob.includes('safety_officer');
+/** PostgREST שולח null מפסיע DEFAULT ב־Postgres; חובה UUID לפני insert אם אין ערך תקין. */
+function ensureDriverInsertId(row: Record<string, unknown>) {
+  const id = row.id;
+  if (id !== null && id !== undefined && id !== '') return;
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    row.id = globalThis.crypto.randomUUID();
+    return;
+  }
+  row.id = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }
 
 async function insertDriverWithCompat(row: Record<string, unknown>) {
+  ensureDriverInsertId(row);
   const first = await supabase.from('drivers').insert(row).select().single();
   if (!first.error) return first;
   if (!isMissingSafetyOfficerColumnError(first.error) || !Object.prototype.hasOwnProperty.call(row, 'safety_officer')) {
@@ -236,8 +246,18 @@ export function useCreateDriver() {
       toast({ title: 'הנהג נוסף בהצלחה' });
     },
     onError: (error) => {
-      toast({ title: 'שגיאה בהוספת הנהג', description: error.message, variant: 'destructive' });
-    }
+      const msg = error instanceof Error ? error.message : String(error);
+      const rls =
+        /row-level security|violates row-level security/i.test(msg) ||
+        (error as { code?: string })?.code === '42501';
+      toast({
+        title: 'שגיאה בהוספת הנהג',
+        description: rls
+          ? `${msg} — ודאו שיש לך הרשאת «נהגים» בארגון (ניהול צוות), או תפקיד fleet_manager/admin ב־user_roles.`
+          : msg,
+        variant: 'destructive',
+      });
+    },
   });
 }
 

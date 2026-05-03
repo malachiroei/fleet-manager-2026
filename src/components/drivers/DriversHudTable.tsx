@@ -22,7 +22,6 @@ import { cn } from '@/lib/utils';
 import { fmtDriverDate } from '@/components/DriverCard';
 import {
   AlertTriangle,
-  Bell,
   ChevronLeft,
   ChevronRight,
   IdCard,
@@ -299,7 +298,6 @@ export interface DriversHudTableProps {
   operationOptions: string[];
   /** רכב ראשון משויך — דגם ומספר רישוי בנפרד */
   assignedVehicleByDriverId: ReadonlyMap<string, { modelLabel: string; plateLabel: string }>;
-  showNotificationSettingsLink?: boolean;
 }
 
 export function DriversHudTable({
@@ -316,7 +314,6 @@ export function DriversHudTable({
   licenseTypeOptions,
   operationOptions,
   assignedVehicleByDriverId,
-  showNotificationSettingsLink = false,
 }: DriversHudTableProps) {
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
@@ -539,15 +536,6 @@ export function DriversHudTable({
           </Select>
         </div>
         <div className="flex w-full min-h-[2.5rem] flex-wrap items-end justify-start gap-2 sm:ml-auto sm:w-auto sm:justify-end">
-          {showNotificationSettingsLink ? (
-            <Link
-              to="/admin/settings"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:border-cyan-400/50 hover:bg-cyan-500/15"
-            >
-              <Bell className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              הגדרות התראות (מייל)
-            </Link>
-          ) : null}
           <FleetTableColumnsButton onClick={() => setDriverColSheetOpen(true)} />
         </div>
       </div>

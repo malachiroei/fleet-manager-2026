@@ -25,3 +25,15 @@ export function formatSupabaseError(error: unknown): string {
     return String(error);
   }
 }
+
+/** PostgREST: עמודת safety_officer לא קיימת / לא ב-schema cache (מיגרציה לא הורצה בפרוד). */
+export function isMissingSafetyOfficerColumnError(error: unknown): boolean {
+  const e = error as { code?: string; message?: string; details?: string; hint?: string } | null;
+  const blob = `${e?.message ?? ''} ${e?.details ?? ''} ${e?.hint ?? ''}`.toLowerCase();
+  if (!blob.includes('safety_officer')) return false;
+  return (
+    e?.code === 'PGRST204' ||
+    blob.includes('pgrst204') ||
+    blob.includes('schema cache')
+  );
+}
