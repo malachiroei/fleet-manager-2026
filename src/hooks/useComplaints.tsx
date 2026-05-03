@@ -4,6 +4,8 @@ import { toast } from '@/hooks/use-toast';
 
 export interface Complaint {
   id: string;
+  /** אם קיים בטבלה — סינון מדויק לנהג ללא תלות בשם */
+  driver_id?: string | null;
   vehicle_number: string;
   report_id: string | null;
   report_type: string | null;
@@ -36,6 +38,27 @@ export function useComplaints() {
 
       if (error) throw error;
       return (data ?? []) as Complaint[];
+    },
+  });
+}
+
+/** תלונה יחידה (טופס ידני מתיק נהג). */
+export function useCreateComplaint() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (row: Omit<Complaint, 'id' | 'created_at' | 'updated_at'>) => {
+      const { data, error } = await supabase.from('procedure6_complaints').insert(row).select().single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['procedure6_complaints'] });
+      toast({ title: 'התלונה נוספה בהצלחה' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'שגיאה בהוספת תלונה', description: error.message, variant: 'destructive' });
     },
   });
 }

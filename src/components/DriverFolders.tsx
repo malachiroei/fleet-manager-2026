@@ -5,15 +5,35 @@ import {
   useDeleteDriverIncident,
   useDriverFamilyMembers,
   useDeleteDriverFamilyMember,
+  useCreateDriverIncident,
+  useCreateDriverFamilyMember,
   type DriverIncidentType,
 } from '@/hooks/useDriverFolders';
-import { useComplaints } from '@/hooks/useComplaints';
+import { useComplaints, useCreateComplaint, type Complaint } from '@/hooks/useComplaints';
 import { useDriverHandoverHistory, type HandoverHistoryItem } from '@/hooks/useHandovers';
 import { useDriverDocuments } from '@/hooks/useDriverDocuments';
 import { useDriverStorageFiles } from '@/hooks/useDriverStorageFiles';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { FleetDatePicker } from '@/components/ui/FleetDatePicker';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   AlertTriangle,
   Car,
@@ -31,6 +51,7 @@ import {
   X,
   FolderOpen,
   Search,
+  Plus,
 } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
@@ -76,12 +97,328 @@ interface Props {
   detailsSlot?: ReactNode;
 }
 
+function complaintMatchesDriver(c: Complaint, driver: Driver): boolean {
+  const did = c.driver_id?.trim();
+  if (did && driver.id) {
+    return did === driver.id;
+  }
+  const dn = c.driver_name?.trim().toLowerCase() ?? '';
+  const fn = driver.full_name.trim().toLowerCase();
+  return dn.length > 0 && dn === fn;
+}
+
+function AddDriverIncidentDialog({
+  driver,
+  incidentType,
+  open,
+  onOpenChange,
+}: {
+  driver: Driver;
+  incidentType: DriverIncidentType;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const create = useCreateDriverIncident();
+  const [incidentDate, setIncidentDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [description, setDescription] = useState('');
+  const [location, setLocation] = useState('');
+  const [damageDesc, setDamageDesc] = useState('');
+  const [notes, setNotes] = useState('');
+
+  const reset = () => {
+    setIncidentDate(new Date().toISOString().slice(0, 10));
+    setDescription('');
+    setLocation('');
+    setDamageDesc('');
+    setNotes('');
+  };
+
+  const submit = () => {
+    const desc = description.trim();
+    if (!desc) return;
+    create.mutate(
+      {
+        driver_id: driver.id,
+        vehicle_id: null,
+        incident_type: incidentType,
+        incident_date: incidentDate,
+        description: desc,
+        location: location.trim() || null,
+        damage_desc: incidentType === 'accident' ? damageDesc.trim() || null : null,
+        police_report_no: null,
+        insurance_claim: null,
+        photo_urls: null,
+        status: 'open',
+        notes: notes.trim() || null,
+      },
+      {
+        onSuccess: () => {
+          onOpenChange(false);
+          reset();
+        },
+      }
+    );
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) reset();
+        onOpenChange(v);
+      }}
+    >
+      <DialogContent className="max-w-md" dir="rtl">
+        <DialogHeader>
+          <DialogTitle>{incidentType === 'event' ? 'הוספת אירוע' : 'הוספת תאונה'}</DialogTitle>
+          <DialogDescription>הרשומה תישמר ותוצג בתיק הנהג.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <FleetDatePicker id="incident_date" label="תאריך" value={incidentDate} onChange={setIncidentDate} />
+          <div className="space-y-2">
+            <Label htmlFor="inc-desc">תיאור *</Label>
+            <Textarea
+              id="inc-desc"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              placeholder="תאר את האירוע או התאונה"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="inc-loc">מיקום</Label>
+            <Input id="inc-loc" value={location} onChange={(e) => setLocation(e.target.value)} />
+          </div>
+          {incidentType === 'accident' && (
+            <div className="space-y-2">
+              <Label htmlFor="inc-dmg">תיאור נזק</Label>
+              <Textarea id="inc-dmg" value={damageDesc} onChange={(e) => setDamageDesc(e.target.value)} rows={2} />
+            </div>
+          )}
+          <div className="space-y-2">
+            <Label htmlFor="inc-notes">הערות</Label>
+            <Textarea id="inc-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+          </div>
+        </div>
+        <DialogFooter className="gap-2 sm:justify-start">
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            ביטול
+          </Button>
+          <Button type="button" onClick={submit} disabled={create.isPending || !description.trim()}>
+            {create.isPending ? 'שומר…' : 'שמירה'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AddDriverComplaintDialog({
+  driver,
+  open,
+  onOpenChange,
+}: {
+  driver: Driver;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const create = useCreateComplaint();
+  const [vehicleNumber, setVehicleNumber] = useState('');
+  const [description, setDescription] = useState('');
+  const [reportType, setReportType] = useState('');
+
+  const reset = () => {
+    setVehicleNumber('');
+    setDescription('');
+    setReportType('');
+  };
+
+  const submit = () => {
+    const vn = vehicleNumber.trim();
+    if (!vn) return;
+    create.mutate(
+      {
+        vehicle_number: vn,
+        report_id: null,
+        report_type: reportType.trim() || null,
+        location: null,
+        description: description.trim() || null,
+        report_date_time: new Date().toISOString(),
+        reporter_name: null,
+        reporter_cell_phone: null,
+        received_time: null,
+        receiver_name: null,
+        driver_response: null,
+        driver_name: driver.full_name.trim(),
+        action_taken: null,
+        first_update_time: null,
+        last_update_time: null,
+        status: 'open',
+        driver_id: driver.id,
+      },
+      {
+        onSuccess: () => {
+          onOpenChange(false);
+          reset();
+        },
+      }
+    );
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) reset();
+        onOpenChange(v);
+      }}
+    >
+      <DialogContent className="max-w-md" dir="rtl">
+        <DialogHeader>
+          <DialogTitle>הוספת תלונה נוהל 6</DialogTitle>
+          <DialogDescription>שם הנהג יישמר אוטומטית ({driver.full_name}).</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <div className="space-y-2">
+            <Label htmlFor="cmp-vn">מספר רכב *</Label>
+            <Input
+              id="cmp-vn"
+              value={vehicleNumber}
+              onChange={(e) => setVehicleNumber(e.target.value)}
+              dir="ltr"
+              placeholder="למשל 12-345-67"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="cmp-type">סוג דיווח</Label>
+            <Input id="cmp-type" value={reportType} onChange={(e) => setReportType(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="cmp-desc">תיאור</Label>
+            <Textarea id="cmp-desc" value={description} onChange={(e) => setDescription(e.target.value)} rows={4} />
+          </div>
+        </div>
+        <DialogFooter className="gap-2 sm:justify-start">
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            ביטול
+          </Button>
+          <Button type="button" onClick={submit} disabled={create.isPending || !vehicleNumber.trim()}>
+            {create.isPending ? 'שומר…' : 'שמירה'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AddDriverFamilyMemberDialog({
+  driver,
+  open,
+  onOpenChange,
+}: {
+  driver: Driver;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const create = useCreateDriverFamilyMember();
+  const [fullName, setFullName] = useState('');
+  const [relationship, setRelationship] = useState('spouse');
+  const [phone, setPhone] = useState('');
+  const [idNumber, setIdNumber] = useState('');
+
+  const reset = () => {
+    setFullName('');
+    setRelationship('spouse');
+    setPhone('');
+    setIdNumber('');
+  };
+
+  const submit = () => {
+    const fn = fullName.trim();
+    if (!fn) return;
+    create.mutate(
+      {
+        driver_id: driver.id,
+        full_name: fn,
+        relationship,
+        phone: phone.trim() || null,
+        id_number: idNumber.trim() || null,
+        birth_date: null,
+        address: null,
+        city: null,
+        notes: null,
+      },
+      {
+        onSuccess: () => {
+          onOpenChange(false);
+          reset();
+        },
+      }
+    );
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) reset();
+        onOpenChange(v);
+      }}
+    >
+      <DialogContent className="max-w-md" dir="rtl">
+        <DialogHeader>
+          <DialogTitle>הוספת בן משפחה</DialogTitle>
+          <DialogDescription>הפרטים יישמרו בטבלת בני משפחה לנהג זה.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <div className="space-y-2">
+            <Label htmlFor="fam-name">שם מלא *</Label>
+            <Input id="fam-name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>קירבה</Label>
+            <Select value={relationship} onValueChange={setRelationship}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="spouse">בן/בת זוג</SelectItem>
+                <SelectItem value="child">ילד/ה</SelectItem>
+                <SelectItem value="parent">הורה</SelectItem>
+                <SelectItem value="sibling">אח/אחות</SelectItem>
+                <SelectItem value="other">אחר</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="fam-phone">טלפון</Label>
+            <Input id="fam-phone" value={phone} onChange={(e) => setPhone(e.target.value)} dir="ltr" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="fam-id">תעודת זהות</Label>
+            <Input id="fam-id" value={idNumber} onChange={(e) => setIdNumber(e.target.value)} dir="ltr" />
+          </div>
+        </div>
+        <DialogFooter className="gap-2 sm:justify-start">
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            ביטול
+          </Button>
+          <Button type="button" onClick={submit} disabled={create.isPending || !fullName.trim()}>
+            {create.isPending ? 'שומר…' : 'שמירה'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Incidents tab (events & accidents) ──────────────────────────────────────
 
 function IncidentsTab({ driver, incidentType }: { driver: Driver; incidentType: DriverIncidentType }) {
   const { data: incidents = [], isLoading, isError } = useDriverIncidents(driver.id, incidentType);
   const deleteIncident = useDeleteDriverIncident();
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
 
   if (isLoading) {
     return <p className="text-muted-foreground px-3 py-2 text-xs">טוען…</p>;
@@ -91,12 +428,24 @@ function IncidentsTab({ driver, incidentType }: { driver: Driver; incidentType: 
     return <FolderLoadErrorMessage />;
   }
 
-  if (incidents.length === 0) {
-    return <EmptyFolderHint />;
-  }
-
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
+      <div className="flex justify-end px-1">
+        <Button type="button" size="sm" variant="secondary" className="gap-1.5" onClick={() => setAddOpen(true)}>
+          <Plus className="h-4 w-4" />
+          {incidentType === 'event' ? 'הוספת אירוע' : 'הוספת תאונה'}
+        </Button>
+      </div>
+      <AddDriverIncidentDialog
+        driver={driver}
+        incidentType={incidentType}
+        open={addOpen}
+        onOpenChange={setAddOpen}
+      />
+      {incidents.length === 0 ? (
+        <EmptyFolderHint />
+      ) : (
+        <div className="space-y-2">
       {incidents.map((inc) => (
         <Card key={inc.id} className="overflow-hidden">
           <div
@@ -168,6 +517,8 @@ function IncidentsTab({ driver, incidentType }: { driver: Driver; incidentType: 
           )}
         </Card>
       ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -175,19 +526,26 @@ function IncidentsTab({ driver, incidentType }: { driver: Driver; incidentType: 
 // ─── Complaints tab ───────────────────────────────────────────────────────────
 
 function ComplaintsTab({ driver }: { driver: Driver }) {
-  const { data: allComplaints = [], isLoading } = useComplaints();
-  const complaints = allComplaints.filter(
-    (c) =>
-      c.driver_name?.trim().toLowerCase() === driver.full_name.trim().toLowerCase()
-  );
+  const { data: allComplaints = [], isLoading, isError } = useComplaints();
+  const [addOpen, setAddOpen] = useState(false);
+  const complaints = allComplaints.filter((c) => complaintMatchesDriver(c, driver));
 
   if (isLoading) return <p className="text-muted-foreground text-sm p-4">טוען...</p>;
 
-  if (complaints.length === 0) {
-    return null;
-  }
+  if (isError) return <FolderLoadErrorMessage />;
 
   return (
+    <div className="space-y-3">
+      <div className="flex justify-end px-1">
+        <Button type="button" size="sm" variant="secondary" className="gap-1.5" onClick={() => setAddOpen(true)}>
+          <Plus className="h-4 w-4" />
+          הוספת תלונה
+        </Button>
+      </div>
+      <AddDriverComplaintDialog driver={driver} open={addOpen} onOpenChange={setAddOpen} />
+      {complaints.length === 0 ? (
+        <EmptyFolderHint />
+      ) : (
     <div className="space-y-2">
       <p className="text-sm text-muted-foreground">{complaints.length} תלונות</p>
       <div className="overflow-x-auto">
@@ -226,6 +584,8 @@ function ComplaintsTab({ driver }: { driver: Driver }) {
           </tbody>
         </table>
       </div>
+    </div>
+      )}
     </div>
   );
 }
@@ -415,6 +775,7 @@ function relationshipLabel(v: string) {
 function FamilyTab({ driver }: { driver: Driver }) {
   const { data: members = [], isLoading, isError } = useDriverFamilyMembers(driver.id);
   const deleteMember = useDeleteDriverFamilyMember();
+  const [addOpen, setAddOpen] = useState(false);
 
   if (isLoading) {
     return <p className="text-muted-foreground px-3 py-2 text-xs">טוען…</p>;
@@ -422,11 +783,18 @@ function FamilyTab({ driver }: { driver: Driver }) {
 
   if (isError) return <FolderLoadErrorMessage />;
 
-  if (members.length === 0) {
-    return <EmptyFolderHint />;
-  }
-
   return (
+    <div className="space-y-3">
+      <div className="flex justify-end px-1">
+        <Button type="button" size="sm" variant="secondary" className="gap-1.5" onClick={() => setAddOpen(true)}>
+          <Plus className="h-4 w-4" />
+          הוספת בן משפחה
+        </Button>
+      </div>
+      <AddDriverFamilyMemberDialog driver={driver} open={addOpen} onOpenChange={setAddOpen} />
+      {members.length === 0 ? (
+        <EmptyFolderHint />
+      ) : (
     <div className="grid gap-2">
         {members.map((m) => (
           <Card key={m.id}>
@@ -461,6 +829,8 @@ function FamilyTab({ driver }: { driver: Driver }) {
             </CardContent>
           </Card>
         ))}
+    </div>
+      )}
     </div>
   );
 }
