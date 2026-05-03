@@ -111,6 +111,7 @@ export function useDrivers() {
               'license_back_url',
               'health_declaration_url',
               'status',
+              'pending_license_expiry',
             ].join(', '),
           )
           .eq('org_id', orgId);
@@ -150,6 +151,7 @@ function mapRowToDriverSummary(row: Record<string, unknown>): DriverSummary {
     phone: (row.phone as string) ?? null,
     email: (row.email as string) ?? null,
     license_expiry: String(row.license_expiry ?? ''),
+    pending_license_expiry: s('pending_license_expiry'),
     status: (row.status as DriverSummary['status']) ?? 'valid',
     address: s('address'),
     city: s('city'),

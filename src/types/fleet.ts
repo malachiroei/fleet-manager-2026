@@ -156,6 +156,8 @@ export interface Driver {
   phone: string | null;
   email: string | null;
   license_expiry: string;
+  /** תאריך מוצע מהעובד בטופס /update לפני אישור — ממופה ל־license_expiry באישור */
+  pending_license_expiry?: string | null;
   health_declaration_date: string | null;
   safety_training_date: string | null;
   license_front_url: string | null;
@@ -202,6 +204,7 @@ export interface DriverSummary {
   phone: string | null;
   email: string | null;
   license_expiry: string;
+  pending_license_expiry?: string | null;
   status: ComplianceStatus;
   address: string | null;
   city: string | null;

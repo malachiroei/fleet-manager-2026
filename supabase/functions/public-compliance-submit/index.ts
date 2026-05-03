@@ -155,6 +155,8 @@ serve(async (req) => {
     } else if (requestRow.task_key === 'driver_license') {
       const licenseUrl = clean(body.license_image_data_url);
       if (!licenseUrl) return json({ error: 'Missing license image' }, 400);
+      const declaredLicYmd = ymdOrNull(body.declared_license_expiry);
+      const declaredLicNo = clean(body.declared_license_number);
       const parsed = parseDataUrl(licenseUrl);
       const path = `compliance-requests/${requestRow.org_id}/${requestRow.driver_id}/${requestRow.id}-license.${parsed.ext}`;
       const up = await admin.storage.from(DOC_BUCKET).upload(path, parsed.bytes, {
@@ -165,14 +167,28 @@ serve(async (req) => {
       const pub = admin.storage.from(DOC_BUCKET).getPublicUrl(path);
       const fileUrl = clean(pub.data.publicUrl);
 
-      const { error: updErr } = await admin
-        .from('drivers')
-        .update({
-          license_front_url: fileUrl,
-          status: 'pending_approval',
-        })
-        .eq('id', requestRow.driver_id)
-        .eq('org_id', requestRow.org_id);
+      const driverPatch: Record<string, unknown> = {
+        license_front_url: fileUrl,
+        status: 'pending_approval',
+      };
+      if (declaredLicYmd) {
+        driverPatch.pending_license_expiry = declaredLicYmd;
+      }
+
+      let updErr = (await admin.from('drivers').update(driverPatch).eq('id', requestRow.driver_id).eq('org_id', requestRow.org_id))
+        .error;
+      if (
+        updErr &&
+        /pending_license_expiry|column|schema cache/i.test(String(updErr.message ?? ''))
+      ) {
+        const { pending_license_expiry: _p, ...fallbackPatch } = driverPatch;
+        void _p;
+        updErr = (await admin
+          .from('drivers')
+          .update(fallbackPatch)
+          .eq('id', requestRow.driver_id)
+          .eq('org_id', requestRow.org_id)).error;
+      }
       if (updErr) return json({ error: updErr.message }, 500);
 
       const { error: docErr } = await admin.from('compliance_docs').insert({
@@ -182,6 +198,10 @@ serve(async (req) => {
         task_key: requestRow.task_key,
         file_url: fileUrl,
         file_kind: 'license_photo',
+        metadata: {
+          declared_license_expiry: declaredLicYmd,
+          declared_license_number: declaredLicNo || null,
+        },
       });
       if (docErr) return json({ error: docErr.message }, 500);
 

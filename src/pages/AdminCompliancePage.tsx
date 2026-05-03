@@ -81,6 +81,7 @@ const VEHICLE_KEYS: string[] = [
 
 const DRIVER_KEYS: string[] = [
   'id', 'org_id', 'user_id', 'managed_by_user_id', 'full_name', 'id_number', 'phone', 'email', 'license_expiry',
+  'pending_license_expiry',
   'health_declaration_date', 'safety_training_date', 'license_front_url', 'license_back_url',
   'health_declaration_url', 'status', 'created_at', 'updated_at', 'address', 'job_title', 'department',
   'license_number', 'regulation_585b_date', 'driver_code', 'is_active', 'employee_number', 'work_start_date', 'city',
@@ -170,6 +171,20 @@ function daysUntil(raw: unknown): number | null {
   return Math.round((targetDay.getTime() - now.getTime()) / 86_400_000);
 }
 
+/** תאריך יעד לחישוב תצוגה/סינון: ברישיון ב־pending — התאריך שהנהג הזין בטופס הציבורי */
+function complianceDueRawForRow(
+  tabKey: ComplianceTabKey,
+  dueField: string,
+  row: Record<string, unknown>,
+): unknown {
+  if (tabKey === 'driver_license') {
+    const st = String(row.status ?? '').trim().toLowerCase();
+    const p = String((row as { pending_license_expiry?: string | null }).pending_license_expiry ?? '').trim();
+    if (st === 'pending_approval' && p) return p;
+  }
+  return row[dueField];
+}
+
 /** סיבה לחסימת שליחה (אימייל / ממתין לחתימה / יותר מדי ימים לפני פקיעה) — null אם מותר לשלוח */
 function complianceRequestSendBarrier(
   tab: { key: ComplianceTabKey; dueField: string },
@@ -181,7 +196,7 @@ function complianceRequestSendBarrier(
     Boolean((row as { __awaitingEmployeeSignature?: boolean }).__awaitingEmployeeSignature);
   const baseBarrier =
     awaitingEmp ? 'כבר נשלח קישור — ממתין להשלמת חתימה במערכת' : requestDisabledReason(row);
-  const dueDays = daysUntil(row[tab.dueField]);
+  const dueDays = daysUntil(complianceDueRawForRow(tab.key, tab.dueField, row));
   const farBarrier =
     dueDays != null && dueDays > COMPLIANCE_SEND_MAX_DAYS_REMAINING
       ? `שליחה זמינה רק עד ${COMPLIANCE_SEND_MAX_DAYS_REMAINING} יום לפני פקיעה (או אחרי פקיעת תוקף).`
@@ -252,6 +267,7 @@ function prettifyKey(key: string): string {
     license_back_url: 'קובץ רישיון גב',
     health_declaration_url: 'קובץ הצהרת בריאות',
     license_expiry: 'תוקף רישיון',
+    pending_license_expiry: 'תוקף מוצע (מהנהג)',
     health_declaration_date: 'הצהרת בריאות',
     safety_training_date: 'הדרכת בטיחות',
     regulation_585b_date: 'תקנה 585',
@@ -637,7 +653,7 @@ function ComplianceTable<T extends Record<string, unknown>>({
   const safeColumns = filteredCols.length > 0 ? filteredCols : [dueField];
 
   const eligibilityByRow = rows.map((row) => {
-    const dueDays = daysUntil(row[dueField]);
+    const dueDays = daysUntil(complianceDueRawForRow(tabKey, dueField, row as Record<string, unknown>));
     const id = String(row.id ?? '').trim();
     const pendingRen =
       rowSource === 'vehicle' && (tabKey === 'annual_licensing' || tabKey === 'insurance') && id
@@ -672,10 +688,17 @@ function ComplianceTable<T extends Record<string, unknown>>({
 
   return (
     <div className="overflow-x-auto rounded-lg border">
-      {/* עם dir=rtl: עמודה ראשונה בדא״ף = קצה ימין — בחירה ליד ההקשר הנכון בעברית */}
+      {/* dir=rtl: עמודת נתונים ראשונה (ימין) → … → צ׳קבוקס משמאל */}
       <Table dir="rtl">
         <TableHeader>
           <TableRow>
+            {safeColumns.map((col) => (
+              <TableHead key={col} className="text-right">{prettifyKey(col)}</TableHead>
+            ))}
+            <TableHead className="text-right">{prettifyKey(dueField)}</TableHead>
+            <TableHead className="text-right">ימים נותרו</TableHead>
+            <TableHead className="text-right">סטטוס</TableHead>
+            <TableHead className="text-right">פעולות</TableHead>
             <TableHead className="w-10 px-2 text-center" aria-label="בחר הכל לשליחה מרוכזת">
               <Checkbox
                 disabled={eligibleBulkIdsOnScreen.length === 0 || bulkSending}
@@ -686,13 +709,6 @@ function ComplianceTable<T extends Record<string, unknown>>({
                 }}
               />
             </TableHead>
-            <TableHead className="text-right">ימים נותרו</TableHead>
-            <TableHead className="text-right">{prettifyKey(dueField)}</TableHead>
-            {safeColumns.map((col) => (
-              <TableHead key={col} className="text-right">{prettifyKey(col)}</TableHead>
-            ))}
-            <TableHead className="text-right">סטטוס</TableHead>
-            <TableHead className="text-right">פעולות</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -718,6 +734,7 @@ function ComplianceTable<T extends Record<string, unknown>>({
                 tabKey === 'driver_license' &&
                 String(row.status ?? '').trim().toLowerCase() === 'pending_approval';
               const rowEntityId = String(row.id ?? '').trim();
+              const effectiveDueRaw = complianceDueRawForRow(tabKey, dueField, row as Record<string, unknown>);
               return (
                 <TableRow
                   key={String(row.id ?? idx)}
@@ -729,64 +746,6 @@ function ComplianceTable<T extends Record<string, unknown>>({
                     focusHighlightId && rowEntityId === focusHighlightId && 'ring-2 ring-inset ring-primary/60',
                   )}
                 >
-                  <TableCell className="px-2 align-middle text-center">
-                    <div className="flex justify-center">
-                      <Checkbox
-                        checked={Boolean(rowEntityId && bulkSendSelectionIds.has(rowEntityId))}
-                        disabled={!gate.canSelectBulk || bulkSending || sendingRowKey === rowEntityId}
-                        onCheckedChange={(v) => {
-                          if (!rowEntityId) return;
-                          onBulkToggleRow(rowEntityId, v === true);
-                        }}
-                        aria-label="בחר שורה לשליחה מרוכזת"
-                      />
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right font-medium">
-                    {dueDays == null ? (
-                      '—'
-                    ) : isExpired ? (
-                      <span className="inline-flex items-center rounded-full border border-red-400/40 bg-red-500/15 px-2 py-0.5 text-xs font-semibold text-red-300">
-                        פג תוקף — עברו {Math.abs(dueDays)} ימים
-                      </span>
-                    ) : band === 'red' ? (
-                      <span className="inline-flex items-center rounded-full border border-red-400/40 bg-red-500/15 px-2 py-0.5 text-xs font-semibold text-red-300">
-                        נותרו {dueDays} ימים
-                      </span>
-                    ) : band === 'yellow' ? (
-                      <span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200">
-                        נותרו {dueDays} ימים
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center rounded-full border border-emerald-400/40 bg-emerald-600/20 px-2 py-0.5 text-xs font-semibold text-emerald-200">
-                        נותרו {dueDays} ימים
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell
-                    className={`text-right ${
-                      rowUrgent ? 'text-red-400 font-semibold' : band === 'yellow' ? 'text-amber-200/95' : band === 'green' ? 'text-emerald-200/90' : ''
-                    }`}
-                  >
-                    {(() => {
-                      const dueRaw = row[dueField];
-                      if (complianceRawMissing(dueRaw)) {
-                        const lp = complianceEditLinkProps(rowSource, dueField, row, complianceReturnUrl, 'due');
-                        return lp ? (
-                          <Link
-                            {...lp}
-                            className="font-medium text-primary underline-offset-4 hover:underline"
-                            title="מעבר לעריכה להשלמת תאריך התוקף"
-                          >
-                            {formatDate(dueRaw)}
-                          </Link>
-                        ) : (
-                          formatDate(dueRaw)
-                        );
-                      }
-                      return formatDate(dueRaw);
-                    })()}
-                  </TableCell>
                   {safeColumns.map((col) => (
                     <TableCell key={`${String(row.id ?? idx)}-${col}`} className="text-right">
                       {rowSource === 'vehicle' && col === 'plate_number' && rowEntityId ? (
@@ -837,6 +796,50 @@ function ComplianceTable<T extends Record<string, unknown>>({
                       )}
                     </TableCell>
                   ))}
+                  <TableCell
+                    className={`text-right ${
+                      rowUrgent ? 'text-red-400 font-semibold' : band === 'yellow' ? 'text-amber-200/95' : band === 'green' ? 'text-emerald-200/90' : ''
+                    }`}
+                  >
+                    {(() => {
+                      if (complianceRawMissing(effectiveDueRaw)) {
+                        const lp = complianceEditLinkProps(rowSource, dueField, row, complianceReturnUrl, 'due');
+                        return lp ? (
+                          <Link
+                            {...lp}
+                            className="font-medium text-primary underline-offset-4 hover:underline"
+                            title="מעבר לעריכה להשלמת תאריך התוקף"
+                          >
+                            {formatDate(effectiveDueRaw)}
+                          </Link>
+                        ) : (
+                          formatDate(effectiveDueRaw)
+                        );
+                      }
+                      return formatDate(effectiveDueRaw);
+                    })()}
+                  </TableCell>
+                  <TableCell className="text-right font-medium">
+                    {dueDays == null ? (
+                      '—'
+                    ) : isExpired ? (
+                      <span className="inline-flex items-center rounded-full border border-red-400/40 bg-red-500/15 px-2 py-0.5 text-xs font-semibold text-red-300">
+                        פג תוקף — עברו {Math.abs(dueDays)} ימים
+                      </span>
+                    ) : band === 'red' ? (
+                      <span className="inline-flex items-center rounded-full border border-red-400/40 bg-red-500/15 px-2 py-0.5 text-xs font-semibold text-red-300">
+                        נותרו {dueDays} ימים
+                      </span>
+                    ) : band === 'yellow' ? (
+                      <span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200">
+                        נותרו {dueDays} ימים
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full border border-emerald-400/40 bg-emerald-600/20 px-2 py-0.5 text-xs font-semibold text-emerald-200">
+                        נותרו {dueDays} ימים
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-right">
                     {(() => {
                       const sentMeta = (row as Record<string, unknown>).__complianceSentMeta as
@@ -1024,6 +1027,19 @@ function ComplianceTable<T extends Record<string, unknown>>({
                       ) : null}
                     </div>
                   </TableCell>
+                  <TableCell className="px-2 align-middle text-center">
+                    <div className="flex justify-center">
+                      <Checkbox
+                        checked={Boolean(rowEntityId && bulkSendSelectionIds.has(rowEntityId))}
+                        disabled={!gate.canSelectBulk || bulkSending || sendingRowKey === rowEntityId}
+                        onCheckedChange={(v) => {
+                          if (!rowEntityId) return;
+                          onBulkToggleRow(rowEntityId, v === true);
+                        }}
+                        aria-label="בחר שורה לשליחה מרוכזת"
+                      />
+                    </div>
+                  </TableCell>
                 </TableRow>
               );
             })
@@ -1051,6 +1067,7 @@ export default function AdminCompliancePage() {
   const [resendNote, setResendNote] = useState('');
   const [resendSending, setResendSending] = useState(false);
   const [resendDriverLicenseDialog, setResendDriverLicenseDialog] = useState<string | null>(null);
+  const [resendDriverNote, setResendDriverNote] = useState('');
   const [resendDriverSending, setResendDriverSending] = useState(false);
   const [approvingRenewalId, setApprovingRenewalId] = useState<string | null>(null);
   const { data: vehicles = [], isLoading: vehiclesLoading } = useVehicles();
@@ -1425,9 +1442,10 @@ export default function AdminCompliancePage() {
       const sourceRows = tab.source === 'vehicle' ? (vehicles as Array<Record<string, unknown>>) : (drivers as Array<Record<string, unknown>>);
       let rows = sourceRows
         .filter((row) => {
-          const dueIso = dueIsoFromRaw(row[tab.dueField]);
+          const dueRaw = complianceDueRawForRow(tab.key, tab.dueField, row);
+          const dueIso = dueIsoFromRaw(dueRaw);
           if (!dueIso) return false;
-          const d = daysUntil(row[tab.dueField]);
+          const d = daysUntil(dueRaw);
           if (viewFilter === 'all') return true;
           if (viewFilter === 'urgent') {
             return d != null && complianceDueBand(d) === 'red';
@@ -1438,8 +1456,8 @@ export default function AdminCompliancePage() {
           return dueIso >= customMinIso && dueIso <= customMaxIso;
         })
         .sort((a, b) => {
-          const aIso = dueIsoFromRaw(a[tab.dueField]) ?? '9999-12-31';
-          const bIso = dueIsoFromRaw(b[tab.dueField]) ?? '9999-12-31';
+          const aIso = dueIsoFromRaw(complianceDueRawForRow(tab.key, tab.dueField, a)) ?? '9999-12-31';
+          const bIso = dueIsoFromRaw(complianceDueRawForRow(tab.key, tab.dueField, b)) ?? '9999-12-31';
           return aIso.localeCompare(bIso);
         });
 
@@ -1631,9 +1649,10 @@ export default function AdminCompliancePage() {
   const submitComplianceRequest = async (
     tab: { key: ComplianceTabKey; label: string; source: ComplianceSource; dueField: string },
     row: Record<string, unknown>,
-    options?: { silent?: boolean },
+    options?: { silent?: boolean; admin_note?: string },
   ): Promise<boolean> => {
     const quiet = options?.silent === true;
+    const adminNote = typeof options?.admin_note === 'string' ? options.admin_note.trim() : '';
     if (tab.key === 'annual_licensing' || tab.key === 'insurance') {
       if (!quiet) {
         toast.error('רישוי שנתי וביטוח נשלחים דרך נציג ליסינג: לחצו «שלח בקשה», הזינו מייל בחלון ואשרו.');
@@ -1694,6 +1713,7 @@ export default function AdminCompliancePage() {
         driver_email: driverEmail,
         driver_name: driverName,
         cta_text: REQUEST_CTA_BY_TAB[tab.key],
+        ...(adminNote ? { admin_note: adminNote } : {}),
       });
 
       const earlyPayload = normalizeInvokePayload(data);
@@ -1891,6 +1911,8 @@ export default function AdminCompliancePage() {
     const id = String(row.id ?? '').trim();
     if (!id) return '';
     if (approveExpiryByDriverId[id]) return approveExpiryByDriverId[id];
+    const pending = String((row as { pending_license_expiry?: string | null }).pending_license_expiry ?? '').trim();
+    if (pending.length >= 10) return pending.slice(0, 10);
     const existing = String(row.license_expiry ?? '').trim();
     return existing.length >= 10 ? existing.slice(0, 10) : existing;
   };
@@ -2071,8 +2093,13 @@ export default function AdminCompliancePage() {
     }
     setResendDriverSending(true);
     try {
-      const ok = await submitComplianceRequest(tab, row as Record<string, unknown>);
-      if (ok) setResendDriverLicenseDialog(null);
+      const ok = await submitComplianceRequest(tab, row as Record<string, unknown>, {
+        admin_note: resendDriverNote.trim(),
+      });
+      if (ok) {
+        setResendDriverLicenseDialog(null);
+        setResendDriverNote('');
+      }
     } finally {
       setResendDriverSending(false);
     }
@@ -2098,6 +2125,7 @@ export default function AdminCompliancePage() {
         .update({
           license_expiry: nextExpiry,
           status: 'active',
+          pending_license_expiry: null,
         })
         .eq('id', driverId)
         .eq('org_id', orgIdRequired);
@@ -2399,11 +2427,11 @@ export default function AdminCompliancePage() {
                     <Table dir="rtl">
                       <TableHeader className="sticky top-0 z-20 bg-card shadow-[0_1px_0_0_hsl(var(--border))]">
                         <TableRow className="hover:bg-transparent">
-                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">פעולות</TableHead>
-                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">נציג (מייל)</TableHead>
-                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">תוקף מוצע</TableHead>
-                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">נושא</TableHead>
                           <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">לוחית</TableHead>
+                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">נושא</TableHead>
+                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">תוקף מוצע</TableHead>
+                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">נציג (מייל)</TableHead>
+                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">פעולות</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -2412,6 +2440,19 @@ export default function AdminCompliancePage() {
                           const rep = String(row.external_recipient_email ?? '').trim();
                           return (
                             <TableRow key={row.id} className="align-middle">
+                              <TableCell className="py-2 text-right text-xs font-medium">{row.plate}</TableCell>
+                              <TableCell className="py-2 text-right text-xs">{row.task_label ?? '—'}</TableCell>
+                              <TableCell className="py-2 tabular-nums text-xs" dir="ltr">
+                                {row.proposed_expiry_date
+                                  ? String(row.proposed_expiry_date).slice(0, 10)
+                                  : '—'}
+                              </TableCell>
+                              <TableCell
+                                className="max-w-[7rem] py-2 text-right text-[11px] leading-tight break-all sm:max-w-[10rem]"
+                                dir="ltr"
+                              >
+                                {rep || '—'}
+                              </TableCell>
                               <TableCell className="py-2">
                                 <div className="flex max-w-[220px] flex-wrap justify-end gap-1 sm:max-w-none">
                                   {docUrl ? (
@@ -2455,19 +2496,6 @@ export default function AdminCompliancePage() {
                                   </Button>
                                 </div>
                               </TableCell>
-                              <TableCell
-                                className="max-w-[7rem] py-2 text-right text-[11px] leading-tight break-all sm:max-w-[10rem]"
-                                dir="ltr"
-                              >
-                                {rep || '—'}
-                              </TableCell>
-                              <TableCell className="py-2 tabular-nums text-xs" dir="ltr">
-                                {row.proposed_expiry_date
-                                  ? String(row.proposed_expiry_date).slice(0, 10)
-                                  : '—'}
-                              </TableCell>
-                              <TableCell className="py-2 text-right text-xs">{row.task_label ?? '—'}</TableCell>
-                              <TableCell className="py-2 text-right text-xs font-medium">{row.plate}</TableCell>
                             </TableRow>
                           );
                         })}
@@ -2485,11 +2513,12 @@ export default function AdminCompliancePage() {
                     <Table dir="rtl">
                       <TableHeader className="bg-card">
                         <TableRow className="hover:bg-transparent">
-                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">פעולות</TableHead>
-                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">מייל נהג</TableHead>
-                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">תוקף נוכחי</TableHead>
-                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">נושא</TableHead>
                           <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">שם</TableHead>
+                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">נושא</TableHead>
+                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">תוקף במערכת</TableHead>
+                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">תוקף מוצע (מהנהג)</TableHead>
+                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">מייל נהג</TableHead>
+                          <TableHead className="h-9 py-1.5 text-right text-xs font-semibold">פעולות</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -2497,8 +2526,27 @@ export default function AdminCompliancePage() {
                           const id = String(d.id ?? '').trim();
                           const docUrl = String(d.license_front_url ?? '').trim();
                           const asRow = d as unknown as Record<string, unknown>;
+                          const pendingYmd = String(
+                            (d as { pending_license_expiry?: string | null }).pending_license_expiry ?? '',
+                          ).trim();
                           return (
                             <TableRow key={id} className="align-middle">
+                              <TableCell className="py-2 text-right text-xs font-medium">
+                                {d.full_name?.trim() || '—'}
+                              </TableCell>
+                              <TableCell className="py-2 text-right text-xs">רישיון נהיגה</TableCell>
+                              <TableCell className="py-2 tabular-nums text-xs" dir="ltr">
+                                {d.license_expiry ? String(d.license_expiry).slice(0, 10) : '—'}
+                              </TableCell>
+                              <TableCell className="py-2 tabular-nums text-xs" dir="ltr">
+                                {pendingYmd.length >= 10 ? pendingYmd.slice(0, 10) : '—'}
+                              </TableCell>
+                              <TableCell
+                                className="max-w-[7rem] py-2 text-right text-[11px] leading-tight break-all sm:max-w-[10rem]"
+                                dir="ltr"
+                              >
+                                {d.email?.trim() || '—'}
+                              </TableCell>
                               <TableCell className="py-2">
                                 <div className="flex max-w-[240px] flex-wrap justify-end gap-1 sm:max-w-none">
                                   {docUrl ? (
@@ -2517,7 +2565,10 @@ export default function AdminCompliancePage() {
                                     size="sm"
                                     variant="secondary"
                                     className="h-7 px-2 text-[11px]"
-                                    onClick={() => setResendDriverLicenseDialog(id)}
+                                    onClick={() => {
+                                      setResendDriverLicenseDialog(id);
+                                      setResendDriverNote('');
+                                    }}
                                   >
                                     מייל חזרה
                                   </Button>
@@ -2546,21 +2597,6 @@ export default function AdminCompliancePage() {
                                     )}
                                   </Button>
                                 </div>
-                              </TableCell>
-                              <TableCell
-                                className="max-w-[7rem] py-2 text-right text-[11px] leading-tight break-all sm:max-w-[10rem]"
-                                dir="ltr"
-                              >
-                                {d.email?.trim() || '—'}
-                              </TableCell>
-                              <TableCell className="py-2 tabular-nums text-xs" dir="ltr">
-                                {d.license_expiry
-                                  ? String(d.license_expiry).slice(0, 10)
-                                  : '—'}
-                              </TableCell>
-                              <TableCell className="py-2 text-right text-xs">רישיון נהיגה</TableCell>
-                              <TableCell className="py-2 text-right text-xs font-medium">
-                                {d.full_name?.trim() || '—'}
                               </TableCell>
                             </TableRow>
                           );
@@ -2632,7 +2668,10 @@ export default function AdminCompliancePage() {
       <Dialog
         open={resendDriverLicenseDialog != null}
         onOpenChange={(o) => {
-          if (!o) setResendDriverLicenseDialog(null);
+          if (!o) {
+            setResendDriverLicenseDialog(null);
+            setResendDriverNote('');
+          }
         }}
       >
         <DialogContent dir="rtl" className="sm:max-w-md">
@@ -2640,14 +2679,28 @@ export default function AdminCompliancePage() {
             <DialogTitle>מייל חזרה לנהג</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            יישלח לנהג <strong>אותו מייל כמו «שלח בקשה»</strong> במגדל הציות (עם קישור לעדכון רישיון נהיגה). אם הנהג
-            עדיין ממתין לאישור, קישור זה עדיין רלוונטי.
+            יישלח לנהג <strong>אותו מייל כמו «שלח בקשה»</strong> במגדל הציות (עם קישור לעדכון רישיון נהיגה), כולל בלוק
+            «הערת מנהל» אם מילאת להלן.
           </p>
+          <div className="space-y-2">
+            <Label htmlFor="resend-driver-note">הערה לנהג (אופציונלי)</Label>
+            <Textarea
+              id="resend-driver-note"
+              dir="rtl"
+              rows={4}
+              value={resendDriverNote}
+              onChange={(e) => setResendDriverNote(e.target.value)}
+              placeholder="לדוגמה: התמונה מטושטשת — נא לצלם מחדש את תאריך התוקף בבירור."
+            />
+          </div>
           <DialogFooter className="gap-2 sm:justify-end">
             <Button
               type="button"
               variant="outline"
-              onClick={() => setResendDriverLicenseDialog(null)}
+              onClick={() => {
+                setResendDriverLicenseDialog(null);
+                setResendDriverNote('');
+              }}
               disabled={resendDriverSending}
             >
               ביטול

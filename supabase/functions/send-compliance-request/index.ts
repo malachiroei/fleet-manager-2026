@@ -24,6 +24,8 @@ type ReqBody = {
   driver_name?: string | null;
   tab_label?: string | null;
   cta_text?: string | null;
+  /** הערה למקבל המייל (למשל מייל חזרה ממסך «ממתין לאישור מנהל») */
+  admin_note?: string | null;
 };
 
 function json(body: unknown, status = 200): Response {
@@ -114,12 +116,20 @@ function buildHebrewComplianceEmail(params: {
   dueDateYmd: string | null;
   primaryHref: string;
   persistedToken: boolean;
+  adminNotePlain?: string | null;
 }): string {
   const name = escHtml(params.driverName.trim() || 'שלום');
   const taskLbl = escHtml(params.taskLabel);
   const tabLbl = escHtml(params.tabLabel);
   const dueLine = params.dueDateYmd
     ? `<p style="margin:12px 0;line-height:1.6;"><strong>תאריך התוקף במערכת:</strong> ${formatDueHebrewUtc(params.dueDateYmd)}</p>`
+    : '';
+  const adminNoteTrimmed = clean(params.adminNotePlain ?? '');
+  const adminNoteBlock = adminNoteTrimmed
+    ? `<div style="border-right:4px solid #f59e0b;padding:12px 14px;margin:18px 0;background:#fffbeb;border-radius:8px;text-align:right;">
+  <p style="margin:0 0 6px;font-weight:bold;color:#92400e;font-size:14px;">הערת מנהל</p>
+  <p style="margin:0;line-height:1.65;color:#78350f;font-size:14px;white-space:pre-wrap;">${escHtml(adminNoteTrimmed)}</p>
+</div>`
     : '';
 
   const middleSection =
@@ -148,6 +158,7 @@ function buildHebrewComplianceEmail(params: {
   <p style="font-size:17px;line-height:1.5;"><strong>${name},</strong></p>
   <p style="line-height:1.65;color:#334155;margin:14px 0;">הוזמנת לעדכן במערכת: <strong>${taskLbl}</strong> (${tabLbl}).</p>
   ${dueLine}
+  ${adminNoteBlock}
   ${middleSection}
   ${introNoLink}
   <div style="text-align:center;margin:28px 0;">
@@ -184,6 +195,7 @@ serve(async (req) => {
     const dueDate = ymdOrNull(body.due_date);
     const ctaText = clean(body.cta_text) || 'Please upload the requested update.';
     const tabLabel = clean(body.tab_label) || taskLabel;
+    const adminNote = clean(body.admin_note);
 
     if (!orgId || !entityType || !entityId || !taskKey || !dueField) {
       return json({ error: 'Missing required fields' }, 400);
@@ -291,6 +303,7 @@ serve(async (req) => {
         metadata: {
           tab_label: tabLabel,
           cta_text: ctaText,
+          ...(adminNote ? { admin_note: adminNote } : {}),
         },
       })
       .select('id')
@@ -317,6 +330,7 @@ serve(async (req) => {
       dueDateYmd: dueDate,
       primaryHref,
       persistedToken,
+      adminNotePlain: adminNote || null,
     });
 
     /** נושא בעברית בלבד */

@@ -180,6 +180,7 @@ export type Database = {
           job_title: string | null
           license_back_url: string | null
           license_expiry: string
+          pending_license_expiry: string | null
           license_front_url: string | null
           license_number: string | null
           note1: string | null
@@ -217,6 +218,7 @@ export type Database = {
           job_title?: string | null
           license_back_url?: string | null
           license_expiry: string
+          pending_license_expiry?: string | null
           license_front_url?: string | null
           license_number?: string | null
           note1?: string | null
@@ -253,6 +255,7 @@ export type Database = {
           job_title?: string | null
           license_back_url?: string | null
           license_expiry?: string
+          pending_license_expiry?: string | null
           license_front_url?: string | null
           license_number?: string | null
           note1?: string | null
