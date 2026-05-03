@@ -160,9 +160,9 @@ export const FEATURE_FLAG_REGISTRY: FeatureFlagRegistryEntry[] = [
   },
   {
     key: 'qa_admin_compliance_tower',
-    display_name_he: 'מגדל ציות אדמין',
+    display_name_he: 'מרכז ציות אדמין',
     description: 'קישור מהיר — טבלאות ציות מורחבות לאדמין ארגון',
-    ui_mapping: 'Dashboard quick actions + תפריט משתמש -> מגדל ציות אדמין',
+    ui_mapping: 'Dashboard quick actions + תפריט משתמש -> מרכז ציות אדמין',
     category: 'quick_actions',
   },
   {

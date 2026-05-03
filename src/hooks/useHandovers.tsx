@@ -1181,7 +1181,92 @@ export function useCreateHandover() {
       queryClient.invalidateQueries({ queryKey: ['handover-history'] });
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['active-driver-vehicle-assignments'] });
+      queryClient.invalidateQueries({ queryKey: ['driver-documents'] });
     }
+  });
+}
+
+/** טוען העברות לארגון; כשמועבר driverId — מסנן בשרת (לא רק 300 האחרונות בכל הארגון). */
+async function loadHandoverHistoryForOrg(
+  orgId: string,
+  options?: { driverId?: string }
+): Promise<HandoverHistoryItem[]> {
+  const driverId = options?.driverId;
+  let handoversQuery = supabase
+    .from('vehicle_handovers')
+    .select(
+      'id, vehicle_id, driver_id, handover_type, handover_date, pdf_url, photo_front_url, photo_back_url, photo_right_url, photo_left_url, driver:drivers(full_name), vehicle:vehicles(manufacturer, model, plate_number)'
+    )
+    .eq('org_id', orgId)
+    .order('handover_date', { ascending: false });
+
+  if (driverId) {
+    handoversQuery = handoversQuery.eq('driver_id', driverId).limit(500);
+  } else {
+    handoversQuery = handoversQuery.limit(300);
+  }
+
+  const { data: handoversData, error: handoversError } = await handoversQuery;
+
+  if (handoversError) {
+    throw handoversError;
+  }
+
+  const handovers = (handoversData ?? []) as any[];
+  const handoverIds = handovers.map((handover) => handover.id);
+
+  let docsByHandover = new Map<string, any>();
+
+  if (handoverIds.length > 0) {
+    const { data: docsData, error: docsError } = await supabase
+      .from('vehicle_documents' as any)
+      .select('handover_id, file_url, metadata, created_at')
+      .in('handover_id', handoverIds)
+      .order('created_at', { ascending: false });
+
+    if (docsError) {
+      console.warn('Vehicle documents query failed:', docsError.message);
+    } else {
+      docsByHandover = new Map(
+        ((docsData as any[]) ?? [])
+          .filter((doc) => !!doc.handover_id)
+          .map((doc) => [doc.handover_id as string, doc])
+      );
+    }
+  }
+
+  return handovers.map((handover): HandoverHistoryItem => {
+    const doc = docsByHandover.get(handover.id) ?? null;
+    const metadataPhotoUrls = [
+      doc?.metadata?.photoUrls?.front,
+      doc?.metadata?.photoUrls?.back,
+      doc?.metadata?.photoUrls?.right,
+      doc?.metadata?.photoUrls?.left,
+    ].filter(Boolean) as string[];
+
+    const rowPhotoUrls = [
+      handover.photo_front_url,
+      handover.photo_back_url,
+      handover.photo_right_url,
+      handover.photo_left_url,
+    ].filter(Boolean) as string[];
+
+    const driverLabel = handover.driver?.full_name ?? 'ללא נהג';
+    const vehicleLabel = handover.vehicle
+      ? `${handover.vehicle.manufacturer} ${handover.vehicle.model} (${handover.vehicle.plate_number})`
+      : 'ללא רכב';
+
+    return {
+      id: handover.id,
+      vehicle_id: handover.vehicle_id,
+      driver_id: handover.driver_id,
+      handover_type: handover.handover_type,
+      handover_date: handover.handover_date,
+      driver_label: driverLabel,
+      vehicle_label: vehicleLabel,
+      form_url: doc?.file_url ?? handover.pdf_url ?? null,
+      photo_urls: Array.from(new Set([...metadataPhotoUrls, ...rowPhotoUrls])),
+    };
   });
 }
 
@@ -1195,75 +1280,23 @@ export function useHandoverHistory() {
     staleTime: 1000 * 60 * 5,
     queryFn: async () => {
       if (orgId == null) return [] as HandoverHistoryItem[];
-      const handoversQuery = supabase
-        .from('vehicle_handovers')
-        .select('id, vehicle_id, driver_id, handover_type, handover_date, pdf_url, photo_front_url, photo_back_url, photo_right_url, photo_left_url, driver:drivers(full_name), vehicle:vehicles(manufacturer, model, plate_number)')
-        .eq('org_id', orgId)
-        .order('handover_date', { ascending: false })
-        .limit(300);
-      const { data: handoversData, error: handoversError } = await handoversQuery;
+      return loadHandoverHistoryForOrg(orgId);
+    },
+  });
+}
 
-      if (handoversError) {
-        console.warn('Handover history query failed:', handoversError.message);
-        return [] as HandoverHistoryItem[];
-      }
+/** היסטוריית העברות לנהג ספציפי — סינון ב־Postgres, בלי תלות ב־300 העברות האחרונות בארגון. */
+export function useDriverHandoverHistory(driverId: string | undefined) {
+  const { effectiveOrgId, fleetListReady } = useImpersonationFleetScope();
+  const orgId = effectiveOrgId ?? null;
 
-      const handovers = (handoversData ?? []) as any[];
-      const handoverIds = handovers.map((handover) => handover.id);
-
-      let docsByHandover = new Map<string, any>();
-
-      if (handoverIds.length > 0) {
-        const { data: docsData, error: docsError } = await supabase
-          .from('vehicle_documents' as any)
-          .select('handover_id, file_url, metadata, created_at')
-          .in('handover_id', handoverIds)
-          .order('created_at', { ascending: false });
-
-        if (docsError) {
-          console.warn('Vehicle documents query failed:', docsError.message);
-        } else {
-          docsByHandover = new Map(
-            ((docsData as any[]) ?? [])
-              .filter((doc) => !!doc.handover_id)
-              .map((doc) => [doc.handover_id as string, doc])
-          );
-        }
-      }
-
-      return handovers.map((handover): HandoverHistoryItem => {
-        const doc = docsByHandover.get(handover.id) ?? null;
-        const metadataPhotoUrls = [
-          doc?.metadata?.photoUrls?.front,
-          doc?.metadata?.photoUrls?.back,
-          doc?.metadata?.photoUrls?.right,
-          doc?.metadata?.photoUrls?.left,
-        ].filter(Boolean) as string[];
-
-        const rowPhotoUrls = [
-          handover.photo_front_url,
-          handover.photo_back_url,
-          handover.photo_right_url,
-          handover.photo_left_url,
-        ].filter(Boolean) as string[];
-
-        const driverLabel = handover.driver?.full_name ?? 'ללא נהג';
-        const vehicleLabel = handover.vehicle
-          ? `${handover.vehicle.manufacturer} ${handover.vehicle.model} (${handover.vehicle.plate_number})`
-          : 'ללא רכב';
-
-        return {
-          id: handover.id,
-          vehicle_id: handover.vehicle_id,
-          driver_id: handover.driver_id,
-          handover_type: handover.handover_type,
-          handover_date: handover.handover_date,
-          driver_label: driverLabel,
-          vehicle_label: vehicleLabel,
-          form_url: doc?.file_url ?? handover.pdf_url ?? null,
-          photo_urls: Array.from(new Set([...metadataPhotoUrls, ...rowPhotoUrls])),
-        };
-      });
+  return useQuery({
+    queryKey: ['handover-history', 'driver', orgId, driverId],
+    enabled: fleetListReady && orgId != null && !!driverId,
+    staleTime: 1000 * 60 * 5,
+    queryFn: async () => {
+      if (orgId == null || !driverId) return [] as HandoverHistoryItem[];
+      return loadHandoverHistoryForOrg(orgId, { driverId });
     },
   });
 }

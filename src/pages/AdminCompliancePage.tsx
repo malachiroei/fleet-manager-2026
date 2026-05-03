@@ -30,6 +30,7 @@ import { useVehicles } from '@/hooks/useVehicles';
 import { supabase } from '@/integrations/supabase/client';
 import { invokeSupabaseEdgeFunction } from '@/lib/supabase/invokeEdgeFunction';
 import type { Driver, Vehicle } from '@/types/fleet';
+import { FleetDatePicker } from '@/components/ui/FleetDatePicker';
 import { cn } from '@/lib/utils';
 import { Columns3, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -97,7 +98,7 @@ const DRIVER_DEFAULT_COLUMNS = ['full_name', 'id_number', 'phone', 'email'];
 const TAB_DEFS: Array<{ key: ComplianceTabKey; label: string; source: 'vehicle' | 'driver'; dueField: string }> = [
   { key: 'annual_licensing', label: 'רישוי שנתי', source: 'vehicle', dueField: 'test_expiry' },
   { key: 'insurance', label: 'ביטוח', source: 'vehicle', dueField: 'insurance_expiry' },
-  { key: 'periodic_inspection', label: 'ביקורת תקופתית (6 חודשים)', source: 'vehicle', dueField: 'next_inspection_date' },
+  { key: 'periodic_inspection', label: 'ביקורת תקופתית', source: 'vehicle', dueField: 'next_inspection_date' },
   { key: 'maintenance', label: 'טיפול', source: 'vehicle', dueField: 'next_maintenance_date' },
   { key: 'driver_license', label: 'רישיון נהיגה', source: 'driver', dueField: 'license_expiry' },
   { key: 'health_declaration', label: 'הצהרת בריאות', source: 'driver', dueField: 'health_declaration_date' },
@@ -218,6 +219,19 @@ function isExpiredRaw(raw: unknown): boolean {
 function formatDate(raw: unknown): string {
   const d = parseIsoDate(raw);
   return d ? d.toLocaleDateString('he-IL') : '—';
+}
+
+/** ISO YYYY-MM-DD → 1/8/2026 (יום/חודש/שנה, בלי אפס מוביל) */
+function formatIsoYmdAsDmySlash(raw: unknown): string {
+  if (raw == null || raw === '') return '—';
+  const s = String(raw).trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (!m) return s;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return s;
+  return `${d}/${mo}/${y}`;
 }
 
 /** תאריך ושעת שליחת בקשת ציות (ISO מהשרת) */
@@ -977,11 +991,12 @@ function ComplianceTable<T extends Record<string, unknown>>({
                           </Button>
                           <div className="flex min-w-[10rem] flex-col items-end gap-1">
                             <span className="text-[11px] font-medium text-muted-foreground">תוקף</span>
-                            <Input
-                              type="date"
-                              className="h-10 w-full min-w-[10.5rem] sm:w-44"
+                            <FleetDatePicker
+                              id={rowEntityId ? `approve-license-inline-${rowEntityId}` : undefined}
                               value={getApproveDateValue(row)}
-                              onChange={(e) => setApproveDateValue(row, e.target.value)}
+                              onChange={(next) => setApproveDateValue(row, next)}
+                              slashDisplay="compact"
+                              className="[&_input]:h-10 [&_input]:w-full [&_input]:min-w-[10.5rem] sm:[&_input]:w-44"
                             />
                           </div>
                           <Button
@@ -1781,7 +1796,7 @@ export default function AdminCompliancePage() {
       }
       if (persistedExplicitFalse) {
         toast.warning(
-          'המייל נשלח, אך הבקשה לא נשמרה במסד — הסטטוס במגדל הציות לא יתעדכן עד שמיגרציית compliance_requests תופעל.',
+          'המייל נשלח, אך הבקשה לא נשמרה במסד — הסטטוס במרכז הציות לא יתעדכן עד שמיגרציית compliance_requests תופעל.',
           { duration: 12_000 },
         );
       } else if (!quiet) {
@@ -2147,7 +2162,7 @@ export default function AdminCompliancePage() {
 
   return (
     <FleetHudPageShell
-      title="מגדל ציות"
+      title="מרכז ציות"
       subtitle="מרכז בקרה לתאריכי תוקף: רישוי רכב, ביטוח, טיפולים, ביקורות ותוקפי נהגים"
     >
       <div className="mx-auto max-w-[1400px] space-y-4 pb-8" dir="rtl">
@@ -2356,7 +2371,7 @@ export default function AdminCompliancePage() {
             <DialogTitle>שליחה לנציג ליסינג</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            לאחר השליחה הנציג יקבל קישור להעלאת צילום מסמך ולציון תאריך תוקף חדש. התוצאה תחזור למגדל הציות לאישורך;
+            לאחר השליחה הנציג יקבל קישור להעלאת צילום מסמך ולציון תאריך תוקף חדש. התוצאה תחזור למרכז הציות לאישורך;
             לאחר האישור המסמך יישמר בכרטיס הרכב (טסט / ביטוח) ויישלח מייל לנהג המשויך.
           </p>
           {leasingContext ? (
@@ -2444,7 +2459,7 @@ export default function AdminCompliancePage() {
                               <TableCell className="py-2 text-right text-xs">{row.task_label ?? '—'}</TableCell>
                               <TableCell className="py-2 tabular-nums text-xs" dir="ltr">
                                 {row.proposed_expiry_date
-                                  ? String(row.proposed_expiry_date).slice(0, 10)
+                                  ? formatIsoYmdAsDmySlash(row.proposed_expiry_date)
                                   : '—'}
                               </TableCell>
                               <TableCell
@@ -2536,10 +2551,10 @@ export default function AdminCompliancePage() {
                               </TableCell>
                               <TableCell className="py-2 text-right text-xs">רישיון נהיגה</TableCell>
                               <TableCell className="py-2 tabular-nums text-xs" dir="ltr">
-                                {d.license_expiry ? String(d.license_expiry).slice(0, 10) : '—'}
+                                {d.license_expiry ? formatIsoYmdAsDmySlash(d.license_expiry) : '—'}
                               </TableCell>
                               <TableCell className="py-2 tabular-nums text-xs" dir="ltr">
-                                {pendingYmd.length >= 10 ? pendingYmd.slice(0, 10) : '—'}
+                                {pendingYmd.length >= 10 ? formatIsoYmdAsDmySlash(pendingYmd) : '—'}
                               </TableCell>
                               <TableCell
                                 className="max-w-[7rem] py-2 text-right text-[11px] leading-tight break-all sm:max-w-[10rem]"
@@ -2572,11 +2587,12 @@ export default function AdminCompliancePage() {
                                   >
                                     מייל חזרה
                                   </Button>
-                                  <Input
-                                    type="date"
-                                    className="h-7 w-[9.75rem] min-w-[9rem] text-[11px]"
+                                  <FleetDatePicker
+                                    id={`pending-approve-dialog-${id}`}
                                     value={approveDateForRow(asRow)}
-                                    onChange={(e) => setApproveDateForRow(asRow, e.target.value)}
+                                    onChange={(next) => setApproveDateForRow(asRow, next)}
+                                    slashDisplay="compact"
+                                    className="[&_input]:h-7 [&_input]:min-w-[9rem] [&_input]:w-[9.75rem] [&_input]:text-[11px] [&_button]:h-6 [&_button]:w-6 [&_button]:end-0.5"
                                   />
                                   <Button
                                     type="button"
@@ -2679,7 +2695,7 @@ export default function AdminCompliancePage() {
             <DialogTitle>מייל חזרה לנהג</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            יישלח לנהג <strong>אותו מייל כמו «שלח בקשה»</strong> במגדל הציות (עם קישור לעדכון רישיון נהיגה), כולל בלוק
+            יישלח לנהג <strong>אותו מייל כמו «שלח בקשה»</strong> במרכז הציות (עם קישור לעדכון רישיון נהיגה), כולל בלוק
             «הערת מנהל» אם מילאת להלן.
           </p>
           <div className="space-y-2">

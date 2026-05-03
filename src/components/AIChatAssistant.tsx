@@ -164,7 +164,7 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
       }
 
       const isDriver = result.entityType === 'create_driver';
-      const path     = isDriver ? `/drivers/${result.entityId}` : `/vehicles/${result.entityId}`;
+      const path     = isDriver ? `/drivers/${result.entityId}/edit` : `/vehicles/${result.entityId}`;
       const label    = isDriver ? 'צפה בכרטיס הנהג החדש' : 'צפה בכרטיס הרכב החדש';
       const emoji    = isDriver ? '👤' : '🚗';
 

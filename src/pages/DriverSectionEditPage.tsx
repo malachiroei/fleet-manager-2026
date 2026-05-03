@@ -92,11 +92,11 @@ export default function DriverSectionEditPage() {
     return (
       <div className="fleet-screen-page text-white">
         <header className="sticky top-0 z-10 border-b border-border bg-card">
-          <div className="container py-4">
+          <div className="fleet-app-form-column py-4">
             <Skeleton className="h-8 w-64" />
           </div>
         </header>
-        <main className="container py-6">
+        <main className="fleet-app-form-column py-6">
           <Skeleton className="h-64 w-full" />
         </main>
       </div>
@@ -108,11 +108,11 @@ export default function DriverSectionEditPage() {
     return (
       <div className="fleet-screen-page text-white">
         <header className="sticky top-0 z-10 border-b border-border bg-card">
-          <div className="container flex items-center gap-3 py-4">
+          <div className="fleet-app-form-column flex items-center gap-3 py-4">
             <h1 className="text-xl font-bold">שגיאה בטעינת הנהג</h1>
           </div>
         </header>
-        <main className="container space-y-4 py-6">
+        <main className="fleet-app-form-column space-y-4 py-6">
           <p className="text-destructive text-sm">{msg}</p>
           <Button type="button" onClick={() => void refetch()}>
             נסה שוב
@@ -126,12 +126,12 @@ export default function DriverSectionEditPage() {
     return (
       <div className="fleet-screen-page text-white">
         <header className="border-b border-border bg-card">
-          <div className="container flex items-center gap-3 py-4">
+          <div className="fleet-app-form-column flex items-center gap-3 py-4">
             <h1 className="text-xl font-bold">סקשן לא נמצא</h1>
           </div>
         </header>
-        <main className="container py-6">
-          <Link to={id ? `/drivers/${id}` : '/drivers'}>
+        <main className="fleet-app-form-column py-6">
+          <Link to={id ? `/drivers/${id}/edit` : '/drivers'}>
             <Button variant="outline">חזור</Button>
           </Link>
         </main>
@@ -189,8 +189,7 @@ export default function DriverSectionEditPage() {
 
       await updateDriver.mutateAsync(payload as Parameters<typeof updateDriver.mutateAsync>[0]);
       setDirty(DIRTY_SOURCE_DRIVER_EDIT, false);
-      // חזרה לרשימה + גלילה לאותו נהג
-      navigate(`/drivers?highlightDriver=${driver.id}`, { replace: true });
+      navigate(`/drivers/${driver.id}/edit`, { replace: true });
     } catch (error) {
       toast.error('שגיאה בעדכון', {
         description: formatSupabaseError(error),
@@ -204,17 +203,23 @@ export default function DriverSectionEditPage() {
   const d = driver as Driver;
 
   return (
-    <div className="fleet-screen-page text-white">
-      <main className="container max-w-5xl py-6 space-y-6">
-        {/* הירו כמו מסך רכב — אישור שינויים באותו מיקום (צד אחד), כותרת בצד השני */}
+    <div className="fleet-screen-page w-full min-w-0 text-white">
+      <main className="fleet-app-form-column max-w-5xl py-6 space-y-6">
+        {/* הירו — כותרת במרכז, כפתורי פעולה בשורה ממורכזת (כמו פס אישור בתחתית עמודי טפסים) */}
         <div className="relative overflow-hidden rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-slate-800/90 via-slate-900 to-[#0a1628] px-5 py-6 shadow-[0_0_50px_rgba(6,182,212,0.06)] sm:px-8 sm:py-8">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(34,211,238,0.12),transparent)]" />
-          <div className="relative flex flex-col gap-4 sm:flex-row-reverse sm:items-center sm:justify-between">
-            <div className="flex shrink-0 flex-col items-center gap-2 self-center sm:items-end sm:self-start">
+          <div className="relative flex flex-col items-center gap-5 text-center">
+            <div className="min-w-0 w-full">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-500/70">נהג</p>
+              <h1 className="mt-1 text-2xl font-bold tracking-tight text-cyan-100 sm:text-3xl">{title}</h1>
+              <p className="mt-2 text-base font-medium text-slate-200 sm:text-lg">{driver.full_name}</p>
+              <p className="mt-1 text-sm text-slate-500">עריכת סקשן — יציאה בלי שמירה תציג התראה</p>
+            </div>
+            <div className="flex w-full max-w-md flex-col items-stretch justify-center gap-2 sm:max-w-none sm:flex-row sm:flex-wrap sm:items-center sm:justify-center">
               <Button
                 type="submit"
                 form="driver-section-form"
-                className="w-full bg-cyan-600 font-semibold shadow-lg shadow-cyan-900/30 hover:bg-cyan-500 sm:w-auto"
+                className="w-full bg-cyan-600 font-semibold shadow-lg shadow-cyan-900/30 hover:bg-cyan-500 sm:w-auto sm:min-w-[12rem]"
                 disabled={isSubmitting}
               >
                 {isSubmitting ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : null}
@@ -224,17 +229,11 @@ export default function DriverSectionEditPage() {
                 type="button"
                 variant="outline"
                 size="sm"
-                className="w-full border-white/20 sm:w-auto"
-                onClick={() => tryNavigate(`/drivers?highlightDriver=${driver.id}`)}
+                className="w-full border-white/20 sm:w-auto sm:min-w-[8rem]"
+                onClick={() => tryNavigate(`/drivers/${driver.id}/edit`)}
               >
                 ביטול
               </Button>
-            </div>
-            <div className="min-w-0 flex-1 text-center sm:text-right">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-500/70">נהג</p>
-              <h1 className="mt-1 text-2xl font-bold tracking-tight text-cyan-100 sm:text-3xl">{title}</h1>
-              <p className="mt-2 text-base font-medium text-slate-200 sm:text-lg">{driver.full_name}</p>
-              <p className="mt-1 text-sm text-slate-500">עריכת סקשן — יציאה בלי שמירה תציג התראה</p>
             </div>
           </div>
         </div>

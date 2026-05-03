@@ -40,7 +40,7 @@ function formatTime(dateStr: string) {
 }
 
 export default function TransfersPage() {
-  const { data: handovers = [], isLoading } = useHandoverHistory();
+  const { data: handovers = [], isLoading, isError } = useHandoverHistory();
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'delivery' | 'return'>('all');
   const [sort, setSort] = useState<'date_desc' | 'date_asc'>('date_desc');
@@ -146,7 +146,13 @@ export default function TransfersPage() {
 
       {/* Table */}
       <div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
-        {isLoading ? (
+        {isError ? (
+          <div className="flex flex-col items-center justify-center py-16 px-4 text-center gap-2">
+            <p className="text-sm text-amber-200/90 leading-relaxed">
+              לא ניתן לטעון את רשימת ההעברות (טבלה או הרשאות בשרת). נסו שוב מאוחר יותר או פנו למנהל המערכת.
+            </p>
+          </div>
+        ) : isLoading ? (
           <div className="flex items-center justify-center py-16">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
           </div>

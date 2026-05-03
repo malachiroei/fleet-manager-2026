@@ -125,6 +125,13 @@ iframe[src*="lovable"] {
   color: hsl(var(--foreground));
 }
 
+/* עמודי טפסים בתוך AppLayout: flex-1 + container בלי היצמדות לצד אחד */
+@layer components {
+  .fleet-app-form-column {
+    @apply container mx-auto w-full min-w-0;
+  }
+}
+
 /* Stat cells: numbers & short English (e.g. leasing) — no mid-word breaks */
 :root:not(.light) .vehicle-stat-mixed {
   word-break: normal;

@@ -506,8 +506,8 @@ export default function VehicleReturnPage() {
           </Card>
 
           {/* Submit */}
-          <div className="fixed bottom-12 left-0 right-0 p-4 bg-slate-950/90 backdrop-blur-sm border-t border-white/10">
-            <div className="container">
+          <div className="fixed bottom-12 left-0 right-0 z-30 border-t border-white/10 bg-slate-950/90 px-6 py-4 backdrop-blur-sm">
+            <div className="fleet-app-form-column flex justify-center">
               <Button 
                 type="submit" 
                 className="w-full rounded-2xl border border-cyan-200/45 bg-[linear-gradient(180deg,rgba(56,189,248,0.65)_0%,rgba(59,130,246,0.55)_48%,rgba(14,116,144,0.85)_100%)] py-6 text-base font-bold text-white shadow-[0_14px_28px_rgba(14,165,233,0.34)] hover:translate-y-[-1px] hover:brightness-110" 

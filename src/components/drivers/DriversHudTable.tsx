@@ -11,7 +11,6 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -394,7 +393,7 @@ export function DriversHudTable({
         <StatCardButton
           active={filterStatus === 'all'}
           onClick={() => applyStatFilter('all')}
-          title="הצג את כל הנהגים (לפי חיפוש והדרופדאונים למטה)"
+          title="הצג את כל הנהגים (לפי חיפוש למעלה והסינונים)"
         >
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-cyan-500/15 text-cyan-300">
             <Users className="h-5 w-5" />
@@ -483,17 +482,8 @@ export function DriversHudTable({
         </StatCardButton>
       </div>
 
-      {/* Filters row */}
+      {/* Filters row — חיפוש בכותרת העמוד */}
       <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-slate-950/80 p-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between sm:gap-3 sm:p-4">
-        <div className="min-w-0 flex-1 sm:max-w-xs">
-          <label className="mb-1 block text-[11px] font-medium text-slate-400">חיפוש</label>
-          <Input
-            placeholder="חפש נהג…"
-            value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
-            className="h-10 border-white/10 bg-black/30 text-white placeholder:text-slate-500"
-          />
-        </div>
         <div className="w-full min-w-[8rem] sm:w-40">
           <label className="mb-1 block text-[11px] font-medium text-slate-400">סטטוס</label>
           <Select

@@ -1,52 +1,62 @@
-import React, { useState } from 'react';
+import React, { type ReactNode, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   useDriverIncidents,
-  useCreateDriverIncident,
   useDeleteDriverIncident,
   useDriverFamilyMembers,
-  useCreateDriverFamilyMember,
   useDeleteDriverFamilyMember,
   type DriverIncidentType,
 } from '@/hooks/useDriverFolders';
 import { useComplaints } from '@/hooks/useComplaints';
-import { useHandoverHistory } from '@/hooks/useHandovers';
+import { useDriverHandoverHistory, type HandoverHistoryItem } from '@/hooks/useHandovers';
 import { useDriverDocuments } from '@/hooks/useDriverDocuments';
 import { useDriverStorageFiles } from '@/hooks/useDriverStorageFiles';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { FleetDatePicker } from '@/components/ui/FleetDatePicker';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import {
   AlertTriangle,
   Car,
   Users,
+  User,
   ArrowLeftRight,
   MessageSquareWarning,
   FileText,
   ExternalLink,
   Eye,
   Download,
-  Plus,
   Trash2,
   ChevronDown,
   ChevronUp,
   X,
   FolderOpen,
+  Search,
 } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import type { Driver } from '@/types/fleet';
+import { cn } from '@/lib/utils';
+import type { Driver, DriverDocument } from '@/types/fleet';
+
+/** מיפוי טאבים ↔ טבלאות Supabase (401/404 / RLS): אירועים·תאונות → driver_incidents · תלונות → procedure6_complaints · העברות → vehicle_handovers (+ vehicle_documents ל־PDF) · משפחה → driver_family_members · מסמכים → driver_documents + Storage */
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type FolderTab = 'events' | 'accidents' | 'complaints' | 'transfers' | 'family' | 'documents';
+export type FolderTab = 'events' | 'accidents' | 'complaints' | 'transfers' | 'family' | 'documents';
+
+type MainTab = 'details' | FolderTab;
+
+function FolderLoadErrorMessage() {
+  return (
+    <p className="px-3 py-4 text-center text-xs leading-relaxed text-amber-200/90">
+      לא ניתן לטעון את התיקייה (טבלה או הרשאות בשרת). נסו שוב מאוחר יותר או פנו למנהל המערכת.
+    </p>
+  );
+}
+
+function EmptyFolderHint() {
+  return (
+    <p className="px-3 py-6 text-center text-sm text-muted-foreground">אין רשומות בתיקייה זו.</p>
+  );
+}
 
 interface Props {
   driver: Driver;
@@ -54,220 +64,39 @@ interface Props {
   collapsible?: boolean;
   /** Initial open state when collapsible (default false) */
   defaultOpen?: boolean;
-}
-
-// ─── Tab button ───────────────────────────────────────────────────────────────
-
-function TabBtn({
-  active,
-  onClick,
-  icon: Icon,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-md border-b-2 transition-colors whitespace-nowrap ${
-        active
-          ? 'border-primary text-primary bg-primary/5'
-          : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
-      }`}
-    >
-      <Icon className="h-4 w-4" />
-      {label}
-    </button>
-  );
+  /**
+   * embedded — רק שורת טאבים + תוכן (בלי Card חיצוני), למיזוג עם Card אחר (פרטים אישיים).
+   * default — Card עוטף כמו קודם (רשימת נהגים וכו').
+   */
+  variant?: 'default' | 'embedded';
+  /**
+   * כשמועבר (עמוד עריכת נהג): טאב «פרטים» + החלפה בין טופס לתיקיות.
+   * התוכן נשאר ב-DOM (מוסתר ב-CSS) כדי לאפשר שמירה מהפס התחתון.
+   */
+  detailsSlot?: ReactNode;
 }
 
 // ─── Incidents tab (events & accidents) ──────────────────────────────────────
 
-function IncidentsTab({
-  driver,
-  incidentType,
-}: {
-  driver: Driver;
-  incidentType: DriverIncidentType;
-}) {
-  const { data: incidents = [], isLoading } = useDriverIncidents(driver.id, incidentType);
-  const createIncident = useCreateDriverIncident();
+function IncidentsTab({ driver, incidentType }: { driver: Driver; incidentType: DriverIncidentType }) {
+  const { data: incidents = [], isLoading, isError } = useDriverIncidents(driver.id, incidentType);
   const deleteIncident = useDeleteDriverIncident();
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({
-    incident_date: '',
-    description: '',
-    location: '',
-    vehicle_id: '',
-    damage_desc: '',
-    police_report_no: '',
-    insurance_claim: '',
-    notes: '',
-    status: 'open' as 'open' | 'closed',
-  });
 
-  const isAccident = incidentType === 'accident';
+  if (isLoading) {
+    return <p className="text-muted-foreground px-3 py-2 text-xs">טוען…</p>;
+  }
 
-  const handleCreate = () => {
-    if (!form.incident_date || !form.description) return;
-    createIncident.mutate(
-      {
-        driver_id: driver.id,
-        vehicle_id: form.vehicle_id || null,
-        incident_type: incidentType,
-        incident_date: form.incident_date,
-        description: form.description,
-        location: form.location || null,
-        damage_desc: form.damage_desc || null,
-        police_report_no: form.police_report_no || null,
-        insurance_claim: form.insurance_claim || null,
-        photo_urls: null,
-        status: form.status,
-        notes: form.notes || null,
-      },
-      {
-        onSuccess: () => {
-          setShowForm(false);
-          setForm({
-            incident_date: '',
-            description: '',
-            location: '',
-            vehicle_id: '',
-            damage_desc: '',
-            police_report_no: '',
-            insurance_claim: '',
-            notes: '',
-            status: 'open',
-          });
-        },
-      }
-    );
-  };
+  if (isError) {
+    return <FolderLoadErrorMessage />;
+  }
 
-  const labelSingle = isAccident ? 'תאונה' : 'אירוע';
-  const labelPlural = isAccident ? 'תאונות' : 'אירועים';
-
-  if (isLoading) return <p className="text-muted-foreground text-sm p-4">טוען...</p>;
+  if (incidents.length === 0) {
+    return <EmptyFolderHint />;
+  }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          {incidents.length} {labelPlural}
-        </p>
-        <Button size="sm" variant="outline" onClick={() => setShowForm(!showForm)}>
-          <Plus className="h-3.5 w-3.5 ml-1" />
-          הוסף {labelSingle}
-        </Button>
-      </div>
-
-      {/* Add form */}
-      {showForm && (
-        <Card className="border-dashed border-primary/40 bg-primary/5">
-          <CardContent className="p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium">{labelSingle} חדש/ה</p>
-              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setShowForm(false)}>
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <FleetDatePicker
-                label="תאריך *"
-                className="[&_label]:text-xs [&_label]:text-muted-foreground"
-                value={form.incident_date}
-                onChange={(ymd) => setForm((f) => ({ ...f, incident_date: ymd }))}
-              />
-              <div>
-                <label className="text-xs text-muted-foreground">מיקום</label>
-                <Input
-                  placeholder="מיקום"
-                  value={form.location}
-                  onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
-                />
-              </div>
-              <div className="col-span-2">
-                <label className="text-xs text-muted-foreground">תיאור *</label>
-                <Input
-                  placeholder="תיאור"
-                  value={form.description}
-                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                />
-              </div>
-              {isAccident && (
-                <>
-                  <div>
-                    <label className="text-xs text-muted-foreground">תיאור נזק</label>
-                    <Input
-                      placeholder="תיאור נזק"
-                      value={form.damage_desc}
-                      onChange={(e) => setForm((f) => ({ ...f, damage_desc: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground">מס' תיק משטרה</label>
-                    <Input
-                      placeholder="מס' תיק"
-                      value={form.police_report_no}
-                      onChange={(e) => setForm((f) => ({ ...f, police_report_no: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground">תביעת ביטוח</label>
-                    <Input
-                      placeholder="מס' תביעה"
-                      value={form.insurance_claim}
-                      onChange={(e) => setForm((f) => ({ ...f, insurance_claim: e.target.value }))}
-                    />
-                  </div>
-                </>
-              )}
-              <div>
-                <label className="text-xs text-muted-foreground">סטטוס</label>
-                <Select
-                  value={form.status}
-                  onValueChange={(v) => setForm((f) => ({ ...f, status: v as 'open' | 'closed' }))}
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="open">פתוח</SelectItem>
-                    <SelectItem value="closed">סגור</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="col-span-2">
-                <label className="text-xs text-muted-foreground">הערות</label>
-                <Input
-                  placeholder="הערות"
-                  value={form.notes}
-                  onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-                />
-              </div>
-            </div>
-            <div className="flex gap-2 justify-end">
-              <Button
-                size="sm"
-                onClick={handleCreate}
-                disabled={createIncident.isPending || !form.incident_date || !form.description}
-              >
-                {createIncident.isPending ? 'שומר...' : 'שמור'}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {incidents.length === 0 && !showForm && (
-        <div className="text-center py-8 text-muted-foreground text-sm">
-          <AlertTriangle className="h-8 w-8 mx-auto mb-2 opacity-30" />
-          אין {labelPlural} רשומות
-        </div>
-      )}
-
+    <div className="space-y-2">
       {incidents.map((inc) => (
         <Card key={inc.id} className="overflow-hidden">
           <div
@@ -355,12 +184,7 @@ function ComplaintsTab({ driver }: { driver: Driver }) {
   if (isLoading) return <p className="text-muted-foreground text-sm p-4">טוען...</p>;
 
   if (complaints.length === 0) {
-    return (
-      <div className="text-center py-8 text-muted-foreground text-sm">
-        <MessageSquareWarning className="h-8 w-8 mx-auto mb-2 opacity-30" />
-        אין תלונות נוהל 6 לנהג זה
-      </div>
-    );
+    return null;
   }
 
   return (
@@ -408,47 +232,107 @@ function ComplaintsTab({ driver }: { driver: Driver }) {
 
 // ─── Transfers tab ────────────────────────────────────────────────────────────
 
-function TransfersTab({ driver }: { driver: Driver }) {
-  const { data: allHandovers = [], isLoading } = useHandoverHistory();
-  const forDriver = allHandovers.filter((h) => h.driver_id === driver.id);
-  // מניעת כפילויות ברשימה (אותו id לא מופיע פעמיים)
+function dedupeHandoverHistory(items: HandoverHistoryItem[]): HandoverHistoryItem[] {
   const seen = new Set<string>();
-  const handovers = forDriver.filter((h) => {
+  const filtered = items.filter((h) => {
     if (seen.has(h.id)) return false;
     seen.add(h.id);
     return true;
   });
-  // איחוד שורות זהות (אותו רכב + תאריך + סוג) — משאירים את הרשומה האחרונה בלבד כדי שלא ייראה "פעמיים"
-  const deduped: typeof handovers = [];
+  const deduped: HandoverHistoryItem[] = [];
   const keySet = new Set<string>();
-  for (let i = handovers.length - 1; i >= 0; i--) {
-    const h = handovers[i];
+  for (let i = filtered.length - 1; i >= 0; i--) {
+    const h = filtered[i];
     const key = `${h.vehicle_id}|${h.handover_date}|${h.handover_type}`;
     if (keySet.has(key)) continue;
     keySet.add(key);
     deduped.unshift(h);
   }
-  const displayHandovers = deduped.length < handovers.length ? deduped : handovers;
+  return deduped.length < filtered.length ? deduped : filtered;
+}
 
-  if (isLoading) return <p className="text-muted-foreground text-sm p-4">טוען...</p>;
+/** כשמסמכי מסירה קיימים ב-driver_documents אך אין התאמה ב-vehicle_handovers (או חסר driver_id בטבלה). */
+function handoverItemsFromDriverDocuments(docs: DriverDocument[], driver: Driver): HandoverHistoryItem[] {
+  const out: HandoverHistoryItem[] = [];
+  for (const doc of docs) {
+    const t = doc.title ?? '';
+    const isHandoverDoc =
+      /טופס\s+(מסירה|החזרה)/.test(t) || /אישור\s+קבלת\s+רכב/.test(t);
+    if (!isHandoverDoc) continue;
 
-  if (displayHandovers.length === 0) {
-    return (
-      <div className="text-center py-8 text-muted-foreground text-sm">
-        <ArrowLeftRight className="h-8 w-8 mx-auto mb-2 opacity-30" />
-        אין העברות לנהג זה
-      </div>
-    );
+    let handover_type: 'delivery' | 'return' = 'delivery';
+    if (/טופס\s+החזרה/.test(t) || (/\bהחזרה\b/.test(t) && !/מסירה/.test(t))) {
+      handover_type = 'return';
+    }
+
+    let vehicle_label = 'לפי כותרת המסמך';
+    const pipe = t.split('|');
+    if (pipe.length >= 2) {
+      vehicle_label = pipe.slice(1).join('|').trim() || vehicle_label;
+    }
+
+    out.push({
+      id: `fallback-doc:${doc.id}`,
+      vehicle_id: '',
+      driver_id: driver.id,
+      handover_type,
+      handover_date: doc.created_at,
+      driver_label: driver.full_name,
+      vehicle_label,
+      form_url: doc.file_url,
+      photo_urls: [],
+    });
+  }
+  return out.sort((a, b) => new Date(b.handover_date).getTime() - new Date(a.handover_date).getTime());
+}
+
+function TransfersTab({ driver }: { driver: Driver }) {
+  const { data: fromDb = [], isLoading: loadingH, isError: errH } = useDriverHandoverHistory(driver.id);
+  const { data: driverDocs = [], isLoading: loadingD } = useDriverDocuments(driver.id);
+  const fallback = useMemo(
+    () => handoverItemsFromDriverDocuments(driverDocs, driver),
+    [driverDocs, driver]
+  );
+
+  if (loadingH) {
+    return <p className="text-muted-foreground text-sm p-4">טוען...</p>;
+  }
+
+  let rows = dedupeHandoverHistory(fromDb);
+  let fromDocumentsOnly = false;
+
+  if (errH) {
+    if (loadingD) {
+      return <p className="text-muted-foreground text-sm p-4">טוען...</p>;
+    }
+    if (fallback.length > 0) {
+      rows = dedupeHandoverHistory(fallback);
+      fromDocumentsOnly = true;
+    } else {
+      return <FolderLoadErrorMessage />;
+    }
+  } else if (rows.length === 0 && fallback.length > 0) {
+    rows = dedupeHandoverHistory(fallback);
+    fromDocumentsOnly = true;
+  }
+
+  if (rows.length === 0) {
+    if (loadingD && !errH) {
+      return <p className="text-muted-foreground text-sm p-4">טוען...</p>;
+    }
+    return <EmptyFolderHint />;
   }
 
   return (
     <div className="space-y-2">
-      <p className="text-sm text-muted-foreground">
-        {displayHandovers.length} העברות
-        {deduped.length < handovers.length && (
-          <span className="mr-2 text-xs opacity-70"> (מאוחד לפי רכב+תאריך+סוג)</span>
-        )}
-      </p>
+      {fromDocumentsOnly && (
+        <p className="rounded-md border border-amber-500/25 bg-amber-500/10 px-2 py-1.5 text-xs leading-snug text-amber-100/90">
+          {errH
+            ? 'טעינת טבלת ההעברות (vehicle_handovers) נכשלה; מוצג גיבוי לפי מסמכי מסירה/קבלה בתיק הנהג.'
+            : 'לא נמצאו העברות רשומות לנהג בטבלה; מוצג לפי מסמכים מהתיק (טופס מסירה / אישור קבלת רכב).'}
+        </p>
+      )}
+      <p className="text-sm text-muted-foreground">{rows.length} העברות</p>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -460,13 +344,13 @@ function TransfersTab({ driver }: { driver: Driver }) {
             </tr>
           </thead>
           <tbody>
-            {displayHandovers.map((h) => (
+            {rows.map((h) => (
               <tr key={h.id} className="border-b border-border/50 hover:bg-muted/30">
                 <td className="py-2 pr-2">
                   {new Date(h.handover_date).toLocaleDateString('he-IL')}
                 </td>
                 <td className="py-2 pr-2">
-                  {h.vehicle_label ? (
+                  {h.vehicle_id ? (
                     <Link
                       to={`/vehicles/${h.vehicle_id}`}
                       className="text-primary hover:underline"
@@ -475,15 +359,19 @@ function TransfersTab({ driver }: { driver: Driver }) {
                       {h.vehicle_label}
                     </Link>
                   ) : (
-                    '—'
+                    <span className="text-muted-foreground" dir="ltr">
+                      {h.vehicle_label}
+                    </span>
                   )}
                 </td>
                 <td className="py-2 pr-2">
-                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${
-                    h.handover_type === 'delivery'
-                      ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                      : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                  }`}>
+                  <span
+                    className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${
+                      h.handover_type === 'delivery'
+                        ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                        : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                    }`}
+                  >
                     {h.handover_type === 'delivery' ? 'מסירה' : 'החזרה'}
                   </span>
                 </td>
@@ -512,178 +400,34 @@ function TransfersTab({ driver }: { driver: Driver }) {
 
 // ─── Family Members tab ───────────────────────────────────────────────────────
 
+const FAMILY_REL_LABELS: Record<string, string> = {
+  spouse: 'בן/בת זוג',
+  child: 'ילד/ה',
+  parent: 'הורה',
+  sibling: 'אח/אחות',
+  other: 'אחר',
+};
+
+function relationshipLabel(v: string) {
+  return FAMILY_REL_LABELS[v] ?? v;
+}
+
 function FamilyTab({ driver }: { driver: Driver }) {
-  const { data: members = [], isLoading } = useDriverFamilyMembers(driver.id);
-  const createMember = useCreateDriverFamilyMember();
+  const { data: members = [], isLoading, isError } = useDriverFamilyMembers(driver.id);
   const deleteMember = useDeleteDriverFamilyMember();
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({
-    full_name: '',
-    relationship: '',
-    phone: '',
-    id_number: '',
-    birth_date: '',
-    address: '',
-    city: '',
-    notes: '',
-  });
 
-  const RELATIONSHIPS = [
-    { value: 'spouse', label: 'בן/בת זוג' },
-    { value: 'child', label: 'ילד/ה' },
-    { value: 'parent', label: 'הורה' },
-    { value: 'sibling', label: 'אח/אחות' },
-    { value: 'other', label: 'אחר' },
-  ];
+  if (isLoading) {
+    return <p className="text-muted-foreground px-3 py-2 text-xs">טוען…</p>;
+  }
 
-  const relationshipLabel = (v: string) =>
-    RELATIONSHIPS.find((r) => r.value === v)?.label ?? v;
+  if (isError) return <FolderLoadErrorMessage />;
 
-  const handleCreate = () => {
-    if (!form.full_name || !form.relationship) return;
-    createMember.mutate(
-      {
-        driver_id: driver.id,
-        full_name: form.full_name,
-        relationship: form.relationship,
-        phone: form.phone || null,
-        id_number: form.id_number || null,
-        birth_date: form.birth_date || null,
-        address: form.address || null,
-        city: form.city || null,
-        notes: form.notes || null,
-      },
-      {
-        onSuccess: () => {
-          setShowForm(false);
-          setForm({
-            full_name: '',
-            relationship: '',
-            phone: '',
-            id_number: '',
-            birth_date: '',
-            address: '',
-            city: '',
-            notes: '',
-          });
-        },
-      }
-    );
-  };
-
-  if (isLoading) return <p className="text-muted-foreground text-sm p-4">טוען...</p>;
+  if (members.length === 0) {
+    return <EmptyFolderHint />;
+  }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{members.length} בני משפחה</p>
-        <Button size="sm" variant="outline" onClick={() => setShowForm(!showForm)}>
-          <Plus className="h-3.5 w-3.5 ml-1" />
-          הוסף בן/בת משפחה
-        </Button>
-      </div>
-
-      {/* Add form */}
-      {showForm && (
-        <Card className="border-dashed border-primary/40 bg-primary/5">
-          <CardContent className="p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium">בן/בת משפחה חדש/ה</p>
-              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setShowForm(false)}>
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-xs text-muted-foreground">שם מלא *</label>
-                <Input
-                  placeholder="שם מלא"
-                  value={form.full_name}
-                  onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground">קירבה *</label>
-                <Select
-                  value={form.relationship}
-                  onValueChange={(v) => setForm((f) => ({ ...f, relationship: v }))}
-                >
-                  <SelectTrigger><SelectValue placeholder="בחר קירבה" /></SelectTrigger>
-                  <SelectContent>
-                    {RELATIONSHIPS.map((r) => (
-                      <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground">טלפון</label>
-                <Input
-                  placeholder="טלפון"
-                  value={form.phone}
-                  onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground">ת.ז.</label>
-                <Input
-                  placeholder="ת.ז."
-                  value={form.id_number}
-                  onChange={(e) => setForm((f) => ({ ...f, id_number: e.target.value }))}
-                />
-              </div>
-              <FleetDatePicker
-                label="תאריך לידה"
-                className="[&_label]:text-xs [&_label]:text-muted-foreground"
-                value={form.birth_date}
-                onChange={(ymd) => setForm((f) => ({ ...f, birth_date: ymd }))}
-              />
-              <div>
-                <label className="text-xs text-muted-foreground">עיר</label>
-                <Input
-                  placeholder="עיר"
-                  value={form.city}
-                  onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
-                />
-              </div>
-              <div className="col-span-2">
-                <label className="text-xs text-muted-foreground">רחוב</label>
-                <Input
-                  placeholder="רחוב"
-                  value={form.address}
-                  onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
-                />
-              </div>
-              <div className="col-span-2">
-                <label className="text-xs text-muted-foreground">הערות</label>
-                <Input
-                  placeholder="הערות"
-                  value={form.notes}
-                  onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-                />
-              </div>
-            </div>
-            <div className="flex gap-2 justify-end">
-              <Button
-                size="sm"
-                onClick={handleCreate}
-                disabled={createMember.isPending || !form.full_name || !form.relationship}
-              >
-                {createMember.isPending ? 'שומר...' : 'שמור'}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {members.length === 0 && !showForm && (
-        <div className="text-center py-8 text-muted-foreground text-sm">
-          <Users className="h-8 w-8 mx-auto mb-2 opacity-30" />
-          לא נרשמו בני משפחה
-        </div>
-      )}
-
-      <div className="grid gap-3">
+    <div className="grid gap-2">
         {members.map((m) => (
           <Card key={m.id}>
             <CardContent className="p-4">
@@ -717,12 +461,9 @@ function FamilyTab({ driver }: { driver: Driver }) {
             </CardContent>
           </Card>
         ))}
-      </div>
     </div>
   );
 }
-
-// ─── Main component ───────────────────────────────────────────────────────────
 
 // ─── Documents tab ───────────────────────────────────────────────────────────
 
@@ -732,10 +473,21 @@ function displayFileName(fileName: string): string {
   return base || fileName;
 }
 
+function parseDocSortTime(iso: string | null | undefined): number {
+  if (!iso) return 0;
+  const t = new Date(iso).getTime();
+  return Number.isNaN(t) ? 0 : t;
+}
+
+function isPdfUrl(src: string): boolean {
+  return /\.pdf(\?|$)/i.test(src) || src.includes('/pdf') || src.includes('content-type=application%2Fpdf');
+}
+
 function DocumentsTab({ driver }: { driver: Driver }) {
-  const { data: docs = [], isLoading } = useDriverDocuments(driver.id);
+  const { data: docs = [], isLoading, isError } = useDriverDocuments(driver.id);
   const { data: storageFiles = [], isLoading: storageLoading } = useDriverStorageFiles(driver.id);
   const [lightbox, setLightbox] = useState<{ src: string; title: string } | null>(null);
+  const [docSearch, setDocSearch] = useState('');
 
   const getUrl = (path: string | null): string | undefined => {
     if (!path) return undefined;
@@ -759,142 +511,260 @@ function DocumentsTab({ driver }: { driver: Driver }) {
     return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString('he-IL');
   };
 
-  if (isLoading && storageLoading)
+  if (isError) {
+    return <FolderLoadErrorMessage />;
+  }
+
+  if (isLoading || storageLoading) {
     return <p className="text-muted-foreground text-sm p-4">טוען...</p>;
+  }
 
-  const hasStorage = storageFiles.length > 0;
-  const hasDbDocs = allDocs.length > 0;
+  type UnifiedRow =
+    | {
+        key: string;
+        sortTime: number;
+        kind: 'storage';
+        displayTitle: string;
+        fileLabel: string;
+        dateLabel: string;
+        publicUrl: string;
+        fileName: string;
+        isPdf: boolean;
+      }
+    | {
+        key: string;
+        sortTime: number;
+        kind: 'registered';
+        title: string;
+        dateLabel: string;
+        src: string;
+        isPdf: boolean;
+      };
 
-  if (!hasStorage && !hasDbDocs)
+  const storageRows: UnifiedRow[] = storageFiles.map((file) => {
+    const isPdf = /\.pdf$/i.test(file.name);
+    return {
+      key: `s-${file.path}`,
+      sortTime: parseDocSortTime(file.createdAt || file.updatedAt),
+      kind: 'storage',
+      displayTitle: displayFileName(file.name),
+      fileLabel: file.name,
+      dateLabel: formatStorageDate(file.createdAt || file.updatedAt),
+      publicUrl: file.publicUrl,
+      fileName: file.name,
+      isPdf,
+    };
+  });
+
+  const registeredRows: UnifiedRow[] = [];
+  for (const doc of allDocs) {
+    const src = getUrl(doc.file_url);
+    if (!src) continue;
+    const isPdf = isPdfUrl(src);
+    const createdAt = 'created_at' in doc ? (doc as { created_at?: string }).created_at : undefined;
+    registeredRows.push({
+      key: `d-${doc.id}`,
+      sortTime: parseDocSortTime(createdAt ?? null),
+      kind: 'registered',
+      title: doc.title,
+      dateLabel: createdAt
+        ? new Date(createdAt).toLocaleString('he-IL')
+        : '—',
+      src,
+      isPdf,
+    });
+  }
+
+  const q = docSearch.trim().toLowerCase();
+  const matchesName = (parts: string[]) => {
+    if (!q) return true;
+    return parts.some((p) => p.toLowerCase().includes(q));
+  };
+
+  const combined = [...storageRows, ...registeredRows]
+    .filter((row) => {
+      if (row.kind === 'storage') {
+        return matchesName([row.displayTitle, row.fileLabel]);
+      }
+      return matchesName([row.title]);
+    })
+    .sort((a, b) => b.sortTime - a.sortTime);
+
+  const totalCount = storageRows.length + registeredRows.length;
+  const hasAnyDocs = totalCount > 0;
+
+  if (!hasAnyDocs) {
     return (
-      <div className="space-y-4">
-        <div className="rounded-lg border border-dashed border-border bg-muted/20 p-4">
-          <p className="text-sm font-medium text-foreground mb-1">תיקיית Storage</p>
-          <p className="text-xs text-muted-foreground">
-            נתיב: Documents/Drivers/{driver.id}/
-          </p>
-          <p className="text-sm text-muted-foreground mt-2">אין קבצים בתיקייה זו.</p>
-        </div>
-        <div className="text-center py-6 text-muted-foreground text-sm">
-          <FileText className="h-8 w-8 mx-auto mb-2 opacity-30" />
-          אין מסמכים רשומים לנהג זה
-        </div>
+      <div className="rounded-lg border border-dashed border-border bg-muted/10 p-4">
+        <p className="text-sm text-muted-foreground text-center">אין מסמכים בתיקיית הנהג.</p>
       </div>
     );
+  }
 
   return (
     <>
-      {/* רשימה מקובצי Storage */}
-      {hasStorage && (
-        <div className="mb-6">
-          <p className="text-sm font-medium text-foreground mb-2">
-            קבצים מתיקיית מסמכים ({storageFiles.length})
-          </p>
-          <p className="text-xs text-muted-foreground mb-3">
-            Storage: Documents/Drivers/{driver.id}/
-          </p>
-          <div className="rounded-lg border border-border overflow-hidden">
+      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-muted-foreground">
+          {totalCount} מסמכים · אחסון ({storageRows.length}) · רשומים במערכת ({registeredRows.length})
+        </p>
+        <div className="relative w-full sm:max-w-sm">
+          <Search className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={docSearch}
+            onChange={(e) => setDocSearch(e.target.value)}
+            placeholder="חיפוש לפי שם מסמך…"
+            className="h-9 pr-9 text-sm"
+            type="search"
+            autoComplete="off"
+          />
+        </div>
+      </div>
+
+      {combined.length === 0 ? (
+        <p className="px-3 py-6 text-center text-sm text-muted-foreground">לא נמצאו מסמכים התואמים לחיפוש.</p>
+      ) : (
+        <div className="rounded-lg border border-border overflow-hidden">
+          <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-muted/40 text-right">
-                  <th className="px-3 py-2 font-medium">שם הטופס</th>
-                  <th className="px-3 py-2 font-medium whitespace-nowrap">תאריך העלאה</th>
+                  <th className="px-3 py-2 font-medium">שם</th>
+                  <th className="px-3 py-2 font-medium whitespace-nowrap">מקור</th>
+                  <th className="px-3 py-2 font-medium whitespace-nowrap">סוג</th>
+                  <th className="px-3 py-2 font-medium whitespace-nowrap">תאריך</th>
                   <th className="px-3 py-2 font-medium w-[1%]">פעולות</th>
                 </tr>
               </thead>
               <tbody>
-                {storageFiles.map((file) => (
-                  <tr key={file.path} className="border-b border-border/60 last:border-0 hover:bg-muted/20">
-                    <td className="px-3 py-2 align-middle">
-                      <span className="font-medium">{displayFileName(file.name)}</span>
-                      <span className="text-xs text-muted-foreground mr-2">({file.name})</span>
-                    </td>
-                    <td className="px-3 py-2 align-middle whitespace-nowrap text-muted-foreground">
-                      {formatStorageDate(file.createdAt || file.updatedAt)}
-                    </td>
-                    <td className="px-3 py-2 align-middle">
-                      <div className="flex items-center gap-1 justify-end">
-                        <a
-                          href={file.publicUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs font-medium hover:bg-muted"
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                          צפייה
-                        </a>
-                        <a
-                          href={file.publicUrl}
-                          download={file.name}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs font-medium hover:bg-muted"
-                        >
-                          <Download className="h-3.5 w-3.5" />
-                          הורדה
-                        </a>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {combined.map((row) => {
+                  if (row.kind === 'storage') {
+                    return (
+                      <tr key={row.key} className="border-b border-border/60 last:border-0 hover:bg-muted/20">
+                        <td className="px-3 py-2 align-middle">
+                          <div className="flex items-center gap-2">
+                            {row.isPdf ? (
+                              <FileText className="h-8 w-8 shrink-0 text-red-400" aria-hidden />
+                            ) : (
+                              <img
+                                src={row.publicUrl}
+                                alt=""
+                                className="h-8 w-8 shrink-0 rounded border border-border/60 object-cover"
+                              />
+                            )}
+                            <div className="min-w-0">
+                              <p className="font-medium leading-tight">{row.displayTitle}</p>
+                              <p className="truncate text-xs text-muted-foreground" title={row.fileLabel}>
+                                {row.fileLabel}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 align-middle whitespace-nowrap text-muted-foreground">אחסון</td>
+                        <td className="px-3 py-2 align-middle whitespace-nowrap">
+                          {row.isPdf ? 'PDF' : 'תמונה'}
+                        </td>
+                        <td className="px-3 py-2 align-middle whitespace-nowrap text-muted-foreground">
+                          {row.dateLabel}
+                        </td>
+                        <td className="px-3 py-2 align-middle">
+                          <div className="flex flex-wrap items-center gap-1 justify-end">
+                            <a
+                              href={row.publicUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs font-medium hover:bg-muted"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                              צפייה
+                            </a>
+                            <a
+                              href={row.publicUrl}
+                              download={row.fileName}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs font-medium hover:bg-muted"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              הורדה
+                            </a>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  return (
+                    <tr key={row.key} className="border-b border-border/60 last:border-0 hover:bg-muted/20">
+                      <td className="px-3 py-2 align-middle">
+                        <div className="flex items-center gap-2">
+                          {row.isPdf ? (
+                            <FileText className="h-8 w-8 shrink-0 text-red-400" aria-hidden />
+                          ) : (
+                            <button
+                              type="button"
+                              className="shrink-0 rounded border border-border/60 focus:outline-none focus:ring-2 focus:ring-primary"
+                              onClick={() => setLightbox({ src: row.src, title: row.title })}
+                            >
+                              <img
+                                src={row.src}
+                                alt=""
+                                className="h-8 w-8 rounded object-cover"
+                              />
+                            </button>
+                          )}
+                          <span className="min-w-0 font-medium leading-tight">{row.title}</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 align-middle whitespace-nowrap text-muted-foreground">מערכת</td>
+                      <td className="px-3 py-2 align-middle whitespace-nowrap">{row.isPdf ? 'PDF' : 'תמונה'}</td>
+                      <td className="px-3 py-2 align-middle whitespace-nowrap text-muted-foreground">
+                        {row.dateLabel}
+                      </td>
+                      <td className="px-3 py-2 align-middle">
+                        <div className="flex flex-wrap items-center gap-1 justify-end">
+                          {row.isPdf ? (
+                            <a
+                              href={row.src}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs font-medium hover:bg-muted"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                              פתיחה
+                            </a>
+                          ) : (
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs font-medium hover:bg-muted"
+                              onClick={() => setLightbox({ src: row.src, title: row.title })}
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                              צפייה
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
       )}
 
-      {!hasStorage && !storageLoading && !hasDbDocs && (
-        <div className="rounded-lg border border-dashed border-border bg-muted/10 p-4 mb-6">
-          <p className="text-sm text-muted-foreground">
-            אין מסמכים בתיקיית הנהג.
-          </p>
-        </div>
-      )}
-
-      {/* מסמכים רשומים (טבלה + קבצים ישנים) */}
-      {hasDbDocs && (
-        <>
-          <p className="text-sm text-muted-foreground mb-3">{allDocs.length} מסמכים רשומים במערכת</p>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {allDocs.map((doc) => {
-          const src = getUrl(doc.file_url);
-          if (!src) return null;
-          const isPdf = /\.pdf(\?|$)/i.test(src) || src.includes('/pdf') || src.includes('content-type=application%2Fpdf');
-          if (isPdf)
-            return (
-              <a key={doc.id} href={src} target="_blank" rel="noopener noreferrer"
-                className="group relative aspect-square rounded-lg border border-border bg-muted/30 overflow-hidden flex flex-col items-center justify-center gap-2 p-3 no-underline hover:shadow-md transition-all">
-                <FileText className="h-10 w-10 text-red-400" />
-                <p className="text-xs font-medium truncate text-center w-full text-foreground">{doc.title}</p>
-                <ExternalLink className="h-3.5 w-3.5 text-muted-foreground absolute top-2 left-2" />
-              </a>
-            );
-          return (
-            <div key={doc.id}
-              className="group relative aspect-square rounded-lg border border-border bg-muted/30 overflow-hidden cursor-pointer hover:shadow-md transition-all"
-              onClick={() => setLightbox({ src, title: doc.title })}>
-              <img src={src} alt={doc.title} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
-              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                <Eye className="text-white h-8 w-8" />
-              </div>
-              <div className="absolute bottom-0 left-0 right-0 bg-black/60 p-2">
-                <p className="text-white text-xs font-medium truncate text-center">{doc.title}</p>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-        </>
-      )}
-
       {lightbox && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80" onClick={() => setLightbox(null)}>
-          <div className="relative max-w-4xl w-full mx-4" onClick={(e) => e.stopPropagation()}>
-            <button className="absolute top-2 right-2 bg-black/50 hover:bg-black/70 rounded-full p-2 text-white" onClick={() => setLightbox(null)}>
+          <div className="relative mx-4 w-full max-w-4xl" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              className="absolute top-2 right-2 rounded-full bg-black/50 p-2 text-white hover:bg-black/70"
+              onClick={() => setLightbox(null)}
+            >
               <X className="h-5 w-5" />
             </button>
-            <img src={lightbox.src} alt={lightbox.title} className="max-h-[85vh] w-full object-contain rounded-lg" />
-            <p className="text-white text-center mt-2 font-medium">{lightbox.title}</p>
+            <img src={lightbox.src} alt={lightbox.title} className="max-h-[85vh] w-full rounded-lg object-contain" />
+            <p className="mt-2 text-center font-medium text-white">{lightbox.title}</p>
           </div>
         </div>
       )}
@@ -904,11 +774,18 @@ function DocumentsTab({ driver }: { driver: Driver }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function DriverFolders({ driver, collapsible = false, defaultOpen = false }: Props) {
-  const [activeTab, setActiveTab] = useState<FolderTab>('events');
+export default function DriverFolders({
+  driver,
+  collapsible = false,
+  defaultOpen = false,
+  variant = 'default',
+  detailsSlot,
+}: Props) {
+  const hasDetailsTab = Boolean(detailsSlot);
+  const [mainTab, setMainTab] = useState<MainTab>(() => (hasDetailsTab ? 'details' : 'events'));
   const [open, setOpen] = useState(defaultOpen);
 
-  const tabs: { id: FolderTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  const folderTabs: { id: FolderTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { id: 'events', label: 'אירועים', icon: AlertTriangle },
     { id: 'accidents', label: 'תאונות', icon: Car },
     { id: 'complaints', label: 'תלונות נוהל 6', icon: MessageSquareWarning },
@@ -918,20 +795,37 @@ export default function DriverFolders({ driver, collapsible = false, defaultOpen
   ];
 
   const tabBar = (
-    <div className="border-b border-border px-4">
-      <div className="flex gap-1 overflow-x-auto">
-        {tabs.map(({ id, label, icon: Icon }) => (
+    <div className="flex flex-nowrap items-center border-b border-border bg-muted/10 px-1 py-0.5 sm:px-2">
+      <div className="scrollbar-thin flex min-h-9 min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+        {hasDetailsTab ? (
+          <button
+            key="details"
+            type="button"
+            onClick={() => setMainTab('details')}
+            className={cn(
+              'flex shrink-0 items-center gap-1.5 rounded-t-md border-b-2 px-2.5 py-1.5 text-xs font-medium transition-colors whitespace-nowrap sm:gap-2 sm:px-4 sm:py-2 sm:text-sm',
+              mainTab === 'details'
+                ? 'border-primary bg-primary/5 text-primary'
+                : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'
+            )}
+          >
+            <User className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+            פרטים
+          </button>
+        ) : null}
+        {folderTabs.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             type="button"
-            onClick={() => setActiveTab(id)}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-md border-b-2 transition-colors whitespace-nowrap ${
-              activeTab === id
-                ? 'border-primary text-primary bg-primary/5'
-                : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
-            }`}
+            onClick={() => setMainTab(id)}
+            className={cn(
+              'flex shrink-0 items-center gap-1.5 rounded-t-md border-b-2 px-2.5 py-1.5 text-xs font-medium transition-colors whitespace-nowrap sm:gap-2 sm:px-4 sm:py-2 sm:text-sm',
+              mainTab === id
+                ? 'border-primary bg-primary/5 text-primary'
+                : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'
+            )}
           >
-            <Icon className="h-4 w-4" />
+            <Icon className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
             {label}
           </button>
         ))}
@@ -939,16 +833,35 @@ export default function DriverFolders({ driver, collapsible = false, defaultOpen
     </div>
   );
 
-  const tabContent = (
-    <CardContent className="pt-4">
-      {activeTab === 'events' && <IncidentsTab driver={driver} incidentType="event" />}
-      {activeTab === 'accidents' && <IncidentsTab driver={driver} incidentType="accident" />}
-      {activeTab === 'complaints' && <ComplaintsTab driver={driver} />}
-      {activeTab === 'transfers' && <TransfersTab driver={driver} />}
-      {activeTab === 'family' && <FamilyTab driver={driver} />}
-      {activeTab === 'documents' && <DocumentsTab driver={driver} />}
-    </CardContent>
+  const folderPanelInner = (
+    <>
+      {mainTab === 'events' && <IncidentsTab driver={driver} incidentType="event" />}
+      {mainTab === 'accidents' && <IncidentsTab driver={driver} incidentType="accident" />}
+      {mainTab === 'complaints' && <ComplaintsTab driver={driver} />}
+      {mainTab === 'transfers' && <TransfersTab driver={driver} />}
+      {mainTab === 'family' && <FamilyTab driver={driver} />}
+      {mainTab === 'documents' && <DocumentsTab driver={driver} />}
+    </>
   );
+
+  const folderPanelWrapped =
+    variant === 'embedded' ? (
+      <div className="min-h-0 px-2 pb-2 pt-2 sm:px-3">{folderPanelInner}</div>
+    ) : (
+      <CardContent className="px-3 pt-3 pb-3 sm:px-4">{folderPanelInner}</CardContent>
+    );
+
+  const embeddedBody =
+    hasDetailsTab ? (
+      <>
+        <div className={cn(mainTab !== 'details' && 'hidden')}>
+          <div className="border-t border-border/80 pt-1">{detailsSlot}</div>
+        </div>
+        <div className={cn(mainTab === 'details' && 'hidden')}>{folderPanelWrapped}</div>
+      </>
+    ) : (
+      folderPanelWrapped
+    );
 
   if (collapsible) {
     return (
@@ -962,7 +875,7 @@ export default function DriverFolders({ driver, collapsible = false, defaultOpen
               >
                 <span className="flex items-center gap-2 font-semibold text-foreground">
                   <FolderOpen className="h-5 w-5 text-primary" />
-                  תיקיות ניהול נהג
+                  תיקיות
                 </span>
                 {open ? (
                   <ChevronUp className="h-5 w-5 shrink-0 text-muted-foreground" />
@@ -974,20 +887,26 @@ export default function DriverFolders({ driver, collapsible = false, defaultOpen
           </CardHeader>
           <CollapsibleContent>
             {tabBar}
-            {tabContent}
+            {embeddedBody}
           </CollapsibleContent>
         </Card>
       </Collapsible>
     );
   }
 
+  if (variant === 'embedded') {
+    return (
+      <>
+        {tabBar}
+        {embeddedBody}
+      </>
+    );
+  }
+
   return (
-    <Card>
-      <CardHeader className="pb-0">
-        <CardTitle className="text-base">תיקיות ניהול נהג</CardTitle>
-      </CardHeader>
+    <Card className="overflow-hidden py-0 shadow-none">
       {tabBar}
-      {tabContent}
+      {embeddedBody}
     </Card>
   );
 }

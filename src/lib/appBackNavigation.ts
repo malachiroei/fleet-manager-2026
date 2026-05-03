@@ -21,10 +21,10 @@ export function resolveLogicalBackTarget(pathname: string): string {
   if (p === '/drivers/add') return '/drivers';
 
   const driverSection = /^\/drivers\/([^/]+)\/section\/[^/]+$/.exec(p);
-  if (driverSection) return `/drivers/${driverSection[1]}`;
+  if (driverSection) return `/drivers/${driverSection[1]}/edit`;
 
   const driverEdit = /^\/drivers\/([^/]+)\/edit$/.exec(p);
-  if (driverEdit) return `/drivers/${driverEdit[1]}`;
+  if (driverEdit) return '/drivers';
 
   if (/^\/drivers\/[^/]+$/.test(p)) return '/drivers';
   if (p === '/drivers') return '/';

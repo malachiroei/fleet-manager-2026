@@ -951,7 +951,7 @@ export default function VehicleDetailPage() {
                       <span className="text-sm text-[#9aa3b2] sm:text-base">נהג משויך</span>
                       {assignedDriver ? (
                         <Link
-                          to={`/drivers/${assignedDriver.id}`}
+                          to={`/drivers/${assignedDriver.id}/edit`}
                           className="text-2xl font-bold leading-tight text-white hover:text-slate-100 hover:underline sm:text-3xl"
                         >
                           {assignedDriver.full_name}

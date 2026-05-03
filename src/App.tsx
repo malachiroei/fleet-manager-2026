@@ -134,8 +134,8 @@ function AppRoutes() {
       <Route path="/drivers" element={<ProtectedRoute><PermissionGuard permission="drivers"><DriverListPage /></PermissionGuard></ProtectedRoute>} />
       <Route path="/drivers/add" element={<ProtectedRoute><PermissionGuard permission="drivers"><AddDriverPage /></PermissionGuard></ProtectedRoute>} />
       <Route path="/drivers/:id/section/:sectionId" element={<ProtectedRoute><PermissionGuard permission="drivers"><DriverSectionEditPage /></PermissionGuard></ProtectedRoute>} />
-      <Route path="/drivers/:id" element={<ProtectedRoute><PermissionGuard permission="drivers"><DriverDetailPage /></PermissionGuard></ProtectedRoute>} />
       <Route path="/drivers/:id/edit" element={<ProtectedRoute><PermissionGuard permission="drivers"><EditDriverPage /></PermissionGuard></ProtectedRoute>} />
+      <Route path="/drivers/:id" element={<ProtectedRoute><PermissionGuard permission="drivers"><DriverDetailPage /></PermissionGuard></ProtectedRoute>} />
       <Route path="/compliance" element={<ProtectedRoute><PermissionGuard permission="compliance"><CompliancePage /></PermissionGuard></ProtectedRoute>} />
       <Route path="/procedure6-complaints" element={<ProtectedRoute><PermissionGuard permission="compliance"><Procedure6ComplaintsPage /></PermissionGuard></ProtectedRoute>} />
       <Route path="/maintenance/add" element={<ProtectedRoute><PermissionGuard permission="maintenance"><AddMaintenancePage /></PermissionGuard></ProtectedRoute>} />

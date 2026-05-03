@@ -327,7 +327,7 @@ export default function Dashboard() {
       featureFlagKey: 'qa_users',
     },
     {
-      title: 'מגדל ציות (אדמין)',
+      title: 'מרכז ציות (אדמין)',
       href: '/admin/compliance',
       icon: ClipboardList,
       permission: 'compliance',

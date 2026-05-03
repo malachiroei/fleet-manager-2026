@@ -71,7 +71,7 @@ const OVERRIDES: Record<string, PublishInventoryHuman> = {
     description: 'טופס לעדכון חלק ספציפי בתיק נהג.',
   },
   'pages/EditDriverPage.tsx': {
-    title: 'עריכת נהג',
+    title: 'פרטי נהג',
     description: 'עדכון פרטי נהג קיים.',
   },
   'pages/EditVehiclePage.tsx': {

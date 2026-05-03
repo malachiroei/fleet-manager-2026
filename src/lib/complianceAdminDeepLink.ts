@@ -7,7 +7,7 @@ type ComplianceTabKey =
   | 'health_declaration'
   | 'regulation_585';
 
-/** פריט התראה מ-useComplianceAlerts — מזהה יעד במגדל ציות (מנהל) */
+/** פריט התראה מ-useComplianceAlerts — מזהה יעד במרכז ציות (מנהל) */
 export type ComplianceAlertNavItem = {
   id: string;
   type: 'vehicle' | 'driver';

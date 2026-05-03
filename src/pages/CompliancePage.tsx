@@ -23,7 +23,7 @@ function complianceAlertAdminHref(alert: ComplianceItem, isAdmin: boolean): stri
   });
 }
 
-/** מנהל: לחיצה → מגדל ציות + הדגשת שורה. שאר המשתמשים: אותו מראה ללא ניווט. */
+/** מנהל: לחיצה → מרכז ציות + הדגשת שורה. שאר המשתמשים: אותו מראה ללא ניווט. */
 function ExpiredAlertRow({ alert, children }: { alert: ComplianceItem; children: ReactNode }) {
   const { isAdmin } = useAuth();
   const href = complianceAlertAdminHref(alert, Boolean(isAdmin));
@@ -61,7 +61,7 @@ export default function CompliancePage() {
   return (
     <FleetHudPageShell
       title="מרכז ציות ותקינות"
-      subtitle="מגדל ציות — מעקב, ספים והודעות לעובדים; למטה סיכום המצב הגולמי."
+      subtitle="מרכז ציות — מעקב, ספים והודעות לעובדים; למטה סיכום המצב הגולמי."
     >
       <div className="mx-auto max-w-6xl pb-8">
         <ComplianceTower />

@@ -174,7 +174,7 @@ export function SidebarUserMenu() {
                 )}
               >
                 <ClipboardList className="h-4 w-4 text-cyan-300 sidebar-menu-icon" />
-                <span className={cn('sidebar-menu-label flex-1', isRtl ? 'text-right' : 'text-left')}>מגדל ציות (אדמין)</span>
+                <span className={cn('sidebar-menu-label flex-1', isRtl ? 'text-right' : 'text-left')}>מרכז ציות (אדמין)</span>
                 <CaretIcon className="h-3.5 w-3.5 opacity-40 sidebar-menu-caret" />
               </Link>
             )}

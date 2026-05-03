@@ -146,7 +146,7 @@ export function DriverCard({
           <div className="flex flex-col gap-2 px-4 pt-4 sm:px-5">
             <div className="flex items-start gap-3">
               <Link
-                to={`/drivers/${driver.id}`}
+                to={`/drivers/${driver.id}/edit`}
                 className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-sm font-bold text-white shadow-md sm:h-12 sm:w-12 sm:text-base ${
                   licenseStatus === 'expired'
                     ? 'bg-red-600'
@@ -158,7 +158,7 @@ export function DriverCard({
                 {(driver.full_name ?? '').trim().slice(0, 2) || '?'}
               </Link>
               <div className="min-w-0 flex-1">
-                <Link to={`/drivers/${driver.id}`} className="block">
+                <Link to={`/drivers/${driver.id}/edit`} className="block">
                   <h3 className="truncate text-base font-semibold text-slate-200 sm:text-lg hover:underline">
                     {driver.full_name}
                   </h3>

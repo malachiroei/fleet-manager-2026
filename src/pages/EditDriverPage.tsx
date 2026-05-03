@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import {
   useVehicleSpecDirty,
   DIRTY_SOURCE_DRIVER_EDIT,
@@ -24,7 +24,10 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Loader2, User, CreditCard, Briefcase, ShieldCheck, FileText, Upload, Heart } from 'lucide-react';
+import { Loader2, User, CreditCard, Briefcase, ShieldCheck, FileText, Car } from 'lucide-react';
+import { useActiveDriverVehicleAssignments, useVehicles } from '@/hooks/useVehicles';
+import { mergeAssignedVehiclesForDriver } from '@/lib/mergeDriverAssignedVehicles';
+import DriverFolders from '@/components/DriverFolders';
 import { toast } from 'sonner';
 import { formatSupabaseError } from '@/lib/supabaseError';
 
@@ -36,6 +39,8 @@ export default function EditDriverPage() {
   const { data: driver, isLoading } = useDriver(id || '');
   const updateDriver = useUpdateDriver();
   const deleteDriver = useDeleteDriver();
+  const { data: activeAssignments = [] } = useActiveDriverVehicleAssignments();
+  const { data: vehicles = [] } = useVehicles();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
@@ -101,16 +106,17 @@ export default function EditDriverPage() {
     setHealthDeclarationImgBroken(false);
   }, [driver?.health_declaration_url]);
 
+  const assignedVehicles = useMemo(() => {
+    if (!id) return [];
+    return mergeAssignedVehiclesForDriver(id, activeAssignments, vehicles);
+  }, [id, activeAssignments, vehicles]);
+
   if (isLoading) {
     return (
-      <div className="fleet-screen-page text-white">
-        <header className="bg-card border-b border-border sticky top-0 z-10">
-          <div className="container py-4"><div className="flex items-center gap-3">
-            <Skeleton className="h-6 w-48" />
-          </div></div>
-        </header>
-        <main className="container py-6 space-y-4">
-          <Skeleton className="h-48 w-full" />
+      <div className="fleet-screen-page w-full min-w-0 text-white">
+        <main className="fleet-app-form-column space-y-3 pt-3">
+          <Skeleton className="h-28 w-full rounded-xl border border-white/5" />
+          <Skeleton className="h-40 w-full rounded-xl border border-white/5" />
         </main>
       </div>
     );
@@ -118,12 +124,14 @@ export default function EditDriverPage() {
 
   if (!driver) {
     return (
-      <div className="fleet-screen-page text-white">
-        <header className="bg-card border-b border-border sticky top-0 z-10">
-          <div className="container py-4"><div className="flex items-center gap-3">
-            <h1 className="font-bold text-xl">נהג לא נמצא</h1>
-          </div></div>
-        </header>
+      <div className="fleet-screen-page w-full min-w-0 text-white">
+        <main className="fleet-app-form-column pt-3">
+          <Card className="border-destructive/30 bg-card/80">
+            <CardContent className="p-5 text-center">
+              <p className="font-semibold">נהג לא נמצא</p>
+            </CardContent>
+          </Card>
+        </main>
       </div>
     );
   }
@@ -207,6 +215,7 @@ export default function EditDriverPage() {
         description,
         duration: 12_000, // זמן ארוך יותר כדי להספיק לקרוא code/details
       });
+    } finally {
       setIsSubmitting(false);
     }
   };
@@ -228,11 +237,11 @@ export default function EditDriverPage() {
   };
 
   return (
-    <div className="fleet-screen-page text-white">
-      <header className="bg-card border-b border-border sticky top-0 z-10">
-        <div className="container py-4">
-          <div className="flex flex-wrap items-center gap-3">
-            {complianceReturnTo ? (
+    <div className="fleet-screen-page flex min-h-screen w-full min-w-0 flex-col text-white">
+      <main className="fleet-app-form-column flex-1 space-y-3 pt-3 pb-28 md:space-y-3 md:pb-32">
+        <Card className="scroll-mt-4 overflow-hidden border border-cyan-500/20 bg-gradient-to-br from-slate-900/95 via-[#0a1628] to-slate-950 shadow-[0_0_36px_rgba(6,182,212,0.07)]">
+          {complianceReturnTo ? (
+            <div className="border-b border-white/10 bg-black/25 px-4 py-2">
               <Button
                 type="button"
                 variant="outline"
@@ -240,31 +249,72 @@ export default function EditDriverPage() {
                 className="shrink-0"
                 onClick={() => navigate(complianceReturnTo)}
               >
-                חזרה למגדל ציות
+                חזרה למרכז ציות
               </Button>
-            ) : null}
-            <h1 className="font-bold text-xl">עריכת נהג - {driver.full_name}</h1>
-          </div>
-        </div>
-      </header>
+            </div>
+          ) : null}
+          <CardContent className="p-4 sm:p-5">
+            <h1 className="text-balance text-right text-2xl font-bold leading-tight tracking-tight text-cyan-50 sm:text-3xl">
+              {driver.full_name}
+            </h1>
+            <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm">
+              <span className="text-muted-foreground">
+                ת.ז.{' '}
+                <span className="font-mono font-medium text-foreground" dir="ltr">
+                  {driver.id_number}
+                </span>
+              </span>
+              <span className="hidden h-3.5 w-px bg-border/80 sm:block" aria-hidden />
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 sm:min-w-0 sm:flex-initial">
+                <Car className="h-4 w-4 shrink-0 text-cyan-400/90" aria-hidden />
+                {assignedVehicles.length > 0 ? (
+                  assignedVehicles.map((v) => (
+                    <Link
+                      key={v.id}
+                      to={`/vehicles/${v.id}`}
+                      className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-2 py-0.5 text-sm font-medium text-primary transition-colors hover:bg-primary/20"
+                    >
+                      <span className="max-w-[200px] truncate">
+                        {v.manufacturer} {v.model}
+                      </span>
+                      <span className="text-xs text-muted-foreground" dir="ltr">
+                        ({v.plate_number})
+                      </span>
+                    </Link>
+                  ))
+                ) : (
+                  <span className="text-sm text-muted-foreground">אין רכב משויך</span>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-      <main className="container py-6">
         <form
+          id="edit-driver-form"
           onSubmit={handleSubmit}
           className="space-y-6"
           onInput={() => setDirty(DIRTY_SOURCE_DRIVER_EDIT, true)}
           onChange={() => setDirty(DIRTY_SOURCE_DRIVER_EDIT, true)}
         >
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent/10">
-                  <User className="h-5 w-5 text-accent" />
-                </div>
-                <CardTitle>פרטים אישיים</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
+          <Card className="scroll-mt-20 overflow-hidden pt-0 gap-0 border-white/10 bg-slate-950/35 shadow-sm">
+            <DriverFolders
+              driver={driver}
+              collapsible={false}
+              defaultOpen
+              variant="embedded"
+              detailsSlot={
+                <div className="space-y-6">
+                  <Card className="border-white/10 bg-slate-950/25 shadow-sm">
+                    <CardHeader className="pb-3 pt-4">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent/10">
+                          <User className="h-5 w-5 text-accent" />
+                        </div>
+                        <CardTitle>פרטים אישיים</CardTitle>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
                   <Label htmlFor="full_name">שם מלא *</Label>
@@ -288,10 +338,10 @@ export default function EditDriverPage() {
                   <Input id="address" name="address" defaultValue={driver.address || ''} />
                 </div>
               </div>
-            </CardContent>
-          </Card>
+                    </CardContent>
+                  </Card>
 
-          <Card>
+                  <Card>
             <CardHeader>
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
@@ -320,9 +370,9 @@ export default function EditDriverPage() {
                 </div>
               </div>
             </CardContent>
-          </Card>
+                  </Card>
 
-          <Card>
+                  <Card>
             <CardHeader>
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10">
@@ -407,9 +457,9 @@ export default function EditDriverPage() {
                 </div>
               </div>
             </CardContent>
-          </Card>
+                  </Card>
 
-          <Card>
+                  <Card>
             <CardHeader>
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10">
@@ -470,40 +520,13 @@ export default function EditDriverPage() {
                 </div>
               </div>
             </CardContent>
+                  </Card>
+                </div>
+              }
+            />
           </Card>
-
-          <div className="rounded-lg border border-cyan-500/20 bg-white/[0.03] p-3 space-y-2">
-            <p className="text-xs text-muted-foreground">לחץ אישור שינויים לשמירה — יציאה בלי שמירה תציג התראה</p>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Button
-                type="button"
-                variant="destructive"
-                className="w-full sm:w-auto"
-                onClick={() => setDeleteDialogOpen(true)}
-                disabled={isSubmitting || deleteDriver.isPending}
-              >
-                מחק נהג
-              </Button>
-              <Button
-                type="submit"
-                className="flex-1 bg-cyan-600 hover:bg-cyan-500 font-semibold shadow-lg shadow-cyan-900/30"
-                disabled={isSubmitting || deleteDriver.isPending}
-              >
-                {isSubmitting && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
-                אישור שינויים
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="flex-1 w-full"
-                disabled={isSubmitting || deleteDriver.isPending}
-                onClick={() => tryNavigate('/drivers')}
-              >
-                ביטול
-              </Button>
-            </div>
-          </div>
         </form>
+
         <AlertDialog
           open={deleteDialogOpen}
           onOpenChange={(open) => {
@@ -545,6 +568,38 @@ export default function EditDriverPage() {
           </AlertDialogContent>
         </AlertDialog>
       </main>
+
+      <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-card/95 px-6 py-3 shadow-[0_-8px_24px_rgba(0,0,0,0.25)] backdrop-blur-md [padding-bottom:max(0.75rem,env(safe-area-inset-bottom))]">
+        <div className="fleet-app-form-column flex flex-wrap items-center justify-center gap-3">
+          <Button
+            type="button"
+            variant="destructive"
+            className="min-w-[9rem] shrink-0 sm:w-auto"
+            onClick={() => setDeleteDialogOpen(true)}
+            disabled={isSubmitting || deleteDriver.isPending}
+          >
+            מחק נהג
+          </Button>
+          <Button
+            type="submit"
+            form="edit-driver-form"
+            className="min-w-[12rem] shrink-0 bg-cyan-600 font-semibold shadow-lg shadow-cyan-900/30 hover:bg-cyan-500 sm:w-auto"
+            disabled={isSubmitting || deleteDriver.isPending}
+          >
+            {isSubmitting && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
+            אישור שינויים
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="min-w-[8rem] shrink-0 sm:w-auto"
+            disabled={isSubmitting || deleteDriver.isPending}
+            onClick={() => tryNavigate('/drivers')}
+          >
+            ביטול
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

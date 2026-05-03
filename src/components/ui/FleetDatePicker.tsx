@@ -47,24 +47,39 @@ export type FleetDatePickerProps = {
   value: string;
   onChange: (ymd: string) => void;
   className?: string;
+  /** padded = 01/08/2026; compact = 1/8/2026 (יום/חודש/שנה) */
+  slashDisplay?: 'padded' | 'compact';
 };
 
 /** תאריך yyyy-MM-dd עם הקלדה ידנית (dd/MM/yyyy) ולוח שנה — אייקון לוח בהיר על רקע כהה */
-export function FleetDatePicker({ id, label, value, onChange, className }: FleetDatePickerProps) {
+export function FleetDatePicker({
+  id,
+  label,
+  value,
+  onChange,
+  className,
+  slashDisplay = 'padded',
+}: FleetDatePickerProps) {
   const [open, setOpen] = useState(false);
 
-  const syncTextFromValue = useCallback((ymd: string) => {
-    if (ymd && /^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
-      return format(new Date(`${ymd}T12:00:00`), 'dd/MM/yyyy');
-    }
-    return '';
-  }, []);
+  const formatDisplayFromYmd = useCallback(
+    (ymd: string) => {
+      if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return '';
+      const d = new Date(`${ymd}T12:00:00`);
+      if (!isValid(d)) return '';
+      if (slashDisplay === 'compact') {
+        return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+      }
+      return format(d, 'dd/MM/yyyy');
+    },
+    [slashDisplay],
+  );
 
-  const [text, setText] = useState(() => syncTextFromValue(value));
+  const [text, setText] = useState(() => formatDisplayFromYmd(value));
 
   useEffect(() => {
-    setText(syncTextFromValue(value));
-  }, [value, syncTextFromValue]);
+    setText(formatDisplayFromYmd(value));
+  }, [value, formatDisplayFromYmd]);
 
   const selected = useMemo(() => {
     if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
@@ -75,9 +90,9 @@ export function FleetDatePicker({ id, label, value, onChange, className }: Fleet
   const applyYmd = useCallback(
     (ymd: string) => {
       onChange(ymd);
-      setText(syncTextFromValue(ymd));
+      setText(formatDisplayFromYmd(ymd));
     },
-    [onChange, syncTextFromValue],
+    [onChange, formatDisplayFromYmd],
   );
 
   return (
@@ -102,7 +117,7 @@ export function FleetDatePicker({ id, label, value, onChange, className }: Fleet
               const d = new Date(`${ymd}T12:00:00`);
               if (isValid(d)) {
                 onChange(ymd);
-                setText(syncTextFromValue(ymd));
+                setText(formatDisplayFromYmd(ymd));
               }
               return;
             }
@@ -116,7 +131,11 @@ export function FleetDatePicker({ id, label, value, onChange, className }: Fleet
             /** רק תאריך מלא (יום+חודש+שנה בארבע ספרות) מתעדכן תוך הקלדה — 6 ספרות (yy) היו ננעלות על 2020 לפני סיום 2026 */
             if (digits.length === 8) {
               const parsed = parseLooseDate(formatted);
-              if (parsed) onChange(toYmd(parsed));
+              if (parsed) {
+                const ymd = toYmd(parsed);
+                onChange(ymd);
+                setText(formatDisplayFromYmd(ymd));
+              }
             }
           }}
           onBlur={(e) => {
@@ -127,9 +146,9 @@ export function FleetDatePicker({ id, label, value, onChange, className }: Fleet
               const d = new Date(`${ymd}T12:00:00`);
               if (isValid(d)) {
                 onChange(ymd);
-                setText(syncTextFromValue(ymd));
+                setText(formatDisplayFromYmd(ymd));
               } else {
-                setText(syncTextFromValue(value));
+                setText(formatDisplayFromYmd(value));
               }
               return;
             }
@@ -145,11 +164,11 @@ export function FleetDatePicker({ id, label, value, onChange, className }: Fleet
               if (parsed) {
                 const ymd = toYmd(parsed);
                 onChange(ymd);
-                setText(syncTextFromValue(ymd));
+                setText(formatDisplayFromYmd(ymd));
                 return;
               }
             }
-            setText(syncTextFromValue(value));
+            setText(formatDisplayFromYmd(value));
           }}
         />
         <Popover open={open} onOpenChange={setOpen}>

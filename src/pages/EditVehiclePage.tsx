@@ -114,11 +114,11 @@ export default function EditVehiclePage() {
     return (
       <div className="fleet-screen-page text-white">
         <header className="bg-card border-b border-border sticky top-0 z-10">
-          <div className="container py-4"><div className="flex items-center gap-3">
+          <div className="fleet-app-form-column py-4"><div className="flex items-center gap-3">
             <Skeleton className="h-6 w-48" />
           </div></div>
         </header>
-        <main className="container py-6 space-y-4"><Skeleton className="h-48 w-full" /></main>
+        <main className="fleet-app-form-column py-6 space-y-4"><Skeleton className="h-48 w-full" /></main>
       </div>
     );
   }
@@ -127,7 +127,7 @@ export default function EditVehiclePage() {
     return (
       <div className="fleet-screen-page text-white">
         <header className="bg-card border-b border-border sticky top-0 z-10">
-          <div className="container py-4"><div className="flex items-center gap-3">
+          <div className="fleet-app-form-column py-4"><div className="flex items-center gap-3">
             <h1 className="font-bold text-xl">רכב לא נמצא</h1>
           </div></div>
         </header>
@@ -260,16 +260,16 @@ export default function EditVehiclePage() {
   };
 
   return (
-    <div className="fleet-screen-page text-white">
+    <div className="fleet-screen-page w-full min-w-0 text-white">
       <header className="bg-card border-b border-border sticky top-0 z-10">
-        <div className="container py-4">
+        <div className="fleet-app-form-column py-4">
           <div className="flex items-center gap-3">
             <h1 className="font-bold text-xl">עריכת רכב - {normalizePlateNumber(vehicle.plate_number)}</h1>
           </div>
         </div>
       </header>
 
-      <main className="container py-6">
+      <main className="fleet-app-form-column py-6">
         <form
           onSubmit={handleSubmit}
           className="space-y-6"
@@ -536,12 +536,12 @@ export default function EditVehiclePage() {
             </CardContent>
           </Card>
 
-          <div className="flex gap-3">
-            <Button type="submit" className="flex-1" disabled={isSubmitting}>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <Button type="submit" className="min-w-[12rem] flex-1 sm:flex-none sm:min-w-[14rem]" disabled={isSubmitting}>
               {isSubmitting && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
               שמור שינויים
             </Button>
-            <Button type="button" variant="outline" className="flex-1" onClick={() => tryNavigate(`/vehicles/${vehicle.id}`)}>ביטול</Button>
+            <Button type="button" variant="outline" className="min-w-[8rem] flex-1 sm:flex-none" onClick={() => tryNavigate(`/vehicles/${vehicle.id}`)}>ביטול</Button>
           </div>
         </form>
       </main>

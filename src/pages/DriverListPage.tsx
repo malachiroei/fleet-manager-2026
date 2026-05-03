@@ -6,10 +6,11 @@ import type { DriverSummary, ComplianceStatus } from '@/types/fleet';
 
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Plus, User, FolderOpen } from 'lucide-react';
+import { Plus, Search, User, FolderOpen } from 'lucide-react';
 import { FleetHudPageShell } from '@/components/FleetHudPageShell';
 import DriverFolders from '@/components/DriverFolders';
 import { DriversHudTable, type StatusFilter } from '@/components/drivers/DriversHudTable';
@@ -154,12 +155,26 @@ export default function DriverListPage() {
       title={t('drivers.title')}
       subtitle={t('drivers.subtitle')}
       headerAside={
-        <Link to="/drivers/add" className="w-full shrink-0 sm:w-auto">
-          <Button size="sm" className="w-full border-cyan-500/40 bg-cyan-600/90 font-bold text-white shadow-[0_0_16px_rgba(6,182,212,0.35)] hover:bg-cyan-500 sm:w-auto">
-            <Plus className="mr-2 h-4 w-4" />
-            {t('drivers.addDriver')}
-          </Button>
-        </Link>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-3">
+          <div className="relative w-full min-w-0 sm:max-w-md">
+            <Search className="pointer-events-none absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
+            <Input
+              type="search"
+              dir="rtl"
+              placeholder="חיפוש נהג — שם, ת״ז, טלפון, מייל…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-10 border-white/15 bg-black/40 pr-10 text-white placeholder:text-slate-500"
+              aria-label="חיפוש נהג"
+            />
+          </div>
+          <Link to="/drivers/add" className="w-full shrink-0 sm:w-auto">
+            <Button size="sm" className="w-full border-cyan-500/40 bg-cyan-600/90 font-bold text-white shadow-[0_0_16px_rgba(6,182,212,0.35)] hover:bg-cyan-500 sm:w-auto">
+              <Plus className="mr-2 h-4 w-4" />
+              {t('drivers.addDriver')}
+            </Button>
+          </Link>
+        </div>
       }
     >
       <section className="dashboard-status-stage dashboard-cyber-stage mx-auto w-full max-w-[1920px] space-y-5 rounded-3xl border border-cyan-400/25 p-4 text-foreground sm:space-y-6 sm:p-6">
