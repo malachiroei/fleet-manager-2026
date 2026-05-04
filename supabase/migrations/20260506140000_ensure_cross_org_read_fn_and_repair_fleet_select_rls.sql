@@ -1,10 +1,8 @@
 -- =============================================================================
--- Fleet SELECT: אין דילוג של «כל צוות הצי» על managed_by עבור עמיתים באותו org.
--- בעבר: user_has_fleet_staff_privileges גרם לכל אדמין בארגון לראות כל רכב/נהג.
--- עכשיו: באותו org רואים שורות עם managed_by ריק (legacy משותף), שורות של עצמי,
---        או שורות של המנהל הישיר (parent_admin_id / managed_by_user_id בפרופיל).
--- malachiroei / רביד (במיילי bootstrap) נשארים עם user_may_cross_org_fleet_read.
--- הערה: יוצרים כאן גם user_may_cross_org_fleet_read אם DB ישן בלי מיגרציה 20260412800000.
+-- תיקון סביבות שלא הריצו מיגרציות קודמות: user_may_cross_org_fleet_read חסרה
+-- ואז 20260505120000 נכשל. כאן יוצרים את הפונקציה ואז מיישרים SELECT לרכבים/נהגים.
+-- גם מסירים פוליסיות מותאמות אישית (vehicles_managed_access וכו') אם נוספו — RLS
+-- מצטבר ב-OR; חובה להסיר כפילויות.
 -- =============================================================================
 
 CREATE OR REPLACE FUNCTION public.user_may_cross_org_fleet_read(_user_id uuid)
@@ -60,8 +58,14 @@ COMMENT ON FUNCTION public.user_may_read_managed_fleet_row(uuid, uuid) IS
 REVOKE ALL ON FUNCTION public.user_may_read_managed_fleet_row(uuid, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.user_may_read_managed_fleet_row(uuid, uuid) TO authenticated;
 
--- vehicles
+-- הסרת פוליסיות מזיקות / כפולות (שמות שנוספו ידנית או ישנים)
+DROP POLICY IF EXISTS "vehicles_managed_access" ON public.vehicles;
+DROP POLICY IF EXISTS "drivers_managed_access" ON public.drivers;
+DROP POLICY IF EXISTS "vehicles_global_org_access" ON public.vehicles;
+DROP POLICY IF EXISTS "drivers_global_org_access" ON public.drivers;
+
 DROP POLICY IF EXISTS "vehicles_select_org_scope" ON public.vehicles;
+DROP POLICY IF EXISTS "drivers_select_org_scope" ON public.drivers;
 
 CREATE POLICY "vehicles_select_org_scope"
   ON public.vehicles FOR SELECT TO authenticated
@@ -84,9 +88,6 @@ CREATE POLICY "vehicles_select_org_scope"
 
 COMMENT ON POLICY "vehicles_select_org_scope" ON public.vehicles IS
   'Org: shared NULL managed_by, own managed_by, or delegate of owner; not peer admins.';
-
--- drivers (align with vehicles; keep viewer branch narrow)
-DROP POLICY IF EXISTS "drivers_select_org_scope" ON public.drivers;
 
 CREATE POLICY "drivers_select_org_scope"
   ON public.drivers FOR SELECT TO authenticated
