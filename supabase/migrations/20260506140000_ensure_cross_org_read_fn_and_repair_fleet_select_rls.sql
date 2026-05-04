@@ -103,7 +103,12 @@ CREATE POLICY "drivers_select_org_scope"
       )
     )
     OR (
-      public.has_role(auth.uid(), 'viewer'::public.app_role)
+      EXISTS (
+        SELECT 1
+        FROM public.user_roles ur
+        WHERE ur.user_id = auth.uid()
+          AND ur.role::text = 'viewer'
+      )
       AND (org_id IS NULL OR public.user_belongs_to_org(auth.uid(), org_id))
       AND (
         managed_by_user_id IS NULL
