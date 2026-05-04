@@ -3,12 +3,17 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useViewAs } from '@/contexts/ViewAsContext';
-import { isPlatformSuperOwnerEmail, resolveSessionEmail, RAVID_MANAGER_EMAIL } from '@/lib/fleetBootstrapEmails';
+import {
+  isPlatformSuperOwnerEmail,
+  isRavidManagerEmail,
+  resolveSessionEmail,
+  RAVID_MANAGER_EMAIL,
+} from '@/lib/fleetBootstrapEmails';
 import { FALLBACK_MAIN_FLEET_ORG_ID, RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 
 /**
  * הקשר לרשימות צי: org (כולל View As), נהג בלבד כשמוחלפים משתמש עם רק תפקיד נהג.
- * סינון managed_by בבקשות הלקוח הוסר — גישה לפי RLS (fleet staff רואה צי מלא בארגון).
+ * applyFleetManagerSlice: סינון managed_by בלקוח לכל משתמש שאינו מנהל־על/רביד (משלים ל־RLS).
  */
 function rolesIncludeFleetElevated(roles: string[]): boolean {
   const r = roles.map((x) => String(x).toLowerCase());
@@ -87,13 +92,15 @@ export function useImpersonationFleetScope() {
     return !adminAccess && !manageTeam;
   }, [isImpersonating, loggedInRolesNorm, profile?.parent_admin_id, profile?.managed_by_user_id, profile?.permissions]);
   const loggedInDriverContextOnly = useMemo(() => {
-    if (loggedInProfileDelegatedDriverContext) return true;
     if (isImpersonating) return false;
+    /** יש מנהל ישיר בפרופיל — לא לכפות מצב «נהג בלבד» (רק רכב משובץ); רשימות עוברות RLS + סינון managed_by בלקוח */
+    if ((profile?.parent_admin_id ?? '').trim()) return false;
+    if (loggedInProfileDelegatedDriverContext) return true;
     if (loggedInRolesNorm.length === 0) return false;
     const hasDriver = loggedInRolesNorm.includes('driver') || loggedInRolesNorm.includes('employee') || loggedInRolesNorm.includes('viewer');
     const hasElevated = loggedInRolesNorm.includes('admin') || loggedInRolesNorm.includes('fleet_manager');
     return hasDriver && !hasElevated;
-  }, [loggedInProfileDelegatedDriverContext, isImpersonating, loggedInRolesNorm]);
+  }, [loggedInProfileDelegatedDriverContext, isImpersonating, loggedInRolesNorm, profile?.parent_admin_id]);
 
   const impersonatedDriverContextOnly = useMemo(() => {
     if (!isImpersonating) return false;
@@ -155,10 +162,15 @@ export function useImpersonationFleetScope() {
   ]);
 
   /**
-   * RLS: drivers/vehicles SELECT use managed slice (NULL / self / delegate of parent) — not full-org for
-   * all fleet_staff (מיגרציה 20260505120000). PostgREST filter here stayed off to match RLS.
+   * סינון PostgREST לפי managed_by + הורה (fleetManagerVisibilityOrFilter). מנהלי bootstrap (מנהל על + רביד)
+   * לא מסננים כאן — להם RLS cross-org / צי מלא. שאר המשתמשים: בלי זה roeima21 רואה כל org אם RLS פגום.
    */
-  const applyFleetManagerSlice = false;
+  const applyFleetManagerSlice = useMemo(() => {
+    if (isImpersonating) return false;
+    const e = resolveSessionEmail(profile, user);
+    if (isPlatformSuperOwnerEmail(e) || isRavidManagerEmail(e)) return false;
+    return true;
+  }, [isImpersonating, profile, user]);
 
   return {
     effectiveOrgId,
