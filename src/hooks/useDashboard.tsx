@@ -5,7 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useViewAs } from '@/contexts/ViewAsContext';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
 import { isPlatformSuperOwnerEmail, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
-import { fleetManagerVisibilityOrFilter } from '@/lib/fleetManagerScope';
+import { fleetManagerVisibilityOrFilter, fleetRowVisibleUnderManagerSlice } from '@/lib/fleetManagerScope';
 
 const COMPLIANCE_IN_CHUNK = 80;
 
@@ -101,6 +101,7 @@ type DerivedComplianceCtx = {
   scopedDriverId: string | null;
   applyFleetManagerSlice: boolean;
   fleetManagerListUserId: string | null;
+  fleetManagerParentProfileId: string | null;
 };
 
 async function appendDerivedComplianceFromFleetDates(
@@ -108,8 +109,14 @@ async function appendDerivedComplianceFromFleetDates(
   occupiedSlots: Set<string>,
   ctx: DerivedComplianceCtx,
 ): Promise<void> {
-  const { effectiveOrgId, isDriverContextOnly, scopedDriverId, applyFleetManagerSlice, fleetManagerListUserId } =
-    ctx;
+  const {
+    effectiveOrgId,
+    isDriverContextOnly,
+    scopedDriverId,
+    applyFleetManagerSlice,
+    fleetManagerListUserId,
+    fleetManagerParentProfileId,
+  } = ctx;
   if (!effectiveOrgId) return;
   // Driver-scoped view without resolved driver row: never fallback to org-wide compliance.
   if (isDriverContextOnly && !scopedDriverId) return;
@@ -158,7 +165,11 @@ async function appendDerivedComplianceFromFleetDates(
       .select('id, plate_number, org_id, managed_by_user_id, assigned_driver_id, road_ascent_month, road_ascent_year, test_expiry, insurance_expiry, next_inspection_date, next_maintenance_date')
       .eq('org_id', effectiveOrgId);
     if (applyFleetManagerSlice && fleetManagerListUserId) {
-      vq = vq.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
+      vq = vq.or(
+        fleetManagerVisibilityOrFilter(fleetManagerListUserId, {
+          parentFleetOwnerProfileId: fleetManagerParentProfileId,
+        }),
+      );
     }
     const { data, error } = await vq;
     if (error) {
@@ -186,7 +197,11 @@ async function appendDerivedComplianceFromFleetDates(
       .select('id, full_name, org_id, managed_by_user_id, status, license_expiry, health_declaration_date, regulation_585b_date')
       .eq('org_id', effectiveOrgId);
     if (applyFleetManagerSlice && fleetManagerListUserId) {
-      dq = dq.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
+      dq = dq.or(
+        fleetManagerVisibilityOrFilter(fleetManagerListUserId, {
+          parentFleetOwnerProfileId: fleetManagerParentProfileId,
+        }),
+      );
     }
     const { data, error } = await dq;
     if (error) {
@@ -304,6 +319,7 @@ export function useDashboardStats() {
     fleetListReady,
     applyFleetManagerSlice,
     fleetManagerListUserId,
+    fleetManagerParentProfileId,
   } = useImpersonationFleetScope();
 
   const loggedInRolesSig = (loggedInRoles ?? [])
@@ -325,6 +341,7 @@ export function useDashboardStats() {
       loggedInRolesSig,
       applyFleetManagerSlice,
       fleetManagerListUserId,
+      fleetManagerParentProfileId,
       sessionEmailSig,
     ],
     enabled: fleetListReady && effectiveUserId != null,
@@ -378,8 +395,16 @@ export function useDashboardStats() {
         let vq = supabase.from('vehicles').select('id').eq('org_id', effectiveOrgId);
         let dq = supabase.from('drivers').select('id').eq('org_id', effectiveOrgId);
         if (applyFleetManagerSlice && fleetManagerListUserId) {
-          vq = vq.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
-          dq = dq.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
+          vq = vq.or(
+            fleetManagerVisibilityOrFilter(fleetManagerListUserId, {
+              parentFleetOwnerProfileId: fleetManagerParentProfileId,
+            }),
+          );
+          dq = dq.or(
+            fleetManagerVisibilityOrFilter(fleetManagerListUserId, {
+              parentFleetOwnerProfileId: fleetManagerParentProfileId,
+            }),
+          );
         }
         const { data: vRows, error: vErr } = await vq;
         if (vErr) throw vErr;
@@ -427,6 +452,7 @@ export function useComplianceAlerts() {
     fleetListReady,
     applyFleetManagerSlice,
     fleetManagerListUserId,
+    fleetManagerParentProfileId,
     isDriverContextOnly,
     scopedDriverId,
   } = useImpersonationFleetScope();
@@ -438,6 +464,7 @@ export function useComplianceAlerts() {
       effectiveUserId,
       applyFleetManagerSlice,
       fleetManagerListUserId,
+      fleetManagerParentProfileId,
       isDriverContextOnly,
       scopedDriverId,
     ],
@@ -547,8 +574,11 @@ export function useComplianceAlerts() {
               if (
                 applyFleetManagerSlice &&
                 fleetManagerListUserId &&
-                v.managed_by_user_id != null &&
-                v.managed_by_user_id !== fleetManagerListUserId
+                !fleetRowVisibleUnderManagerSlice(
+                  v.managed_by_user_id,
+                  fleetManagerListUserId,
+                  fleetManagerParentProfileId,
+                )
               ) {
                 continue;
               }
@@ -580,8 +610,11 @@ export function useComplianceAlerts() {
               if (
                 applyFleetManagerSlice &&
                 fleetManagerListUserId &&
-                d.managed_by_user_id != null &&
-                d.managed_by_user_id !== fleetManagerListUserId
+                !fleetRowVisibleUnderManagerSlice(
+                  d.managed_by_user_id,
+                  fleetManagerListUserId,
+                  fleetManagerParentProfileId,
+                )
               ) {
                 continue;
               }
@@ -609,6 +642,7 @@ export function useComplianceAlerts() {
         scopedDriverId,
         applyFleetManagerSlice,
         fleetManagerListUserId,
+        fleetManagerParentProfileId,
       });
 
       return out;

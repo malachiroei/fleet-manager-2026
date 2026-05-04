@@ -158,6 +158,22 @@ export function useImpersonationFleetScope() {
 
   const fleetListSubjectIsElevated = isImpersonating ? impersonatedFleetElevated : viewerIsFleetElevated;
 
+  /** profiles.id של מנהל העל — רכבים/נהגים שסומנו אצלו יופיעו גם אצל משנים באותו org */
+  const fleetManagerParentProfileId = useMemo((): string | null => {
+    if (isImpersonating) {
+      const fromProfile = (viewAsProfile?.parent_admin_id ?? viewAsProfile?.managed_by_user_id ?? '').trim();
+      return fromProfile || null;
+    }
+    const fromProfile = (profile?.parent_admin_id ?? profile?.managed_by_user_id ?? '').trim();
+    return fromProfile || null;
+  }, [
+    isImpersonating,
+    profile?.parent_admin_id,
+    profile?.managed_by_user_id,
+    viewAsProfile?.parent_admin_id,
+    viewAsProfile?.managed_by_user_id,
+  ]);
+
   /** Per-manager lists within org for admins/managers; viewers keep org-wide lists (NULL managed_by pool). */
   const applyFleetManagerSlice =
     !viewAsProfilePending &&
@@ -175,5 +191,6 @@ export function useImpersonationFleetScope() {
     fleetListReady,
     applyFleetManagerSlice,
     fleetManagerListUserId,
+    fleetManagerParentProfileId,
   };
 }

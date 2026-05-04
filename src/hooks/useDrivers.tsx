@@ -56,6 +56,7 @@ export function useDrivers() {
     fleetListReady,
     applyFleetManagerSlice,
     fleetManagerListUserId,
+    fleetManagerParentProfileId,
   } = useImpersonationFleetScope();
 
   const orgId = effectiveOrgId;
@@ -69,6 +70,7 @@ export function useDrivers() {
       impersonatedUserId,
       applyFleetManagerSlice,
       fleetManagerListUserId,
+      fleetManagerParentProfileId,
     ],
     enabled: fleetListReady && orgId != null,
     queryFn: async () => {
@@ -77,7 +79,11 @@ export function useDrivers() {
       if (isDriverContextOnly && impersonatedUserId) {
         base = base.eq('user_id', impersonatedUserId);
       } else if (applyFleetManagerSlice && fleetManagerListUserId) {
-        base = base.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
+        base = base.or(
+          fleetManagerVisibilityOrFilter(fleetManagerListUserId, {
+            parentFleetOwnerProfileId: fleetManagerParentProfileId,
+          }),
+        );
       }
       const { data, error } = await base.order('full_name');
 
@@ -128,7 +134,11 @@ export function useDrivers() {
         if (isDriverContextOnly && impersonatedUserId) {
           fallbackQ = fallbackQ.eq('user_id', impersonatedUserId);
         } else if (applyFleetManagerSlice && fleetManagerListUserId) {
-          fallbackQ = fallbackQ.or(fleetManagerVisibilityOrFilter(fleetManagerListUserId));
+          fallbackQ = fallbackQ.or(
+            fleetManagerVisibilityOrFilter(fleetManagerListUserId, {
+              parentFleetOwnerProfileId: fleetManagerParentProfileId,
+            }),
+          );
         }
         const fallback = await fallbackQ.order('full_name');
         if (fallback.error) {
