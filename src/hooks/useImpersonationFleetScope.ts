@@ -155,9 +155,8 @@ export function useImpersonationFleetScope() {
   ]);
 
   /**
-   * RLS on vehicles already allows full org rows for fleet staff (`user_has_fleet_staff_privileges`).
-   * An extra PostgREST filter on `managed_by_user_id` broke org-level staff (e.g. wrong `parent_admin_id`
-   * vs the admin who owns rows). Driver SELECT is aligned by migration; lists stay org-scoped via RLS only.
+   * RLS: drivers/vehicles SELECT use managed slice (NULL / self / delegate of parent) — not full-org for
+   * all fleet_staff (מיגרציה 20260505120000). PostgREST filter here stayed off to match RLS.
    */
   const applyFleetManagerSlice = false;
 
