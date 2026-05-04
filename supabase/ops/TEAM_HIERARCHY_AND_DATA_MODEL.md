@@ -37,5 +37,6 @@
 | `set_null_managed_by_drivers_to_ravid.sql` | נהגים ב־org רביד בלי `managed_by` — שיוך לרביד |
 | `diagnose_unassigned_fleet_platform_owner.sql` | איתור רכבים/נהגים בלי `org` / בלי `managed_by` לשיוך ל־malachiroei |
 | מיגרציה `20260506140000_*.sql` | אם 20260505120000 נכשל (חסר `user_may_cross_org_fleet_read`) או נוספו פוליסיות SQL ידנית — תיקון + הסרת כפילויות |
+| `setup_team_hierarchy_malachiroei_ravid_roeima21.sql` | סדר יישור: מנהל על → שני אדמינים → משנים תחת רביד |
 
 הרץ `reclaim_platform_fleet_from_ravid_org.sql` אחרי שבדקת את בלוקי ה־`SELECT` הראשונים.
