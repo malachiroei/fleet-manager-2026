@@ -7,8 +7,8 @@ import { isPlatformSuperOwnerEmail, resolveSessionEmail, RAVID_MANAGER_EMAIL } f
 import { FALLBACK_MAIN_FLEET_ORG_ID, RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 
 /**
- * הקשר לרשימות צי: org (כולל View As), נהג בלבד כשמוחלפים משתמש עם רק תפקיד נהג,
- * וסינון managed_by_user_id למנהלי צי/אדמין — שורות NULL נשארות משותפות לכל המנהלים בארגון.
+ * הקשר לרשימות צי: org (כולל View As), נהג בלבד כשמוחלפים משתמש עם רק תפקיד נהג.
+ * סינון managed_by בבקשות הלקוח הוסר — גישה לפי RLS (fleet staff רואה צי מלא בארגון).
  */
 function rolesIncludeFleetElevated(roles: string[]): boolean {
   const r = roles.map((x) => String(x).toLowerCase());
@@ -25,13 +25,6 @@ export function useImpersonationFleetScope() {
   const isImpersonating = Boolean(viewAsEmail?.trim() && impersonatedUserId);
   /** באנר תצוגה כ… פעיל (גם אם profiles עדיין לא נפתר בגלל RLS) */
   const viewAsBannerActive = Boolean(viewAsEmail?.trim());
-  /**
-   * בין לחיצת View-As לבין טעינת viewAsProfile — effectiveUserId עדיין של המנהל המחובר.
-   * אם מפעילים applyFleetManagerSlice עם UUID של רועי על org של רביד, מתקבל 0 שורות ואז
-   * fallback של הדשבורד (מנהל ראשי) מציג את כל הצי הגלובלי — נראה כמו «רואים את רועי».
-   */
-  const viewAsProfilePending = Boolean(viewAsEmail?.trim()) && !impersonatedUserId;
-
   const viewAsNorm = (viewAsEmail ?? '').trim().toLowerCase();
   const sessionNorm = resolveSessionEmail(profile, user);
   const viewAsActive = Boolean((viewAsEmail ?? '').trim());
@@ -145,20 +138,7 @@ export function useImpersonationFleetScope() {
 
   const fleetManagerListUserId = (isDriverContextOnly ? null : effectiveUserId) as string | null;
 
-  const viewerIsFleetElevated = useMemo(
-    () => rolesIncludeFleetElevated(loggedInRolesNorm),
-    [loggedInRolesNorm]
-  );
-
-  const impersonatedFleetElevated = useMemo(() => {
-    if (!isImpersonating) return false;
-    if (!rolesQuery.isFetched) return false;
-    return rolesIncludeFleetElevated(rolesQuery.data ?? []);
-  }, [isImpersonating, rolesQuery.data, rolesQuery.isFetched]);
-
-  const fleetListSubjectIsElevated = isImpersonating ? impersonatedFleetElevated : viewerIsFleetElevated;
-
-  /** profiles.id של מנהל העל — רכבים/נהגים שסומנו אצלו יופיעו גם אצל משנים באותו org */
+  /** profiles.id של מנהל העל — עדיין מוחזר לתאימות; רשימות מסתמכות על RLS (אין slice בלקוח) */
   const fleetManagerParentProfileId = useMemo((): string | null => {
     if (isImpersonating) {
       const fromProfile = (viewAsProfile?.parent_admin_id ?? viewAsProfile?.managed_by_user_id ?? '').trim();
@@ -174,12 +154,12 @@ export function useImpersonationFleetScope() {
     viewAsProfile?.managed_by_user_id,
   ]);
 
-  /** Per-manager lists within org for admins/managers; viewers keep org-wide lists (NULL managed_by pool). */
-  const applyFleetManagerSlice =
-    !viewAsProfilePending &&
-    fleetManagerListUserId != null &&
-    !isDriverContextOnly &&
-    fleetListSubjectIsElevated;
+  /**
+   * RLS on vehicles already allows full org rows for fleet staff (`user_has_fleet_staff_privileges`).
+   * An extra PostgREST filter on `managed_by_user_id` broke org-level staff (e.g. wrong `parent_admin_id`
+   * vs the admin who owns rows). Driver SELECT is aligned by migration; lists stay org-scoped via RLS only.
+   */
+  const applyFleetManagerSlice = false;
 
   return {
     effectiveOrgId,
