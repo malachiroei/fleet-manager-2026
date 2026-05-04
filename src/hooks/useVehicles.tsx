@@ -4,7 +4,11 @@ import type { Vehicle } from '@/types/fleet';
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
-import { fleetManagerVisibilityOrFilter } from '@/lib/fleetManagerScope';
+import {
+  applyPlatformOwnerFleetListFilter,
+  fleetManagerVisibilityOrFilter,
+} from '@/lib/fleetManagerScope';
+import { isPlatformSuperOwnerEmail, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
 import { normalizePlateNumber } from '@/lib/plateNumber';
 import { isMissingSafetyOfficerColumnError } from '@/lib/supabaseError';
 
@@ -46,6 +50,7 @@ export async function fetchActiveDriverAssignments(driverId: string, excludeVehi
 }
 
 export function useActiveDriverVehicleAssignments() {
+  const { user, profile } = useAuth();
   const {
     effectiveOrgId,
     isDriverContextOnly,
@@ -54,6 +59,9 @@ export function useActiveDriverVehicleAssignments() {
     applyFleetManagerSlice,
     fleetManagerListUserId,
     fleetManagerParentProfileId,
+    platformFleetViewAdminId,
+    platformTenantViewProfile,
+    platformTenantViewLookupFailed,
   } = useImpersonationFleetScope();
 
   return useQuery({
@@ -65,12 +73,26 @@ export function useActiveDriverVehicleAssignments() {
       applyFleetManagerSlice,
       fleetManagerListUserId,
       fleetManagerParentProfileId,
+      resolveSessionEmail(profile, user),
+      user?.id,
+      platformFleetViewAdminId,
+      platformTenantViewProfile?.id,
+      platformTenantViewLookupFailed,
     ],
     enabled: fleetListReady && effectiveOrgId != null,
     queryFn: async () => {
       const orgId = effectiveOrgId;
       if (orgId == null) return [] as ActiveDriverVehicleAssignment[];
-      let vehiclesQuery = supabase.from('vehicles').select('id').eq('org_id', orgId);
+      const sessionEmail = resolveSessionEmail(profile, user);
+      const isSuper = isPlatformSuperOwnerEmail(sessionEmail);
+      const ownerId = user?.id ?? '';
+      let vehiclesQuery = applyPlatformOwnerFleetListFilter(supabase.from('vehicles').select('id'), {
+        orgId,
+        isPlatformSuperOwner: isSuper,
+        platformOwnerId: ownerId,
+        tenantViewProfile: platformTenantViewProfile ?? undefined,
+        tenantViewLookupFailed: platformTenantViewLookupFailed,
+      });
       if (isDriverContextOnly && scopedDriverId) {
         vehiclesQuery = vehiclesQuery.eq('assigned_driver_id', scopedDriverId);
       } else if (applyFleetManagerSlice && fleetManagerListUserId) {
@@ -107,6 +129,7 @@ export function useActiveDriverVehicleAssignments() {
 }
 
 export function useVehicles() {
+  const { user, profile } = useAuth();
   const {
     effectiveOrgId,
     fleetListReady,
@@ -115,6 +138,9 @@ export function useVehicles() {
     applyFleetManagerSlice,
     fleetManagerListUserId,
     fleetManagerParentProfileId,
+    platformFleetViewAdminId,
+    platformTenantViewProfile,
+    platformTenantViewLookupFailed,
   } = useImpersonationFleetScope();
 
   return useQuery({
@@ -126,15 +152,28 @@ export function useVehicles() {
       applyFleetManagerSlice,
       fleetManagerListUserId,
       fleetManagerParentProfileId,
+      resolveSessionEmail(profile, user),
+      user?.id,
+      platformFleetViewAdminId,
+      platformTenantViewProfile?.id,
+      platformTenantViewLookupFailed,
     ],
     enabled: fleetListReady && effectiveOrgId != null,
     queryFn: async () => {
       if (effectiveOrgId == null) return [] as Vehicle[];
-      let q = supabase
-        .from('vehicles')
-        .select('*')
-        .eq('org_id', effectiveOrgId)
-        .order('plate_number');
+      const sessionEmail = resolveSessionEmail(profile, user);
+      const isSuper = isPlatformSuperOwnerEmail(sessionEmail);
+      const ownerId = user?.id ?? '';
+      let q = applyPlatformOwnerFleetListFilter(
+        supabase.from('vehicles').select('*').order('plate_number'),
+        {
+          orgId: effectiveOrgId,
+          isPlatformSuperOwner: isSuper,
+          platformOwnerId: ownerId,
+          tenantViewProfile: platformTenantViewProfile ?? undefined,
+          tenantViewLookupFailed: platformTenantViewLookupFailed,
+        },
+      );
       if (isDriverContextOnly && scopedDriverId) {
         q = q.eq('assigned_driver_id', scopedDriverId);
       } else if (applyFleetManagerSlice && fleetManagerListUserId) {
@@ -152,14 +191,18 @@ export function useVehicles() {
 }
 
 export function useVehicle(id: string) {
+  const { user, profile } = useAuth();
   const { effectiveOrgId, fleetListReady } = useImpersonationFleetScope();
   const orgId = effectiveOrgId ?? null;
 
   return useQuery({
-    queryKey: ['vehicle', id, orgId],
+    queryKey: ['vehicle', id, orgId, resolveSessionEmail(profile, user), user?.id],
     queryFn: async () => {
       let query = supabase.from('vehicles').select('*').eq('id', id);
-      if (orgId != null) {
+      const sessionEmail = resolveSessionEmail(profile, user);
+      const isSuper = isPlatformSuperOwnerEmail(sessionEmail);
+      // Super owner: רק לפי id — סינון ארגון ברשימה; פה PostgREST לא תומך יפה ב‑id + or(org,managed_by).
+      if (orgId != null && !isSuper) {
         query = query.eq('org_id', orgId);
       }
       const { data, error } = await query.maybeSingle();

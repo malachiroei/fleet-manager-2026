@@ -5,7 +5,11 @@ import { toast } from '@/hooks/use-toast';
 import { formatSupabaseError, isMissingSafetyOfficerColumnError } from '@/lib/supabaseError';
 import { useAuth } from '@/hooks/useAuth';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
-import { fleetManagerVisibilityOrFilter } from '@/lib/fleetManagerScope';
+import {
+  applyPlatformOwnerFleetListFilter,
+  fleetManagerVisibilityOrFilter,
+} from '@/lib/fleetManagerScope';
+import { isPlatformSuperOwnerEmail, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
 
 /** PostgREST שולח null מפסיע DEFAULT ב־Postgres; חובה UUID לפני insert אם אין ערך תקין. */
 function ensureDriverInsertId(row: Record<string, unknown>) {
@@ -48,6 +52,7 @@ async function updateDriverWithCompat(id: string, payload: Partial<Driver>) {
 }
 
 export function useDrivers() {
+  const { user, profile } = useAuth();
   const {
     effectiveOrgId,
     isImpersonating,
@@ -57,6 +62,9 @@ export function useDrivers() {
     applyFleetManagerSlice,
     fleetManagerListUserId,
     fleetManagerParentProfileId,
+    platformFleetViewAdminId,
+    platformTenantViewProfile,
+    platformTenantViewLookupFailed,
   } = useImpersonationFleetScope();
 
   const orgId = effectiveOrgId;
@@ -71,11 +79,25 @@ export function useDrivers() {
       applyFleetManagerSlice,
       fleetManagerListUserId,
       fleetManagerParentProfileId,
+      resolveSessionEmail(profile, user),
+      user?.id,
+      platformFleetViewAdminId,
+      platformTenantViewProfile?.id,
+      platformTenantViewLookupFailed,
     ],
     enabled: fleetListReady && orgId != null,
     queryFn: async () => {
       if (orgId == null) return [] as DriverSummary[];
-      let base = supabase.from('drivers').select('*').eq('org_id', orgId);
+      const sessionEmail = resolveSessionEmail(profile, user);
+      const isSuper = isPlatformSuperOwnerEmail(sessionEmail);
+      const ownerId = user?.id ?? '';
+      let base = applyPlatformOwnerFleetListFilter(supabase.from('drivers').select('*'), {
+        orgId,
+        isPlatformSuperOwner: isSuper,
+        platformOwnerId: ownerId,
+        tenantViewProfile: platformTenantViewProfile ?? undefined,
+        tenantViewLookupFailed: platformTenantViewLookupFailed,
+      });
       if (isDriverContextOnly && impersonatedUserId) {
         base = base.eq('user_id', impersonatedUserId);
       } else if (applyFleetManagerSlice && fleetManagerListUserId) {
@@ -88,9 +110,7 @@ export function useDrivers() {
       const { data, error } = await base.order('full_name');
 
       if (error) {
-        let fallbackQ = supabase
-          .from('drivers')
-          .select(
+        let fallbackQ = supabase.from('drivers').select(
             [
               'id',
               'full_name',
@@ -129,8 +149,14 @@ export function useDrivers() {
               'status',
               'pending_license_expiry',
             ].join(', '),
-          )
-          .eq('org_id', orgId);
+          );
+        fallbackQ = applyPlatformOwnerFleetListFilter(fallbackQ, {
+          orgId,
+          isPlatformSuperOwner: isSuper,
+          platformOwnerId: ownerId,
+          tenantViewProfile: platformTenantViewProfile ?? undefined,
+          tenantViewLookupFailed: platformTenantViewLookupFailed,
+        });
         if (isDriverContextOnly && impersonatedUserId) {
           fallbackQ = fallbackQ.eq('user_id', impersonatedUserId);
         } else if (applyFleetManagerSlice && fleetManagerListUserId) {
@@ -205,22 +231,24 @@ function mapRowToDriverSummary(row: Record<string, unknown>): DriverSummary {
 }
 
 export function useDriver(id: string) {
+  const { user, profile } = useAuth();
   const { effectiveOrgId, fleetListReady } = useImpersonationFleetScope();
   const orgId = effectiveOrgId;
 
   return useQuery({
-    queryKey: ['driver', id, orgId],
+    queryKey: ['driver', id, orgId, resolveSessionEmail(profile, user)],
     enabled: !!id && orgId != null && fleetListReady,
     refetchOnMount: 'always',
     queryFn: async () => {
       if (orgId == null) return null;
-      // בלי .or(managed_by…) כאן — שילוב עם .eq('id') שובר PostgREST (400). הרשאות: RLS + org_id.
-      const { data, error } = await supabase
-        .from('drivers')
-        .select('*')
-        .eq('id', id)
-        .eq('org_id', orgId)
-        .maybeSingle();
+      const sessionEmail = resolveSessionEmail(profile, user);
+      const isSuper = isPlatformSuperOwnerEmail(sessionEmail);
+      // בלי .or כאן — id + or שובר PostgREST; מנהל על: רק id + RLS.
+      let q = supabase.from('drivers').select('*').eq('id', id);
+      if (!isSuper) {
+        q = q.eq('org_id', orgId);
+      }
+      const { data, error } = await q.maybeSingle();
       if (error) throw error;
       return data as Driver | null;
     },

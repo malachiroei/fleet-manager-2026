@@ -17,6 +17,17 @@ import { readViewAsActiveFromSession, setViewAsActiveSession } from '@/lib/viewA
 import { isFleetManagerProHostname } from '@/lib/versionManifest';
 
 const ACTIVE_ORG_STORAGE_KEY = 'fleet-manager-active-org';
+/** מנהל פלטפורמה: צפייה בצי של אדמין אחר (profiles.id) — לא «הצי שלי» */
+const PLATFORM_FLEET_VIEW_ADMIN_STORAGE_KEY = 'fleet-manager-platform-fleet-view-admin';
+
+function readStoredPlatformFleetViewAdminId(): string | null {
+  try {
+    const v = localStorage.getItem(PLATFORM_FLEET_VIEW_ADMIN_STORAGE_KEY)?.trim();
+    return v && isLikelyUuid(v) ? v : null;
+  } catch {
+    return null;
+  }
+}
 
 function resolveSignUpEmailRedirectUrl(): string {
   if (typeof window === 'undefined') return 'https://fleet-manager-pro.com/auth';
@@ -88,6 +99,11 @@ interface AuthContextType {
   /** Currently active org for dashboard data (selected switcher or profile.org_id). */
   activeOrgId: string | null;
   setActiveOrgId: (orgId: string | null) => void;
+  /**
+   * מנהל פלטפורמה בלבד: כשבוחרים אדמין צי במתג — מזהה profiles.id שלו (או null ל«הצי שלי»).
+   */
+  platformFleetViewAdminId: string | null;
+  setPlatformFleetViewAdminId: (profileId: string | null) => void;
   hasPermission: (permission: PermissionKey) => boolean;
   refreshProfile: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
@@ -105,6 +121,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [roles, setRoles] = useState<AppRole[]>([]);
   const [memberOrganizations, setMemberOrganizations] = useState<MemberOrganization[]>([]);
   const [_activeOrgId, setActiveOrgIdState] = useState<string | null>(null);
+  const [platformFleetViewAdminId, setPlatformFleetViewAdminIdState] = useState<string | null>(() =>
+    typeof window !== 'undefined' ? readStoredPlatformFleetViewAdminId() : null,
+  );
   const inviteCheckDoneRef = useRef(false);
   const activeOrgInitializedRef = useRef(false);
   const profileRef = useRef<Profile | null>(null);
@@ -123,6 +142,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {
         // ignore
       }
+    }
+  }, []);
+
+  const setPlatformFleetViewAdminId = useCallback((profileId: string | null) => {
+    setPlatformFleetViewAdminIdState(profileId);
+    try {
+      if (profileId && isLikelyUuid(profileId)) {
+        localStorage.setItem(PLATFORM_FLEET_VIEW_ADMIN_STORAGE_KEY, profileId);
+      } else {
+        localStorage.removeItem(PLATFORM_FLEET_VIEW_ADMIN_STORAGE_KEY);
+      }
+    } catch {
+      // ignore
     }
   }, []);
 
@@ -792,6 +824,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       memberOrganizations,
       activeOrgId,
       setActiveOrgId,
+      platformFleetViewAdminId,
+      setPlatformFleetViewAdminId,
       hasPermission,
       refreshProfile,
       signIn,

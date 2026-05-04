@@ -7,6 +7,7 @@ import { getDefaultPermissions } from '@/lib/permissions';
 import { sendInvitationEmail } from '@/lib/sendInvitationEmail';
 import { useAuth } from '@/hooks/useAuth';
 import { isSuperAdminPermissionBypass } from '@/lib/allowedFeatures';
+import { isPlatformSuperOwnerEmail, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
 
 export const TEAM_MEMBERS_QUERY_KEY = ['team-members'] as const;
 const TEAM_QUERY_KEY = TEAM_MEMBERS_QUERY_KEY;
@@ -130,6 +131,80 @@ export function useOrgInvitations(_orgId: string | null | undefined) {
         return [];
       }
       return (data ?? []) as OrgInvitation[];
+    },
+  });
+}
+
+/** מנהל פלטפורמה: אדמיני צי (admin / fleet_manager) לבחירת היקף צפייה בסרגל — לא שמות ארגון גולמיים */
+export interface TenantFleetAdminOption {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  org_id: string | null;
+}
+
+export function useTenantFleetAdminsForPlatformSwitcher() {
+  const { user, profile } = useAuth();
+  const sessionEmail = resolveSessionEmail(profile, user);
+  const enabled = isPlatformSuperOwnerEmail(sessionEmail) && Boolean(user?.id);
+
+  return useQuery({
+    queryKey: ['tenant-fleet-admins-platform-switcher', user?.id],
+    enabled,
+    staleTime: 60_000,
+    queryFn: async (): Promise<TenantFleetAdminOption[]> => {
+      const { data: roleRows, error: roleErr } = await supabase
+        .from('user_roles')
+        .select('user_id, role')
+        .in('role', ['admin', 'fleet_manager']);
+      if (roleErr) {
+        console.warn('[useTenantFleetAdminsForPlatformSwitcher] user_roles failed', roleErr.message);
+        return [];
+      }
+      const ids = [
+        ...new Set(
+          (roleRows ?? [])
+            .map((r: { user_id?: string }) => String(r.user_id ?? '').trim())
+            .filter((id) => id.length > 0),
+        ),
+      ];
+      if (ids.length === 0) return [];
+
+      const { data: profs, error: profErr } = await supabase
+        .from('profiles')
+        .select('id, full_name, email, org_id, status')
+        .in('id', ids);
+      if (profErr) {
+        console.warn('[useTenantFleetAdminsForPlatformSwitcher] profiles failed', profErr.message);
+        return [];
+      }
+
+      const out: TenantFleetAdminOption[] = [];
+      for (const p of profs ?? []) {
+        const row = p as {
+          id: string;
+          full_name: string | null;
+          email: string | null;
+          org_id: string | null;
+          status?: string | null;
+        };
+        if (isPlatformSuperOwnerEmail(row.email)) continue;
+        if (String(row.status ?? '').trim().toLowerCase() === 'pending_approval') continue;
+        const oid = String(row.org_id ?? '').trim();
+        if (!oid) continue;
+        out.push({
+          id: row.id,
+          full_name: row.full_name ?? null,
+          email: row.email ?? null,
+          org_id: oid,
+        });
+      }
+      out.sort((a, b) => {
+        const la = (a.full_name || a.email || a.id).toLowerCase();
+        const lb = (b.full_name || b.email || b.id).toLowerCase();
+        return la.localeCompare(lb, 'he');
+      });
+      return out;
     },
   });
 }

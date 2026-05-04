@@ -21,7 +21,7 @@ function rolesIncludeFleetElevated(roles: string[]): boolean {
 }
 
 export function useImpersonationFleetScope() {
-  const { user, profile, activeOrgId, roles: loggedInRoles } = useAuth();
+  const { user, profile, activeOrgId, roles: loggedInRoles, platformFleetViewAdminId } = useAuth();
   const sessionEmail = resolveSessionEmail(profile, user);
   const { viewAsEmail, viewAsProfile } = useViewAs();
 
@@ -137,11 +137,41 @@ export function useImpersonationFleetScope() {
   const scopedDriverId = isDriverContextOnly ? (driverRowQuery.data ?? null) : null;
   const driverScopePending = Boolean(isDriverContextOnly && driverRowQuery.isLoading);
 
+  const platformTenantViewProfileQuery = useQuery({
+    queryKey: ['platform-tenant-fleet-view-profile', platformFleetViewAdminId],
+    enabled: Boolean(isPlatformSuperOwnerEmail(sessionEmail) && platformFleetViewAdminId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, email, org_id, parent_admin_id, managed_by_user_id')
+        .eq('id', platformFleetViewAdminId!)
+        .maybeSingle();
+      if (error) throw error;
+      return data as {
+        id: string;
+        email: string | null;
+        org_id: string | null;
+        parent_admin_id?: string | null;
+        managed_by_user_id?: string | null;
+      } | null;
+    },
+    staleTime: 60_000,
+  });
+
+  const platformTenantViewProfile = platformTenantViewProfileQuery.data ?? null;
+  const platformTenantViewLookupFailed = Boolean(
+    platformFleetViewAdminId && platformTenantViewProfileQuery.isFetched && !platformTenantViewProfileQuery.data,
+  );
+  const platformTenantViewPending = Boolean(
+    isPlatformSuperOwnerEmail(sessionEmail) && platformFleetViewAdminId && platformTenantViewProfileQuery.isLoading,
+  );
+
   const fleetListReady =
     (effectiveOrgId != null || bootstrapOwnerMayLackOrg) &&
     !scopePending &&
     (!isImpersonating || rolesQuery.isFetched) &&
-    (!isDriverContextOnly || !driverScopePending);
+    (!isDriverContextOnly || !driverScopePending) &&
+    !platformTenantViewPending;
 
   const fleetManagerListUserId = (isDriverContextOnly ? null : effectiveUserId) as string | null;
 
@@ -183,5 +213,8 @@ export function useImpersonationFleetScope() {
     applyFleetManagerSlice,
     fleetManagerListUserId,
     fleetManagerParentProfileId,
+    platformFleetViewAdminId,
+    platformTenantViewProfile,
+    platformTenantViewLookupFailed,
   };
 }

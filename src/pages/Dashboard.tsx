@@ -178,7 +178,18 @@ export default function Dashboard() {
   const { data: alerts } = useComplianceAlerts();
   const { t } = useTranslation();
   const isMobile = useIsMobile();
-  const { user, profile, hasPermission, isAdmin, isManager, isDriver, roles: userRoles, loading, activeOrgId } = useAuth();
+  const {
+    user,
+    profile,
+    hasPermission,
+    isAdmin,
+    isManager,
+    isDriver,
+    roles: userRoles,
+    loading,
+    activeOrgId,
+    platformFleetViewAdminId,
+  } = useAuth();
   const { viewAsEmail } = useViewAs();
   const { isPending: flagsPending } = useFeatureFlags();
   const { canAccessUi } = usePermissions();
@@ -194,7 +205,7 @@ export default function Dashboard() {
   const scopeInvalidateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!activeOrgId && !viewAsEmail?.trim()) return;
-    const key = `${activeOrgId ?? ''}|${(viewAsEmail ?? '').trim()}`;
+    const key = `${activeOrgId ?? ''}|${(viewAsEmail ?? '').trim()}|${platformFleetViewAdminId ?? ''}`;
     if (scopeRefreshKeyRef.current === key) return;
     scopeRefreshKeyRef.current = key;
     if (scopeInvalidateTimerRef.current != null) {
@@ -210,7 +221,7 @@ export default function Dashboard() {
         scopeInvalidateTimerRef.current = null;
       }
     };
-  }, [activeOrgId, viewAsEmail, queryClient]);
+  }, [activeOrgId, platformFleetViewAdminId, viewAsEmail, queryClient]);
 
   const email = user?.email || '';
   const isMainAdmin = email.toLowerCase() === 'malachiroei@gmail.com';

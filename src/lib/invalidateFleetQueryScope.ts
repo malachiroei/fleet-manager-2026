@@ -6,11 +6,13 @@ const FLEET_SCOPED_QUERY_ROOTS = [
   'compliance-alerts',
   'vehicles',
   'drivers',
+  'active-driver-vehicle-assignments',
   'feature-flags',
   'team-members',
   'org-invitations',
   'view-as-target-roles',
   'view-as-scoped-driver',
+  'platform-tenant-fleet-view-profile',
 ] as const;
 
 export function invalidateFleetScopedQueries(client: QueryClient): void {
