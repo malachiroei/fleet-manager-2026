@@ -34,5 +34,6 @@
 | `reparent_arik_roei1_to_ravid.sql` | קישור אריק + רועי 1 לרביד + יישור `org_id` |
 | `fix_roeima21_peer_admin_under_platform_owner.sql` | הורה של roeima21 → malachiroei |
 | `reclaim_platform_fleet_from_ravid_org.sql` | **החזרת** רכבים/נהגים מ־org רביד ל־malachiroei, למעט מה שמסומן לרביד/roeima21 |
+| `set_null_managed_by_drivers_to_ravid.sql` | נהגים ב־org רביד בלי `managed_by` — שיוך לרביד |
 
 הרץ `reclaim_platform_fleet_from_ravid_org.sql` אחרי שבדקת את בלוקי ה־`SELECT` הראשונים.
