@@ -26,6 +26,11 @@ export interface TeamMemberSummary {
   email: string | null;
   org_id?: string | null;
   source: 'profile' | 'invitation';
+  /** למחליף ארגון / View-As: היררכיה והרשאות */
+  parent_admin_id?: string | null;
+  managed_by_user_id?: string | null;
+  permissions?: ProfilePermissions | null;
+  is_system_admin?: boolean | null;
 }
 
 export type UseTeamMembersOptions = {
@@ -133,12 +138,17 @@ export function useTeamMembersForSwitcher(orgId: string | null | undefined) {
   const { profile } = useAuth();
   const loadAllOrgs = isSuperAdminPermissionBypass(profile);
   return useQuery({
-    queryKey: ['team-members-switcher', orgId ?? null],
+    queryKey: ['team-members-switcher', orgId ?? null, 'v2-hierarchy'],
     enabled: !!orgId,
     queryFn: async (): Promise<TeamMemberSummary[]> => {
       if (!orgId) return [];
 
-      let q = supabase.from('profiles').select('id, full_name, email, org_id, status').order('full_name');
+      let q = supabase
+        .from('profiles')
+        .select(
+          'id, full_name, email, org_id, status, parent_admin_id, managed_by_user_id, permissions, is_system_admin',
+        )
+        .order('full_name');
       if (!loadAllOrgs) {
         q = q.eq('org_id', orgId);
       }
@@ -149,7 +159,16 @@ export function useTeamMembersForSwitcher(orgId: string | null | undefined) {
         return [];
       }
 
-      const profiles = (data ?? []) as { id: string; full_name: string | null; email: string | null; org_id: string | null }[];
+      const profiles = (data ?? []) as Array<{
+        id: string;
+        full_name: string | null;
+        email: string | null;
+        org_id: string | null;
+        parent_admin_id?: string | null;
+        managed_by_user_id?: string | null;
+        permissions?: ProfilePermissions | null;
+        is_system_admin?: boolean | null;
+      }>;
 
       const profileSummaries: TeamMemberSummary[] = profiles.map((p) => ({
         id: p.id,
@@ -157,6 +176,10 @@ export function useTeamMembersForSwitcher(orgId: string | null | undefined) {
         email: p.email ?? null,
         org_id: p.org_id ?? null,
         source: 'profile',
+        parent_admin_id: p.parent_admin_id ?? null,
+        managed_by_user_id: p.managed_by_user_id ?? null,
+        permissions: p.permissions ?? null,
+        is_system_admin: p.is_system_admin ?? null,
       }));
 
       return profileSummaries.sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));

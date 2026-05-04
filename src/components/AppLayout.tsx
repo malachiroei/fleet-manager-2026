@@ -67,12 +67,20 @@ function shouldUseHardNavigationToHome(): boolean {
   return false;
 }
 
+function teamSummaryIsAdminLike(m: TeamMemberSummary): boolean {
+  if (m.is_system_admin === true) return true;
+  const perms = m.permissions as Record<string, boolean> | undefined;
+  if (!perms || typeof perms !== 'object') return false;
+  return perms.admin_access === true || perms.manage_team === true;
+}
+
 function augmentSwitcherMembers(
   teamMembers: TeamMemberSummary[],
   opts: {
     selfEmail: string;
     isMainAdmin: boolean;
     isRavid: boolean;
+    viewerProfileId: string | null | undefined;
     activeOrgId: string | null;
     mainFleetOrgId: string | null;
     profileOrgId: string | null | undefined;
@@ -86,6 +94,17 @@ function augmentSwitcherMembers(
       m.email.toLowerCase() !== MAIN_ADMIN_SWITCHER_EMAIL,
   );
   visible = visible.filter((m) => (m.full_name || '').trim() !== 'רביד צי רכבים');
+
+  /** אדמין עמית (נוצר ע״י מנהל-העל) לא מופיע תחת «תצוגה כחבר צוות» של רביד — רק משנים ישירים */
+  const ravidId = String(opts.viewerProfileId ?? '').trim();
+  if (opts.isRavid && ravidId) {
+    visible = visible.filter((m) => {
+      const parent = String(m.parent_admin_id ?? m.managed_by_user_id ?? '').trim();
+      if (parent === ravidId) return true;
+      if (teamSummaryIsAdminLike(m)) return false;
+      return true;
+    });
+  }
 
   /** תמיד ארגון רביד האמיתי — לא mainFleet של רועי (אחרת View-As נשאר על הצי הראשי). */
   const orgForSyntheticRavid = VIEW_AS_RAVID_ORG_ID;
@@ -525,6 +544,7 @@ export function AppLayout({ children }: AppLayoutProps) {
           selfEmail: email,
           isMainAdmin,
           isRavid,
+          viewerProfileId: profile?.id,
           activeOrgId,
           mainFleetOrgId,
           profileOrgId: profile?.org_id,
