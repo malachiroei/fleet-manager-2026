@@ -51,6 +51,20 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
 
   const normalizedEmail = useMemo(() => (viewAsEmail ?? '').trim().toLowerCase(), [viewAsEmail]);
 
+  /** תצוגת מנהל (View-As) הוסרה מהמוצר — מאפסים מצב ישן מסשן/אחסון בכל עליית אפליקציה. */
+  useEffect(() => {
+    setViewAsEmail(null);
+    setViewAsProfile(null);
+    setViewAsLoading(false);
+    setViewAsActiveSession(false);
+    try {
+      sessionStorage.removeItem(VIEW_AS_USER_ID_SESSION_KEY);
+      localStorage.removeItem('viewAsUser');
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   /** מאפשר ל־useAuth לדלג על כפיית org לפי חברות המנהל בזמן תצוגה כמשתמש אחר. */
   useEffect(() => {
     setViewAsActiveSession(Boolean((viewAsEmail ?? '').trim()));

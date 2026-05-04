@@ -1,11 +1,9 @@
 import { type ElementType, type MouseEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useVehicleSpecDirty } from '@/contexts/VehicleSpecDirtyContext';
-import { useViewAs } from '@/contexts/ViewAsContext';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrganization } from '@/hooks/useOrganizations';
-import { useTeamMembersForSwitcher } from '@/hooks/useTeam';
 import { AIChatAssistant } from './AIChatAssistant';
 import { useTheme } from '@/hooks/useTheme';
 import { Sun, Moon, Building2, LogOut, Home, ArrowRight, ChevronDown, Building, Settings, UserCog, Menu, Download, Smartphone } from 'lucide-react';
@@ -28,7 +26,6 @@ import {
   DropdownMenuSubContent,
 } from './ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/integrations/supabase/client';
 import {
   FLEET_PRO_ACK_VERSION_STORAGE_KEY,
   FLEET_PRO_ACK_VERSION_UPDATED_EVENT,
@@ -39,23 +36,15 @@ import {
   isPlatformSuperOwnerEmail,
   isRavidManagerEmail,
   resolveSessionEmail,
-  RAVID_MANAGER_EMAIL,
 } from '@/lib/fleetBootstrapEmails';
 import { FALLBACK_MAIN_FLEET_ORG_ID, RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 import { isSuperAdminPermissionBypass } from '@/lib/allowedFeatures';
 import { resolveLogicalBackTarget } from '@/lib/appBackNavigation';
-import type { TeamMemberSummary } from '@/hooks/useTeam';
 
 /** קישור מנהל ראשי ↔ מנהל צי ↔ נהג — כש־RLS לא מחזיר את כל ה־profiles במחליף */
 const MAIN_ADMIN_SWITCHER_EMAIL = 'malachiroei@gmail.com';
 
-/** ארגון רביד בתצוגה כמשתמש — נעילה מפורשת (לא תלוי ב-profile.org_id של המנהל המחובר). */
-const VIEW_AS_RAVID_ORG_ID = '2bb0f9c3-b210-4099-b0c5-de92794d5cc9' as const;
-
-/**
- * ניווט מלא (מומלץ אחרי View-As): מסכים צרים, מגע גס (טאבלטים), או WebView.
- * רוחב ≥768 עם עכבר בלבד — נשארים ב-SPA ב-handleGoHome בלי View-As.
- */
+/** ניווט מלא לדף הבית: מסכים צרים, מגע גס (טאבלטים), או WebView. */
 function shouldUseHardNavigationToHome(): boolean {
   if (typeof window === 'undefined') return false;
   if (window.matchMedia('(max-width: 767px)').matches) return true;
@@ -67,70 +56,12 @@ function shouldUseHardNavigationToHome(): boolean {
   return false;
 }
 
-function teamSummaryIsAdminLike(m: TeamMemberSummary): boolean {
-  if (m.is_system_admin === true) return true;
-  const perms = m.permissions as Record<string, boolean> | undefined;
-  if (!perms || typeof perms !== 'object') return false;
-  return perms.admin_access === true || perms.manage_team === true;
-}
-
-function augmentSwitcherMembers(
-  teamMembers: TeamMemberSummary[],
-  opts: {
-    selfEmail: string;
-    isMainAdmin: boolean;
-    isRavid: boolean;
-    viewerProfileId: string | null | undefined;
-    activeOrgId: string | null;
-    mainFleetOrgId: string | null;
-    profileOrgId: string | null | undefined;
-  },
-): TeamMemberSummary[] {
-  const self = opts.selfEmail.toLowerCase();
-  let visible = teamMembers.filter(
-    (m) =>
-      m.email &&
-      m.email.toLowerCase() !== self &&
-      m.email.toLowerCase() !== MAIN_ADMIN_SWITCHER_EMAIL,
-  );
-  visible = visible.filter((m) => (m.full_name || '').trim() !== 'רביד צי רכבים');
-
-  /** אדמין עמית (נוצר ע״י מנהל-העל) לא מופיע תחת «תצוגה כחבר צוות» של רביד — רק משנים ישירים */
-  const ravidId = String(opts.viewerProfileId ?? '').trim();
-  if (opts.isRavid && ravidId) {
-    visible = visible.filter((m) => {
-      const parent = String(m.parent_admin_id ?? m.managed_by_user_id ?? '').trim();
-      if (parent === ravidId) return true;
-      if (teamSummaryIsAdminLike(m)) return false;
-      return true;
-    });
-  }
-
-  /** תמיד ארגון רביד האמיתי — לא mainFleet של רועי (אחרת View-As נשאר על הצי הראשי). */
-  const orgForSyntheticRavid = VIEW_AS_RAVID_ORG_ID;
-  if (opts.isMainAdmin && !visible.some((m) => m.email?.toLowerCase() === RAVID_MANAGER_EMAIL)) {
-    visible = [
-      ...visible,
-      {
-        id: 'synthetic-ravid',
-        full_name: 'רביד מלחי',
-        email: RAVID_MANAGER_EMAIL,
-        org_id: orgForSyntheticRavid,
-        source: 'profile',
-      },
-    ];
-  }
-
-  return visible;
-}
-
 interface AppLayoutProps {
   children: ReactNode;
 }
 
 export function AppLayout({ children }: AppLayoutProps) {
   const location = useLocation();
-  const navigate = useNavigate();
   const { t, i18n } = useTranslation();
   const { theme, toggleTheme } = useTheme();
   const { isInstalled: pwaInstalled, canPrompt: pwaCanPrompt, isIos: pwaIsIos, promptInstall: pwaPromptInstall } =
@@ -169,8 +100,6 @@ export function AppLayout({ children }: AppLayoutProps) {
   const isHomeActive = location.pathname === '/';
   const { data: organization } = useOrganization(activeOrgId ?? null);
   const orgName = organization?.name?.trim() ?? '';
-  const { data: teamMembers = [] } = useTeamMembersForSwitcher(activeOrgId ?? null as any);
-  const { viewAsEmail, setViewAsEmail, viewAsProfile } = useViewAs();
 
   /** בלי דליפת «צי ראשי» / ארגון מנהל-העל למשתמשים שאינם מנהל-העל */
   const memberOrgsForSwitcher = useMemo(() => {
@@ -209,70 +138,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     return () => window.removeEventListener(FLEET_PRO_ACK_VERSION_UPDATED_EVENT, onAckEvent);
   }, [isProduction]);
 
-  // When impersonating: active org must follow the impersonated user (not the logged-in admin's org).
-  // רביד: תמיד VIEW_AS_RAVID_ORG_ID — לא מסתמכים על profile.org_id שעלול להצביע על הצי הראשי.
-  // אחרים: 1) profile.org_id 2) org_members
-  useEffect(() => {
-    if (!viewAsEmail?.trim()) return;
-    const norm = viewAsEmail.trim().toLowerCase();
-    if (isRavidManagerEmail(norm)) {
-      if (activeOrgId !== VIEW_AS_RAVID_ORG_ID) {
-        setActiveOrgId(VIEW_AS_RAVID_ORG_ID);
-      }
-      return;
-    }
-    const fromProfile = viewAsProfile?.org_id?.trim() || null;
-    if (fromProfile && activeOrgId !== fromProfile) {
-      setActiveOrgId(fromProfile);
-    }
-  }, [viewAsEmail, viewAsProfile?.org_id, activeOrgId, setActiveOrgId]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const viewAsAuthId = viewAsProfile?.id ?? viewAsProfile?.user_id;
-      if (!viewAsEmail?.trim() || !viewAsAuthId) return;
-      if (isRavidManagerEmail(viewAsEmail.trim())) return;
-      if (viewAsProfile?.org_id?.trim()) return;
-
-      try {
-        const { data: rows, error } = await (supabase as any)
-          .from('org_members')
-          .select('org_id')
-          .eq('user_id', viewAsAuthId)
-          .limit(1);
-        if (error || cancelled) return;
-        const nextOrgId = (rows?.[0] as { org_id?: string } | undefined)?.org_id;
-        if (nextOrgId && activeOrgId !== nextOrgId) {
-          console.log('[Impersonation] Setting activeOrgId from org_members (fallback)', {
-            viewAsEmail,
-            nextOrgId,
-          });
-          setActiveOrgId(nextOrgId);
-        }
-      } catch (err) {
-        console.warn('[Impersonation] Failed to resolve org_members org_id', err);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    viewAsEmail,
-    viewAsProfile?.id,
-    viewAsProfile?.user_id,
-    viewAsProfile?.org_id,
-    activeOrgId,
-    setActiveOrgId,
-  ]);
-
   const isMainAdmin = email === MAIN_ADMIN_SWITCHER_EMAIL;
-  /**
-   * תצוגה כחבר צוות — רק מנהל-העל או מנהל צי (admin / fleet_manager) עם manage_team.
-   * לא מספיק הרשאת manage_team בלבד (מוזמנים/נהגים לא יראו עמיתים כמו roeima / malachiroei1).
-   */
-  const canViewAsTeamMembers =
-    isMainAdmin || ((isAdmin || isManager) && hasPermission('manage_team'));
   const canManageTeamUi = isMainAdmin || hasPermission('manage_team') || isOrgAdminOrManager;
   const canManageOrgUi = isMainAdmin || hasPermission('admin_access') || isOrgAdminOrManager;
 
@@ -286,8 +152,6 @@ export function AppLayout({ children }: AppLayoutProps) {
     return RAVID_FLEET_ORG_ID;
   }, [isRavid]);
 
-  /** כל מי שבתצוגת משתמש צריך באנר יציאה (לא רק מנהלים מוגדרים מראש). */
-  const viewAsBannerVisible = Boolean(viewAsEmail?.trim());
   const mainFleetOrgId = useMemo(() => {
     const explicitMainFleet = memberOrganizations.find((o) => o.id === FALLBACK_MAIN_FLEET_ORG_ID);
     if (explicitMainFleet) return explicitMainFleet.id;
@@ -303,91 +167,29 @@ export function AppLayout({ children }: AppLayoutProps) {
     return mainFleet?.id ?? memberOrganizations[0]?.id ?? null;
   }, [memberOrganizations]);
 
-  // Ensure main admin is always on the main admin org when not impersonating
+  // Ensure main admin is always on the main admin org
   useEffect(() => {
     if (!isMainAdmin) return;
-    if (viewAsEmail) return; // when impersonating, org follows the impersonated user
     if (mainFleetOrgId && activeOrgId !== mainFleetOrgId) {
       setActiveOrgId(mainFleetOrgId);
     }
-  }, [isMainAdmin, viewAsEmail, activeOrgId, setActiveOrgId, mainFleetOrgId]);
+  }, [isMainAdmin, activeOrgId, setActiveOrgId, mainFleetOrgId]);
 
   // Ensure Ravid is locked to his org and cannot switch orgs
   useEffect(() => {
     if (!isRavid) return;
-    if (viewAsEmail?.trim()) return; // בתצוגה כמשתמש אחר — אל תנעל ל-org של רביד
     const targetOrgId = ravidLockedTargetOrgId;
     if (targetOrgId && activeOrgId !== targetOrgId) {
       setActiveOrgId(targetOrgId);
     }
-  }, [isRavid, viewAsEmail, ravidLockedTargetOrgId, activeOrgId, setActiveOrgId]);
+  }, [isRavid, ravidLockedTargetOrgId, activeOrgId, setActiveOrgId]);
 
   /** bootstrap בלי org בפרופיל — רק חשבון על: UUID הצי הראשי */
   useEffect(() => {
     if (!isPlatformSuperOwnerEmail(resolveSessionEmail(profile, user))) return;
-    if (viewAsEmail) return;
     if (activeOrgId) return;
     setActiveOrgId(mainFleetOrgId ?? FALLBACK_MAIN_FLEET_ORG_ID);
-  }, [profile, user, viewAsEmail, activeOrgId, mainFleetOrgId, setActiveOrgId]);
-
-  /**
-   * יציאה מ-View-As + ניווט לדשבורד.
-   * תמיד טעינה מלאה — navigate('/') לעיתים לא מגיב (כבר ב־/, Router מתעלם, WebView אחרי החלפת org).
-   * API האפליקציה: setViewAsEmail (לא setViewAs).
-   */
-  const exitViewAsToDashboard = useCallback(() => {
-    setViewAsEmail(null);
-
-    const mainOrgId = FALLBACK_MAIN_FLEET_ORG_ID;
-    if (isMainAdmin) {
-      setActiveOrgId(mainOrgId);
-    } else {
-      const back = profile?.org_id?.trim() || memberOrganizations[0]?.id?.trim() || null;
-      setActiveOrgId(back ?? mainOrgId);
-    }
-
-    try {
-      localStorage.removeItem('viewAsUser');
-    } catch {
-      /* ignore */
-    }
-    try {
-      sessionStorage.removeItem('fleet-view-as-user-id');
-    } catch {
-      /* ignore */
-    }
-
-    try {
-      window.dispatchEvent(new CustomEvent('app:go-home'));
-    } catch {
-      /* ignore */
-    }
-
-    requestAnimationFrame(() => {
-      navigate('/', { replace: true });
-    });
-  }, [setViewAsEmail, isMainAdmin, profile?.org_id, memberOrganizations, setActiveOrgId, navigate]);
-
-  /** תצוגה כחבר צוות: לרביד תמיד מעבירים ל-VIEW_AS_RAVID_ORG_ID (לא org של המנהל המחובר). */
-  const handleViewAs = useCallback(
-    (member: Pick<TeamMemberSummary, 'id' | 'email'> & Partial<Pick<TeamMemberSummary, 'org_id'>>) => {
-      const trimmed = (member.email ?? '').trim();
-      try {
-        const uid = String(member.id ?? '').trim();
-        if (uid) sessionStorage.setItem('fleet-view-as-user-id', uid);
-      } catch {
-        /* ignore */
-      }
-      setViewAsEmail(trimmed || null);
-      if (trimmed.toLowerCase() === RAVID_MANAGER_EMAIL) {
-        setActiveOrgId(VIEW_AS_RAVID_ORG_ID);
-        return;
-      }
-      const oid = member.org_id != null ? String(member.org_id).trim() : '';
-      if (oid) setActiveOrgId(oid);
-    },
-    [setViewAsEmail, setActiveOrgId],
-  );
+  }, [profile, user, activeOrgId, mainFleetOrgId, setActiveOrgId]);
 
   const handleLogout = () => {
     void signOut();
@@ -539,17 +341,6 @@ export function AppLayout({ children }: AppLayoutProps) {
       ? (mainFleetOrgId ? memberOrganizations.filter((org) => org.id === mainFleetOrgId) : memberOrganizations)
       : memberOrgsForSwitcher;
 
-    const visibleMembers = canViewAsTeamMembers
-      ? augmentSwitcherMembers(teamMembers, {
-          selfEmail: email,
-          isMainAdmin,
-          isRavid,
-          viewerProfileId: profile?.id,
-          activeOrgId,
-          mainFleetOrgId,
-          profileOrgId: profile?.org_id,
-        })
-      : [];
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -567,21 +358,11 @@ export function AppLayout({ children }: AppLayoutProps) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align={isRtl ? 'start' : 'end'} className="min-w-[220px]">
-          {viewAsEmail && (
-            <DropdownMenuItem
-              className="text-xs font-semibold text-emerald-200 bg-emerald-950/60 cursor-pointer mb-1"
-              onSelect={() => exitViewAsToDashboard()}
-            >
-              חזרה לתצוגת מנהל
-            </DropdownMenuItem>
-          )}
           <DropdownMenuRadioGroup
             value={activeOrgId ?? ''}
             onValueChange={(id) => {
               if (!id) return;
               if (isMainAdmin && id === FALLBACK_MAIN_FLEET_ORG_ID) {
-                // Manual override: reset to admin view and main admin org
-                setViewAsEmail(null);
                 if (mainFleetOrgId) setActiveOrgId(mainFleetOrgId);
               } else {
                 setActiveOrgId(id);
@@ -594,37 +375,6 @@ export function AppLayout({ children }: AppLayoutProps) {
               </DropdownMenuRadioItem>
             ))}
           </DropdownMenuRadioGroup>
-          {visibleMembers.length > 0 ? (
-            <>
-              <DropdownMenuItem disabled className="mt-2 text-[11px] font-semibold opacity-80">
-                תצוגה כחבר צוות
-              </DropdownMenuItem>
-              {visibleMembers.map((member) => (
-                <DropdownMenuItem
-                  key={member.id}
-                  className="text-xs cursor-pointer"
-                  onClick={() => handleViewAs(member)}
-                >
-                  <div className="flex flex-col">
-                    <span className="font-medium truncate">
-                      {member.full_name || member.email || 'חבר צוות'}
-                    </span>
-                    {member.email && (
-                      <span className="text-[11px] text-muted-foreground truncate">{member.email}</span>
-                    )}
-                  </div>
-                </DropdownMenuItem>
-              ))}
-            </>
-          ) : teamMembers.length > 0 ? (
-            <DropdownMenuItem disabled className="mt-2 text-[11px] opacity-70">
-              אין חברי צוות נוספים לארגון זה
-            </DropdownMenuItem>
-          ) : (
-            <DropdownMenuItem disabled className="mt-2 text-[11px] opacity-70">
-              אין חברי צוות לארגון זה
-            </DropdownMenuItem>
-          )}
         </DropdownMenuContent>
       </DropdownMenu>
     );
@@ -720,24 +470,6 @@ export function AppLayout({ children }: AppLayoutProps) {
     );
   };
 
-  const ViewAsExitButton = ({ className }: { className?: string }) =>
-    viewAsEmail ? (
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className={cn(
-          'relative z-[2] h-7 gap-1 px-2 text-[11px] font-semibold border-emerald-400/60 bg-emerald-500/20 text-emerald-50 hover:bg-emerald-500/30 hover:text-white shrink-0 touch-manipulation cursor-pointer',
-          className
-        )}
-        style={{ touchAction: 'manipulation' }}
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={() => exitViewAsToDashboard()}
-      >
-        חזרה לתצוגת מנהל
-      </Button>
-    ) : null;
-
   const UtilityCluster = () => (
     <>
       <HeaderSettingsMenu />
@@ -777,10 +509,6 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   const handleGoHomeNav = (e: MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
-    if (viewAsEmail) {
-      exitViewAsToDashboard();
-      return;
-    }
     try {
       window.dispatchEvent(new CustomEvent('app:go-home'));
     } catch {
@@ -944,31 +672,6 @@ export function AppLayout({ children }: AppLayoutProps) {
       className="flex min-h-[100dvh] flex-col overflow-x-hidden bg-transparent"
       dir={isRtl ? 'rtl' : 'ltr'}
     >
-      {viewAsBannerVisible && (
-        <div
-          className={cn(
-            'sticky top-0 z-[70] w-full bg-amber-500 text-black shadow-md pointer-events-auto'
-          )}
-        >
-          <div className="mx-auto flex max-w-[1920px] items-center justify-between gap-2 px-3 py-1 text-[11px] sm:text-xs sm:px-4 pointer-events-auto">
-            <span className="font-medium min-w-0">
-              אתה נמצא כרגע בתצוגת משתמש:{' '}
-              <span className="font-bold">{viewAsProfile?.full_name || viewAsEmail}</span>
-            </span>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="relative z-[2] h-7 min-h-9 px-3 text-xs font-semibold border-black/40 bg-black/80 text-amber-50 hover:bg-black/90 touch-manipulation shrink-0 cursor-pointer"
-              style={{ touchAction: 'manipulation' }}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={() => exitViewAsToDashboard()}
-            >
-              חזור לתצוגת מנהל
-            </Button>
-          </div>
-        </div>
-      )}
       <header
         className={cn(
           'sticky top-0 z-40 border-b border-white/10 bg-[#0d1b2e] min-h-0 md:h-auto md:border-gray-800'
@@ -984,7 +687,6 @@ export function AppLayout({ children }: AppLayoutProps) {
               )}
             >
               <UtilityCluster />
-              <ViewAsExitButton />
               <UserInline />
             </div>
             <div className={cn('flex shrink-0 items-center', isRtl ? 'order-1' : 'order-2')}>
@@ -1023,11 +725,6 @@ export function AppLayout({ children }: AppLayoutProps) {
             </div>
           </div>
           <MobilePrimaryNav />
-          {viewAsEmail ? (
-            <div className="flex w-full min-w-0 justify-end">
-              <ViewAsExitButton className="min-h-11 w-full justify-center sm:w-auto" />
-            </div>
-          ) : null}
         </div>
       </header>
 

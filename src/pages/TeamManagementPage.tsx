@@ -9,7 +9,6 @@ import {
   ORG_INVITATIONS_QUERY_KEY,
   isRoeySuperAdminProfile,
 } from '@/hooks/useTeam';
-import { useViewAs } from '@/contexts/ViewAsContext';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
 import { getDefaultPermissions } from '@/lib/permissions';
 import { isSuperAdminPermissionBypass } from '@/lib/allowedFeatures';
@@ -56,13 +55,12 @@ import type { Profile } from '@/types/fleet';
  */
 export default function TeamManagementPage() {
   const { user, profile, activeOrgId, hasPermission, isAdmin, isManager } = useAuth();
-  const { viewAsProfile } = useViewAs();
   const { effectiveUserId, effectiveOrgId } = useImpersonationFleetScope();
   const queryClient = useQueryClient();
   const orgId = effectiveOrgId ?? activeOrgId ?? null;
   const isSuperAdminTeamView = isRoeySuperAdminProfile(profile);
   const [globalFeaturesOpen, setGlobalFeaturesOpen] = useState(false);
-  const subjectIsSystemAdmin = (viewAsProfile?.is_system_admin ?? profile?.is_system_admin) === true;
+  const subjectIsSystemAdmin = profile?.is_system_admin === true;
   const { data: members, isLoading, isFetching: membersFetching } = useTeamMembers(orgId, {
     loadAllOrgs: isSuperAdminTeamView,
     subjectManagerUserId: effectiveUserId,
