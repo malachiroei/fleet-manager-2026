@@ -39,5 +39,6 @@
 | מיגרציה `20260506140000_*.sql` | אם 20260505120000 נכשל (חסר `user_may_cross_org_fleet_read`) או נוספו פוליסיות SQL ידנית — תיקון + הסרת כפילויות |
 | `setup_team_hierarchy_malachiroei_ravid_roeima21.sql` | סדר יישור: מנהל על → שני אדמינים → משנים תחת רביד |
 | `fix_fleet_managed_by_malachiroei_to_ravid_in_ravid_org.sql` | נהגים/רכבים עם `managed_by` של מנהל־העל בצי רביד → רביד (ו־roeima21 לנהג שלו) |
+| `assign_drivers_under_roeima21_to_ravid_in_shared_org.sql` | נהגים שמסומנים ל־roeima21 באותו org — העברה לרביד כדי שמשנים יראו אותם |
 
 הרץ `reclaim_platform_fleet_from_ravid_org.sql` אחרי שבדקת את בלוקי ה־`SELECT` הראשונים.
