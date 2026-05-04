@@ -414,24 +414,7 @@ export function useDashboardStats() {
 
         vehiclesCount = (vRows ?? []).length;
         driversCount = (dRows ?? []).length;
-
-        // רק חשבון על: ארגון ריק — ספירה גלובלית (לא בתצוגת משתמש / impersonation).
-        if (
-          isPlatformSuperOwner &&
-          !viewAsEmail?.trim() &&
-          !isImpersonating &&
-          vehiclesCount === 0 &&
-          driversCount === 0
-        ) {
-          const [gv, gd] = await Promise.all([
-            supabase.from('vehicles').select('id'),
-            supabase.from('drivers').select('id'),
-          ]);
-          if (gv.error) throw gv.error;
-          if (gd.error) throw gd.error;
-          vehiclesCount = (gv.data ?? []).length;
-          driversCount = (gd.data ?? []).length;
-        }
+        // לא fallback גלובלי כשיש effectiveOrgId — גרם לספירות 12/11 בזמן שרשימות רכבים/נהגים מציגות 0 (ארגון שונה מהנתונים).
       }
 
       return {

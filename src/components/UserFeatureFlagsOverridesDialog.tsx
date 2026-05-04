@@ -51,6 +51,8 @@ type SubjectProfileLite = {
   org_id: string | null;
   email: string | null;
   permissions: Record<string, boolean> | null;
+  parent_admin_id: string | null;
+  managed_by_user_id: string | null;
 };
 
 const FEATURE_PERMISSION_DEFAULTS: Record<string, string | null> = {
@@ -113,7 +115,7 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
     queryFn: async (): Promise<SubjectProfileLite | null> => {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, org_id, email, permissions')
+        .select('id, org_id, email, permissions, parent_admin_id, managed_by_user_id')
         .eq('id', userId as string)
         .maybeSingle();
       if (error) throw error;
@@ -125,10 +127,18 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
   const subjectEmail = (subjectProfile?.email ?? userLabel ?? '').trim().toLowerCase();
   const isSubjectRoei = subjectEmail === 'malachiroei@gmail.com';
   const sameOrg = Boolean(viewerOrgId && subjectProfile?.org_id && viewerOrgId === subjectProfile.org_id);
+  const viewerProfileId = String(profile?.id ?? '').trim();
+  const subjectReportsToViewer =
+    Boolean(viewerProfileId) &&
+    (subjectProfile?.parent_admin_id === viewerProfileId ||
+      subjectProfile?.managed_by_user_id === viewerProfileId);
   const canEditSubjectOverrides = Boolean(
     typeof userId === 'string' &&
       userId.length > 0 &&
-      (isRoeiAdmin || (viewerHasManageTeam && sameOrg && !isSubjectRoei)),
+      (isRoeiAdmin ||
+        (viewerHasManageTeam &&
+          !isSubjectRoei &&
+          (sameOrg || subjectReportsToViewer))),
   );
 
   const { data: overrideRows = [] as OverrideRow[], isLoading: isOverridesLoading, isError: isOverridesError } = useQuery({

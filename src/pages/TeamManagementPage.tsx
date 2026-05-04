@@ -12,7 +12,6 @@ import {
 import { useViewAs } from '@/contexts/ViewAsContext';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
 import { getDefaultPermissions } from '@/lib/permissions';
-import { isRavidManagerEmail } from '@/lib/fleetBootstrapEmails';
 import { isSuperAdminPermissionBypass } from '@/lib/allowedFeatures';
 import {
   buildReleaseSnapshotPayload,
@@ -57,7 +56,6 @@ import type { Profile } from '@/types/fleet';
  */
 export default function TeamManagementPage() {
   const { user, profile, activeOrgId, hasPermission, isAdmin, isManager } = useAuth();
-  const isRavid = isRavidManagerEmail(user?.email ?? null);
   const { viewAsProfile } = useViewAs();
   const { effectiveUserId, effectiveOrgId } = useImpersonationFleetScope();
   const queryClient = useQueryClient();
@@ -287,10 +285,14 @@ export default function TeamManagementPage() {
                         const isAdminRow = isMemberAdminLike(m);
                         const childrenCount = memberHierarchy.usersByManager.get(m.id)?.length ?? 0;
                         const isExpanded = expandedAdminIds.includes(m.id);
+                        const viewerProfileId = String(profile?.id ?? '').trim();
+                        const memberReportsToViewer =
+                          Boolean(viewerProfileId) &&
+                          String(m.parent_admin_id ?? m.managed_by_user_id ?? '').trim() === viewerProfileId;
                         const canOpenFeatureOverrides =
                           isRoeiAdmin ||
                           (memberEmail && memberEmail === viewerEmail) ||
-                          (isRavid && canManageTeam && !isSelf);
+                          (canManageTeam && !isSelf && memberReportsToViewer);
                         const showRemoveForRow =
                           canRemoveTeamMemberRow &&
                           !isSelf &&
