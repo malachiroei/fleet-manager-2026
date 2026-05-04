@@ -391,6 +391,20 @@ export function useDashboardStats() {
         if (vErr) throw vErr;
         vehiclesCount = (vRows ?? []).length;
         driversCount = 1;
+      } else if (
+        isPlatformSuperOwner &&
+        !viewAsEmail?.trim() &&
+        !isImpersonating
+      ) {
+        /** חשבון על: כרטיסי הדשבורד = סה״כ במערכת (RLS). הארגון במתג משפיע על רשימות — לא על הספירה כאן. */
+        const [gv, gd] = await Promise.all([
+          supabase.from('vehicles').select('id'),
+          supabase.from('drivers').select('id'),
+        ]);
+        if (gv.error) throw gv.error;
+        if (gd.error) throw gd.error;
+        vehiclesCount = (gv.data ?? []).length;
+        driversCount = (gd.data ?? []).length;
       } else {
         let vq = supabase.from('vehicles').select('id').eq('org_id', effectiveOrgId);
         let dq = supabase.from('drivers').select('id').eq('org_id', effectiveOrgId);
@@ -414,7 +428,6 @@ export function useDashboardStats() {
 
         vehiclesCount = (vRows ?? []).length;
         driversCount = (dRows ?? []).length;
-        // לא fallback גלובלי כשיש effectiveOrgId — גרם לספירות 12/11 בזמן שרשימות רכבים/נהגים מציגות 0 (ארגון שונה מהנתונים).
       }
 
       return {
