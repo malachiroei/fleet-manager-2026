@@ -218,7 +218,7 @@ export default function TeamManagementPage() {
         ) : null
       }
     >
-      <section className="dashboard-status-stage dashboard-cyber-stage mx-auto max-w-4xl space-y-4 rounded-3xl border border-cyan-400/25 p-3 sm:space-y-6 sm:p-6" dir="rtl">
+      <section className="dashboard-status-stage dashboard-cyber-stage mx-auto w-full max-w-[1920px] space-y-4 rounded-3xl border border-cyan-400/25 p-3 sm:space-y-6 sm:p-6" dir="rtl">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <div>

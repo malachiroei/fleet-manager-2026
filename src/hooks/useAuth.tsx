@@ -595,6 +595,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!user) return;
     if (!activeOrgId) return;
     if (memberOrganizations.length === 0) return;
+    // Platform owner viewing another admin fleet: don't snap back to own org membership.
+    if (
+      platformFleetViewAdminId &&
+      isPlatformSuperOwnerEmail(resolveSessionEmail(profile, user))
+    ) {
+      return;
+    }
     const known = memberOrganizations.some((o) => o.id === activeOrgId);
     if (known) return;
     if (readViewAsActiveFromSession()) return;
@@ -613,7 +620,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (preferred && preferred !== activeOrgId) {
       setActiveOrgId(preferred);
     }
-  }, [user, profile, activeOrgId, memberOrganizations, setActiveOrgId]);
+  }, [user, profile, activeOrgId, memberOrganizations, platformFleetViewAdminId, setActiveOrgId]);
 
   /**
    * `activeOrgId` על צי ראשי (localStorage) אבל `profiles.org_id` כבר ארגון אחר — למשל כש־RLS על org_members
@@ -637,13 +644,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user?.id) return;
     if (memberOrganizations.length !== 1) return;
+    if (
+      platformFleetViewAdminId &&
+      isPlatformSuperOwnerEmail(resolveSessionEmail(profile, user))
+    ) {
+      return;
+    }
     const onlyId = memberOrganizations[0]?.id;
     if (!onlyId) return;
     if (activeOrgId === onlyId) return;
     if (activeOrgId === RAVID_FLEET_ORG_ID) return;
     if (activeOrgId && !memberOrganizations.some((o) => o.id === activeOrgId)) return;
     setActiveOrgId(onlyId);
-  }, [user?.id, memberOrganizations, activeOrgId, setActiveOrgId]);
+  }, [user?.id, memberOrganizations, activeOrgId, platformFleetViewAdminId, profile, user, setActiveOrgId]);
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });

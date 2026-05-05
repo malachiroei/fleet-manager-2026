@@ -24,6 +24,8 @@ export default function AddVehiclePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isActive, setIsActive] = useState(true);
   const [assignedDriverId, setAssignedDriverId] = useState<string>('');
+  const [ownershipType, setOwnershipType] = useState<string>('');
+  const [leasingCompanyName, setLeasingCompanyName] = useState<string>('');
   const [manufacturerCode, setManufacturerCode] = useState('');
   const [modelCode, setModelCode] = useState('');
   const [taxValuePrice, setTaxValuePrice] = useState('');
@@ -48,6 +50,12 @@ export default function AddVehiclePage() {
     setTaxValueYear(pricingData.usage_year?.toString() || '');
     setAdjustedPrice(pricingData.adjusted_price?.toString() || '');
   }, [pricingData]);
+
+  useEffect(() => {
+    if (ownershipType !== 'ליסינג' && leasingCompanyName) {
+      setLeasingCompanyName('');
+    }
+  }, [ownershipType, leasingCompanyName]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -112,8 +120,8 @@ export default function AddVehiclePage() {
         road_ascent_month: formData.get('road_ascent_month')
           ? parseInt(formData.get('road_ascent_month') as string)
           : null,
-        ownership_type: formData.get('ownership_type') as string || null,
-        leasing_company_name: formData.get('leasing_company_name') as string || null,
+        ownership_type: ownershipType || null,
+        leasing_company_name: ownershipType === 'ליסינג' ? (leasingCompanyName || null) : null,
         safety_officer: formData.get('safety_officer') as string || null,
         last_odometer_date: lastOdometerDate.trim() || null,
         manufacturer_code: manufacturerCode || null,
@@ -422,25 +430,45 @@ export default function AddVehiclePage() {
             <CardContent className="space-y-4">
               <div>
                 <Label htmlFor="ownership_type">סוג בעלות</Label>
-                <Select name="ownership_type">
+                <Select name="ownership_type" value={ownershipType} onValueChange={setOwnershipType}>
                   <SelectTrigger>
                     <SelectValue placeholder="בחר סוג בעלות" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="הרץ">הרץ</SelectItem>
-                    <SelectItem value="יוניון מוביליטי">יוניון מוביליטי</SelectItem>
-                    <SelectItem value="פריים ליס">פריים ליס</SelectItem>
+                    <SelectItem value="ליסינג">ליסינג</SelectItem>
+                    <SelectItem value="רכב זמני">רכב זמני</SelectItem>
+                    <SelectItem value="רכב בבעלות חברה">רכב בבעלות חברה</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div>
                 <Label htmlFor="leasing_company_name">שם חברת ליסינג</Label>
-                <Input 
-                  id="leasing_company_name" 
-                  name="leasing_company_name" 
-                  placeholder="שם החברה"
-                />
+                {ownershipType === 'ליסינג' ? (
+                  <Select
+                    name="leasing_company_name"
+                    value={leasingCompanyName}
+                    onValueChange={setLeasingCompanyName}
+                  >
+                    <SelectTrigger id="leasing_company_name">
+                      <SelectValue placeholder="בחר חברת ליסינג" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="הרץ">הרץ</SelectItem>
+                      <SelectItem value="פריים ליס">פריים ליס</SelectItem>
+                      <SelectItem value="יוניון">יוניון</SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    id="leasing_company_name"
+                    name="leasing_company_name"
+                    value=""
+                    disabled
+                    placeholder="לא רלוונטי לבעלות/רכב זמני"
+                    readOnly
+                  />
+                )}
               </div>
             </CardContent>
           </Card>

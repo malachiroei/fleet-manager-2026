@@ -181,24 +181,40 @@ export function useImpersonationFleetScope() {
       const fromProfile = (viewAsProfile?.parent_admin_id ?? viewAsProfile?.managed_by_user_id ?? '').trim();
       return fromProfile || null;
     }
+    // Admin-like users should not inherit parent-owner slice (prevents sibling admin data leak).
+    const sessionEmailNow = resolveSessionEmail(profile, user);
+    const perms = (profile?.permissions ?? null) as Record<string, unknown> | null;
+    const isAdminLike =
+      isRavidManagerEmail(sessionEmailNow) ||
+      profile?.is_system_admin === true ||
+      loggedInRolesNorm.includes('admin') ||
+      loggedInRolesNorm.includes('fleet_manager') ||
+      perms?.admin_access === true ||
+      perms?.manage_team === true;
+    if (isAdminLike) return null;
     const fromProfile = (profile?.parent_admin_id ?? profile?.managed_by_user_id ?? '').trim();
     return fromProfile || null;
   }, [
     isImpersonating,
+    loggedInRolesNorm,
     profile?.parent_admin_id,
     profile?.managed_by_user_id,
+    profile?.is_system_admin,
+    profile?.permissions,
+    profile,
+    user,
     viewAsProfile?.parent_admin_id,
     viewAsProfile?.managed_by_user_id,
   ]);
 
   /**
    * סינון PostgREST לפי managed_by + הורה (fleetManagerVisibilityOrFilter). מנהלי bootstrap (מנהל על + רביד)
-   * לא מסננים כאן — להם RLS cross-org / צי מלא. שאר המשתמשים: בלי זה roeima21 רואה כל org אם RLS פגום.
+   * לא מסננים כאן — רק מנהל-העל. שאר המשתמשים (כולל רביד) חייבים slice כדי למנוע דליפת צי בין אדמינים.
    */
   const applyFleetManagerSlice = useMemo(() => {
     if (isImpersonating) return false;
     const e = resolveSessionEmail(profile, user);
-    if (isPlatformSuperOwnerEmail(e) || isRavidManagerEmail(e)) return false;
+    if (isPlatformSuperOwnerEmail(e)) return false;
     return true;
   }, [isImpersonating, profile, user]);
 

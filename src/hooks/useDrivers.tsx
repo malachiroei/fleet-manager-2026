@@ -257,7 +257,7 @@ export function useDriver(id: string) {
 
 export function useCreateDriver() {
   const queryClient = useQueryClient();
-  const { activeOrgId, profile, user } = useAuth();
+  const { activeOrgId, profile, user, isAdmin, isManager } = useAuth();
 
   return useMutation({
     mutationFn: async (driver: Partial<Omit<Driver, 'id' | 'created_at' | 'updated_at' | 'status'>> & {
@@ -270,7 +270,20 @@ export function useCreateDriver() {
       if (effectiveOrgId != null && row.org_id == null) {
         row.org_id = effectiveOrgId;
       }
-      const ownerId = profile?.id ?? user?.id;
+      const permissions = (profile?.permissions ?? null) as Record<string, unknown> | null;
+      const creatorIsAdminLike =
+        isAdmin ||
+        isManager ||
+        profile?.is_system_admin === true ||
+        permissions?.admin_access === true ||
+        permissions?.manage_team === true;
+      // Admin-like creators own their rows; delegates inherit manager owner.
+      const ownerId = creatorIsAdminLike
+        ? (profile?.id || user?.id)
+        : (profile?.parent_admin_id?.trim() ||
+          profile?.managed_by_user_id?.trim() ||
+          profile?.id ||
+          user?.id);
       if (ownerId != null && row.managed_by_user_id === undefined) {
         row.managed_by_user_id = ownerId;
       }

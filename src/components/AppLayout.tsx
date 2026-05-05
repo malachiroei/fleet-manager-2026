@@ -76,6 +76,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     memberOrganizations,
     setActiveOrgId,
     setPlatformFleetViewAdminId,
+    platformFleetViewAdminId,
     isAdmin,
     isManager,
     isDriver,
@@ -345,7 +346,10 @@ export function AppLayout({ children }: AppLayoutProps) {
     if (selfOrg && activeOrgId === selfOrg) {
       return 'הצי שלי · רועי';
     }
-    const adm = tenantFleetAdmins.find((a) => a.org_id === activeOrgId);
+    const adm =
+      (platformFleetViewAdminId
+        ? tenantFleetAdmins.find((a) => a.id === platformFleetViewAdminId)
+        : null) ?? tenantFleetAdmins.find((a) => a.org_id === activeOrgId);
     if (adm) {
       const n = adm.full_name?.trim();
       const local = (adm.email ?? '').split('@')[0]?.trim();
@@ -357,6 +361,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     user,
     mainFleetOrgId,
     activeOrgId,
+    platformFleetViewAdminId,
     tenantFleetAdmins,
     organization?.name,
     orgName,
@@ -367,9 +372,12 @@ export function AppLayout({ children }: AppLayoutProps) {
     const selfOrg = mainFleetOrgId ?? FALLBACK_MAIN_FLEET_ORG_ID;
     if (!activeOrgId) return 'self';
     if (selfOrg && activeOrgId === selfOrg) return 'self';
-    const adm = tenantFleetAdmins.find((a) => a.org_id === activeOrgId);
+    const adm =
+      (platformFleetViewAdminId
+        ? tenantFleetAdmins.find((a) => a.id === platformFleetViewAdminId)
+        : null) ?? tenantFleetAdmins.find((a) => a.org_id === activeOrgId);
     return adm?.id ?? activeOrgId;
-  }, [profile, user, mainFleetOrgId, activeOrgId, tenantFleetAdmins]);
+  }, [profile, user, mainFleetOrgId, activeOrgId, platformFleetViewAdminId, tenantFleetAdmins]);
 
   const OrgSwitcher = () => {
     /** מתג צפייה בצי — רק למנהל הפלטפורמה: «הצי שלי» + אדמינים (לא שמות ארגון DB) */
