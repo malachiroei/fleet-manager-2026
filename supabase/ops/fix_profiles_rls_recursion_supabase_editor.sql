@@ -282,4 +282,13 @@ CREATE POLICY organizations_select_platform_super_admin
   ON public.organizations FOR SELECT TO authenticated
   USING (public.is_platform_super_admin(auth.uid()));
 
+-- Overrides פיצ'רים: בעל פלטפורמה (מיגרציה 20260508130000)
+DROP POLICY IF EXISTS user_feature_overrides_platform_super_admin ON public.user_feature_overrides;
+CREATE POLICY user_feature_overrides_platform_super_admin
+  ON public.user_feature_overrides
+  FOR ALL
+  TO authenticated
+  USING (public.is_platform_super_admin(auth.uid()))
+  WITH CHECK (public.is_platform_super_admin(auth.uid()));
+
 NOTIFY pgrst, 'reload schema';

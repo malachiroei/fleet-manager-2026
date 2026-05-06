@@ -17,6 +17,7 @@ import {
 } from '@/lib/featureFlagRegistry';
 import { useAuth } from '@/hooks/useAuth';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
+import { isRoeySuperAdminProfile } from '@/hooks/useTeam';
 import { cn } from '@/lib/utils';
 
 const NESTED_UNDER_QA_SET = new Set<string>(QA_FORMS_NESTED_KEYS);
@@ -36,6 +37,11 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   userId: string | null;
   userLabel?: string | null;
+  /**
+   * ארגון הרשימה ב«ניהול צוות» (effectiveOrgId של העמוד). מאפשר לאמת נגד `profiles.org_id`
+   * גם כש־org_id של פרופיל הצופה (או activeOrg) לא מסתנכרן עם נבחר הצוות.
+   */
+  fleetOrgScopeId?: string | null;
 };
 
 type FeatureFlagRow = {
@@ -76,7 +82,13 @@ const FEATURE_PERMISSION_DEFAULTS: Record<string, string | null> = {
   qa_admin_settings: 'admin_access',
 };
 
-export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, userLabel }: Props) {
+export function UserFeatureFlagsOverridesDialog({
+  open,
+  onOpenChange,
+  userId,
+  userLabel,
+  fleetOrgScopeId = null,
+}: Props) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [savingKey, setSavingKey] = useState<string | null>(null);
@@ -85,8 +97,16 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
   const { effectiveOrgId } = useImpersonationFleetScope();
   const viewerEmail = (profile?.email ?? user?.email ?? '').trim().toLowerCase();
   const isRoeiAdmin = viewerEmail === 'malachiroei@gmail.com';
-  const viewerOrgId = (effectiveOrgId ?? activeOrgId ?? profile?.org_id ?? null) as string | null;
-  const viewerHasManageTeam = isRoeiAdmin || hasPermission('manage_team') || isAdmin || isManager;
+  const isSuperAdminViewer = isRoeySuperAdminProfile(profile);
+  const viewerFleetOrgId = (effectiveOrgId ?? activeOrgId ?? profile?.org_id ?? null) as string | null;
+  /** תואם ל־canManageTeam בעמוד ניהול צוות: admin / fleet_manager / ניהול צוות / סופר־אדמין */
+  const viewerHasManageTeam =
+    isRoeiAdmin ||
+    isSuperAdminViewer ||
+    hasPermission('manage_team') ||
+    hasPermission('admin_access') ||
+    isAdmin ||
+    isManager;
 
   const { data: featureFlags = [] as FeatureFlagRow[], isLoading: isFlagsLoading, isError: isFlagsError } = useQuery({
     queryKey: ['feature-flags-user-overrides-list'],
@@ -134,7 +154,14 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
 
   const subjectEmail = (subjectProfile?.email ?? userLabel ?? '').trim().toLowerCase();
   const isSubjectRoei = subjectEmail === 'malachiroei@gmail.com';
-  const sameOrg = Boolean(viewerOrgId && subjectProfile?.org_id && viewerOrgId === subjectProfile.org_id);
+  const subjectOrgId = (subjectProfile?.org_id ?? null) as string | null;
+  const scopeId = (fleetOrgScopeId ?? '').trim();
+  const sameOrgAsViewer =
+    Boolean(viewerFleetOrgId && subjectOrgId && viewerFleetOrgId === subjectOrgId);
+  /** מזהה הארגון כפי שמוצג בטבלת הצוות — מתעלם מפערים בין profile.org_id של הצופה לנבחר */
+  const sameOrgAsFleetScope =
+    Boolean(scopeId && subjectOrgId && scopeId === subjectOrgId);
+  const sameOrg = sameOrgAsViewer || sameOrgAsFleetScope;
   const viewerProfileId = String(profile?.id ?? '').trim();
   const subjectReportsToViewer =
     Boolean(viewerProfileId) &&

@@ -417,6 +417,9 @@ export default function TeamManagementPage() {
         }}
         userId={featureOverridesMember?.id ?? featureOverridesMember?.user_id ?? null}
         userLabel={featureOverridesMember?.full_name ?? featureOverridesMember?.email ?? null}
+        fleetOrgScopeId={
+          isSuperAdminTeamView ? (featureOverridesMember?.org_id ?? null) : orgId
+        }
       />
 
       <AlertDialog

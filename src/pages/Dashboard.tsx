@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useDashboardStats, useComplianceAlerts } from '@/hooks/useDashboard';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
-import { useFeatureFlags } from '@/hooks/useFeatureFlags';
+import { isFeatureEnabled, useFeatureFlags } from '@/hooks/useFeatureFlags';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useAuth } from '@/hooks/useAuth';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -35,6 +35,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { invalidateFleetScopedQueries } from '@/lib/invalidateFleetQueryScope';
 import { toast } from 'sonner';
 import { getBrandLogoUrl } from '@/components/BrandLogo';
+import {
+  isFleetOrgAdminFallbackEmail,
+  isPlatformSuperOwnerEmail,
+  resolveSessionEmail,
+} from '@/lib/fleetBootstrapEmails';
 
 const statusCardConfig: Array<{
   titleKey: 'navigation.fleetManagement' | 'navigation.drivers' | 'navigation.exceptionAlerts' | 'dashboard.replacementVehicle';
@@ -192,15 +197,20 @@ export default function Dashboard() {
   } = useAuth();
   const { effectiveOrgId } = useImpersonationFleetScope();
   const { viewAsEmail } = useViewAs();
-  const { isPending: flagsPending } = useFeatureFlags();
-  const { canAccessUi } = usePermissions();
+  const {
+    data: featureFlags,
+    isPending: flagsPending,
+    isPlaceholderData: flagsPlaceholder,
+  } = useFeatureFlags();
+  const { canAccessPermission } = usePermissions();
   const showDashboardTreatmentCard = false;
   const showDashboardTestCard = false;
   const showMaintenanceFormCard = false;
   /** כרטיס «התראות חריגה» + מרכז ציות: רק פג תוקף (ללא אזהרת 30 יום) */
   const totalAlerts = (alerts?.filter((a) => a.status === 'expired').length) ?? 0;
   const isStatsLoading = isLoading || !stats;
-  const isInitialUiLoading = loading || flagsPending;
+  /** placeholderData ב-useFeatureFlags מדליק כל הדגלים — לא לרנדר גייטים לפני נתונים אמיתיים */
+  const isInitialUiLoading = loading || flagsPending || flagsPlaceholder;
 
   const dashboardScopeRemountKey = useMemo(
     () =>
@@ -240,6 +250,16 @@ export default function Dashboard() {
   const email = user?.email || '';
   const isMainAdmin = email.toLowerCase() === 'malachiroei@gmail.com';
   const isOwner = isMainAdmin;
+  /** קישורי quick action עם adminOnly — לא רק malachiroei; כל אדמין/מנהל צי בארגון */
+  const sessionEmailDash = resolveSessionEmail(profile, user);
+  const isElevatedOrgAdmin =
+    isMainAdmin ||
+    isPlatformSuperOwnerEmail(sessionEmailDash) ||
+    isFleetOrgAdminFallbackEmail(sessionEmailDash) ||
+    hasPermission('admin_access') ||
+    isAdmin ||
+    isManager ||
+    profile?.is_system_admin === true;
   const { data: pendingUsersCount = 0 } = useQuery({
     queryKey: ['pending-users-count'],
     enabled: isMainAdmin,
@@ -377,22 +397,25 @@ export default function Dashboard() {
   const canReportMileage = forceMileageForMalachiroei || canReportMileageFromPermissions;
 
   const visibleStatusCards = useMemo(() => {
-    return statusCardConfig.filter((card) =>
-      canAccessUi({ permission: card.permission, featureKey: card.featureFlagKey }),
-    );
-  }, [canAccessUi]);
+    return statusCardConfig.filter((card) => {
+      if (!canAccessPermission(card.permission)) return false;
+      return isFeatureEnabled(featureFlags, card.featureFlagKey);
+    });
+  }, [canAccessPermission, featureFlags]);
 
   const visibleQuickLinksByFlags = useMemo(() => {
     return baseQuickLinks.filter((a) => {
-      return canAccessUi({ permission: a.permission, featureKey: a.featureFlagKey });
+      if (!canAccessPermission(a.permission)) return false;
+      if (!a.featureFlagKey) return true;
+      return isFeatureEnabled(featureFlags, a.featureFlagKey);
     });
-  }, [baseQuickLinks, canAccessUi]);
+  }, [baseQuickLinks, canAccessPermission, featureFlags]);
 
   const quickLinks = visibleQuickLinksByFlags.filter((a) => {
     if (a.href === '/report-mileage') return canReportMileage;
     if (a.href === '/team') return canManageTeamUi;
     if (a.href === '/admin/compliance') return Boolean(isAdmin);
-    if (a.adminOnly && !isMainAdmin) return false;
+    if (a.adminOnly && !isElevatedOrgAdmin) return false;
     return true;
   });
 
@@ -466,7 +489,7 @@ export default function Dashboard() {
       )}
 
       <section className="dashboard-status-stage dashboard-cyber-stage p-3 sm:p-4 md:p-6 xl:p-8 pb-3 space-y-4 xl:space-y-6 [@media(max-height:820px)]:p-2.5 [@media(max-height:820px)]:pb-2 [@media(max-height:820px)]:space-y-3 relative z-[20]">
-        {isStatsLoading ? (
+        {isStatsLoading || flagsPlaceholder ? (
           <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             {[1, 2, 3, 4].map((i) => (
               <Skeleton
