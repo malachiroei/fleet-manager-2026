@@ -107,6 +107,25 @@ CREATE POLICY "user_feature_overrides_same_org_staff"
     )
   );
 
+DROP POLICY IF EXISTS user_feature_overrides_platform_super_admin ON public.user_feature_overrides;
+CREATE POLICY user_feature_overrides_platform_super_admin
+  ON public.user_feature_overrides
+  FOR ALL
+  TO authenticated
+  USING (public.is_platform_super_admin(auth.uid()))
+  WITH CHECK (public.is_platform_super_admin(auth.uid()));
+  $sql$;
+
+  -- מיגרציה 202604129: בסביבות ללא הפונקציה לא ניתן ליצור מדיניות שמפנה אליה
+  IF EXISTS (
+    SELECT 1
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname = 'user_is_fleet_bootstrap_owner'
+      AND pg_get_function_identity_arguments(p.oid) = 'uuid'
+  ) THEN
+    EXECUTE $sql$
 DROP POLICY IF EXISTS "user_feature_overrides_fleet_bootstrap_owner" ON public.user_feature_overrides;
 CREATE POLICY "user_feature_overrides_fleet_bootstrap_owner"
   ON public.user_feature_overrides
@@ -132,15 +151,11 @@ CREATE POLICY "user_feature_overrides_fleet_bootstrap_owner"
         AND user_feature_overrides.org_id = t.org_id
     )
   );
-
-DROP POLICY IF EXISTS user_feature_overrides_platform_super_admin ON public.user_feature_overrides;
-CREATE POLICY user_feature_overrides_platform_super_admin
-  ON public.user_feature_overrides
-  FOR ALL
-  TO authenticated
-  USING (public.is_platform_super_admin(auth.uid()))
-  WITH CHECK (public.is_platform_super_admin(auth.uid()));
-  $sql$;
+    $sql$;
+  ELSE
+    EXECUTE 'DROP POLICY IF EXISTS "user_feature_overrides_fleet_bootstrap_owner" ON public.user_feature_overrides';
+    RAISE NOTICE 'user_is_fleet_bootstrap_owner(uuid) missing — skipped fleet_bootstrap_owner policy (run migration 20260412900000_vehicle_handovers_bootstrap_insert_fallback.sql if needed)';
+  END IF;
 END $policies$;
 
 NOTIFY pgrst, 'reload schema';
