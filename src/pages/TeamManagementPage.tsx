@@ -60,10 +60,8 @@ export default function TeamManagementPage() {
   const orgId = effectiveOrgId ?? activeOrgId ?? null;
   const isSuperAdminTeamView = isRoeySuperAdminProfile(profile);
   const [globalFeaturesOpen, setGlobalFeaturesOpen] = useState(false);
-  const subjectIsSystemAdmin = profile?.is_system_admin === true;
   const { data: members, isLoading, isFetching: membersFetching } = useTeamMembers(orgId, {
     loadAllOrgs: isSuperAdminTeamView,
-    subjectIsSystemAdmin,
   });
   const { data: invitations, isLoading: invitationsLoading, isFetching: invitationsFetching } =
     useOrgInvitations(orgId);
@@ -302,7 +300,6 @@ export default function TeamManagementPage() {
                                       onClick={() =>
                                         approveMember.mutate({
                                           profileId: m.id,
-                                          parentAdminProfileId: profile?.id ?? null,
                                         })
                                       }
                                     >

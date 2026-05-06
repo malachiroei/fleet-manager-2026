@@ -177,7 +177,7 @@ async function updateVehicleWithCompat(id: string, payload: Partial<Vehicle>) {
 
 export function useCreateVehicle() {
   const queryClient = useQueryClient();
-  const { activeOrgId, profile, user, memberOrganizations, isAdmin, isManager } = useAuth();
+  const { activeOrgId, profile, memberOrganizations } = useAuth();
 
   return useMutation({
     mutationFn: async (newVehicle: Partial<Vehicle>) => {
@@ -188,23 +188,6 @@ export function useCreateVehicle() {
       const effectiveOrgId = activeOrgId ?? profile?.org_id ?? memberOrganizations[0]?.id ?? null;
       if (effectiveOrgId != null && row.org_id == null) {
         row.org_id = effectiveOrgId;
-      }
-      const permissions = (profile?.permissions ?? null) as Record<string, unknown> | null;
-      const creatorIsAdminLike =
-        isAdmin ||
-        isManager ||
-        profile?.is_system_admin === true ||
-        permissions?.admin_access === true ||
-        permissions?.manage_team === true;
-      // Admin-like creators own their rows; delegates inherit manager owner.
-      const ownerId = creatorIsAdminLike
-        ? (profile?.id || user?.id)
-        : (profile?.parent_admin_id?.trim() ||
-          profile?.managed_by_user_id?.trim() ||
-          profile?.id ||
-          user?.id);
-      if (ownerId != null && row.managed_by_user_id === undefined) {
-        row.managed_by_user_id = ownerId;
       }
       const { data, error } = await insertVehicleWithCompat(row);
 

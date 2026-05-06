@@ -9,7 +9,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { QA_FORMS_NESTED_KEYS, QA_FORMS_PARENT_KEY, registryEntryForKey } from '@/lib/featureFlagRegistry';
+import {
+  mergeDbFeatureFlagsWithRegistry,
+  QA_FORMS_NESTED_KEYS,
+  QA_FORMS_PARENT_KEY,
+  registryEntryForKey,
+} from '@/lib/featureFlagRegistry';
 import { useAuth } from '@/hooks/useAuth';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
 import { cn } from '@/lib/utils';
@@ -89,22 +94,25 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
     queryFn: async () => {
       const { data, error } = await supabase
         .from('feature_flags')
-        .select('id, feature_key, display_name_he, description, is_enabled_globally')
+        .select('id, feature_key, display_name_he, description, category, is_enabled_globally')
         .order('feature_key', { ascending: true });
-      if (error) throw error;
-      // Defensive: DB should have unique feature_key, but UI must not show duplicates.
+      if (error) {
+        console.warn('[UserFeatureFlagsOverrides] feature_flags — מציגים לפי רג׳יסטרי בלבד', {
+          code: (error as { code?: string }).code,
+          message: (error as { message?: string }).message,
+        });
+      }
       const seen = new Set<string>();
-      const out: FeatureFlagRow[] = [];
-      for (const row of (data ?? []) as FeatureFlagRow[]) {
+      const deduped: FeatureFlagRow[] = [];
+      for (const row of ((error ? [] : data) ?? []) as FeatureFlagRow[]) {
         const key = String(row.feature_key ?? '').trim();
         if (!key) continue;
         if (seen.has(key)) continue;
         seen.add(key);
-        // Show only UI-exposed flags (registry entry exists).
         if (!registryEntryForKey(key)) continue;
-        out.push(row);
+        deduped.push(row);
       }
-      return out;
+      return mergeDbFeatureFlagsWithRegistry(deduped) as FeatureFlagRow[];
     },
     staleTime: 60_000,
   });
@@ -202,7 +210,8 @@ export function UserFeatureFlagsOverridesDialog({ open, onOpenChange, userId, us
 
   const tableRows = useMemo(() => {
     const byKey = new Map(featureFlagsVisibleToViewer.map((f) => [f.feature_key, f]));
-    const sorted = [...filteredRootFlags].sort((a, b) => a.feature_key.localeCompare(b.feature_key));
+    /** סדר כמו ב-FEATURE_FLAG_REGISTRY (לא א-ב לפי מפתח) */
+    const sorted = [...filteredRootFlags];
     const out: { flag: FeatureFlagRow; nestedUnderQa: boolean }[] = [];
     for (const flag of sorted) {
       out.push({ flag, nestedUnderQa: false });

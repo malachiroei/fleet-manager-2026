@@ -204,6 +204,59 @@ export function registryEntryForKey(key: string): FeatureFlagRegistryEntry | und
   return registryByKey.get(key);
 }
 
+/** שורה ממוזגת ל-UI — כוללת שורות סינתטיות כשאין התאמה ב-DB */
+export type MergedFeatureFlagRow = {
+  id: string;
+  feature_key: string;
+  display_name_he: string | null;
+  description: string | null;
+  category: string | null;
+  is_enabled_globally: boolean;
+};
+
+/**
+ * מבטיח שכל מפתחות הרג׳יסטרי מופיעים במודאלים גם כש-feature_flags ריק או לא נגיש (RLS).
+ * סדר השורות = סדר ההגדרה ברג׳יסטרי (קבוצות לוגיות).
+ */
+export function mergeDbFeatureFlagsWithRegistry(
+  dbRows: readonly {
+    id: string;
+    feature_key: string;
+    display_name_he: string | null;
+    description: string | null;
+    category?: string | null;
+    is_enabled_globally: boolean;
+  }[],
+): MergedFeatureFlagRow[] {
+  const byKey = new Map<string, (typeof dbRows)[number]>();
+  for (const row of dbRows) {
+    const k = String(row.feature_key ?? '').trim();
+    if (!k || !registryEntryForKey(k)) continue;
+    byKey.set(k, row);
+  }
+  return FEATURE_FLAG_REGISTRY.map((entry) => {
+    const existing = byKey.get(entry.key);
+    if (existing) {
+      return {
+        id: existing.id,
+        feature_key: entry.key,
+        display_name_he: (existing.display_name_he ?? '').trim() || entry.display_name_he,
+        description: (existing.description ?? '').trim() || entry.description,
+        category: (existing.category ?? entry.category) as string | null,
+        is_enabled_globally: existing.is_enabled_globally === true,
+      };
+    }
+    return {
+      id: `registry:${entry.key}`,
+      feature_key: entry.key,
+      display_name_he: entry.display_name_he,
+      description: entry.description,
+      category: entry.category,
+      is_enabled_globally: true,
+    };
+  });
+}
+
 export function registryCategoryForKey(key: string): FeatureFlagCategoryId | null {
   return registryByKey.get(key)?.category ?? null;
 }

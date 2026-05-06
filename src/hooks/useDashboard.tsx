@@ -285,7 +285,7 @@ async function appendDerivedComplianceFromFleetDates(
 }
 
 export function useDashboardStats() {
-  const { roles: loggedInRoles, user, profile } = useAuth();
+  const { roles: loggedInRoles, user, profile, loading: authLoading, activeOrgId } = useAuth();
   const { viewAsEmail } = useViewAs();
   const {
     effectiveOrgId,
@@ -302,11 +302,25 @@ export function useDashboardStats() {
     .join('|');
 
   const sessionEmailSig = resolveSessionEmail(profile, user);
+  const normalizedEmail = resolveSessionEmail(profile, user);
+  const isPlatformSuperOwner = isPlatformSuperOwnerEmail(normalizedEmail);
+  const orgIdForCounts = (effectiveOrgId ?? '').trim();
+  /**
+   * לא לרוץ לפני Auth + fleet scope; חובה org מפורש לספירה ארגונית (מונע cache של «אפסים» לפני activeOrgId).
+   * חשבון על: כשאין עדיין org — נופלים לספירה גלובלית (RLS) רק אחרי auth stable.
+   */
+  const dashboardStatsEnabled =
+    !authLoading &&
+    fleetListReady &&
+    effectiveUserId != null &&
+    (orgIdForCounts.length > 0 || isPlatformSuperOwner);
 
   return useQuery({
     queryKey: [
       'dashboard-stats',
-      effectiveOrgId,
+      orgIdForCounts,
+      activeOrgId ?? '',
+      profile?.org_id ?? '',
       effectiveUserId,
       viewAsEmail ?? '',
       isImpersonating,
@@ -315,18 +329,14 @@ export function useDashboardStats() {
       loggedInRolesSig,
       sessionEmailSig,
     ],
-    enabled: fleetListReady && effectiveUserId != null,
+    enabled: dashboardStatsEnabled,
     queryFn: async (): Promise<DashboardStats> => {
       if (!effectiveUserId) {
         return { totalVehicles: 0, totalDrivers: 0, alertsCount: 0, warningCount: 0, expiredCount: 0 };
       }
 
-      const normalizedEmail = resolveSessionEmail(profile, user);
-      /** ספירה גלובלית רק לחשבון על — לא למנהלי ארגון */
-      const isPlatformSuperOwner = isPlatformSuperOwnerEmail(normalizedEmail);
-
-      /** בלי org (פרו/RLS) — רק חשבון על */
-      if (!effectiveOrgId) {
+      /** בלי org — רק חשבון על (נדיר אחרי bootstrap) */
+      if (!orgIdForCounts) {
         if (!isPlatformSuperOwner) {
           return { totalVehicles: 0, totalDrivers: 0, alertsCount: 0, warningCount: 0, expiredCount: 0 };
         }
@@ -356,7 +366,7 @@ export function useDashboardStats() {
         const { data: vRows, error: vErr } = await supabase
           .from('vehicles')
           .select('id')
-          .eq('org_id', effectiveOrgId)
+          .eq('org_id', orgIdForCounts)
           .eq('assigned_driver_id', driverId);
 
         if (vErr) throw vErr;
@@ -366,13 +376,13 @@ export function useDashboardStats() {
         const { data: vRows, error: vErr } = await supabase
           .from('vehicles')
           .select('id')
-          .eq('org_id', effectiveOrgId);
+          .eq('org_id', orgIdForCounts);
         if (vErr) throw vErr;
 
         const { data: dRows, error: dErr } = await supabase
           .from('drivers')
           .select('id')
-          .eq('org_id', effectiveOrgId);
+          .eq('org_id', orgIdForCounts);
         if (dErr) throw dErr;
 
         vehiclesCount = (vRows ?? []).length;
@@ -391,7 +401,7 @@ export function useDashboardStats() {
 }
 
 export function useComplianceAlerts() {
-  const { user, profile } = useAuth();
+  const { user, profile, loading: authLoading, activeOrgId } = useAuth();
   const {
     effectiveOrgId,
     effectiveUserId,
@@ -401,17 +411,26 @@ export function useComplianceAlerts() {
   } = useImpersonationFleetScope();
 
   const sessionEmailSig = resolveSessionEmail(profile, user);
+  const orgTrim = (effectiveOrgId ?? '').trim();
+  const isPlatformSuperOwner = isPlatformSuperOwnerEmail(sessionEmailSig);
+  const complianceAlertsEnabled =
+    !authLoading &&
+    fleetListReady &&
+    effectiveUserId != null &&
+    (orgTrim.length > 0 || isPlatformSuperOwner);
 
   return useQuery({
     queryKey: [
       'compliance-alerts',
-      effectiveOrgId,
+      orgTrim,
+      activeOrgId ?? '',
+      profile?.org_id ?? '',
       effectiveUserId,
       isDriverContextOnly,
       scopedDriverId,
       sessionEmailSig,
     ],
-    enabled: fleetListReady && effectiveUserId != null,
+    enabled: complianceAlertsEnabled,
     staleTime: 60_000,
     /** 400 על compliance_alerts + retry ברירת מחדל = אלפי בקשות והקפאת UI */
     retry: false,
@@ -549,7 +568,7 @@ export function useComplianceAlerts() {
       }
 
       await appendDerivedComplianceFromFleetDates(out, occupiedSlots, {
-        effectiveOrgId,
+        effectiveOrgId: orgTrim || (effectiveOrgId ?? null),
         isDriverContextOnly,
         scopedDriverId,
       });

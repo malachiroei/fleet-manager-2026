@@ -64,6 +64,14 @@ This project is built with:
 
 Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
 
+## Supabase / RLS
+
+כל טבלה חדשה ב־`public` חייבת `ENABLE ROW LEVEL SECURITY` ומדיניות RLS. המיגרציה `supabase/migrations/20260508123000_enable_rls_on_all_public_tables.sql` מאחדת טבלאות קיימות. לאחר יצירת טבלה ידנית בפרויקט, אפשר להריץ גם את `supabase/ops/enable_rls_all_public_tables.sql` בעורך ה-SQL של Supabase.
+
+```sh
+npx supabase db push
+```
+
 ## TEST deploy workflow (Vercel)
 
 Use this command for test deployments only:

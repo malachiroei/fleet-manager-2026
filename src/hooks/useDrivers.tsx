@@ -6,6 +6,11 @@ import { formatSupabaseError, isMissingSafetyOfficerColumnError } from '@/lib/su
 import { useAuth } from '@/hooks/useAuth';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
 import { resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
+import {
+  canViewDriverSensitivePii,
+  DRIVER_SELECT_ALL,
+  DRIVER_SELECT_COLUMNS_PUBLIC,
+} from '@/lib/driverSelectProjection';
 
 /** PostgREST שולח null מפסיע DEFAULT ב־Postgres; חובה UUID לפני insert אם אין ערך תקין. */
 function ensureDriverInsertId(row: Record<string, unknown>) {
@@ -48,7 +53,9 @@ async function updateDriverWithCompat(id: string, payload: Partial<Driver>) {
 }
 
 export function useDrivers() {
-  const { user, profile } = useAuth();
+  const { user, profile, hasPermission, isAdmin, isManager } = useAuth();
+  const canViewSensitive = canViewDriverSensitivePii({ profile, user, isAdmin, isManager, hasPermission });
+  const driverSelectList = canViewSensitive ? DRIVER_SELECT_ALL : DRIVER_SELECT_COLUMNS_PUBLIC;
   const {
     effectiveOrgId,
     isImpersonating,
@@ -63,6 +70,7 @@ export function useDrivers() {
     queryKey: [
       'drivers',
       orgId,
+      canViewSensitive,
       isImpersonating,
       isDriverContextOnly,
       impersonatedUserId,
@@ -72,53 +80,14 @@ export function useDrivers() {
     enabled: fleetListReady && orgId != null,
     queryFn: async () => {
       if (orgId == null) return [] as DriverSummary[];
-      let base = supabase.from('drivers').select('*').eq('org_id', orgId);
+      let base = supabase.from('drivers').select(driverSelectList).eq('org_id', orgId);
       if (isDriverContextOnly && impersonatedUserId) {
         base = base.eq('user_id', impersonatedUserId);
       }
       const { data, error } = await base.order('full_name');
 
       if (error) {
-        let fallbackQ = supabase.from('drivers').select(
-          [
-            'id',
-            'full_name',
-            'id_number',
-            'license_expiry',
-            'phone',
-            'email',
-            'address',
-            'city',
-            'birth_date',
-            'note1',
-            'note2',
-            'rating',
-            'job_title',
-            'department',
-            'employee_number',
-            'driver_code',
-            'division',
-            'area',
-            'group_name',
-            'group_code',
-            'safety_officer',
-            'eligibility',
-            'work_start_date',
-            'license_number',
-            'health_declaration_date',
-            'safety_training_date',
-            'regulation_585b_date',
-            'practical_driving_test_date',
-            'is_field_person',
-            'is_active',
-            'driving_permit',
-            'license_front_url',
-            'license_back_url',
-            'health_declaration_url',
-            'status',
-            'pending_license_expiry',
-          ].join(', '),
-        );
+        let fallbackQ = supabase.from('drivers').select(driverSelectList);
         fallbackQ = fallbackQ.eq('org_id', orgId);
         if (isDriverContextOnly && impersonatedUserId) {
           fallbackQ = fallbackQ.eq('user_id', impersonatedUserId);
@@ -188,27 +157,53 @@ function mapRowToDriverSummary(row: Record<string, unknown>): DriverSummary {
 }
 
 export function useDriver(id: string) {
-  const { user, profile } = useAuth();
+  const { user, profile, hasPermission, isAdmin, isManager } = useAuth();
+  const canViewSensitive = canViewDriverSensitivePii({ profile, user, isAdmin, isManager, hasPermission });
   const { effectiveOrgId, fleetListReady } = useImpersonationFleetScope();
 
   return useQuery({
-    queryKey: ['driver', id, effectiveOrgId ?? null, resolveSessionEmail(profile, user)],
+    queryKey: [
+      'driver',
+      id,
+      effectiveOrgId ?? null,
+      canViewSensitive,
+      user?.id ?? '',
+      resolveSessionEmail(profile, user),
+    ],
     enabled: !!id && effectiveOrgId != null && fleetListReady,
     refetchOnMount: 'always',
     queryFn: async () => {
       if (effectiveOrgId == null) return null;
-      // Trust RLS; fetch by id only.
-      const q = supabase.from('drivers').select('*').eq('id', id);
-      const { data, error } = await q.maybeSingle();
+      if (canViewSensitive) {
+        const { data, error } = await supabase.from('drivers').select(DRIVER_SELECT_ALL).eq('id', id).maybeSingle();
+        if (error) throw error;
+        return data as Driver | null;
+      }
+      const { data: partial, error } = await supabase
+        .from('drivers')
+        .select(DRIVER_SELECT_COLUMNS_PUBLIC)
+        .eq('id', id)
+        .maybeSingle();
       if (error) throw error;
-      return data as Driver | null;
+      if (!partial) return null;
+      const uid = String((partial as { user_id?: string | null }).user_id ?? '').trim();
+      if (uid && user?.id && uid === user.id) {
+        const { data: full, error: fullErr } = await supabase
+          .from('drivers')
+          .select(DRIVER_SELECT_ALL)
+          .eq('id', id)
+          .maybeSingle();
+        if (fullErr) throw fullErr;
+        return full as Driver | null;
+      }
+      return partial as Driver;
     },
   });
 }
 
 export function useCreateDriver() {
   const queryClient = useQueryClient();
-  const { activeOrgId, profile, user, isAdmin, isManager } = useAuth();
+  const { activeOrgId, profile } = useAuth();
 
   return useMutation({
     mutationFn: async (driver: Partial<Omit<Driver, 'id' | 'created_at' | 'updated_at' | 'status'>> & {
@@ -220,23 +215,6 @@ export function useCreateDriver() {
       const effectiveOrgId = activeOrgId ?? profile?.org_id;
       if (effectiveOrgId != null && row.org_id == null) {
         row.org_id = effectiveOrgId;
-      }
-      const permissions = (profile?.permissions ?? null) as Record<string, unknown> | null;
-      const creatorIsAdminLike =
-        isAdmin ||
-        isManager ||
-        profile?.is_system_admin === true ||
-        permissions?.admin_access === true ||
-        permissions?.manage_team === true;
-      // Admin-like creators own their rows; delegates inherit manager owner.
-      const ownerId = creatorIsAdminLike
-        ? (profile?.id || user?.id)
-        : (profile?.parent_admin_id?.trim() ||
-          profile?.managed_by_user_id?.trim() ||
-          profile?.id ||
-          user?.id);
-      if (ownerId != null && row.managed_by_user_id === undefined) {
-        row.managed_by_user_id = ownerId;
       }
       const { data, error } = await insertDriverWithCompat(row);
 

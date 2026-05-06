@@ -46,10 +46,9 @@ import { isFleetManagerProHostname } from '@/lib/versionManifest';
 import {
   isFleetOrgAdminFallbackEmail,
   isPlatformSuperOwnerEmail,
-  isRavidManagerEmail,
   resolveSessionEmail,
 } from '@/lib/fleetBootstrapEmails';
-import { FALLBACK_MAIN_FLEET_ORG_ID, RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
+import { FALLBACK_MAIN_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 import { isSuperAdminPermissionBypass } from '@/lib/allowedFeatures';
 import { resolveLogicalBackTarget } from '@/lib/appBackNavigation';
 import { isLikelyUuid } from '@/lib/fleetUuid';
@@ -181,13 +180,6 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   /** Gold header buttons (Roei Admin + Ravid Manager). */
   const canAccessGoldenManagementLinks = !isDriverOnlyHeader && (canManageOrgUi || canManageTeamUi);
-  const isRavid = isRavidManagerEmail(email);
-
-  /** נעילת org לרביד: תמיד UUID הצי של רביד (2bb0f9c3-… ברירת מחדל) — מנהל בלעדי, בלי נדידה לפי profile שגוי */
-  const ravidLockedTargetOrgId = useMemo(() => {
-    if (!isRavid) return null;
-    return RAVID_FLEET_ORG_ID;
-  }, [isRavid]);
 
   const mainFleetOrgId = useMemo(() => {
     const explicitMainFleet = memberOrganizations.find((o) => o.id === FALLBACK_MAIN_FLEET_ORG_ID);
@@ -212,15 +204,6 @@ export function AppLayout({ children }: AppLayoutProps) {
       setActiveOrgId(mainFleetOrgId);
     }
   }, [isMainAdmin, activeOrgId, mainFleetOrgId, setActiveOrgId]);
-
-  // Ensure Ravid is locked to his org and cannot switch orgs
-  useEffect(() => {
-    if (!isRavid) return;
-    const targetOrgId = ravidLockedTargetOrgId;
-    if (targetOrgId && activeOrgId !== targetOrgId) {
-      setActiveOrgId(targetOrgId);
-    }
-  }, [isRavid, ravidLockedTargetOrgId, activeOrgId, setActiveOrgId]);
 
   /** bootstrap בלי org בפרופיל — רק חשבון על: UUID הצי הראשי */
   useEffect(() => {

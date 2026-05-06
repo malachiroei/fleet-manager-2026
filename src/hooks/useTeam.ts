@@ -37,8 +37,6 @@ export interface TeamMemberSummary {
 export type UseTeamMembersOptions = {
   /** סופר־אדמין: טוען את כל ה-profiles; אחרת מסנן לפי org_id */
   loadAllOrgs?: boolean;
-  /** Subject system-admin flag (supports View As depth). */
-  subjectIsSystemAdmin?: boolean;
 };
 
 /**
@@ -48,32 +46,27 @@ export type UseTeamMembersOptions = {
 export function useTeamMembers(orgId: string | null | undefined, options?: UseTeamMembersOptions) {
   const { profile } = useAuth();
   const loadAllOrgs = options?.loadAllOrgs === true;
-  const subjectIsSystemAdmin = options?.subjectIsSystemAdmin === true;
 
   const enabled = Boolean(profile) && (loadAllOrgs || Boolean(orgId));
 
   return useQuery({
-    queryKey: [
-      ...TEAM_QUERY_KEY,
-      loadAllOrgs ? 'all-orgs' : 'org',
-      orgId ?? 'none',
-      subjectIsSystemAdmin ? 'sys-admin' : 'regular',
-      'scope-org',
-    ],
+    queryKey: [...TEAM_QUERY_KEY, loadAllOrgs ? 'all-orgs' : 'org', orgId ?? 'none', 'scope-org'],
     enabled,
     queryFn: async (): Promise<Profile[]> => {
       let q = supabase.from('profiles').select('*').order('full_name', { ascending: true });
-      if (!loadAllOrgs && orgId) {
-        // Trust RLS + org isolation: frontend should not attempt managed_by/parent_admin filtering.
-        q = q.eq('org_id', orgId);
-      }
-      if (!loadAllOrgs) {
-        if (subjectIsSystemAdmin) {
-          // System admins can see full org team, including unmanaged (NULL) rows.
-        } else {
+
+      if (loadAllOrgs) {
+        const { data, error } = await q;
+        if (error) {
+          console.error('Supabase Error (useTeamMembers):', error);
           return [];
         }
+        return (data ?? []) as Profile[];
       }
+
+      if (!orgId) return [];
+
+      q = q.eq('org_id', orgId);
       const { data, error } = await q;
       if (error) {
         console.error('Supabase Error (useTeamMembers):', error);
@@ -392,14 +385,7 @@ export function useApproveMember() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({
-      profileId,
-      parentAdminProfileId,
-    }: {
-      profileId: string;
-      /** profiles.id של המאשר — נשמר כ-parent_admin_id אצל המשתמש המאושר */
-      parentAdminProfileId: string | null;
-    }) => {
+    mutationFn: async ({ profileId }: { profileId: string }) => {
       const { data: existing, error: existingError } = await (supabase as any)
         .from('profiles')
         .select('permissions')
@@ -418,9 +404,6 @@ export function useApproveMember() {
         .update({
           status: 'active',
           permissions: nextPerms,
-          ...(parentAdminProfileId
-            ? { parent_admin_id: parentAdminProfileId, managed_by_user_id: parentAdminProfileId }
-            : {}),
           updated_at: new Date().toISOString(),
         })
         .eq('id', profileId)

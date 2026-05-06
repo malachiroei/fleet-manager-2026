@@ -1,18 +1,22 @@
 import { supabase } from '@/integrations/supabase/client';
+import { isLikelyUuid } from '@/lib/fleetUuid';
 
 /**
- * חשבון על שמזמין אדמין ארגון — חייב `org_id` של ארגון חדש ונפרד, לא של הארגון
- * שבו הוא צופה כרגע (למשל צי רביד).
+ * בעל פלטפורמה שמזמין אדמין: ארגון היעד הוא הארגון הפעיל במסך (`contextOrgId`), כדי שהמוזמן
+ * יקבל הרשאות אדמין רק על אותו צי. אם אין הקשר ארגון — נוצר ארגון חדש להשכרה נפרדת.
  */
 export async function resolveOrgIdForTeamInvite(options: {
   inviterIsPlatformOwner: boolean;
   inviteRole: 'admin' | 'driver';
-  /** ארגון הקשר ב-UI (מנהל צוות / מחליף ארגון) — משמש רק כשלא נוצר ארגון חדש */
+  /** ארגון הקשר ב-UI (מנהל צוות / מתג ארגון) — משמש רק כשלא נוצר ארגון חדש */
   contextOrgId: string;
   inviteEmail: string;
 }): Promise<{ orgId: string | null; error: string | null }> {
   const ctx = String(options.contextOrgId ?? '').trim();
   if (options.inviterIsPlatformOwner && options.inviteRole === 'admin') {
+    if (ctx && isLikelyUuid(ctx)) {
+      return { orgId: ctx, error: null };
+    }
     const local = options.inviteEmail.trim().toLowerCase().split('@')[0] || 'tenant';
     const pName = `צי ${local}`;
     const { data, error } = await (supabase as any).rpc('create_organization_for_platform_tenant', {

@@ -5,57 +5,50 @@ import { useAuth } from '@/hooks/useAuth';
 import { useViewAs } from '@/contexts/ViewAsContext';
 import {
   isPlatformSuperOwnerEmail,
-  isRavidManagerEmail,
   resolveSessionEmail,
-  RAVID_MANAGER_EMAIL,
 } from '@/lib/fleetBootstrapEmails';
-import { FALLBACK_MAIN_FLEET_ORG_ID, RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
+import { FALLBACK_MAIN_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
+import { resolveLockedFleetOrgIdForStaff } from '@/lib/resolveFleetScopeOrg';
 
-/**
- * הקשר לרשימות צי: org (כולל View As), נהג בלבד כשמוחלפים משתמש עם רק תפקיד נהג.
- * applyFleetManagerSlice: סינון managed_by בלקוח לכל משתמש שאינו מנהל־על/רביד (משלים ל־RLS).
- */
+/** תפקידים מועלים בצי — לזיהוי הקשר נהג־בלבד */
 function rolesIncludeFleetElevated(roles: string[]): boolean {
   const r = roles.map((x) => String(x).toLowerCase());
   return r.includes('admin') || r.includes('fleet_manager');
 }
 
 export function useImpersonationFleetScope() {
-  const { user, profile, activeOrgId, roles: loggedInRoles } = useAuth();
+  const { user, profile, activeOrgId, roles: loggedInRoles, memberOrganizations } = useAuth();
   const sessionEmail = resolveSessionEmail(profile, user);
+  const platformSuperOwner = isPlatformSuperOwnerEmail(sessionEmail);
+  const lockedFleetOrgIdForStaff = resolveLockedFleetOrgIdForStaff(profile, memberOrganizations);
+
   const { viewAsEmail, viewAsProfile } = useViewAs();
 
   const impersonatedUserId = (viewAsProfile?.id ?? viewAsProfile?.user_id ?? null) as string | null;
-  /** פרופיל נטען — טעינת תפקידי נהג/מנהל לפי המשתמש המוחלף */
   const isImpersonating = Boolean(viewAsEmail?.trim() && impersonatedUserId);
-  /** באנר תצוגה כ… פעיל (גם אם profiles עדיין לא נפתר בגלל RLS) */
+  /** באנר תצוגה כ… פעיל גם כשפרופיל המטרה עדיין לא נטען */
   const viewAsBannerActive = Boolean(viewAsEmail?.trim());
-  const viewAsNorm = (viewAsEmail ?? '').trim().toLowerCase();
-  const sessionNorm = resolveSessionEmail(profile, user);
-  const viewAsActive = Boolean((viewAsEmail ?? '').trim());
   /**
-   * נעילה ל־RAVID_FLEET_ORG_ID רק כשאין תצוגה כמשתמש אחר (רביד «עצמו»), או כשהתצוגה היא כרביד.
-   * אחרת: כש־רביד בתצוגה כרועי — `sessionNorm` עדיין רביד ואסור לכפות את ארגון רביד (אחרת נשארת שורת
-   * הפרופיל של רביד בניהול צוות במקום צו המשנה).
+   * נתוני צי: בעל פלטפורמה משתמש ב-activeOrgId (מתג ארגון). כל השאר נעולים ל-profiles.org_id —
+   * ה-RLS מסנן עומק; אין סינון managed_by בלקוח.
    */
-  const forceRavidFleetOrg =
-    viewAsNorm === RAVID_MANAGER_EMAIL ||
-    (sessionNorm === RAVID_MANAGER_EMAIL && !viewAsActive);
-  const orgFromContext = (
-    (forceRavidFleetOrg ? RAVID_FLEET_ORG_ID : null) ??
-    activeOrgId ??
-    viewAsProfile?.org_id ??
-    null
-  ) as string | null;
-  /** בלי org בפרופיל/מחליף — בעלי bootstrap נופלים לצי הראשי הידוע (אותו UUID כמו במחליף) */
+  const viewAsOrgTrim = ((viewAsProfile?.org_id ?? '').trim() || null) as string | null;
+
   const effectiveOrgId =
-    orgFromContext ?? (isPlatformSuperOwnerEmail(sessionEmail) ? FALLBACK_MAIN_FLEET_ORG_ID : null);
+    platformSuperOwner
+      ? (((activeOrgId ?? '').trim() ||
+          viewAsOrgTrim ||
+          lockedFleetOrgIdForStaff ||
+          FALLBACK_MAIN_FLEET_ORG_ID) as string)
+      : (lockedFleetOrgIdForStaff ??
+          viewAsOrgTrim ??
+          ((activeOrgId ?? '').trim() || null));
 
   const effectiveUserId = (impersonatedUserId ?? user?.id ?? null) as string | null;
 
-  /** בעלי צי ידועים: בלי impersonation מלא (או בלי באנר) — אפשר מסלול בלי org ב-query enable */
+  /** בעל פלטפורמה בלי impersonation ובלי באנר — מאפשר שאילתות לפני ש-activeOrgId הוגדר במלואו */
   const bootstrapOwnerMayLackOrg =
-    isPlatformSuperOwnerEmail(sessionEmail) && !isImpersonating && !viewAsBannerActive;
+    platformSuperOwner && !isImpersonating && !viewAsBannerActive;
 
   const rolesQuery = useQuery({
     queryKey: ['view-as-target-roles', effectiveUserId, isImpersonating],
@@ -80,8 +73,11 @@ export function useImpersonationFleetScope() {
   const loggedInDriverContextOnly = useMemo(() => {
     if (isImpersonating) return false;
     if (loggedInRolesNorm.length === 0) return false;
-    const hasDriver = loggedInRolesNorm.includes('driver') || loggedInRolesNorm.includes('employee') || loggedInRolesNorm.includes('viewer');
-    const hasElevated = loggedInRolesNorm.includes('admin') || loggedInRolesNorm.includes('fleet_manager');
+    const hasDriver =
+      loggedInRolesNorm.includes('driver') ||
+      loggedInRolesNorm.includes('employee') ||
+      loggedInRolesNorm.includes('viewer');
+    const hasElevated = rolesIncludeFleetElevated(loggedInRolesNorm);
     return hasDriver && !hasElevated;
   }, [isImpersonating, loggedInRolesNorm]);
 
@@ -90,8 +86,9 @@ export function useImpersonationFleetScope() {
     if (!rolesQuery.isFetched) return false;
     const roles = rolesQuery.data ?? [];
     if (roles.length === 0) return false;
-    const hasDriver = roles.includes('driver') || roles.includes('employee') || roles.includes('viewer');
-    const hasElevated = roles.includes('admin') || roles.includes('fleet_manager');
+    const hasDriver =
+      roles.includes('driver') || roles.includes('employee') || roles.includes('viewer');
+    const hasElevated = rolesIncludeFleetElevated(roles);
     return hasDriver && !hasElevated;
   }, [isImpersonating, rolesQuery.data, rolesQuery.isFetched]);
 
@@ -127,7 +124,7 @@ export function useImpersonationFleetScope() {
     (!isDriverContextOnly || !driverScopePending);
 
   return {
-    effectiveOrgId,
+    effectiveOrgId: effectiveOrgId as string | null,
     effectiveUserId,
     impersonatedUserId,
     isImpersonating,

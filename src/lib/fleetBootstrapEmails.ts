@@ -1,6 +1,9 @@
 /** חשבון על (מנהל פלטפורמה) — יחיד; אין לוותר עליו עם אימיילים של מנהלי ארגון. */
 export const PLATFORM_SUPER_OWNER_EMAIL = 'malachiroei@gmail.com';
 
+/** auth.users.id / profiles.id של בעל הפלטפורמה — תואם מיגרציית RLS `is_platform_super_admin`. */
+export const PLATFORM_SUPER_OWNER_USER_ID = '200ebcdd-9900-4e74-88fd-1ff3993e5f3e';
+
 /** מנהל צי — תצוגה כמשתמש / ארגון נפרד מהצי הראשי */
 export const RAVID_MANAGER_EMAIL = 'ravidmalachi@gmail.com';
 
@@ -32,6 +35,12 @@ export function isPlatformSuperOwnerEmail(email: string | null | undefined): boo
     .trim()
     .toLowerCase();
   return e === PLATFORM_SUPER_OWNER_EMAIL.toLowerCase();
+}
+
+/** התאמת auth uid לבעל פלטפורמה — מונע טעינת פרופיל/ארגון מעורבבים עם session. */
+export function isPlatformSuperOwnerUserId(userId: string | null | undefined): boolean {
+  const u = String(userId ?? '').trim().toLowerCase();
+  return u.length > 0 && u === PLATFORM_SUPER_OWNER_USER_ID.toLowerCase();
 }
 
 /**

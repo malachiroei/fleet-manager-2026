@@ -6,17 +6,26 @@ import { hasPermission as checkPermission, type PermissionKey } from '@/lib/perm
 import {
   isFleetOrgAdminFallbackEmail,
   isPlatformSuperOwnerEmail,
-  isRavidManagerEmail,
   resolveSessionEmail,
 } from '@/lib/fleetBootstrapEmails';
-import { FALLBACK_MAIN_FLEET_ORG_ID, RAVID_FLEET_ORG_ID } from '@/lib/fleetDefaultOrg';
 import { isLikelyUuid } from '@/lib/fleetUuid';
 import { toast } from 'sonner';
 import { clearFleetProUpdateModalSuppressFlag } from '@/lib/pwaUpdateModalBridge';
 import { readViewAsActiveFromSession, setViewAsActiveSession } from '@/lib/viewAsSessionBridge';
 import { isFleetManagerProHostname } from '@/lib/versionManifest';
+import { resolveLockedFleetOrgIdForStaff } from '@/lib/resolveFleetScopeOrg';
+import {
+  isTransientAuthStorageOrAbortError,
+  sleep,
+  stableAuthGetSession,
+  stableAuthGetUser,
+  withAuthLockRetries,
+} from '@/lib/authBootstrapRetry';
 
 const ACTIVE_ORG_STORAGE_KEY = 'fleet-manager-active-org';
+
+/** למניעת עדכוני state מתוך הרצת bootstrap ישנה (Strict Mode). */
+let authBootstrapEpoch = 0;
 
 function resolveSignUpEmailRedirectUrl(): string {
   if (typeof window === 'undefined') return 'https://fleet-manager-pro.com/auth';
@@ -24,17 +33,9 @@ function resolveSignUpEmailRedirectUrl(): string {
   return `${window.location.origin}/auth`;
 }
 
-/** ארגון פעיל לפי `profiles` + חריג לרביד (זהה לאתחול `activeOrgId`). */
-function resolveProfileOrgIdForActiveSession(profile: Profile | null, user: User | null): string | null {
-  const rawProfileOrgId = profile?.org_id?.trim() || null;
-  const sessionEmailForOrg = resolveSessionEmail(profile, user);
-  if (
-    isRavidManagerEmail(sessionEmailForOrg) &&
-    (!rawProfileOrgId || rawProfileOrgId === FALLBACK_MAIN_FLEET_ORG_ID)
-  ) {
-    return RAVID_FLEET_ORG_ID;
-  }
-  return rawProfileOrgId;
+/** ארגון ראשי מהפרופיל בלבד — מנהלי צי נעולים ל־`profiles.org_id`; רק בעל הפלטפורמה מחליף ארגון ב־UI. */
+function resolveProfileOrgIdForActiveSession(profile: Profile | null): string | null {
+  return profile?.org_id?.trim() || null;
 }
 
 /** מונע טעינת פרופיל כפולה ב־React Strict Mode (אפקט ×2) לאותו משתמש. */
@@ -133,22 +134,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [profile]);
 
   const fetchUserRoles = useCallback(async (userId: string) => {
-    // Roles are defined globally in `user_roles`.
-    const { data, error } = await (supabase as any)
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', userId);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const { data, error } = await (supabase as any)
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', userId);
 
-    if (error) {
-      console.warn('[Auth] user_roles fetch failed', { message: error.message });
-      setRoles([]);
-      return;
-    }
-
-    if (data) {
-      setRoles((data ?? []).map((r: { role: AppRole }) => r.role));
-    } else {
-      setRoles([]);
+      if (!error) {
+        if (data) {
+          setRoles((data ?? []).map((r: { role: AppRole }) => r.role));
+        } else {
+          setRoles([]);
+        }
+        return;
+      }
+      const retryable =
+        isTransientAuthStorageOrAbortError(error) || /lock broken|abort/i.test(String(error.message ?? ''));
+      if (!retryable || attempt === 4) {
+        console.warn('[Auth] user_roles fetch failed', { message: (error as { message?: string }).message });
+        setRoles([]);
+        return;
+      }
+      await sleep(50 * (attempt + 1) * (attempt + 1));
     }
   }, []);
 
@@ -187,16 +194,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       | null = null;
     try {
-      const queryRes = await supabase
-        .from('profiles')
-        .select(PROFILE_SELECT_STAR)
-        .eq('id', userId)
-        .single();
+      const queryRes = await withAuthLockRetries(async () => {
+        const qr = await supabase
+          .from('profiles')
+          .select(PROFILE_SELECT_STAR)
+          .eq('id', userId)
+          .single();
+        const e = qr.error as { message?: string; code?: string } | null | undefined;
+        if (e != null && isTransientAuthStorageOrAbortError(e)) {
+          throw new Error(String(e.message ?? 'profiles transient'));
+        }
+        return qr;
+      }, 5);
       res = {
         data: (queryRes?.data as Profile | null) ?? null,
         error: (queryRes?.error as { message?: string; code?: string } | null) ?? null,
       };
     } catch (e) {
+      const msg = String((e as Error)?.message ?? e ?? '');
+      if (isTransientAuthStorageOrAbortError(e) || /lock broken|abort/i.test(msg)) {
+        const authData = await stableAuthGetUser(supabase);
+        const email =
+          authData?.data?.user?.id === userId ? (authData.data.user.email ?? null) : null;
+        applyPersonalRow(buildPersonalProfilePlaceholder(userId, email, 'profile_fetch_error'));
+        return;
+      }
       const err = e as { message?: string; code?: string } | null;
       res = {
         data: null,
@@ -208,7 +230,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     if (!res?.error && res?.data) {
-      applyPersonalRow(res.data as Profile);
+      const row = res.data as Profile;
+      if (String(row.id ?? '').trim() !== userId) {
+        console.error('[Auth] profiles.id mismatches auth uid — refusing row', {
+          authUid: userId,
+          rowId: row.id,
+        });
+        const { data: authData } = await stableAuthGetUser(supabase);
+        const email =
+          authData?.user?.id === userId ? (authData.user.email ?? null) : null;
+        applyPersonalRow(buildPersonalProfilePlaceholder(userId, email, 'profile_identity_mismatch'));
+        return;
+      }
+      applyPersonalRow(row);
       return;
     }
 
@@ -219,7 +253,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       code === 'PGRST116' || /no rows|0 rows/i.test(msg) || /multiple rows/i.test(msg);
 
     if (noRow) {
-      const { data: authData } = await supabase.auth.getUser();
+      const { data: authData } = await stableAuthGetUser(supabase);
       const email =
         authData?.user?.id === userId ? (authData.user.email ?? null) : null;
       console.warn('[Auth] no profiles row for auth uid — using placeholder until row exists', { userId });
@@ -232,7 +266,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (prev?.id === userId) {
       return;
     }
-    const { data: authData } = await supabase.auth.getUser();
+    const { data: authData } = await stableAuthGetUser(supabase);
     const email =
       authData?.user?.id === userId ? (authData.user.email ?? null) : null;
     applyPersonalRow(buildPersonalProfilePlaceholder(userId, email, 'profile_fetch_error'));
@@ -242,6 +276,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   fetchProfileRef.current = fetchProfile;
 
   const fetchMemberOrganizations = useCallback(async (userId: string, fallbackOrgId?: string | null) => {
+    const { data: authSelf } = await stableAuthGetUser(supabase);
+    if (authSelf?.user?.id === userId && isPlatformSuperOwnerEmail(resolveSessionEmail(null, authSelf.user))) {
+      const catalog = (await withAuthLockRetries(
+        () => (supabase as any).from('organizations').select('id, name').order('name'),
+        4,
+      )) as { data: unknown; error: { message?: string } | null };
+      const catRows = (catalog?.data as Array<{ id: string; name: string }> | null) ?? null;
+      if (!catalog.error && catRows && catRows.length > 0) {
+        setMemberOrganizations(
+          catRows.slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })),
+        );
+        return;
+      }
+    }
+
     let rows: Array<{ org_id: string }> | null = null;
     let memError: { message?: string } | null = null;
     try {
@@ -268,7 +317,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let orgs: Array<{ id: string; name: string }> | null = null;
     let orgError: { message?: string } | null = null;
     try {
-      const orgRes = await supabase
+      const orgRes = await (supabase as any)
         .from('organizations')
         .select('id, name')
         .in('id', orgIds);
@@ -340,11 +389,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // User metadata updates: refresh in the background without the full-screen auth gate.
         if (event === 'USER_UPDATED') {
           void (async () => {
-            await Promise.allSettled([
-              fetchUserRoles(session.user.id),
-              fetchProfileRef.current(session.user.id),
-              fetchMemberOrganizations(session.user.id),
-            ]);
+            await fetchUserRoles(session.user.id);
+            await fetchProfileRef.current(session.user.id);
+            await fetchMemberOrganizations(session.user.id);
           })();
           return;
         }
@@ -352,38 +399,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(true);
         setTimeout(() => {
           void (async () => {
-            await Promise.allSettled([
-              fetchUserRoles(session.user.id),
-              fetchProfileRef.current(session.user.id),
-              fetchMemberOrganizations(session.user.id),
-            ]);
-            setLoading(false);
+            try {
+              await fetchUserRoles(session.user.id);
+              await fetchProfileRef.current(session.user.id);
+              await fetchMemberOrganizations(session.user.id);
+            } finally {
+              setLoading(false);
+            }
           })();
         }, 0);
       }
     );
 
     void (async () => {
+      const epoch = ++authBootstrapEpoch;
       try {
-        const sessionRes = await supabase.auth.getSession();
+        const sessionRes = await stableAuthGetSession(supabase);
         const session = sessionRes?.data?.session ?? null;
+        if (epoch !== authBootstrapEpoch) return;
+
         setSession(session);
         setUser(session?.user ?? null);
 
         if (session?.user) {
           if (authBootstrapLastUserId !== session.user.id) {
-            await Promise.allSettled([
-              fetchUserRoles(session.user.id),
-              fetchProfileRef.current(session.user.id),
-              fetchMemberOrganizations(session.user.id),
-            ]);
+            await fetchUserRoles(session.user.id);
+            if (epoch !== authBootstrapEpoch) return;
+            await fetchProfileRef.current(session.user.id);
+            if (epoch !== authBootstrapEpoch) return;
+            await fetchMemberOrganizations(session.user.id);
+            if (epoch !== authBootstrapEpoch) return;
             authBootstrapLastUserId = session.user.id;
           }
         } else {
           authBootstrapLastUserId = null;
         }
       } finally {
-        setLoading(false);
+        if (epoch === authBootstrapEpoch) {
+          setLoading(false);
+        }
       }
     })();
 
@@ -418,14 +472,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
       const inviteRole = String(inv.role ?? '').trim().toLowerCase();
       const resolvedRole = inviteRole === 'admin' ? 'admin' : 'driver';
-      const inviterId = String(inv.invited_by ?? '').trim() || null;
-      /** אדמין ארגוני מהזמנת חשבון על — לא נשמר תחת המזמין בהיררכיית צוות */
-      const managerFromInvite =
-        resolvedRole === 'admin'
-          ? { parent_admin_id: null, managed_by_user_id: null }
-          : inviterId
-            ? { parent_admin_id: inviterId, managed_by_user_id: inviterId }
-            : {};
       const { error: upsertError } = await (supabase as any)
         .from('profiles')
         .upsert(
@@ -436,7 +482,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             org_id: inv.org_id,
             role: resolvedRole,
             permissions: inv.permissions ?? {},
-            ...managerFromInvite,
             status: 'active',
             updated_at: new Date().toISOString(),
           },
@@ -484,17 +529,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!user) return;
     if (profile === null) return;
     if (activeOrgInitializedRef.current) return;
-    const rawProfileOrgId = profile.org_id?.trim() || null;
     const sessionEmailForOrg = resolveSessionEmail(profile, user);
-    const profileOrgIdForActive = resolveProfileOrgIdForActiveSession(profile, user);
-    if (memberOrganizations.length === 0 && !profileOrgIdForActive) return;
+    const profileOrgIdForActive = resolveProfileOrgIdForActiveSession(profile);
 
-    const orgKnown = (id: string | null | undefined) =>
-      Boolean(id) && memberOrganizations.some((o) => o.id === id);
-    const profileInMembers =
-      Boolean(profileOrgIdForActive) &&
-      memberOrganizations.some((o) => o.id === profileOrgIdForActive);
-    const delegated = Boolean(profile.parent_admin_id?.trim());
+    if (!isPlatformSuperOwnerEmail(sessionEmailForOrg)) {
+      if (memberOrganizations.length === 0 && !profileOrgIdForActive) return;
+      activeOrgInitializedRef.current = true;
+      setActiveOrgId(profileOrgIdForActive ?? memberOrganizations[0]?.id ?? null);
+      return;
+    }
+
+    if (memberOrganizations.length === 0 && !profileOrgIdForActive) return;
 
     let stored: string | null = null;
     try {
@@ -504,9 +549,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const storedTrim = (stored ?? '').trim();
 
+    const orgKnown = (id: string | null | undefined) =>
+      Boolean(id) && memberOrganizations.some((o) => o.id === id);
+
     activeOrgInitializedRef.current = true;
 
-    /** חברות יחידה — תמיד הארגון הזה (מנקה localStorage ישן / UUID של צי ראשי). */
     if (memberOrganizations.length === 1) {
       const onlyId = memberOrganizations[0]?.id ?? null;
       if (onlyId) {
@@ -515,35 +562,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    /** משתמש תחת מנהל: `profiles.org_id` הוא מקור האמת מול מפתח שמור מארגון אחר. */
-    if (delegated && profileInMembers && profileOrgIdForActive && storedTrim !== profileOrgIdForActive) {
-      setActiveOrgId(profileOrgIdForActive);
+    if (storedTrim && orgKnown(storedTrim)) {
+      setActiveOrgId(storedTrim);
       return;
     }
-
-    /**
-     * לא בעלי bootstrap: אם נשמר בדפדפן «צי ראשי» אבל בפרופיל כבר ארגון אחר שהמשתמש חבר בו —
-     * לא לבחור את הצי הראשי רק כי הוא עדיין ב־org_members (למשל לפני ניקוי כפילות ב-DB).
-     */
-    if (
-      !isPlatformSuperOwnerEmail(sessionEmailForOrg) &&
-      profileInMembers &&
-      profileOrgIdForActive &&
-      profileOrgIdForActive !== FALLBACK_MAIN_FLEET_ORG_ID &&
-      storedTrim === FALLBACK_MAIN_FLEET_ORG_ID
-    ) {
+    if (profileOrgIdForActive && orgKnown(profileOrgIdForActive)) {
       setActiveOrgId(profileOrgIdForActive);
-      return;
-    }
-
-    const wrongMainStoredForRavid =
-      isRavidManagerEmail(sessionEmailForOrg) && stored === FALLBACK_MAIN_FLEET_ORG_ID;
-    const validStored =
-      !wrongMainStoredForRavid &&
-      Boolean(stored) &&
-      (orgKnown(stored) || stored === rawProfileOrgId || stored === profileOrgIdForActive);
-    if (validStored && stored) {
-      setActiveOrgId(stored);
       return;
     }
     if (profileOrgIdForActive) {
@@ -555,63 +579,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user, profile, memberOrganizations, profile?.org_id, setActiveOrgId]);
 
-  /**
-   * אחרי שינוי `org_members` / `profiles.org_id` בשרת — הרשימה בזיכרון מתעדכנת אבל `activeOrgId` עלול
-   * להישאר על ארגון שהמשתמש כבר לא חבר בו (localStorage + רשימה ישנה לפני Realtime).
-   */
-  useEffect(() => {
-    if (!user) return;
-    if (!activeOrgId) return;
-    if (memberOrganizations.length === 0) return;
-    const known = memberOrganizations.some((o) => o.id === activeOrgId);
-    if (known) return;
-    if (readViewAsActiveFromSession()) return;
-    const preferredId = resolveProfileOrgIdForActiveSession(profile, user);
-    if (
-      preferredId &&
-      activeOrgId === preferredId &&
-      !memberOrganizations.some((o) => o.id === preferredId)
-    ) {
-      return;
-    }
-    const preferred =
-      preferredId && memberOrganizations.some((o) => o.id === preferredId)
-        ? preferredId
-        : memberOrganizations[0]?.id ?? null;
-    if (preferred && preferred !== activeOrgId) {
-      setActiveOrgId(preferred);
-    }
-  }, [user, profile, activeOrgId, memberOrganizations, setActiveOrgId]);
-
-  /**
-   * `activeOrgId` על צי ראשי (localStorage) אבל `profiles.org_id` כבר ארגון אחר — למשל כש־RLS על org_members
-   * לא מחזיר את הארגון החדש ו־`profileInMembers` נכשל באתחול הראשי.
-   */
+  /** מנהלי צי: `activeOrgId` נעול לארגון הצי (פרופיל או org_members), לא רק ל־profiles.org_id כשהם חרגו. */
   useEffect(() => {
     if (!user || !profile) return;
     if (readViewAsActiveFromSession()) return;
-    const sessionEmail = resolveSessionEmail(profile, user);
-    if (isPlatformSuperOwnerEmail(sessionEmail)) return;
-    const pid = resolveProfileOrgIdForActiveSession(profile, user);
-    if (!pid || pid === FALLBACK_MAIN_FLEET_ORG_ID) return;
-    if (activeOrgId !== FALLBACK_MAIN_FLEET_ORG_ID) return;
-    setActiveOrgId(pid);
-  }, [user, profile, activeOrgId, setActiveOrgId]);
-
-  /**
-   * משתמש עם חברות בארגון יחיד — מסנכרן localStorage / active שגוי.
-   * לא כופים כש־activeOrgId שייך לארגון שלא ברשימה (למשל תצוגה כמשתמש אחר — ארגון המוחלף).
-   */
-  useEffect(() => {
-    if (!user?.id) return;
-    if (memberOrganizations.length !== 1) return;
-    const onlyId = memberOrganizations[0]?.id;
-    if (!onlyId) return;
-    if (activeOrgId === onlyId) return;
-    if (activeOrgId === RAVID_FLEET_ORG_ID) return;
-    if (activeOrgId && !memberOrganizations.some((o) => o.id === activeOrgId)) return;
-    setActiveOrgId(onlyId);
-  }, [user?.id, memberOrganizations, activeOrgId, profile, user, setActiveOrgId]);
+    if (isPlatformSuperOwnerEmail(resolveSessionEmail(profile, user))) return;
+    const target = resolveLockedFleetOrgIdForStaff(profile, memberOrganizations);
+    if (!target) return;
+    if (activeOrgId !== target) {
+      setActiveOrgId(target);
+    }
+  }, [user, profile, activeOrgId, memberOrganizations, setActiveOrgId]);
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -643,7 +621,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const now = new Date().toISOString();
         const { data: inviteRows } = await (supabase as any)
           .from('org_invitations')
-          .select('org_id, permissions, invited_by, role')
+          .select('org_id, permissions, role')
           .eq('email', userEmail)
           .order('created_at', { ascending: false })
           .limit(1);
@@ -651,20 +629,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           | {
               org_id?: string | null;
               permissions?: unknown;
-              invited_by?: string | null;
               role?: string | null;
             }
           | null;
-        const inviterId = String(inv?.invited_by ?? '').trim() || null;
         const inviteOrgId = String(inv?.org_id ?? '').trim() || null;
         const inviteRole = String(inv?.role ?? '').trim().toLowerCase();
         const resolvedRole = inviteRole === 'admin' ? 'admin' : 'driver';
-        const managerFromInvite =
-          resolvedRole === 'admin'
-            ? { parent_admin_id: null, managed_by_user_id: null }
-            : inviterId
-              ? { parent_admin_id: inviterId, managed_by_user_id: inviterId }
-              : {};
 
         const profilePayload: Record<string, unknown> = {
           id: userId,
@@ -674,7 +644,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           created_at: now,
           updated_at: now,
           ...(inviteOrgId ? { org_id: inviteOrgId, role: resolvedRole } : {}),
-          ...managerFromInvite,
           ...(inv?.permissions != null ? { permissions: inv.permissions } : {}),
         };
         const { error: profileError } = await (supabase as any)
@@ -748,7 +717,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   /**
    * כש־user_roles ריק בפרו: חשבון על (מלכי) או מנהל צי רביד — תמיד כ-admin ל-UI.
-   * רביד נעול לארגון `RAVID_FLEET_ORG_ID` ב־AppLayout (לא תלוי ב-member/driver בטבלאות).
+   * מנהלי צי נשענים על `profiles.org_id` + RLS; מתג ארגון בכותרת רק לבעל הפלטפורמה.
    */
   const sessionEmailResolved = resolveSessionEmail(profile, user);
   const isAdminEffective =

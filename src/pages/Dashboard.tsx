@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useDashboardStats, useComplianceAlerts } from '@/hooks/useDashboard';
+import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
 import { useFeatureFlags } from '@/hooks/useFeatureFlags';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useAuth } from '@/hooks/useAuth';
@@ -189,6 +190,7 @@ export default function Dashboard() {
     loading,
     activeOrgId,
   } = useAuth();
+  const { effectiveOrgId } = useImpersonationFleetScope();
   const { viewAsEmail } = useViewAs();
   const { isPending: flagsPending } = useFeatureFlags();
   const { canAccessUi } = usePermissions();
@@ -200,11 +202,24 @@ export default function Dashboard() {
   const isStatsLoading = isLoading || !stats;
   const isInitialUiLoading = loading || flagsPending;
 
+  const dashboardScopeRemountKey = useMemo(
+    () =>
+      [user?.id ?? '', profile?.org_id ?? '', activeOrgId ?? '', effectiveOrgId ?? '', (viewAsEmail ?? '').trim()].join(
+        '|',
+      ),
+    [user?.id, profile?.org_id, activeOrgId, effectiveOrgId, viewAsEmail],
+  );
+
   const scopeRefreshKeyRef = useRef<string | null>(null);
   const scopeInvalidateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (!activeOrgId && !viewAsEmail?.trim()) return;
-    const key = `${activeOrgId ?? ''}|${(viewAsEmail ?? '').trim()}`;
+    const key = [
+      user?.id ?? '',
+      activeOrgId ?? '',
+      profile?.org_id ?? '',
+      effectiveOrgId ?? '',
+      (viewAsEmail ?? '').trim(),
+    ].join('|');
     if (scopeRefreshKeyRef.current === key) return;
     scopeRefreshKeyRef.current = key;
     if (scopeInvalidateTimerRef.current != null) {
@@ -393,7 +408,10 @@ export default function Dashboard() {
       <div className="dashboard-cyber-vignette select-none" aria-hidden />
       <div className="dashboard-cyber-grid select-none" aria-hidden />
 
-      <div className="container relative z-[2] mx-auto max-w-[1920px] space-y-3 md:space-y-4 py-2.5 md:py-3 pb-10 sm:pb-8 [@media(max-height:820px)]:py-1 [@media(max-height:820px)]:pb-4 [@media(max-height:820px)]:space-y-2">
+      <div
+        key={dashboardScopeRemountKey}
+        className="container relative z-[2] mx-auto max-w-[1920px] space-y-3 md:space-y-4 py-2.5 md:py-3 pb-10 sm:pb-8 [@media(max-height:820px)]:py-1 [@media(max-height:820px)]:pb-4 [@media(max-height:820px)]:space-y-2"
+      >
       <div className="hidden xl:block [@media(max-height:820px)]:hidden dashboard-hud-header-card rounded-2xl sm:rounded-3xl border-t border-l border-white/[0.16] border-b border-r border-black/55 p-3 sm:p-4 md:p-5 relative overflow-hidden">
         <div className="hud-status-card-carbon pointer-events-none absolute inset-0 rounded-3xl opacity-50" aria-hidden />
         <div className="relative flex items-center justify-between gap-4">
