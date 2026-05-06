@@ -118,11 +118,11 @@ function StatusCard({
   return (
     <Link
       to={link}
-      className="block group cursor-pointer touch-manipulation min-w-0 relative z-10 min-h-[7.25rem] sm:min-h-[8rem] md:min-h-[8.5rem]"
+      className="block group cursor-pointer touch-manipulation min-w-0 relative z-10 min-h-[7.25rem] sm:min-h-[8rem] md:min-h-[8.5rem] xl:min-h-[11rem]"
       style={{ touchAction: 'manipulation', pointerEvents: 'auto' }}
     >
       <div
-        className={`dashboard-cyber-status-card hud-status-card-surface status-card status-card--${theme} relative h-[7.25rem] sm:h-32 md:h-36 w-full rounded-2xl sm:rounded-3xl p-2 sm:p-2.5 flex flex-col items-center justify-between hover:scale-[1.02] hover:-translate-y-0.5 overflow-hidden transition-all duration-300 border-t border-l border-white/[0.18] border-b border-r border-black/60 backdrop-blur-md ${glowClass}`}
+        className={`dashboard-cyber-status-card hud-status-card-surface status-card status-card--${theme} relative h-[7.25rem] sm:h-32 md:h-36 xl:h-56 w-full rounded-2xl sm:rounded-3xl p-2 sm:p-2.5 xl:p-4 flex flex-col items-center justify-between hover:scale-[1.02] hover:-translate-y-0.5 overflow-hidden transition-all duration-300 border-t border-l border-white/[0.18] border-b border-r border-black/60 backdrop-blur-md ${glowClass}`}
         style={{ pointerEvents: 'none' } as React.CSSProperties}
       >
         <div className="hud-status-card-carbon pointer-events-none absolute inset-0 rounded-3xl opacity-85" aria-hidden />
@@ -132,12 +132,12 @@ function StatusCard({
           aria-hidden
         />
 
-        <div className="relative z-10 mt-0.5 flex flex-col items-center gap-1.5">
+        <div className="relative z-10 mt-0.5 flex flex-col items-center gap-1.5 xl:gap-2">
           <div
-            className={`status-card-icon-box dashboard-cyber-icon-dish inline-flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-2xl border bg-slate-950/65 backdrop-blur-md ${theme === 'blue' ? 'border-[#00f2ff]/55' : theme === 'purple' ? 'border-violet-400/50' : theme === 'orange' ? 'border-[#ff4d00]/65' : 'border-teal-400/50'}`}
+            className={`status-card-icon-box dashboard-cyber-icon-dish inline-flex h-11 w-11 sm:h-12 sm:w-12 xl:h-14 xl:w-14 items-center justify-center rounded-2xl border bg-slate-950/65 backdrop-blur-md ${theme === 'blue' ? 'border-[#00f2ff]/55' : theme === 'purple' ? 'border-violet-400/50' : theme === 'orange' ? 'border-[#ff4d00]/65' : 'border-teal-400/50'}`}
           >
             <Icon
-              className={`h-6 w-6 sm:h-7 sm:w-7 ${iconStroke}`}
+              className={`h-6 w-6 sm:h-7 sm:w-7 xl:h-8 xl:w-8 ${iconStroke}`}
               strokeWidth={1.35}
               aria-hidden
             />
@@ -149,7 +149,7 @@ function StatusCard({
 
         {value !== '' && (
           <div className="relative z-10 text-center">
-            <p className="hud-kpi-value text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight text-white tabular-nums">
+            <p className="hud-kpi-value text-2xl sm:text-3xl md:text-4xl xl:text-5xl font-bold tracking-tight text-white tabular-nums">
               {value}
             </p>
           </div>
@@ -394,8 +394,8 @@ export default function Dashboard() {
       <div className="dashboard-cyber-vignette select-none" aria-hidden />
       <div className="dashboard-cyber-grid select-none" aria-hidden />
 
-      <div className="container relative z-[2] mx-auto max-w-[1600px] space-y-3 md:space-y-4 py-2.5 md:py-3 pb-10 sm:pb-8">
-      <div className="hidden lg:block dashboard-hud-header-card rounded-2xl sm:rounded-3xl border-t border-l border-white/[0.16] border-b border-r border-black/55 p-3 sm:p-4 md:p-5 relative overflow-hidden">
+      <div className="container relative z-[2] mx-auto max-w-[1920px] space-y-3 md:space-y-4 py-2.5 md:py-3 pb-10 sm:pb-8">
+      <div className="hidden xl:block dashboard-hud-header-card rounded-2xl sm:rounded-3xl border-t border-l border-white/[0.16] border-b border-r border-black/55 p-3 sm:p-4 md:p-5 relative overflow-hidden">
         <div className="hud-status-card-carbon pointer-events-none absolute inset-0 rounded-3xl opacity-50" aria-hidden />
         <div className="relative flex items-center justify-between gap-4">
           <div className="min-w-0 flex-1">
@@ -448,7 +448,7 @@ export default function Dashboard() {
         </Card>
       )}
 
-      <section className="dashboard-status-stage dashboard-cyber-stage p-3 sm:p-4 md:p-6 pb-4 space-y-4 relative z-[20]">
+      <section className="dashboard-status-stage dashboard-cyber-stage p-3 sm:p-4 md:p-6 xl:p-8 pb-4 space-y-4 xl:space-y-6 relative z-[20]">
         {isStatsLoading ? (
           <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             {[1, 2, 3, 4].map((i) => (

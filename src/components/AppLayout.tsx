@@ -673,24 +673,12 @@ export function AppLayout({ children }: AppLayoutProps) {
         ) : null}
       </nav>
 
-      {/* דף הבית במובייל/מסכים קטנים: כותרת קומפקטית במקום כרטיס Hero גדול */}
+      {/* דף הבית במובייל/מסכים קטנים: בלי "מלבן לוח בקרה" — רק שורת כותרת קצרה */}
       {isHomeActive ? (
-        <div className="pt-2 pb-1">
-          <div className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/25 px-3 py-2">
-            <div className="min-w-0">
-              <div className="text-sm font-bold text-white">לוח בקרה</div>
-              <div className="text-[11px] text-white/60 truncate">ניהול צי — תצוגה מהירה</div>
-            </div>
-            <div className="h-10 w-16 shrink-0 overflow-hidden rounded-md bg-[#0a1525]">
-              <img
-                src={getBrandLogoUrl()}
-                alt=""
-                className="h-full w-full object-contain object-center scale-[1.8]"
-                loading="lazy"
-                decoding="async"
-                aria-hidden
-              />
-            </div>
+        <div className="pt-2 pb-0.5">
+          <div className="flex items-center justify-between gap-2 px-1">
+            <span className="text-sm font-bold text-white">לוח בקרה</span>
+            <span className="text-[11px] font-medium text-white/55">תצוגה מהירה</span>
           </div>
         </div>
       ) : null}
