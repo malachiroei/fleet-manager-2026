@@ -118,11 +118,11 @@ function StatusCard({
   return (
     <Link
       to={link}
-      className="block group cursor-pointer touch-manipulation min-w-0 relative z-10 min-h-[11rem] sm:min-h-[11rem] md:min-h-[14rem]"
+      className="block group cursor-pointer touch-manipulation min-w-0 relative z-10 min-h-[9rem] sm:min-h-[9.5rem] md:min-h-[11rem]"
       style={{ touchAction: 'manipulation', pointerEvents: 'auto' }}
     >
       <div
-        className={`dashboard-cyber-status-card hud-status-card-surface status-card status-card--${theme} relative h-40 sm:h-44 md:h-56 w-full rounded-3xl p-3 sm:p-4 flex flex-col items-center justify-between hover:scale-[1.02] hover:-translate-y-0.5 overflow-hidden transition-all duration-300 border-t border-l border-white/[0.18] border-b border-r border-black/60 backdrop-blur-md ${glowClass}`}
+        className={`dashboard-cyber-status-card hud-status-card-surface status-card status-card--${theme} relative h-32 sm:h-36 md:h-44 w-full rounded-2xl sm:rounded-3xl p-2.5 sm:p-3 flex flex-col items-center justify-between hover:scale-[1.02] hover:-translate-y-0.5 overflow-hidden transition-all duration-300 border-t border-l border-white/[0.18] border-b border-r border-black/60 backdrop-blur-md ${glowClass}`}
         style={{ pointerEvents: 'none' } as React.CSSProperties}
       >
         <div className="hud-status-card-carbon pointer-events-none absolute inset-0 rounded-3xl opacity-85" aria-hidden />
@@ -394,23 +394,25 @@ export default function Dashboard() {
       <div className="dashboard-cyber-vignette select-none" aria-hidden />
       <div className="dashboard-cyber-grid select-none" aria-hidden />
 
-      <div className="container relative z-[2] mx-auto space-y-6 md:space-y-8 py-5 md:py-7 pb-28 sm:pb-10">
-      <div className="dashboard-hud-header-card rounded-3xl border-t border-l border-white/[0.16] border-b border-r border-black/55 p-5 md:p-8 relative overflow-hidden">
+      <div className="container relative z-[2] mx-auto max-w-[1600px] space-y-4 md:space-y-5 py-3 md:py-4 pb-16 sm:pb-8">
+      <div className="dashboard-hud-header-card rounded-2xl sm:rounded-3xl border-t border-l border-white/[0.16] border-b border-r border-black/55 p-3 sm:p-4 md:p-5 relative overflow-hidden">
         <div className="hud-status-card-carbon pointer-events-none absolute inset-0 rounded-3xl opacity-50" aria-hidden />
         <div className="relative flex items-center justify-between gap-4">
           <div className="min-w-0 flex-1">
-            <h1 className="dashboard-cyber-hero-title hidden sm:block relative text-2xl md:text-3xl font-bold tracking-tight text-white">
+            <h1 className="dashboard-cyber-hero-title hidden sm:block relative text-xl md:text-2xl font-bold tracking-tight text-white">
               {t('dashboard.title')}
             </h1>
-            <p className="relative text-xs sm:text-sm md:text-base hud-dashboard-label mt-1 sm:mt-2 max-w-2xl leading-relaxed">
+            <p className="relative text-[11px] sm:text-xs md:text-sm hud-dashboard-label mt-0.5 sm:mt-1.5 max-w-2xl leading-snug sm:leading-relaxed">
               {t('dashboard.subtitle')}
             </p>
           </div>
-          <div className="hidden h-24 w-44 shrink-0 overflow-hidden rounded-xl sm:flex md:h-28 md:w-56">
+          <div className="hidden h-16 w-32 shrink-0 overflow-hidden rounded-lg sm:flex md:h-[4.75rem] md:w-44">
             <img
               src={getBrandLogoUrl()}
               alt=""
               className="h-full w-full object-cover object-center"
+              loading="lazy"
+              decoding="async"
               aria-hidden
             />
           </div>
@@ -446,13 +448,13 @@ export default function Dashboard() {
         </Card>
       )}
 
-      <section className="dashboard-status-stage dashboard-cyber-stage p-4 sm:p-6 md:p-10 pb-6 space-y-6 relative z-[20]">
+      <section className="dashboard-status-stage dashboard-cyber-stage p-3 sm:p-4 md:p-6 pb-4 space-y-4 relative z-[20]">
         {isStatsLoading ? (
           <div className="grid grid-cols-2 sm:grid-cols-2 gap-4 sm:gap-4">
             {[1, 2, 3, 4].map((i) => (
               <Skeleton
                 key={i}
-                className="h-40 w-full rounded-3xl min-h-[10rem]"
+                className="h-32 w-full rounded-2xl sm:rounded-3xl min-h-[8rem]"
               />
             ))}
           </div>

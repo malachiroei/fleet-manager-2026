@@ -1,4 +1,15 @@
-import { type ElementType, type MouseEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type ElementType,
+  type MouseEvent,
+  ReactNode,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useVehicleSpecDirty } from '@/contexts/VehicleSpecDirtyContext';
 import { useTranslation } from 'react-i18next';
@@ -64,6 +75,14 @@ interface AppLayoutProps {
 
 export function AppLayout({ children }: AppLayoutProps) {
   const location = useLocation();
+  const mainScrollRef = useRef<HTMLElement>(null);
+
+  /** גלילה לראש בעת ניווט — בלי key על main (שגרם ל-unmount מלא והאטה חזקה). */
+  useLayoutEffect(() => {
+    const el = mainScrollRef.current;
+    if (!el) return;
+    el.scrollTop = 0;
+  }, [location.pathname, location.search]);
   const { t, i18n } = useTranslation();
   const { theme, toggleTheme } = useTheme();
   const { isInstalled: pwaInstalled, canPrompt: pwaCanPrompt, isIos: pwaIsIos, promptInstall: pwaPromptInstall } =
@@ -808,8 +827,8 @@ export function AppLayout({ children }: AppLayoutProps) {
       </header>
 
       <main
-        key={location.pathname + location.search}
-        className="fleet-app-main-scene relative min-w-0 flex-1 overflow-y-auto overflow-x-clip overscroll-x-none bg-transparent px-6 py-6"
+        ref={mainScrollRef}
+        className="fleet-app-main-scene relative min-w-0 flex-1 overflow-y-auto overflow-x-clip overscroll-x-none bg-transparent px-4 py-4 sm:px-6 sm:py-5"
       >
         {profile?.status === 'pending_approval' ? (
           <div className="flex min-h-[60vh] items-center justify-center">
@@ -837,7 +856,19 @@ export function AppLayout({ children }: AppLayoutProps) {
             </div>
           </div>
         ) : (
-          <>{children}</>
+          <Suspense
+            fallback={
+              <div className="flex min-h-[35vh] items-center justify-center gap-3 text-sm text-white/75">
+                <div
+                  className="h-7 w-7 animate-spin rounded-full border-2 border-cyan-400/25 border-t-cyan-300"
+                  aria-hidden
+                />
+                <span>טוען…</span>
+              </div>
+            }
+          >
+            {children}
+          </Suspense>
         )}
       </main>
 

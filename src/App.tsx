@@ -8,42 +8,7 @@ import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { AppLayout } from "@/components/AppLayout";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import AuthPage from "./pages/AuthPage";
-import AuthCallbackPage from "./pages/AuthCallbackPage";
-import ResetPasswordPage from "./pages/ResetPasswordPage";
 import Dashboard from "./pages/Dashboard";
-import VehicleListPage from "./pages/VehicleListPage";
-import AddVehiclePage from "./pages/AddVehiclePage";
-import VehicleDetailPage from "./pages/VehicleDetailPage";
-import DriverListPage from "./pages/DriverListPage";
-import AddDriverPage from "./pages/AddDriverPage";
-import DriverDetailPage from "./pages/DriverDetailPage";
-import EditDriverPage from "./pages/EditDriverPage";
-import DriverSectionEditPage from "./pages/DriverSectionEditPage";
-import EditVehiclePage from "./pages/EditVehiclePage";
-import CompliancePage from "./pages/CompliancePage";
-import Procedure6ComplaintsPage from "./pages/Procedure6ComplaintsPage";
-import AddMaintenancePage from "./pages/AddMaintenancePage";
-import UpdateOdometerPage from "./pages/UpdateOdometerPage";
-import VehicleDeliveryPage from "./pages/VehicleDeliveryPage";
-import VehicleReturnPage from "./pages/VehicleReturnPage";
-import ReplacementVehicleHubPage from "./pages/ReplacementVehicleHubPage";
-import AdminSettingsPage from "./pages/AdminSettingsPage";
-import AdminDashboardPage from "./pages/AdminDashboardPage";
-import AdminUsersPage from "./pages/AdminUsersPage";
-import AdminCompliancePage from "./pages/AdminCompliancePage";
-import OrgSettingsPage from "./pages/OrgSettingsPage";
-import TeamManagementPage from "./pages/TeamManagementPage";
-import NotFound from "./pages/NotFound";
-import ScanReportPage from "./pages/ScanReportPage";
-import ReportsPage from "./pages/ReportsPage";
-import FormsPage from "./pages/FormsPage";
-import EmployeeComplianceFormPage from "./pages/employee/EmployeeComplianceFormPage";
-import UpdateComplianceRequestPage from "./pages/UpdateComplianceRequestPage";
-import VehicleExternalRenewalPage from "./pages/VehicleExternalRenewalPage";
-import VehicleHandoverWizard from './pages/VehicleHandoverWizard';
-import TransfersPage from './pages/TransfersPage';
-import ReportMileagePage from "./pages/ReportMileagePage";
-import ServiceUpdatePage from "./pages/ServiceUpdatePage";
 import { ThemeProvider } from '@/hooks/useTheme';
 import { ViewAsProvider } from '@/contexts/ViewAsContext';
 import Footer from "@/components/layout/Footer";
@@ -54,6 +19,43 @@ import {
   FLEET_MANAGER_PRO_ORIGIN,
 } from "@/lib/testDeployUpdate";
 import { UpdateModal } from "@/components/UpdateModal";
+
+const AuthCallbackPage = lazy(() => import("./pages/AuthCallbackPage"));
+const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage"));
+const VehicleListPage = lazy(() => import("./pages/VehicleListPage"));
+const AddVehiclePage = lazy(() => import("./pages/AddVehiclePage"));
+const VehicleDetailPage = lazy(() => import("./pages/VehicleDetailPage"));
+const DriverListPage = lazy(() => import("./pages/DriverListPage"));
+const AddDriverPage = lazy(() => import("./pages/AddDriverPage"));
+const DriverDetailPage = lazy(() => import("./pages/DriverDetailPage"));
+const EditDriverPage = lazy(() => import("./pages/EditDriverPage"));
+const DriverSectionEditPage = lazy(() => import("./pages/DriverSectionEditPage"));
+const EditVehiclePage = lazy(() => import("./pages/EditVehiclePage"));
+const CompliancePage = lazy(() => import("./pages/CompliancePage"));
+const Procedure6ComplaintsPage = lazy(() => import("./pages/Procedure6ComplaintsPage"));
+const AddMaintenancePage = lazy(() => import("./pages/AddMaintenancePage"));
+const UpdateOdometerPage = lazy(() => import("./pages/UpdateOdometerPage"));
+const VehicleDeliveryPage = lazy(() => import("./pages/VehicleDeliveryPage"));
+const VehicleReturnPage = lazy(() => import("./pages/VehicleReturnPage"));
+const ReplacementVehicleHubPage = lazy(() => import("./pages/ReplacementVehicleHubPage"));
+const AdminSettingsPage = lazy(() => import("./pages/AdminSettingsPage"));
+const AdminDashboardPage = lazy(() => import("./pages/AdminDashboardPage"));
+const AdminUsersPage = lazy(() => import("./pages/AdminUsersPage"));
+const AdminCompliancePage = lazy(() => import("./pages/AdminCompliancePage"));
+const OrgSettingsPage = lazy(() => import("./pages/OrgSettingsPage"));
+const TeamManagementPage = lazy(() => import("./pages/TeamManagementPage"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const ScanReportPage = lazy(() => import("./pages/ScanReportPage"));
+const ReportsPage = lazy(() => import("./pages/ReportsPage"));
+const FormsPage = lazy(() => import("./pages/FormsPage"));
+const EmployeeComplianceFormPage = lazy(() => import("./pages/employee/EmployeeComplianceFormPage"));
+const UpdateComplianceRequestPage = lazy(() => import("./pages/UpdateComplianceRequestPage"));
+const VehicleExternalRenewalPage = lazy(() => import("./pages/VehicleExternalRenewalPage"));
+const VehicleHandoverWizard = lazy(() => import('./pages/VehicleHandoverWizard'));
+const TransfersPage = lazy(() => import('./pages/TransfersPage'));
+const ReportMileagePage = lazy(() => import("./pages/ReportMileagePage"));
+const ServiceUpdatePage = lazy(() => import("./pages/ServiceUpdatePage"));
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -63,6 +65,19 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+/** טעינת צ'אנק לפני mount — נפרד מ־Suspense בתוך AppLayout (דפים מחוץ למעטפת מוגנת). */
+function AppShellFallback() {
+  return (
+    <div className="flex min-h-[45vh] flex-col items-center justify-center gap-3 bg-[#060d18] px-6 text-sm text-white/80">
+      <div
+        className="h-8 w-8 animate-spin rounded-full border-2 border-cyan-400/25 border-t-cyan-300"
+        aria-hidden
+      />
+      <span>טוען…</span>
+    </div>
+  );
+}
 
 /** נטען בדומיין הטסט: מנקה מטמון/SW/localStorage ומחזיר למקור (pro.com) */
 function ForceUpdateProHandler() {
@@ -120,68 +135,62 @@ function AuthRoute({ children }: { children: ReactNode }) {
 
 function AppRoutes() {
   return (
-    <Routes>
-      <Route path="/auth" element={<AuthRoute><AuthPage /></AuthRoute>} />
-      <Route path="/auth/callback" element={<AuthCallbackPage />} />
-      <Route path="/reset-password" element={<ResetPasswordPage />} />
-      <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-      <Route path="/vehicles" element={<ProtectedRoute><PermissionGuard permission="vehicles"><VehicleListPage /></PermissionGuard></ProtectedRoute>} />
-      <Route path="/vehicles/add" element={<ProtectedRoute><PermissionGuard permission="vehicles"><AddVehiclePage /></PermissionGuard></ProtectedRoute>} />
-      <Route path="/vehicles/odometer" element={<ProtectedRoute><PermissionGuard permission="vehicles"><UpdateOdometerPage /></PermissionGuard></ProtectedRoute>} />
-      <Route path="/vehicles/service-update" element={<ProtectedRoute><PermissionGuard permission="vehicles"><ServiceUpdatePage /></PermissionGuard></ProtectedRoute>} />
-      <Route path="/vehicles/:id" element={<ProtectedRoute><PermissionGuard permission="vehicles"><VehicleDetailPage /></PermissionGuard></ProtectedRoute>} />
-      <Route path="/vehicles/:id/edit" element={<ProtectedRoute><PermissionGuard permission="vehicles"><EditVehiclePage /></PermissionGuard></ProtectedRoute>} />
-      <Route path="/drivers" element={<ProtectedRoute><PermissionGuard permission="drivers"><DriverListPage /></PermissionGuard></ProtectedRoute>} />
-      <Route path="/drivers/add" element={<ProtectedRoute><PermissionGuard permission="drivers"><AddDriverPage /></PermissionGuard></ProtectedRoute>} />
-      <Route path="/drivers/:id/section/:sectionId" element={<ProtectedRoute><PermissionGuard permission="drivers"><DriverSectionEditPage /></PermissionGuard></ProtectedRoute>} />
-      <Route path="/drivers/:id/edit" element={<ProtectedRoute><PermissionGuard permission="drivers"><EditDriverPage /></PermissionGuard></ProtectedRoute>} />
-      <Route path="/drivers/:id" element={<ProtectedRoute><PermissionGuard permission="drivers"><DriverDetailPage /></PermissionGuard></ProtectedRoute>} />
-      <Route path="/compliance" element={<ProtectedRoute><PermissionGuard permission="compliance"><CompliancePage /></PermissionGuard></ProtectedRoute>} />
-      <Route path="/procedure6-complaints" element={<ProtectedRoute><PermissionGuard permission="compliance"><Procedure6ComplaintsPage /></PermissionGuard></ProtectedRoute>} />
-      <Route path="/maintenance/add" element={<ProtectedRoute><PermissionGuard permission="maintenance"><AddMaintenancePage /></PermissionGuard></ProtectedRoute>} />
-      <Route path="/vehicles/transfers" element={<ProtectedRoute><PermissionGuard permission="handover"><TransfersPage /></PermissionGuard></ProtectedRoute>} />
-      <Route path="/handover/delivery" element={<ProtectedRoute><PermissionGuard permission="vehicle_delivery"><VehicleDeliveryPage /></PermissionGuard></ProtectedRoute>} />
-      <Route path="/handover/return" element={<ProtectedRoute><PermissionGuard permission="handover"><VehicleReturnPage /></PermissionGuard></ProtectedRoute>} />
-      <Route path="/handover/replacement" element={<ProtectedRoute><PermissionGuard permission="replacement_car"><ReplacementVehicleHubPage /></PermissionGuard></ProtectedRoute>} />
-      <Route path="/handover/wizard" element={<ProtectedRoute><PermissionGuard permission="handover"><VehicleHandoverWizard /></PermissionGuard></ProtectedRoute>} />
-      <Route path="/report-mileage" element={<ProtectedRoute><PermissionGuard permission="report_mileage"><ReportMileagePage /></PermissionGuard></ProtectedRoute>} />
-      <Route
-        path="/admin/settings"
-        element={
-          <ProtectedRoute>
-            <Suspense
-              fallback={
-                <div className="fleet-screen-page flex min-h-[40vh] items-center justify-center text-sm text-white/70">
-                  טוען הגדרות…
-                </div>
-              }
-            >
+    <Suspense fallback={<AppShellFallback />}>
+      <Routes>
+        <Route path="/auth" element={<AuthRoute><AuthPage /></AuthRoute>} />
+        <Route path="/auth/callback" element={<AuthCallbackPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/vehicles" element={<ProtectedRoute><PermissionGuard permission="vehicles"><VehicleListPage /></PermissionGuard></ProtectedRoute>} />
+        <Route path="/vehicles/add" element={<ProtectedRoute><PermissionGuard permission="vehicles"><AddVehiclePage /></PermissionGuard></ProtectedRoute>} />
+        <Route path="/vehicles/odometer" element={<ProtectedRoute><PermissionGuard permission="vehicles"><UpdateOdometerPage /></PermissionGuard></ProtectedRoute>} />
+        <Route path="/vehicles/service-update" element={<ProtectedRoute><PermissionGuard permission="vehicles"><ServiceUpdatePage /></PermissionGuard></ProtectedRoute>} />
+        <Route path="/vehicles/:id" element={<ProtectedRoute><PermissionGuard permission="vehicles"><VehicleDetailPage /></PermissionGuard></ProtectedRoute>} />
+        <Route path="/vehicles/:id/edit" element={<ProtectedRoute><PermissionGuard permission="vehicles"><EditVehiclePage /></PermissionGuard></ProtectedRoute>} />
+        <Route path="/drivers" element={<ProtectedRoute><PermissionGuard permission="drivers"><DriverListPage /></PermissionGuard></ProtectedRoute>} />
+        <Route path="/drivers/add" element={<ProtectedRoute><PermissionGuard permission="drivers"><AddDriverPage /></PermissionGuard></ProtectedRoute>} />
+        <Route path="/drivers/:id/section/:sectionId" element={<ProtectedRoute><PermissionGuard permission="drivers"><DriverSectionEditPage /></PermissionGuard></ProtectedRoute>} />
+        <Route path="/drivers/:id/edit" element={<ProtectedRoute><PermissionGuard permission="drivers"><EditDriverPage /></PermissionGuard></ProtectedRoute>} />
+        <Route path="/drivers/:id" element={<ProtectedRoute><PermissionGuard permission="drivers"><DriverDetailPage /></PermissionGuard></ProtectedRoute>} />
+        <Route path="/compliance" element={<ProtectedRoute><PermissionGuard permission="compliance"><CompliancePage /></PermissionGuard></ProtectedRoute>} />
+        <Route path="/procedure6-complaints" element={<ProtectedRoute><PermissionGuard permission="compliance"><Procedure6ComplaintsPage /></PermissionGuard></ProtectedRoute>} />
+        <Route path="/maintenance/add" element={<ProtectedRoute><PermissionGuard permission="maintenance"><AddMaintenancePage /></PermissionGuard></ProtectedRoute>} />
+        <Route path="/vehicles/transfers" element={<ProtectedRoute><PermissionGuard permission="handover"><TransfersPage /></PermissionGuard></ProtectedRoute>} />
+        <Route path="/handover/delivery" element={<ProtectedRoute><PermissionGuard permission="vehicle_delivery"><VehicleDeliveryPage /></PermissionGuard></ProtectedRoute>} />
+        <Route path="/handover/return" element={<ProtectedRoute><PermissionGuard permission="handover"><VehicleReturnPage /></PermissionGuard></ProtectedRoute>} />
+        <Route path="/handover/replacement" element={<ProtectedRoute><PermissionGuard permission="replacement_car"><ReplacementVehicleHubPage /></PermissionGuard></ProtectedRoute>} />
+        <Route path="/handover/wizard" element={<ProtectedRoute><PermissionGuard permission="handover"><VehicleHandoverWizard /></PermissionGuard></ProtectedRoute>} />
+        <Route path="/report-mileage" element={<ProtectedRoute><PermissionGuard permission="report_mileage"><ReportMileagePage /></PermissionGuard></ProtectedRoute>} />
+        <Route
+          path="/admin/settings"
+          element={
+            <ProtectedRoute>
               <AdminSettingsPage />
-            </Suspense>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin-settings"
-        element={
-          <ProtectedRoute>
-            <AdminSettingsPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route path="/admin/dashboard" element={<ProtectedRoute><AdminDashboardPage /></ProtectedRoute>} />
-      <Route path="/admin/compliance" element={<ProtectedRoute><AdminCompliancePage /></ProtectedRoute>} />
-      <Route path="/admin/users" element={<ProtectedRoute><AdminUsersPage /></ProtectedRoute>} />
-      <Route path="/admin/org-settings" element={<ProtectedRoute><OrgSettingsPage /></ProtectedRoute>} />
-      <Route path="/team" element={<ProtectedRoute><TeamManagementPage /></ProtectedRoute>} />
-      <Route path="/reports" element={<ProtectedRoute><PermissionGuard permission="reports"><ReportsPage /></PermissionGuard></ProtectedRoute>} />
-      <Route path="/reports/scan" element={<ProtectedRoute><PermissionGuard permission="reports"><ScanReportPage /></PermissionGuard></ProtectedRoute>} />
-      <Route path="/forms" element={<ProtectedRoute><PermissionGuard permission="forms"><FormsPage /></PermissionGuard></ProtectedRoute>} />
-      <Route path="/employee/forms/:token" element={<EmployeeComplianceFormPage />} />
-      <Route path="/update/:token" element={<UpdateComplianceRequestPage />} />
-      <Route path="/vehicle-renewal/:token" element={<VehicleExternalRenewalPage />} />
-      <Route path="*" element={<NotFound />} />
-    </Routes>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin-settings"
+          element={
+            <ProtectedRoute>
+              <AdminSettingsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/admin/dashboard" element={<ProtectedRoute><AdminDashboardPage /></ProtectedRoute>} />
+        <Route path="/admin/compliance" element={<ProtectedRoute><AdminCompliancePage /></ProtectedRoute>} />
+        <Route path="/admin/users" element={<ProtectedRoute><AdminUsersPage /></ProtectedRoute>} />
+        <Route path="/admin/org-settings" element={<ProtectedRoute><OrgSettingsPage /></ProtectedRoute>} />
+        <Route path="/team" element={<ProtectedRoute><TeamManagementPage /></ProtectedRoute>} />
+        <Route path="/reports" element={<ProtectedRoute><PermissionGuard permission="reports"><ReportsPage /></PermissionGuard></ProtectedRoute>} />
+        <Route path="/reports/scan" element={<ProtectedRoute><PermissionGuard permission="reports"><ScanReportPage /></PermissionGuard></ProtectedRoute>} />
+        <Route path="/forms" element={<ProtectedRoute><PermissionGuard permission="forms"><FormsPage /></PermissionGuard></ProtectedRoute>} />
+        <Route path="/employee/forms/:token" element={<EmployeeComplianceFormPage />} />
+        <Route path="/update/:token" element={<UpdateComplianceRequestPage />} />
+        <Route path="/vehicle-renewal/:token" element={<VehicleExternalRenewalPage />} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </Suspense>
   );
 }
 
