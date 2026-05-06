@@ -1,4 +1,5 @@
 import type { FC } from 'react';
+import { version as bundleVersion } from '@/constants/version';
 
 type FooterVariant = 'test' | 'source' | 'hidden';
 
@@ -42,7 +43,7 @@ const Footer: FC = () => {
       }`}
     >
       <span className="text-[10px] font-semibold leading-none tracking-wide text-white sm:text-[11px]">
-        {isTest ? 'גרסת טסט' : 'מערכת בניהול'}
+        {isTest ? 'גרסת טסט' : 'מערכת בניהול'} <span className="opacity-90">v{bundleVersion}</span>
       </span>
     </footer>
   );
