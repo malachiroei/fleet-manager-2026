@@ -122,7 +122,7 @@ function StatusCard({
       style={{ touchAction: 'manipulation', pointerEvents: 'auto' }}
     >
       <div
-        className={`dashboard-cyber-status-card hud-status-card-surface status-card status-card--${theme} relative h-[7.25rem] sm:h-32 md:h-36 xl:h-56 w-full rounded-2xl sm:rounded-3xl p-2 sm:p-2.5 xl:p-4 flex flex-col items-center justify-between hover:scale-[1.02] hover:-translate-y-0.5 overflow-hidden transition-all duration-300 border-t border-l border-white/[0.18] border-b border-r border-black/60 backdrop-blur-md ${glowClass}`}
+        className={`dashboard-cyber-status-card hud-status-card-surface status-card status-card--${theme} relative h-[clamp(7.25rem,18vh,9.25rem)] sm:h-[clamp(8rem,18vh,10rem)] md:h-[clamp(8.5rem,18vh,10.5rem)] xl:h-[clamp(10.5rem,18vh,14rem)] w-full rounded-2xl sm:rounded-3xl p-2 sm:p-2.5 xl:p-4 flex flex-col items-center justify-between hover:scale-[1.02] hover:-translate-y-0.5 overflow-hidden transition-all duration-300 border-t border-l border-white/[0.18] border-b border-r border-black/60 backdrop-blur-md ${glowClass}`}
         style={{ pointerEvents: 'none' } as React.CSSProperties}
       >
         <div className="hud-status-card-carbon pointer-events-none absolute inset-0 rounded-3xl opacity-85" aria-hidden />
@@ -134,10 +134,10 @@ function StatusCard({
 
         <div className="relative z-10 mt-0.5 flex flex-col items-center gap-1.5 xl:gap-2">
           <div
-            className={`status-card-icon-box dashboard-cyber-icon-dish inline-flex h-11 w-11 sm:h-12 sm:w-12 xl:h-14 xl:w-14 items-center justify-center rounded-2xl border bg-slate-950/65 backdrop-blur-md ${theme === 'blue' ? 'border-[#00f2ff]/55' : theme === 'purple' ? 'border-violet-400/50' : theme === 'orange' ? 'border-[#ff4d00]/65' : 'border-teal-400/50'}`}
+            className={`status-card-icon-box dashboard-cyber-icon-dish inline-flex h-11 w-11 sm:h-12 sm:w-12 xl:h-14 xl:w-14 [@media(max-height:820px)]:h-11 [@media(max-height:820px)]:w-11 items-center justify-center rounded-2xl border bg-slate-950/65 backdrop-blur-md ${theme === 'blue' ? 'border-[#00f2ff]/55' : theme === 'purple' ? 'border-violet-400/50' : theme === 'orange' ? 'border-[#ff4d00]/65' : 'border-teal-400/50'}`}
           >
             <Icon
-              className={`h-6 w-6 sm:h-7 sm:w-7 xl:h-8 xl:w-8 ${iconStroke}`}
+              className={`h-6 w-6 sm:h-7 sm:w-7 xl:h-8 xl:w-8 [@media(max-height:820px)]:h-6 [@media(max-height:820px)]:w-6 ${iconStroke}`}
               strokeWidth={1.35}
               aria-hidden
             />
@@ -149,7 +149,7 @@ function StatusCard({
 
         {value !== '' && (
           <div className="relative z-10 text-center">
-            <p className="hud-kpi-value text-2xl sm:text-3xl md:text-4xl xl:text-5xl font-bold tracking-tight text-white tabular-nums">
+            <p className="hud-kpi-value text-2xl sm:text-3xl md:text-4xl xl:text-5xl [@media(max-height:820px)]:xl:text-4xl font-bold tracking-tight text-white tabular-nums">
               {value}
             </p>
           </div>
@@ -448,7 +448,7 @@ export default function Dashboard() {
         </Card>
       )}
 
-      <section className="dashboard-status-stage dashboard-cyber-stage p-3 sm:p-4 md:p-6 xl:p-8 pb-4 space-y-4 xl:space-y-6 [@media(max-height:820px)]:p-3 [@media(max-height:820px)]:space-y-3 relative z-[20]">
+      <section className="dashboard-status-stage dashboard-cyber-stage p-3 sm:p-4 md:p-6 xl:p-8 pb-3 space-y-4 xl:space-y-6 [@media(max-height:820px)]:p-3 [@media(max-height:820px)]:space-y-3 relative z-[20]">
         {isStatsLoading ? (
           <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             {[1, 2, 3, 4].map((i) => (
@@ -609,11 +609,11 @@ export default function Dashboard() {
         </>
       ) : (
         <>
-          <section className="space-y-3">
+          <section className="space-y-3 [@media(max-height:820px)]:space-y-2">
             <h2 className="dashboard-cyber-section-title text-lg font-semibold text-white tracking-tight">
               {t('dashboard.quickActions')}
             </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 [@media(max-height:820px)]:gap-2">
               {isInitialUiLoading ? (
                 <>
                   {[1, 2, 3, 4].map((i) => (
