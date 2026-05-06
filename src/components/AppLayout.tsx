@@ -77,6 +77,22 @@ interface AppLayoutProps {
 export function AppLayout({ children }: AppLayoutProps) {
   const location = useLocation();
   const mainScrollRef = useRef<HTMLElement>(null);
+  const [isShortHeightDesktop, setIsShortHeightDesktop] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(min-width: 768px) and (max-height: 820px)');
+    const onChange = () => setIsShortHeightDesktop(Boolean(mq.matches));
+    onChange();
+    try {
+      mq.addEventListener('change', onChange);
+      return () => mq.removeEventListener('change', onChange);
+    } catch {
+      // Safari/old
+      mq.addListener(onChange);
+      return () => mq.removeListener(onChange);
+    }
+  }, []);
 
   /** גלילה לראש בעת ניווט — בלי key על main (שגרם ל-unmount מלא והאטה חזקה). */
   useLayoutEffect(() => {
@@ -284,6 +300,26 @@ export function AppLayout({ children }: AppLayoutProps) {
       </DropdownMenuTrigger>
       <DropdownMenuContent align={isRtl ? 'start' : 'end'} className="min-w-[220px] z-[10001]">
         <DropdownMenuLabel className="text-xs font-semibold">הגדרות</DropdownMenuLabel>
+        {/* מסך נמוך: העברת "ניהול/ניהול צוות" לכאן כדי לפנות מקום בכותרת */}
+        {isShortHeightDesktop ? (
+          <>
+            {availableActions
+              .filter((a) => a.key === 'manage_org' || a.key === 'manage_team')
+              .map((a) => {
+                const Icon = a.icon;
+                if (!('to' in a)) return null;
+                return (
+                  <DropdownMenuItem key={`short-${a.key}`} asChild className="cursor-pointer">
+                    <Link to={a.to} className="w-full flex items-center justify-between text-xs">
+                      <span className="font-medium">{a.label}</span>
+                      <Icon className="h-4 w-4 shrink-0" />
+                    </Link>
+                  </DropdownMenuItem>
+                );
+              })}
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
         <DropdownMenuItem
           className="cursor-pointer text-xs"
           onClick={() => {
@@ -826,7 +862,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               <HomeNavLinkDesktop />
               {location.pathname !== '/' ? <BackButton /> : null}
             </div>
-            {canAccessGoldenManagementLinks ? (
+            {canAccessGoldenManagementLinks && !isShortHeightDesktop ? (
               <div className={cn('flex min-w-0 shrink-0 items-center', isRtl ? 'order-2' : 'order-1')}>
                 <GoldManagementNavLinks />
               </div>

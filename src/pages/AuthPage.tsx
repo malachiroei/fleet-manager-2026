@@ -128,13 +128,13 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="fleet-screen-page relative flex min-h-[100dvh] items-center justify-center p-3 sm:p-4">
+    <div className="fleet-screen-page relative flex min-h-[100dvh] items-center justify-center p-2 sm:p-4 [@media(max-height:740px)]:p-1">
       {/* Install app – top corner, also available after login in header */}
       <div className="absolute top-3 left-3 rtl:left-auto rtl:right-3">
         <PwaInstallButton variant="auth" />
       </div>
-      <Card className="w-full max-w-md border-white/10 bg-[#0d1b2e] text-white shadow-xl shadow-black/40 max-h-[calc(100dvh-1.5rem)] overflow-y-hidden [@media(max-height:700px)]:overflow-y-auto">
-        <CardHeader className="text-center space-y-1 py-5 sm:py-6">
+      <Card className="w-full max-w-md border-white/10 bg-[#0d1b2e] text-white shadow-xl shadow-black/40 max-h-[calc(100dvh-3.25rem)] overflow-y-hidden [@media(max-height:700px)]:overflow-y-auto">
+        <CardHeader className="text-center space-y-1 py-4 sm:py-6 [@media(max-height:740px)]:py-3">
           {/* Dark strip so the white car pops; same idea as dashboard logo box */}
           <div className="mx-auto -mt-1 mb-3 flex justify-center rounded-2xl bg-[#0a1525] px-6 py-4 sm:px-8 sm:py-6 [@media(max-height:760px)]:px-5 [@media(max-height:760px)]:py-3">
             <img
