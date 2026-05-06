@@ -394,7 +394,7 @@ export default function Dashboard() {
       <div className="dashboard-cyber-vignette select-none" aria-hidden />
       <div className="dashboard-cyber-grid select-none" aria-hidden />
 
-      <div className="container relative z-[2] mx-auto max-w-[1920px] space-y-3 md:space-y-4 py-2.5 md:py-3 pb-10 sm:pb-8 [@media(max-height:820px)]:py-1.5 [@media(max-height:820px)]:space-y-2">
+      <div className="container relative z-[2] mx-auto max-w-[1920px] space-y-3 md:space-y-4 py-2.5 md:py-3 pb-10 sm:pb-8 [@media(max-height:820px)]:py-1 [@media(max-height:820px)]:pb-4 [@media(max-height:820px)]:space-y-2">
       <div className="hidden xl:block [@media(max-height:820px)]:hidden dashboard-hud-header-card rounded-2xl sm:rounded-3xl border-t border-l border-white/[0.16] border-b border-r border-black/55 p-3 sm:p-4 md:p-5 relative overflow-hidden">
         <div className="hud-status-card-carbon pointer-events-none absolute inset-0 rounded-3xl opacity-50" aria-hidden />
         <div className="relative flex items-center justify-between gap-4">
@@ -448,7 +448,7 @@ export default function Dashboard() {
         </Card>
       )}
 
-      <section className="dashboard-status-stage dashboard-cyber-stage p-3 sm:p-4 md:p-6 xl:p-8 pb-3 space-y-4 xl:space-y-6 [@media(max-height:820px)]:p-3 [@media(max-height:820px)]:space-y-3 relative z-[20]">
+      <section className="dashboard-status-stage dashboard-cyber-stage p-3 sm:p-4 md:p-6 xl:p-8 pb-3 space-y-4 xl:space-y-6 [@media(max-height:820px)]:p-2.5 [@media(max-height:820px)]:pb-2 [@media(max-height:820px)]:space-y-3 relative z-[20]">
         {isStatsLoading ? (
           <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             {[1, 2, 3, 4].map((i) => (
