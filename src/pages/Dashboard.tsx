@@ -388,13 +388,13 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="dashboard-cyber-page dashboard-page-hud relative isolate z-[1] -mx-6 w-[calc(100%+3rem)] max-w-none shrink-0 px-6 pt-1 pb-2 md:pb-3">
+    <div className="dashboard-cyber-page dashboard-page-hud relative isolate z-[1] -mx-6 w-[calc(100%+3rem)] max-w-none shrink-0 px-6 pt-1 pb-2 md:pb-3 [@media(max-height:820px)]:pt-0 [@media(max-height:820px)]:pb-1">
       <div className="dashboard-cyber-lens dashboard-cyber-lens--top select-none" aria-hidden />
       <div className="dashboard-cyber-lens dashboard-cyber-lens--bottom select-none" aria-hidden />
       <div className="dashboard-cyber-vignette select-none" aria-hidden />
       <div className="dashboard-cyber-grid select-none" aria-hidden />
 
-      <div className="container relative z-[2] mx-auto max-w-[1920px] space-y-3 md:space-y-4 py-2.5 md:py-3 pb-10 sm:pb-8">
+      <div className="container relative z-[2] mx-auto max-w-[1920px] space-y-3 md:space-y-4 py-2.5 md:py-3 pb-10 sm:pb-8 [@media(max-height:820px)]:py-1.5 [@media(max-height:820px)]:space-y-2">
       <div className="hidden xl:block [@media(max-height:820px)]:hidden dashboard-hud-header-card rounded-2xl sm:rounded-3xl border-t border-l border-white/[0.16] border-b border-r border-black/55 p-3 sm:p-4 md:p-5 relative overflow-hidden">
         <div className="hud-status-card-carbon pointer-events-none absolute inset-0 rounded-3xl opacity-50" aria-hidden />
         <div className="relative flex items-center justify-between gap-4">

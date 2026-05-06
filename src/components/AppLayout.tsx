@@ -909,7 +909,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
       <main
         ref={mainScrollRef}
-        className="fleet-app-main-scene relative min-w-0 flex-1 overflow-y-auto overflow-x-clip overscroll-x-none bg-transparent px-4 py-4 sm:px-6 sm:py-5"
+        className="fleet-app-main-scene relative min-w-0 flex-1 overflow-y-auto overflow-x-clip overscroll-x-none bg-transparent px-4 py-4 sm:px-6 sm:py-5 [@media(max-height:820px)]:py-2"
       >
         {profile?.status === 'pending_approval' ? (
           <div className="flex min-h-[60vh] items-center justify-center">
