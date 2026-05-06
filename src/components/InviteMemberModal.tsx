@@ -7,6 +7,7 @@ import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { isSuperAdminPermissionBypass } from '@/lib/allowedFeatures';
 import { resolveOrgIdForTeamInvite } from '@/lib/platformTenantOrgInvite';
+import { formatSupabaseLikeError } from '@/lib/supabaseErrorMessage';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -150,7 +151,7 @@ export function InviteMemberModal({
         // Local only: toast. No global state, no shared hooks. Roei's session untouched.
         toast({
           title: 'שגיאה בשמירת ההזמנה',
-          description: err instanceof Error ? err.message : String(err),
+          description: formatSupabaseLikeError(err),
           variant: 'destructive',
         });
       } finally {

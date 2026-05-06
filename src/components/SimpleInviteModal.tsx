@@ -7,6 +7,7 @@ import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { isSuperAdminPermissionBypass } from '@/lib/allowedFeatures';
 import { resolveOrgIdForTeamInvite } from '@/lib/platformTenantOrgInvite';
+import { formatSupabaseLikeError } from '@/lib/supabaseErrorMessage';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -121,7 +122,7 @@ export function SimpleInviteModal({
     } catch (err) {
       toast({
         title: 'שגיאה בשמירת ההזמנה',
-        description: err instanceof Error ? err.message : String(err),
+        description: formatSupabaseLikeError(err),
         variant: 'destructive',
       });
     } finally {

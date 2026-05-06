@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import type { Profile } from '@/types/fleet';
 import type { ProfilePermissions } from '@/types/fleet';
 import { toast } from '@/hooks/use-toast';
+import { formatSupabaseLikeError } from '@/lib/supabaseErrorMessage';
 import { getDefaultPermissions } from '@/lib/permissions';
 import { sendInvitationEmail } from '@/lib/sendInvitationEmail';
 import { useAuth } from '@/hooks/useAuth';
@@ -293,8 +294,12 @@ export function useCreateInvitation() {
         });
       }
     },
-    onError: (err: Error) => {
-      toast({ title: 'שגיאה בשמירת ההזמנה', description: err.message, variant: 'destructive' });
+    onError: (err: unknown) => {
+      toast({
+        title: 'שגיאה בשמירת ההזמנה',
+        description: formatSupabaseLikeError(err),
+        variant: 'destructive',
+      });
     },
   });
 }
