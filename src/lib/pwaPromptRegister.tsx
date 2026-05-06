@@ -33,6 +33,8 @@ export function isFleetManagerTestHost(): boolean {
   if (h.endsWith(".vercel.app")) {
     const first = h.split(".")[0];
     if (first === "fleet-manager-dev" || first.startsWith("fleet-manager-dev-")) return true;
+    // fleet-manager-2026 (דיפלוי Git / פריוויו) — כמו dev: ניקוי cache + עדכון SW אוטומטי
+    if (first === "fleet-manager-2026" || first.startsWith("fleet-manager-2026-")) return true;
   }
   return false;
 }

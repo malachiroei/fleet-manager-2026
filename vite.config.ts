@@ -54,11 +54,12 @@ export default defineConfig(({ mode }) => {
       outDir: 'dist',
       emptyOutDir: true,
       assetsDir: 'assets',
+      /** חובה hash בכתובת — בלי זה `assets/index.js` נשאר במטמון CDN/דפדפן/SW ואחרי דיפלוי נראית גרסה ישנה */
       rollupOptions: {
         output: {
-          entryFileNames: "assets/[name].js",
-          chunkFileNames: "assets/[name].js",
-          assetFileNames: "assets/[name][extname]",
+          entryFileNames: "assets/[name]-[hash].js",
+          chunkFileNames: "assets/[name]-[hash].js",
+          assetFileNames: "assets/[name]-[hash][extname]",
         },
       },
     },
