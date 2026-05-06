@@ -527,7 +527,7 @@ async function syncUserFeatureOverrides(
     if (!pid) continue;
     mapped.push({ ...r, user_id: pid });
   }
-  await upsertChunks(prod, 'user_feature_overrides', mapped, 'user_id,feature_key');
+  await upsertChunks(prod, 'user_feature_overrides', mapped, 'user_id,org_id,feature_key');
 }
 
 async function listAllStoragePaths(client: SupabaseClient, bucket: string, prefix = ''): Promise<string[]> {

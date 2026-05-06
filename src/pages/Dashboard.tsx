@@ -247,6 +247,13 @@ export default function Dashboard() {
     };
   }, [activeOrgId, viewAsEmail, queryClient]);
 
+  useEffect(() => {
+    /** activeOrgId משפיע על סינון user_feature_overrides לפי org_id — מאלץ רענון דגלים */
+    void queryClient.invalidateQueries({ queryKey: ['feature-flags'] });
+    void queryClient.invalidateQueries({ queryKey: ['user-feature-overrides'] });
+    void queryClient.invalidateQueries({ queryKey: ['feature-flags-user-overrides-list'] });
+  }, [activeOrgId, queryClient]);
+
   const email = user?.email || '';
   const isMainAdmin = email.toLowerCase() === 'malachiroei@gmail.com';
   const isOwner = isMainAdmin;

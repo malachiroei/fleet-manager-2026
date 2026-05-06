@@ -176,14 +176,24 @@ export function UserFeatureFlagsOverridesDialog({
           (sameOrg || subjectReportsToViewer))),
   );
 
+  const overridesOrgScope = useMemo(() => {
+    const fromFleetScope = scopeId;
+    const fromSubject = subjectOrgId ? String(subjectOrgId).trim() : '';
+    const fromViewer = viewerFleetOrgId ? String(viewerFleetOrgId).trim() : '';
+    const merged = fromFleetScope || fromSubject || fromViewer;
+    return merged.length > 0 ? merged : null;
+  }, [scopeId, subjectOrgId, viewerFleetOrgId]);
+
   const { data: overrideRows = [] as OverrideRow[], isLoading: isOverridesLoading, isError: isOverridesError } = useQuery({
-    queryKey: ['user-feature-overrides', userId],
-    enabled: open && canEditSubjectOverrides,
+    queryKey: ['user-feature-overrides', userId, overridesOrgScope],
+    enabled: open && canEditSubjectOverrides && Boolean(overridesOrgScope),
     queryFn: async () => {
+      if (!userId || !overridesOrgScope) return [];
       const { data, error } = await (supabase as any)
         .from('user_feature_overrides')
         .select('feature_key, is_enabled')
-        .eq('user_id', userId);
+        .eq('user_id', userId)
+        .eq('org_id', overridesOrgScope);
       if (error) throw error;
       return (data ?? []) as OverrideRow[];
     },
@@ -279,9 +289,14 @@ export function UserFeatureFlagsOverridesDialog({
 
   const handleToggle = async (featureKey: string, nextEnabled: boolean) => {
     if (!userId) return;
+    if (!overridesOrgScope) {
+      toast.error('חסר מזהה ארגון לשורת ה-override.');
+      return;
+    }
     if (savingKey) return;
     console.log('[FeatureOverrides] saving override', {
       userId,
+      orgId: overridesOrgScope,
       featureKey,
       nextEnabled,
     });
@@ -292,31 +307,20 @@ export function UserFeatureFlagsOverridesDialog({
       const { data: upserted, error } = await (supabase as any).from('user_feature_overrides').upsert(
         {
           user_id: userId,
+          org_id: overridesOrgScope,
           feature_key: featureKey,
           is_enabled: nextEnabled,
           updated_at: new Date().toISOString(),
         },
-        { onConflict: 'user_id,feature_key' },
-      ).select('user_id, feature_key, is_enabled');
+        { onConflict: 'user_id,org_id,feature_key' },
+      ).select('user_id, org_id, feature_key, is_enabled');
       if (error) throw error;
       if (!upserted || upserted.length === 0) {
         throw new Error('Override save did not return rows (possible RLS rejection).');
       }
 
-      // Instant UX: update resolved feature-flags cache for this subject user
-      // so gated UI disappears/appears immediately in view-as mode.
-      queryClient.setQueryData<Record<string, boolean> | undefined>(
-        ['feature-flags', userId],
-        (prev) => ({
-          ...(prev ?? {}),
-          [featureKey]: nextEnabled,
-        }),
-      );
-
-      await queryClient.invalidateQueries({ queryKey: ['user-feature-overrides', userId] });
       await queryClient.invalidateQueries({ queryKey: ['user-feature-overrides'] });
       await queryClient.invalidateQueries({ queryKey: ['feature-flags'] });
-      await queryClient.invalidateQueries({ queryKey: ['feature-flags', userId] });
       setOptimisticOverrides((prev) => {
         const next = { ...prev };
         delete next[featureKey];
