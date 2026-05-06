@@ -16,6 +16,9 @@
 -- =============================================================================
 
 DO $$
+DECLARE
+  profiles_has_user_id boolean;
+  profiles_has_org_id boolean;
 BEGIN
   -- ---------------------------------------------------------------------------
   -- user_roles
@@ -48,13 +51,32 @@ BEGIN
   ) THEN
     EXECUTE 'ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY';
 
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='profiles' AND column_name='user_id'
+    ) INTO profiles_has_user_id;
+
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='profiles' AND column_name='org_id'
+    ) INTO profiles_has_org_id;
+
     -- Own profile (always safe).
     EXECUTE 'DROP POLICY IF EXISTS "profiles_select_own" ON public.profiles';
-    EXECUTE $pol$
-      CREATE POLICY "profiles_select_own"
-        ON public.profiles FOR SELECT TO authenticated
-        USING (user_id = auth.uid())
-    $pol$;
+    IF profiles_has_user_id THEN
+      EXECUTE $pol$
+        CREATE POLICY "profiles_select_own"
+          ON public.profiles FOR SELECT TO authenticated
+          USING (user_id = auth.uid())
+      $pol$;
+    ELSE
+      -- Some projects model profiles.id as auth.uid() (no user_id column).
+      EXECUTE $pol$
+        CREATE POLICY "profiles_select_own"
+          ON public.profiles FOR SELECT TO authenticated
+          USING (id = auth.uid())
+      $pol$;
+    END IF;
 
     -- Platform owner cross-org team lists (matches repo policy name).
     IF NOT EXISTS (
@@ -73,14 +95,16 @@ BEGIN
       SELECT 1 FROM pg_policies
       WHERE schemaname='public' AND tablename='profiles' AND policyname='profiles_select_same_org_team_manager'
     ) THEN
-      EXECUTE $pol$
-        CREATE POLICY "profiles_select_same_org_team_manager"
-          ON public.profiles FOR SELECT TO authenticated
-          USING (
-            public.user_belongs_to_org(auth.uid(), org_id)
-            AND public.user_has_fleet_staff_privileges(auth.uid())
-          )
-      $pol$;
+      IF profiles_has_org_id THEN
+        EXECUTE $pol$
+          CREATE POLICY "profiles_select_same_org_team_manager"
+            ON public.profiles FOR SELECT TO authenticated
+            USING (
+              public.user_belongs_to_org(auth.uid(), org_id)
+              AND public.user_has_fleet_staff_privileges(auth.uid())
+            )
+        $pol$;
+      END IF;
     END IF;
   END IF;
 
