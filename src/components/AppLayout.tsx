@@ -737,10 +737,29 @@ export function AppLayout({ children }: AppLayoutProps) {
     </Link>
   );
 
-  const BrandMarkBlock = () => (
+  /** דסקטופ-נמוך: בית כפתור קטן בשורה העליונה (מפנה את השורה השנייה לגובה תוכן). */
+  const HomeNavIconTopRight = () => (
+    <Link
+      to="/"
+      onClick={handleGoHomeNav}
+      title={t('navigation.home')}
+      aria-label={t('navigation.home')}
+      className={cn(
+        'hidden md:inline-flex h-9 w-12 shrink-0 items-center justify-center rounded-lg border transition-colors',
+        isHomeActive
+          ? 'border-cyan-400/35 bg-cyan-500/15 text-cyan-100'
+          : 'border-white/10 bg-white/[0.06] text-white/70 hover:bg-white/10 hover:text-white/90'
+      )}
+    >
+      <Home className="h-4.5 w-4.5 shrink-0 opacity-90" />
+    </Link>
+  );
+
+  const BrandMarkBlock = ({ centerOnShortHeight }: { centerOnShortHeight?: boolean } = {}) => (
     <div
       className={cn(
         'flex shrink-0 items-center min-w-0 lg:min-w-[150px]',
+        centerOnShortHeight && isShortHeightDesktop ? 'flex-1 justify-center' : '',
         isRtl && 'flex-row-reverse'
       )}
     >
@@ -847,8 +866,10 @@ export function AppLayout({ children }: AppLayoutProps) {
               <UtilityCluster />
               <UserInline />
             </div>
-            <div className={cn('flex shrink-0 items-center', isRtl ? 'order-1' : 'order-2')}>
-              <BrandMarkBlock />
+            <div className={cn('flex min-w-0 items-center gap-2', isRtl ? 'order-1' : 'order-2')}>
+              {isShortHeightDesktop && isRtl ? <HomeNavIconTopRight /> : null}
+              <BrandMarkBlock centerOnShortHeight />
+              {isShortHeightDesktop && !isRtl ? <HomeNavIconTopRight /> : null}
             </div>
           </div>
 
@@ -859,8 +880,8 @@ export function AppLayout({ children }: AppLayoutProps) {
                 isRtl ? 'order-1' : 'order-2',
               )}
             >
-              <HomeNavLinkDesktop />
-              {location.pathname !== '/' ? <BackButton /> : null}
+              {!isShortHeightDesktop ? <HomeNavLinkDesktop /> : null}
+              {!isShortHeightDesktop && location.pathname !== '/' ? <BackButton /> : null}
             </div>
             {canAccessGoldenManagementLinks && !isShortHeightDesktop ? (
               <div className={cn('flex min-w-0 shrink-0 items-center', isRtl ? 'order-2' : 'order-1')}>
