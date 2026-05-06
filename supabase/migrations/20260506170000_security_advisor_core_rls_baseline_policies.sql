@@ -19,6 +19,11 @@ DO $$
 DECLARE
   profiles_has_user_id boolean;
   profiles_has_org_id boolean;
+  ca_has_entity_type boolean;
+  ca_has_entity_id boolean;
+  ca_has_org_id boolean;
+  ca_has_vehicle_id boolean;
+  ca_has_driver_id boolean;
 BEGIN
   -- ---------------------------------------------------------------------------
   -- user_roles
@@ -117,36 +122,98 @@ BEGIN
   ) THEN
     EXECUTE 'ALTER TABLE public.compliance_alerts ENABLE ROW LEVEL SECURITY';
 
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='compliance_alerts' AND column_name='entity_type'
+    ) INTO ca_has_entity_type;
+
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='compliance_alerts' AND column_name='entity_id'
+    ) INTO ca_has_entity_id;
+
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='compliance_alerts' AND column_name='org_id'
+    ) INTO ca_has_org_id;
+
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='compliance_alerts' AND column_name='vehicle_id'
+    ) INTO ca_has_vehicle_id;
+
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='compliance_alerts' AND column_name='driver_id'
+    ) INTO ca_has_driver_id;
+
     IF NOT EXISTS (
       SELECT 1 FROM pg_policies
       WHERE schemaname='public' AND tablename='compliance_alerts' AND cmd='SELECT'
     ) THEN
       EXECUTE 'DROP POLICY IF EXISTS "compliance_alerts_select_same_org" ON public.compliance_alerts';
-      EXECUTE $pol$
-        CREATE POLICY "compliance_alerts_select_same_org"
-          ON public.compliance_alerts FOR SELECT TO authenticated
-          USING (
-            public.user_may_cross_org_fleet_read(auth.uid())
-            OR (
-              entity_type = 'vehicle'
-              AND EXISTS (
-                SELECT 1
-                FROM public.vehicles v
-                WHERE v.id = compliance_alerts.entity_id
-                  AND (v.org_id IS NULL OR public.user_belongs_to_org(auth.uid(), v.org_id))
+      -- Variant A: entity_type/entity_id schema (repo default)
+      IF ca_has_entity_type AND ca_has_entity_id THEN
+        EXECUTE $pol$
+          CREATE POLICY "compliance_alerts_select_same_org"
+            ON public.compliance_alerts FOR SELECT TO authenticated
+            USING (
+              public.user_may_cross_org_fleet_read(auth.uid())
+              OR (
+                entity_type = 'vehicle'
+                AND EXISTS (
+                  SELECT 1
+                  FROM public.vehicles v
+                  WHERE v.id = compliance_alerts.entity_id
+                    AND (v.org_id IS NULL OR public.user_belongs_to_org(auth.uid(), v.org_id))
+                )
+              )
+              OR (
+                entity_type = 'driver'
+                AND EXISTS (
+                  SELECT 1
+                  FROM public.drivers d
+                  WHERE d.id = compliance_alerts.entity_id
+                    AND (d.org_id IS NULL OR public.user_belongs_to_org(auth.uid(), d.org_id))
+                )
               )
             )
-            OR (
-              entity_type = 'driver'
-              AND EXISTS (
-                SELECT 1
-                FROM public.drivers d
-                WHERE d.id = compliance_alerts.entity_id
-                  AND (d.org_id IS NULL OR public.user_belongs_to_org(auth.uid(), d.org_id))
+        $pol$;
+      -- Variant B: direct org_id on alert rows (safe fallback)
+      ELSIF ca_has_org_id THEN
+        EXECUTE $pol$
+          CREATE POLICY "compliance_alerts_select_same_org"
+            ON public.compliance_alerts FOR SELECT TO authenticated
+            USING (
+              public.user_may_cross_org_fleet_read(auth.uid())
+              OR public.user_belongs_to_org(auth.uid(), org_id)
+            )
+        $pol$;
+      -- Variant C: foreign keys to vehicle/driver (no entity_type)
+      ELSIF ca_has_vehicle_id OR ca_has_driver_id THEN
+        EXECUTE $pol$
+          CREATE POLICY "compliance_alerts_select_same_org"
+            ON public.compliance_alerts FOR SELECT TO authenticated
+            USING (
+              public.user_may_cross_org_fleet_read(auth.uid())
+              OR (
+                (vehicle_id IS NOT NULL AND EXISTS (
+                  SELECT 1
+                  FROM public.vehicles v
+                  WHERE v.id = compliance_alerts.vehicle_id
+                    AND (v.org_id IS NULL OR public.user_belongs_to_org(auth.uid(), v.org_id))
+                ))
+                OR
+                (driver_id IS NOT NULL AND EXISTS (
+                  SELECT 1
+                  FROM public.drivers d
+                  WHERE d.id = compliance_alerts.driver_id
+                    AND (d.org_id IS NULL OR public.user_belongs_to_org(auth.uid(), d.org_id))
+                ))
               )
             )
-          )
-      $pol$;
+        $pol$;
+      END IF;
     END IF;
   END IF;
 END $$;
