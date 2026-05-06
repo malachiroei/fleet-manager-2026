@@ -17,17 +17,6 @@ import { readViewAsActiveFromSession, setViewAsActiveSession } from '@/lib/viewA
 import { isFleetManagerProHostname } from '@/lib/versionManifest';
 
 const ACTIVE_ORG_STORAGE_KEY = 'fleet-manager-active-org';
-/** מנהל פלטפורמה: צפייה בצי של אדמין אחר (profiles.id) — לא «הצי שלי» */
-const PLATFORM_FLEET_VIEW_ADMIN_STORAGE_KEY = 'fleet-manager-platform-fleet-view-admin';
-
-function readStoredPlatformFleetViewAdminId(): string | null {
-  try {
-    const v = localStorage.getItem(PLATFORM_FLEET_VIEW_ADMIN_STORAGE_KEY)?.trim();
-    return v && isLikelyUuid(v) ? v : null;
-  } catch {
-    return null;
-  }
-}
 
 function resolveSignUpEmailRedirectUrl(): string {
   if (typeof window === 'undefined') return 'https://fleet-manager-pro.com/auth';
@@ -99,11 +88,6 @@ interface AuthContextType {
   /** Currently active org for dashboard data (selected switcher or profile.org_id). */
   activeOrgId: string | null;
   setActiveOrgId: (orgId: string | null) => void;
-  /**
-   * מנהל פלטפורמה בלבד: כשבוחרים אדמין צי במתג — מזהה profiles.id שלו (או null ל«הצי שלי»).
-   */
-  platformFleetViewAdminId: string | null;
-  setPlatformFleetViewAdminId: (profileId: string | null) => void;
   hasPermission: (permission: PermissionKey) => boolean;
   refreshProfile: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
@@ -121,9 +105,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [roles, setRoles] = useState<AppRole[]>([]);
   const [memberOrganizations, setMemberOrganizations] = useState<MemberOrganization[]>([]);
   const [_activeOrgId, setActiveOrgIdState] = useState<string | null>(null);
-  const [platformFleetViewAdminId, setPlatformFleetViewAdminIdState] = useState<string | null>(() =>
-    typeof window !== 'undefined' ? readStoredPlatformFleetViewAdminId() : null,
-  );
   const inviteCheckDoneRef = useRef(false);
   const activeOrgInitializedRef = useRef(false);
   const profileRef = useRef<Profile | null>(null);
@@ -142,19 +123,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {
         // ignore
       }
-    }
-  }, []);
-
-  const setPlatformFleetViewAdminId = useCallback((profileId: string | null) => {
-    setPlatformFleetViewAdminIdState(profileId);
-    try {
-      if (profileId && isLikelyUuid(profileId)) {
-        localStorage.setItem(PLATFORM_FLEET_VIEW_ADMIN_STORAGE_KEY, profileId);
-      } else {
-        localStorage.removeItem(PLATFORM_FLEET_VIEW_ADMIN_STORAGE_KEY);
-      }
-    } catch {
-      // ignore
     }
   }, []);
 
@@ -595,13 +563,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!user) return;
     if (!activeOrgId) return;
     if (memberOrganizations.length === 0) return;
-    // Platform owner viewing another admin fleet: don't snap back to own org membership.
-    if (
-      platformFleetViewAdminId &&
-      isPlatformSuperOwnerEmail(resolveSessionEmail(profile, user))
-    ) {
-      return;
-    }
     const known = memberOrganizations.some((o) => o.id === activeOrgId);
     if (known) return;
     if (readViewAsActiveFromSession()) return;
@@ -620,7 +581,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (preferred && preferred !== activeOrgId) {
       setActiveOrgId(preferred);
     }
-  }, [user, profile, activeOrgId, memberOrganizations, platformFleetViewAdminId, setActiveOrgId]);
+  }, [user, profile, activeOrgId, memberOrganizations, setActiveOrgId]);
 
   /**
    * `activeOrgId` על צי ראשי (localStorage) אבל `profiles.org_id` כבר ארגון אחר — למשל כש־RLS על org_members
@@ -644,19 +605,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user?.id) return;
     if (memberOrganizations.length !== 1) return;
-    if (
-      platformFleetViewAdminId &&
-      isPlatformSuperOwnerEmail(resolveSessionEmail(profile, user))
-    ) {
-      return;
-    }
     const onlyId = memberOrganizations[0]?.id;
     if (!onlyId) return;
     if (activeOrgId === onlyId) return;
     if (activeOrgId === RAVID_FLEET_ORG_ID) return;
     if (activeOrgId && !memberOrganizations.some((o) => o.id === activeOrgId)) return;
     setActiveOrgId(onlyId);
-  }, [user?.id, memberOrganizations, activeOrgId, platformFleetViewAdminId, profile, user, setActiveOrgId]);
+  }, [user?.id, memberOrganizations, activeOrgId, profile, user, setActiveOrgId]);
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -837,8 +792,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       memberOrganizations,
       activeOrgId,
       setActiveOrgId,
-      platformFleetViewAdminId,
-      setPlatformFleetViewAdminId,
       hasPermission,
       refreshProfile,
       signIn,

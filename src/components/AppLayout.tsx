@@ -15,7 +15,6 @@ import { useVehicleSpecDirty } from '@/contexts/VehicleSpecDirtyContext';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrganization } from '@/hooks/useOrganizations';
-import { useTenantFleetAdminsForPlatformSwitcher } from '@/hooks/useTeam';
 import { AIChatAssistant } from './AIChatAssistant';
 import { useTheme } from '@/hooks/useTheme';
 import { Sun, Moon, Building2, LogOut, Home, ArrowRight, ChevronDown, Settings, UserCog, Menu, Download, Smartphone, Eye } from 'lucide-react';
@@ -111,8 +110,6 @@ export function AppLayout({ children }: AppLayoutProps) {
     activeOrgId,
     memberOrganizations,
     setActiveOrgId,
-    setPlatformFleetViewAdminId,
-    platformFleetViewAdminId,
     isAdmin,
     isManager,
     isDriver,
@@ -140,7 +137,6 @@ export function AppLayout({ children }: AppLayoutProps) {
   const isHomeActive = location.pathname === '/';
   const { data: organization } = useOrganization(activeOrgId ?? null);
   const orgName = organization?.name?.trim() ?? '';
-  const { data: tenantFleetAdmins = [] } = useTenantFleetAdminsForPlatformSwitcher();
 
   /** בלי דליפת «צי ראשי» / ארגון מנהל-העל למשתמשים שאינם מנהל-העל */
   const memberOrgsForSwitcher = useMemo(() => {
@@ -397,49 +393,14 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   const platformOwnerFleetScopeLabel = useMemo(() => {
     if (!isPlatformSuperOwnerEmail(resolveSessionEmail(profile, user))) return '';
-    const selfOrg = mainFleetOrgId ?? FALLBACK_MAIN_FLEET_ORG_ID;
-    if (!activeOrgId) return 'צפייה בצי';
-    if (selfOrg && activeOrgId === selfOrg) {
-      return 'הצי שלי · רועי';
-    }
-    const adm =
-      (platformFleetViewAdminId
-        ? tenantFleetAdmins.find((a) => a.id === platformFleetViewAdminId)
-        : null) ?? tenantFleetAdmins.find((a) => a.org_id === activeOrgId);
-    if (adm) {
-      const n = adm.full_name?.trim();
-      const local = (adm.email ?? '').split('@')[0]?.trim();
-      return n || local || 'מנהל צי';
-    }
-    return (organization?.name ?? orgName) || 'צפייה בצי';
-  }, [
-    profile,
-    user,
-    mainFleetOrgId,
-    activeOrgId,
-    platformFleetViewAdminId,
-    tenantFleetAdmins,
-    organization?.name,
-    orgName,
-  ]);
-
-  const platformOwnerFleetScopeValue = useMemo(() => {
-    if (!isPlatformSuperOwnerEmail(resolveSessionEmail(profile, user))) return '';
-    const selfOrg = mainFleetOrgId ?? FALLBACK_MAIN_FLEET_ORG_ID;
-    if (!activeOrgId) return 'self';
-    if (selfOrg && activeOrgId === selfOrg) return 'self';
-    const adm =
-      (platformFleetViewAdminId
-        ? tenantFleetAdmins.find((a) => a.id === platformFleetViewAdminId)
-        : null) ?? tenantFleetAdmins.find((a) => a.org_id === activeOrgId);
-    return adm?.id ?? activeOrgId;
-  }, [profile, user, mainFleetOrgId, activeOrgId, platformFleetViewAdminId, tenantFleetAdmins]);
+    if (!activeOrgId) return 'בחירת ארגון';
+    const org = memberOrganizations.find((o) => o.id === activeOrgId);
+    return org?.name?.trim() || (organization?.name ?? orgName) || 'ארגון';
+  }, [profile, user, activeOrgId, memberOrganizations, organization?.name, orgName]);
 
   const OrgSwitcher = () => {
-    /** מתג צפייה בצי — רק למנהל הפלטפורמה: «הצי שלי» + אדמינים (לא שמות ארגון DB) */
+    /** מתג ארגון — רק למנהל הפלטפורמה. הרשאות נתונים מנוהלות ב-RLS. */
     if (!isPlatformSuperOwnerEmail(resolveSessionEmail(profile, user))) return null;
-
-    const selfOrg = mainFleetOrgId ?? FALLBACK_MAIN_FLEET_ORG_ID;
 
     return (
       <DropdownMenu>
@@ -456,59 +417,21 @@ export function AppLayout({ children }: AppLayoutProps) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align={isRtl ? 'start' : 'end'} className="min-w-[240px] z-[10001]">
-          <DropdownMenuLabel className="text-xs text-muted-foreground">צפייה בצי לפי מנהל</DropdownMenuLabel>
+          <DropdownMenuLabel className="text-xs text-muted-foreground">בחירת ארגון</DropdownMenuLabel>
           <DropdownMenuRadioGroup
-            value={platformOwnerFleetScopeValue}
+            value={activeOrgId ?? ''}
             onValueChange={(id) => {
               if (!id) return;
-              if (id === 'self') {
-                setPlatformFleetViewAdminId(null);
-                setActiveOrgId(selfOrg);
-                return;
-              }
-              const adm = tenantFleetAdmins.find((a) => a.id === id);
-              if (adm?.org_id) {
-                setPlatformFleetViewAdminId(adm.id);
-                setActiveOrgId(adm.org_id);
-                return;
-              }
-              setPlatformFleetViewAdminId(null);
-              if (isLikelyUuid(id)) {
-                setActiveOrgId(id);
-              }
+              setActiveOrgId(id);
             }}
           >
-            <DropdownMenuRadioItem value="self" className="text-xs">
-              <span className="truncate font-medium">הצי שלי · רועי</span>
-            </DropdownMenuRadioItem>
-            {tenantFleetAdmins.map((a) => {
-              const label =
-                a.full_name?.trim() ||
-                (a.email ?? '').split('@')[0]?.trim() ||
-                'מנהל צי';
-              const sub = (a.email ?? '').trim();
+            {memberOrgsForSwitcher.map((org) => {
               return (
-                <DropdownMenuRadioItem key={a.id} value={a.id} className="text-xs">
-                  <span className="flex flex-col gap-0.5 text-right rtl:text-right">
-                    <span className="truncate font-medium">{label}</span>
-                    {sub ? (
-                      <span className="truncate text-[10px] text-muted-foreground opacity-90">{sub}</span>
-                    ) : null}
-                  </span>
+                <DropdownMenuRadioItem key={org.id} value={org.id} className="text-xs">
+                  <span className="truncate font-medium">{org.name ?? 'ארגון'}</span>
                 </DropdownMenuRadioItem>
               );
             })}
-            {(() => {
-              const v = platformOwnerFleetScopeValue;
-              if (v === 'self' || tenantFleetAdmins.some((a) => a.id === v)) return null;
-              if (!isLikelyUuid(v)) return null;
-              const org = memberOrganizations.find((o) => o.id === v);
-              return (
-                <DropdownMenuRadioItem key={`other-org-${v}`} value={v} className="text-xs">
-                  <span className="truncate">{org?.name ?? 'ארגון נוסף'}</span>
-                </DropdownMenuRadioItem>
-              );
-            })()}
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>

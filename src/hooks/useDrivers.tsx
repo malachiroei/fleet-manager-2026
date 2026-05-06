@@ -5,11 +5,7 @@ import { toast } from '@/hooks/use-toast';
 import { formatSupabaseError, isMissingSafetyOfficerColumnError } from '@/lib/supabaseError';
 import { useAuth } from '@/hooks/useAuth';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
-import {
-  applyPlatformOwnerFleetListFilter,
-  fleetManagerVisibilityOrFilter,
-} from '@/lib/fleetManagerScope';
-import { isPlatformSuperOwnerEmail, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
+import { resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
 
 /** PostgREST שולח null מפסיע DEFAULT ב־Postgres; חובה UUID לפני insert אם אין ערך תקין. */
 function ensureDriverInsertId(row: Record<string, unknown>) {
@@ -59,12 +55,6 @@ export function useDrivers() {
     isDriverContextOnly,
     impersonatedUserId,
     fleetListReady,
-    applyFleetManagerSlice,
-    fleetManagerListUserId,
-    fleetManagerParentProfileId,
-    platformFleetViewAdminId,
-    platformTenantViewProfile,
-    platformTenantViewLookupFailed,
   } = useImpersonationFleetScope();
 
   const orgId = effectiveOrgId;
@@ -76,95 +66,62 @@ export function useDrivers() {
       isImpersonating,
       isDriverContextOnly,
       impersonatedUserId,
-      applyFleetManagerSlice,
-      fleetManagerListUserId,
-      fleetManagerParentProfileId,
       resolveSessionEmail(profile, user),
       user?.id,
-      platformFleetViewAdminId,
-      platformTenantViewProfile?.id,
-      platformTenantViewLookupFailed,
     ],
     enabled: fleetListReady && orgId != null,
     queryFn: async () => {
       if (orgId == null) return [] as DriverSummary[];
-      const sessionEmail = resolveSessionEmail(profile, user);
-      const isSuper = isPlatformSuperOwnerEmail(sessionEmail);
-      const ownerId = user?.id ?? '';
-      let base = applyPlatformOwnerFleetListFilter(supabase.from('drivers').select('*'), {
-        orgId,
-        isPlatformSuperOwner: isSuper,
-        platformOwnerId: ownerId,
-        tenantViewProfile: platformTenantViewProfile ?? undefined,
-        tenantViewLookupFailed: platformTenantViewLookupFailed,
-      });
+      let base = supabase.from('drivers').select('*').eq('org_id', orgId);
       if (isDriverContextOnly && impersonatedUserId) {
         base = base.eq('user_id', impersonatedUserId);
-      } else if (applyFleetManagerSlice && fleetManagerListUserId) {
-        base = base.or(
-          fleetManagerVisibilityOrFilter(fleetManagerListUserId, {
-            parentFleetOwnerProfileId: fleetManagerParentProfileId,
-          }),
-        );
       }
       const { data, error } = await base.order('full_name');
 
       if (error) {
         let fallbackQ = supabase.from('drivers').select(
-            [
-              'id',
-              'full_name',
-              'id_number',
-              'license_expiry',
-              'phone',
-              'email',
-              'address',
-              'city',
-              'birth_date',
-              'note1',
-              'note2',
-              'rating',
-              'job_title',
-              'department',
-              'employee_number',
-              'driver_code',
-              'division',
-              'area',
-              'group_name',
-              'group_code',
-              'safety_officer',
-              'eligibility',
-              'work_start_date',
-              'license_number',
-              'health_declaration_date',
-              'safety_training_date',
-              'regulation_585b_date',
-              'practical_driving_test_date',
-              'is_field_person',
-              'is_active',
-              'driving_permit',
-              'license_front_url',
-              'license_back_url',
-              'health_declaration_url',
-              'status',
-              'pending_license_expiry',
-            ].join(', '),
-          );
-        fallbackQ = applyPlatformOwnerFleetListFilter(fallbackQ, {
-          orgId,
-          isPlatformSuperOwner: isSuper,
-          platformOwnerId: ownerId,
-          tenantViewProfile: platformTenantViewProfile ?? undefined,
-          tenantViewLookupFailed: platformTenantViewLookupFailed,
-        });
+          [
+            'id',
+            'full_name',
+            'id_number',
+            'license_expiry',
+            'phone',
+            'email',
+            'address',
+            'city',
+            'birth_date',
+            'note1',
+            'note2',
+            'rating',
+            'job_title',
+            'department',
+            'employee_number',
+            'driver_code',
+            'division',
+            'area',
+            'group_name',
+            'group_code',
+            'safety_officer',
+            'eligibility',
+            'work_start_date',
+            'license_number',
+            'health_declaration_date',
+            'safety_training_date',
+            'regulation_585b_date',
+            'practical_driving_test_date',
+            'is_field_person',
+            'is_active',
+            'driving_permit',
+            'license_front_url',
+            'license_back_url',
+            'health_declaration_url',
+            'status',
+            'pending_license_expiry',
+          ].join(', '),
+        );
+        fallbackQ = fallbackQ.eq('org_id', orgId);
         if (isDriverContextOnly && impersonatedUserId) {
           fallbackQ = fallbackQ.eq('user_id', impersonatedUserId);
-        } else if (applyFleetManagerSlice && fleetManagerListUserId) {
-          fallbackQ = fallbackQ.or(
-            fleetManagerVisibilityOrFilter(fleetManagerListUserId, {
-              parentFleetOwnerProfileId: fleetManagerParentProfileId,
-            }),
-          );
         }
         const fallback = await fallbackQ.order('full_name');
         if (fallback.error) {
@@ -233,21 +190,15 @@ function mapRowToDriverSummary(row: Record<string, unknown>): DriverSummary {
 export function useDriver(id: string) {
   const { user, profile } = useAuth();
   const { effectiveOrgId, fleetListReady } = useImpersonationFleetScope();
-  const orgId = effectiveOrgId;
 
   return useQuery({
-    queryKey: ['driver', id, orgId, resolveSessionEmail(profile, user)],
-    enabled: !!id && orgId != null && fleetListReady,
+    queryKey: ['driver', id, effectiveOrgId ?? null, resolveSessionEmail(profile, user)],
+    enabled: !!id && effectiveOrgId != null && fleetListReady,
     refetchOnMount: 'always',
     queryFn: async () => {
-      if (orgId == null) return null;
-      const sessionEmail = resolveSessionEmail(profile, user);
-      const isSuper = isPlatformSuperOwnerEmail(sessionEmail);
-      // בלי .or כאן — id + or שובר PostgREST; מנהל על: רק id + RLS.
-      let q = supabase.from('drivers').select('*').eq('id', id);
-      if (!isSuper) {
-        q = q.eq('org_id', orgId);
-      }
+      if (effectiveOrgId == null) return null;
+      // Trust RLS; fetch by id only.
+      const q = supabase.from('drivers').select('*').eq('id', id);
       const { data, error } = await q.maybeSingle();
       if (error) throw error;
       return data as Driver | null;

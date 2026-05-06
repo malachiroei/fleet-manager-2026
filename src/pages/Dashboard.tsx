@@ -188,7 +188,6 @@ export default function Dashboard() {
     roles: userRoles,
     loading,
     activeOrgId,
-    platformFleetViewAdminId,
   } = useAuth();
   const { viewAsEmail } = useViewAs();
   const { isPending: flagsPending } = useFeatureFlags();
@@ -205,7 +204,7 @@ export default function Dashboard() {
   const scopeInvalidateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!activeOrgId && !viewAsEmail?.trim()) return;
-    const key = `${activeOrgId ?? ''}|${(viewAsEmail ?? '').trim()}|${platformFleetViewAdminId ?? ''}`;
+    const key = `${activeOrgId ?? ''}|${(viewAsEmail ?? '').trim()}`;
     if (scopeRefreshKeyRef.current === key) return;
     scopeRefreshKeyRef.current = key;
     if (scopeInvalidateTimerRef.current != null) {
@@ -221,7 +220,7 @@ export default function Dashboard() {
         scopeInvalidateTimerRef.current = null;
       }
     };
-  }, [activeOrgId, platformFleetViewAdminId, viewAsEmail, queryClient]);
+  }, [activeOrgId, viewAsEmail, queryClient]);
 
   const email = user?.email || '';
   const isMainAdmin = email.toLowerCase() === 'malachiroei@gmail.com';

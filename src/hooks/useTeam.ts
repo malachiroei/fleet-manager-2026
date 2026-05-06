@@ -37,12 +37,8 @@ export interface TeamMemberSummary {
 export type UseTeamMembersOptions = {
   /** סופר־אדמין: טוען את כל ה-profiles; אחרת מסנן לפי org_id */
   loadAllOrgs?: boolean;
-  /** Subject manager id for hierarchy scope (supports View As depth). */
-  subjectManagerUserId?: string | null;
   /** Subject system-admin flag (supports View As depth). */
   subjectIsSystemAdmin?: boolean;
-  /** מנהל ארגון: הצגה לפי managed_by/parent_admin בלבד (ללא כל הארגון). */
-  managedScopeOnly?: boolean;
 };
 
 /**
@@ -52,9 +48,7 @@ export type UseTeamMembersOptions = {
 export function useTeamMembers(orgId: string | null | undefined, options?: UseTeamMembersOptions) {
   const { profile } = useAuth();
   const loadAllOrgs = options?.loadAllOrgs === true;
-  const subjectManagerUserId = options?.subjectManagerUserId ?? null;
   const subjectIsSystemAdmin = options?.subjectIsSystemAdmin === true;
-  const managedScopeOnly = options?.managedScopeOnly === true;
 
   const enabled = Boolean(profile) && (loadAllOrgs || Boolean(orgId));
 
@@ -63,35 +57,19 @@ export function useTeamMembers(orgId: string | null | undefined, options?: UseTe
       ...TEAM_QUERY_KEY,
       loadAllOrgs ? 'all-orgs' : 'org',
       orgId ?? 'none',
-      subjectManagerUserId ?? 'none',
       subjectIsSystemAdmin ? 'sys-admin' : 'regular',
-      'scope-org-or-direct-reports',
+      'scope-org',
     ],
     enabled,
     queryFn: async (): Promise<Profile[]> => {
       let q = supabase.from('profiles').select('*').order('full_name', { ascending: true });
       if (!loadAllOrgs && orgId) {
-        if (subjectManagerUserId) {
-          if (managedScopeOnly) {
-            // מבנה היררכי: מנהל רואה רק מי שמשויך אליו.
-            q = q.or(
-              `parent_admin_id.eq.${subjectManagerUserId},managed_by_user_id.eq.${subjectManagerUserId}`,
-            );
-          } else {
-            q = q.or(
-              `org_id.eq.${orgId},parent_admin_id.eq.${subjectManagerUserId},managed_by_user_id.eq.${subjectManagerUserId}`,
-            );
-          }
-        } else {
-          q = q.eq('org_id', orgId);
-        }
+        // Trust RLS + org isolation: frontend should not attempt managed_by/parent_admin filtering.
+        q = q.eq('org_id', orgId);
       }
       if (!loadAllOrgs) {
         if (subjectIsSystemAdmin) {
           // System admins can see full org team, including unmanaged (NULL) rows.
-        } else if (subjectManagerUserId) {
-          // ניהול צוות: כל חברי הארגון פחות המשתמש הנוכחי (תואם כותרת «חברי הארגון»).
-          q = q.neq('id', subjectManagerUserId);
         } else {
           return [];
         }

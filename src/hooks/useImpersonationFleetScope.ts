@@ -21,7 +21,7 @@ function rolesIncludeFleetElevated(roles: string[]): boolean {
 }
 
 export function useImpersonationFleetScope() {
-  const { user, profile, activeOrgId, roles: loggedInRoles, platformFleetViewAdminId } = useAuth();
+  const { user, profile, activeOrgId, roles: loggedInRoles } = useAuth();
   const sessionEmail = resolveSessionEmail(profile, user);
   const { viewAsEmail, viewAsProfile } = useViewAs();
 
@@ -77,30 +77,13 @@ export function useImpersonationFleetScope() {
     () => (loggedInRoles ?? []).map((x) => String(x).toLowerCase()),
     [loggedInRoles],
   );
-  const loggedInProfileDelegatedDriverContext = useMemo(() => {
-    if (isImpersonating) return false;
-    if (rolesIncludeFleetElevated(loggedInRolesNorm)) return false;
-    const hasParentAdmin = Boolean(profile?.parent_admin_id?.trim() || profile?.managed_by_user_id?.trim());
-    if (!hasParentAdmin) return false;
-    const perms = (profile?.permissions ?? null) as Record<string, unknown> | null;
-    if (!perms || typeof perms !== 'object') return false;
-    const hasAdminAccessFlag = typeof perms.admin_access === 'boolean';
-    const hasManageTeamFlag = typeof perms.manage_team === 'boolean';
-    if (!hasAdminAccessFlag && !hasManageTeamFlag) return false;
-    const adminAccess = perms.admin_access === true;
-    const manageTeam = perms.manage_team === true;
-    return !adminAccess && !manageTeam;
-  }, [isImpersonating, loggedInRolesNorm, profile?.parent_admin_id, profile?.managed_by_user_id, profile?.permissions]);
   const loggedInDriverContextOnly = useMemo(() => {
     if (isImpersonating) return false;
-    /** יש מנהל ישיר בפרופיל — לא לכפות מצב «נהג בלבד» (רק רכב משובץ); רשימות עוברות RLS + סינון managed_by בלקוח */
-    if ((profile?.parent_admin_id ?? '').trim()) return false;
-    if (loggedInProfileDelegatedDriverContext) return true;
     if (loggedInRolesNorm.length === 0) return false;
     const hasDriver = loggedInRolesNorm.includes('driver') || loggedInRolesNorm.includes('employee') || loggedInRolesNorm.includes('viewer');
     const hasElevated = loggedInRolesNorm.includes('admin') || loggedInRolesNorm.includes('fleet_manager');
     return hasDriver && !hasElevated;
-  }, [loggedInProfileDelegatedDriverContext, isImpersonating, loggedInRolesNorm, profile?.parent_admin_id]);
+  }, [isImpersonating, loggedInRolesNorm]);
 
   const impersonatedDriverContextOnly = useMemo(() => {
     if (!isImpersonating) return false;
@@ -137,86 +120,11 @@ export function useImpersonationFleetScope() {
   const scopedDriverId = isDriverContextOnly ? (driverRowQuery.data ?? null) : null;
   const driverScopePending = Boolean(isDriverContextOnly && driverRowQuery.isLoading);
 
-  const platformTenantViewProfileQuery = useQuery({
-    queryKey: ['platform-tenant-fleet-view-profile', platformFleetViewAdminId],
-    enabled: Boolean(isPlatformSuperOwnerEmail(sessionEmail) && platformFleetViewAdminId),
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, email, org_id, parent_admin_id, managed_by_user_id')
-        .eq('id', platformFleetViewAdminId!)
-        .maybeSingle();
-      if (error) throw error;
-      return data as {
-        id: string;
-        email: string | null;
-        org_id: string | null;
-        parent_admin_id?: string | null;
-        managed_by_user_id?: string | null;
-      } | null;
-    },
-    staleTime: 60_000,
-  });
-
-  const platformTenantViewProfile = platformTenantViewProfileQuery.data ?? null;
-  const platformTenantViewLookupFailed = Boolean(
-    platformFleetViewAdminId && platformTenantViewProfileQuery.isFetched && !platformTenantViewProfileQuery.data,
-  );
-  const platformTenantViewPending = Boolean(
-    isPlatformSuperOwnerEmail(sessionEmail) && platformFleetViewAdminId && platformTenantViewProfileQuery.isLoading,
-  );
-
   const fleetListReady =
     (effectiveOrgId != null || bootstrapOwnerMayLackOrg) &&
     !scopePending &&
     (!isImpersonating || rolesQuery.isFetched) &&
-    (!isDriverContextOnly || !driverScopePending) &&
-    !platformTenantViewPending;
-
-  const fleetManagerListUserId = (isDriverContextOnly ? null : effectiveUserId) as string | null;
-
-  /** profiles.id של מנהל העל — עדיין מוחזר לתאימות; רשימות מסתמכות על RLS (אין slice בלקוח) */
-  const fleetManagerParentProfileId = useMemo((): string | null => {
-    if (isImpersonating) {
-      const fromProfile = (viewAsProfile?.parent_admin_id ?? viewAsProfile?.managed_by_user_id ?? '').trim();
-      return fromProfile || null;
-    }
-    // Admin-like users should not inherit parent-owner slice (prevents sibling admin data leak).
-    const sessionEmailNow = resolveSessionEmail(profile, user);
-    const perms = (profile?.permissions ?? null) as Record<string, unknown> | null;
-    const isAdminLike =
-      isRavidManagerEmail(sessionEmailNow) ||
-      profile?.is_system_admin === true ||
-      loggedInRolesNorm.includes('admin') ||
-      loggedInRolesNorm.includes('fleet_manager') ||
-      perms?.admin_access === true ||
-      perms?.manage_team === true;
-    if (isAdminLike) return null;
-    const fromProfile = (profile?.parent_admin_id ?? profile?.managed_by_user_id ?? '').trim();
-    return fromProfile || null;
-  }, [
-    isImpersonating,
-    loggedInRolesNorm,
-    profile?.parent_admin_id,
-    profile?.managed_by_user_id,
-    profile?.is_system_admin,
-    profile?.permissions,
-    profile,
-    user,
-    viewAsProfile?.parent_admin_id,
-    viewAsProfile?.managed_by_user_id,
-  ]);
-
-  /**
-   * סינון PostgREST לפי managed_by + הורה (fleetManagerVisibilityOrFilter). מנהלי bootstrap (מנהל על + רביד)
-   * לא מסננים כאן — רק מנהל-העל. שאר המשתמשים (כולל רביד) חייבים slice כדי למנוע דליפת צי בין אדמינים.
-   */
-  const applyFleetManagerSlice = useMemo(() => {
-    if (isImpersonating) return false;
-    const e = resolveSessionEmail(profile, user);
-    if (isPlatformSuperOwnerEmail(e)) return false;
-    return true;
-  }, [isImpersonating, profile, user]);
+    (!isDriverContextOnly || !driverScopePending);
 
   return {
     effectiveOrgId,
@@ -226,11 +134,5 @@ export function useImpersonationFleetScope() {
     isDriverContextOnly,
     scopedDriverId,
     fleetListReady,
-    applyFleetManagerSlice,
-    fleetManagerListUserId,
-    fleetManagerParentProfileId,
-    platformFleetViewAdminId,
-    platformTenantViewProfile,
-    platformTenantViewLookupFailed,
   };
 }

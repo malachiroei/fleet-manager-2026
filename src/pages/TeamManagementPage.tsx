@@ -63,9 +63,7 @@ export default function TeamManagementPage() {
   const subjectIsSystemAdmin = profile?.is_system_admin === true;
   const { data: members, isLoading, isFetching: membersFetching } = useTeamMembers(orgId, {
     loadAllOrgs: isSuperAdminTeamView,
-    subjectManagerUserId: effectiveUserId,
     subjectIsSystemAdmin,
-    managedScopeOnly: !isSuperAdminTeamView && !subjectIsSystemAdmin,
   });
   const { data: invitations, isLoading: invitationsLoading, isFetching: invitationsFetching } =
     useOrgInvitations(orgId);
@@ -84,52 +82,12 @@ export default function TeamManagementPage() {
     return m.is_system_admin === true || perms.manage_team === true || perms.admin_access === true;
   };
 
-  const [expandedAdminIds, setExpandedAdminIds] = useState<string[]>([]);
-  const memberHierarchy = useMemo(() => {
-    const byId = new Map(memberRows.map((m) => [m.id, m] as const));
-    const admins = memberRows
-      .filter((m) => isMemberAdminLike(m))
-      .sort((a, b) => (a.full_name || a.email || '').localeCompare(b.full_name || b.email || ''));
-    const users = memberRows.filter((m) => !isMemberAdminLike(m));
-    const usersByManager = new Map<string, Profile[]>();
-    const unassigned: Profile[] = [];
-
-    for (const u of users) {
-      const managerId = String(u.managed_by_user_id ?? u.parent_admin_id ?? '').trim();
-      if (!managerId || !byId.has(managerId)) {
-        unassigned.push(u);
-        continue;
-      }
-      const arr = usersByManager.get(managerId) ?? [];
-      arr.push(u);
-      usersByManager.set(managerId, arr);
-    }
-    for (const [key, arr] of usersByManager.entries()) {
-      usersByManager.set(
-        key,
-        [...arr].sort((a, b) => (a.full_name || a.email || '').localeCompare(b.full_name || b.email || '')),
-      );
-    }
-
-    return {
-      admins,
-      usersByManager,
-      unassigned: unassigned.sort((a, b) => (a.full_name || a.email || '').localeCompare(b.full_name || b.email || '')),
-    };
-  }, [memberRows]);
-
+  /** UI must not attempt to infer parent/managed hierarchy; trust RLS output. */
   const visibleMemberRows = useMemo(() => {
-    const out: Profile[] = [];
-    for (const admin of memberHierarchy.admins) {
-      out.push(admin);
-      if (expandedAdminIds.includes(admin.id)) {
-        out.push(...(memberHierarchy.usersByManager.get(admin.id) ?? []));
-      }
-    }
-    // Never hide unmanaged users: show them even when all admin groups are collapsed.
-    out.push(...memberHierarchy.unassigned);
-    return out;
-  }, [memberHierarchy, expandedAdminIds]);
+    return [...memberRows].sort((a, b) =>
+      (a.full_name || a.email || '').localeCompare(b.full_name || b.email || ''),
+    );
+  }, [memberRows]);
 
   /** מיילים שכבר יש להם שורה ב-profiles — לא מציגים אותם כהזמנה פתוחה */
   const registeredEmails = useMemo(() => {
@@ -281,16 +239,10 @@ export default function TeamManagementPage() {
                         const viewerAuthId = String(profile?.user_id ?? profile?.id ?? '').trim();
                         const isSelf = Boolean(memberAuthId) && memberAuthId === viewerAuthId;
                         const isAdminRow = isMemberAdminLike(m);
-                        const childrenCount = memberHierarchy.usersByManager.get(m.id)?.length ?? 0;
-                        const isExpanded = expandedAdminIds.includes(m.id);
-                        const viewerProfileId = String(profile?.id ?? '').trim();
-                        const memberReportsToViewer =
-                          Boolean(viewerProfileId) &&
-                          String(m.parent_admin_id ?? m.managed_by_user_id ?? '').trim() === viewerProfileId;
                         const canOpenFeatureOverrides =
                           isRoeiAdmin ||
                           (memberEmail && memberEmail === viewerEmail) ||
-                          (canManageTeam && !isSelf && memberReportsToViewer);
+                          (canManageTeam && !isSelf);
                         const showRemoveForRow =
                           canRemoveTeamMemberRow &&
                           !isSelf &&
@@ -306,23 +258,8 @@ export default function TeamManagementPage() {
                             <TableCell className="w-[190px] font-medium align-middle">
                               <span className="truncate block">{m.full_name || '—'}</span>
                               <span className="block text-[11px] text-muted-foreground">
-                                {isMemberAdminLike(m) ? 'אדמין' : 'משתמש תחת אדמין'}
+                                {isAdminRow ? 'אדמין' : 'משתמש'}
                               </span>
-                              {isAdminRow && childrenCount > 0 ? (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  className="mt-2 h-7 px-2 text-[11px]"
-                                  onClick={() =>
-                                    setExpandedAdminIds((prev) =>
-                                      prev.includes(m.id) ? prev.filter((id) => id !== m.id) : [...prev, m.id],
-                                    )
-                                  }
-                                >
-                                  {isExpanded ? `הסתר משתמשים (${childrenCount})` : `הצג משתמשים (${childrenCount})`}
-                                </Button>
-                              ) : null}
                             </TableCell>
                             <TableCell className="w-[240px] text-muted-foreground align-middle" dir="ltr">
                               <span className="truncate block">{m.email || '—'}</span>

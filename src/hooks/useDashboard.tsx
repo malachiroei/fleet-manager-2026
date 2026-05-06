@@ -5,13 +5,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { useViewAs } from '@/contexts/ViewAsContext';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
 import { isPlatformSuperOwnerEmail, resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
-import {
-  applyPlatformOwnerFleetListFilter,
-  fleetManagerVisibilityOrFilter,
-  fleetRowVisibleUnderManagerSlice,
-  rowMatchesPlatformOrTenantFleetScope,
-  type TenantFleetViewProfileLike,
-} from '@/lib/fleetManagerScope';
 
 const COMPLIANCE_IN_CHUNK = 80;
 
@@ -105,13 +98,6 @@ type DerivedComplianceCtx = {
   effectiveOrgId: string | null;
   isDriverContextOnly: boolean;
   scopedDriverId: string | null;
-  applyFleetManagerSlice: boolean;
-  fleetManagerListUserId: string | null;
-  fleetManagerParentProfileId: string | null;
-  isPlatformSuperOwner: boolean;
-  platformOwnerProfileId: string | null;
-  platformTenantViewProfile: TenantFleetViewProfileLike | null;
-  platformTenantViewLookupFailed: boolean;
 };
 
 async function appendDerivedComplianceFromFleetDates(
@@ -123,13 +109,6 @@ async function appendDerivedComplianceFromFleetDates(
     effectiveOrgId,
     isDriverContextOnly,
     scopedDriverId,
-    applyFleetManagerSlice,
-    fleetManagerListUserId,
-    fleetManagerParentProfileId,
-    isPlatformSuperOwner,
-    platformOwnerProfileId,
-    platformTenantViewProfile,
-    platformTenantViewLookupFailed,
   } = ctx;
   if (!effectiveOrgId) return;
   // Driver-scoped view without resolved driver row: never fallback to org-wide compliance.
@@ -139,7 +118,6 @@ async function appendDerivedComplianceFromFleetDates(
     id: string;
     plate_number: string | null;
     org_id: string | null;
-    managed_by_user_id: string | null;
     assigned_driver_id: string | null;
     road_ascent_month: number | null;
     road_ascent_year: number | null;
@@ -152,7 +130,6 @@ async function appendDerivedComplianceFromFleetDates(
     id: string;
     full_name: string | null;
     org_id: string | null;
-    managed_by_user_id: string | null;
     status: string | null;
     license_expiry: string | null;
     health_declaration_date: string | null;
@@ -164,7 +141,7 @@ async function appendDerivedComplianceFromFleetDates(
     const { data, error } = await supabase
       .from('vehicles')
       .select(
-        'id, plate_number, org_id, managed_by_user_id, assigned_driver_id, road_ascent_month, road_ascent_year, test_expiry, insurance_expiry, next_inspection_date, next_maintenance_date',
+        'id, plate_number, org_id, assigned_driver_id, road_ascent_month, road_ascent_year, test_expiry, insurance_expiry, next_inspection_date, next_maintenance_date',
       )
       .eq('org_id', effectiveOrgId)
       .eq('assigned_driver_id', scopedDriverId);
@@ -176,25 +153,8 @@ async function appendDerivedComplianceFromFleetDates(
   } else {
     let vq = supabase
       .from('vehicles')
-      .select('id, plate_number, org_id, managed_by_user_id, assigned_driver_id, road_ascent_month, road_ascent_year, test_expiry, insurance_expiry, next_inspection_date, next_maintenance_date');
-    if (isPlatformSuperOwner && platformOwnerProfileId) {
-      vq = applyPlatformOwnerFleetListFilter(vq, {
-        orgId: effectiveOrgId,
-        isPlatformSuperOwner: true,
-        platformOwnerId: platformOwnerProfileId,
-        tenantViewProfile: platformTenantViewProfile ?? undefined,
-        tenantViewLookupFailed: platformTenantViewLookupFailed,
-      });
-    } else {
-      vq = vq.eq('org_id', effectiveOrgId);
-    }
-    if (applyFleetManagerSlice && fleetManagerListUserId) {
-      vq = vq.or(
-        fleetManagerVisibilityOrFilter(fleetManagerListUserId, {
-          parentFleetOwnerProfileId: fleetManagerParentProfileId,
-        }),
-      );
-    }
+      .select('id, plate_number, org_id, assigned_driver_id, road_ascent_month, road_ascent_year, test_expiry, insurance_expiry, next_inspection_date, next_maintenance_date')
+      .eq('org_id', effectiveOrgId);
     const { data, error } = await vq;
     if (error) {
       console.warn('[useComplianceAlerts] derived vehicles failed', error.message);
@@ -207,7 +167,7 @@ async function appendDerivedComplianceFromFleetDates(
   if (isDriverContextOnly && scopedDriverId) {
     const { data, error } = await supabase
       .from('drivers')
-      .select('id, full_name, org_id, managed_by_user_id, status, license_expiry, health_declaration_date, regulation_585b_date')
+      .select('id, full_name, org_id, status, license_expiry, health_declaration_date, regulation_585b_date')
       .eq('id', scopedDriverId)
       .maybeSingle();
     if (error) {
@@ -218,25 +178,8 @@ async function appendDerivedComplianceFromFleetDates(
   } else {
     let dq = supabase
       .from('drivers')
-      .select('id, full_name, org_id, managed_by_user_id, status, license_expiry, health_declaration_date, regulation_585b_date');
-    if (isPlatformSuperOwner && platformOwnerProfileId) {
-      dq = applyPlatformOwnerFleetListFilter(dq, {
-        orgId: effectiveOrgId,
-        isPlatformSuperOwner: true,
-        platformOwnerId: platformOwnerProfileId,
-        tenantViewProfile: platformTenantViewProfile ?? undefined,
-        tenantViewLookupFailed: platformTenantViewLookupFailed,
-      });
-    } else {
-      dq = dq.eq('org_id', effectiveOrgId);
-    }
-    if (applyFleetManagerSlice && fleetManagerListUserId) {
-      dq = dq.or(
-        fleetManagerVisibilityOrFilter(fleetManagerListUserId, {
-          parentFleetOwnerProfileId: fleetManagerParentProfileId,
-        }),
-      );
-    }
+      .select('id, full_name, org_id, status, license_expiry, health_declaration_date, regulation_585b_date')
+      .eq('org_id', effectiveOrgId);
     const { data, error } = await dq;
     if (error) {
       console.warn('[useComplianceAlerts] derived drivers failed', error.message);
@@ -351,12 +294,6 @@ export function useDashboardStats() {
     isDriverContextOnly,
     scopedDriverId,
     fleetListReady,
-    applyFleetManagerSlice,
-    fleetManagerListUserId,
-    fleetManagerParentProfileId,
-    platformFleetViewAdminId,
-    platformTenantViewProfile,
-    platformTenantViewLookupFailed,
   } = useImpersonationFleetScope();
 
   const loggedInRolesSig = (loggedInRoles ?? [])
@@ -376,13 +313,7 @@ export function useDashboardStats() {
       isDriverContextOnly,
       scopedDriverId,
       loggedInRolesSig,
-      applyFleetManagerSlice,
-      fleetManagerListUserId,
-      fleetManagerParentProfileId,
       sessionEmailSig,
-      platformFleetViewAdminId,
-      platformTenantViewProfile?.id,
-      platformTenantViewLookupFailed,
     ],
     enabled: fleetListReady && effectiveUserId != null,
     queryFn: async (): Promise<DashboardStats> => {
@@ -431,50 +362,17 @@ export function useDashboardStats() {
         if (vErr) throw vErr;
         vehiclesCount = (vRows ?? []).length;
         driversCount = 1;
-      } else if (
-        isPlatformSuperOwner &&
-        !viewAsEmail?.trim() &&
-        !isImpersonating
-      ) {
-        /** חשבון על: «הצי שלי» (or) או צפייה באדמין — כמו {@link applyPlatformOwnerFleetListFilter} */
-        const vq = applyPlatformOwnerFleetListFilter(supabase.from('vehicles').select('id'), {
-          orgId: effectiveOrgId,
-          isPlatformSuperOwner: true,
-          platformOwnerId: effectiveUserId,
-          tenantViewProfile: platformTenantViewProfile ?? undefined,
-          tenantViewLookupFailed: platformTenantViewLookupFailed,
-        });
-        const dq = applyPlatformOwnerFleetListFilter(supabase.from('drivers').select('id'), {
-          orgId: effectiveOrgId,
-          isPlatformSuperOwner: true,
-          platformOwnerId: effectiveUserId,
-          tenantViewProfile: platformTenantViewProfile ?? undefined,
-          tenantViewLookupFailed: platformTenantViewLookupFailed,
-        });
-        const [gv, gd] = await Promise.all([vq, dq]);
-        if (gv.error) throw gv.error;
-        if (gd.error) throw gd.error;
-        vehiclesCount = (gv.data ?? []).length;
-        driversCount = (gd.data ?? []).length;
       } else {
-        let vq = supabase.from('vehicles').select('id').eq('org_id', effectiveOrgId);
-        let dq = supabase.from('drivers').select('id').eq('org_id', effectiveOrgId);
-        if (applyFleetManagerSlice && fleetManagerListUserId) {
-          vq = vq.or(
-            fleetManagerVisibilityOrFilter(fleetManagerListUserId, {
-              parentFleetOwnerProfileId: fleetManagerParentProfileId,
-            }),
-          );
-          dq = dq.or(
-            fleetManagerVisibilityOrFilter(fleetManagerListUserId, {
-              parentFleetOwnerProfileId: fleetManagerParentProfileId,
-            }),
-          );
-        }
-        const { data: vRows, error: vErr } = await vq;
+        const { data: vRows, error: vErr } = await supabase
+          .from('vehicles')
+          .select('id')
+          .eq('org_id', effectiveOrgId);
         if (vErr) throw vErr;
 
-        const { data: dRows, error: dErr } = await dq;
+        const { data: dRows, error: dErr } = await supabase
+          .from('drivers')
+          .select('id')
+          .eq('org_id', effectiveOrgId);
         if (dErr) throw dErr;
 
         vehiclesCount = (vRows ?? []).length;
@@ -498,14 +396,8 @@ export function useComplianceAlerts() {
     effectiveOrgId,
     effectiveUserId,
     fleetListReady,
-    applyFleetManagerSlice,
-    fleetManagerListUserId,
-    fleetManagerParentProfileId,
     isDriverContextOnly,
     scopedDriverId,
-    platformFleetViewAdminId,
-    platformTenantViewProfile,
-    platformTenantViewLookupFailed,
   } = useImpersonationFleetScope();
 
   const sessionEmailSig = resolveSessionEmail(profile, user);
@@ -515,15 +407,9 @@ export function useComplianceAlerts() {
       'compliance-alerts',
       effectiveOrgId,
       effectiveUserId,
-      applyFleetManagerSlice,
-      fleetManagerListUserId,
-      fleetManagerParentProfileId,
       isDriverContextOnly,
       scopedDriverId,
       sessionEmailSig,
-      platformFleetViewAdminId,
-      platformTenantViewProfile?.id,
-      platformTenantViewLookupFailed,
     ],
     enabled: fleetListReady && effectiveUserId != null,
     staleTime: 60_000,
@@ -563,7 +449,6 @@ export function useComplianceAlerts() {
           {
             plate_number: string | null;
             org_id: string | null;
-            managed_by_user_id: string | null;
             assigned_driver_id: string | null;
             road_ascent_month: number | null;
             road_ascent_year: number | null;
@@ -572,7 +457,7 @@ export function useComplianceAlerts() {
         for (const part of chunkIds(vehicleIds, COMPLIANCE_IN_CHUNK)) {
           const { data: vrows, error: verr } = await supabase
             .from('vehicles')
-            .select('id, plate_number, org_id, managed_by_user_id, assigned_driver_id, road_ascent_month, road_ascent_year')
+            .select('id, plate_number, org_id, assigned_driver_id, road_ascent_month, road_ascent_year')
             .in('id', part);
           if (verr) {
             console.warn('[useComplianceAlerts] vehicles chunk failed — skipping chunk', verr.message);
@@ -582,7 +467,6 @@ export function useComplianceAlerts() {
             vehicleById.set(v.id, {
               plate_number: v.plate_number ?? null,
               org_id: v.org_id ?? null,
-              managed_by_user_id: v.managed_by_user_id ?? null,
               assigned_driver_id: v.assigned_driver_id ?? null,
               road_ascent_month: v.road_ascent_month ?? null,
               road_ascent_year: v.road_ascent_year ?? null,
@@ -595,14 +479,13 @@ export function useComplianceAlerts() {
           {
             full_name: string | null;
             org_id: string | null;
-            managed_by_user_id: string | null;
             status: string | null;
           }
         >();
         for (const part of chunkIds(driverIds, COMPLIANCE_IN_CHUNK)) {
           const { data: drows, error: derr } = await supabase
             .from('drivers')
-            .select('id, full_name, org_id, managed_by_user_id, status')
+            .select('id, full_name, org_id, status')
             .in('id', part);
           if (derr) {
             console.warn('[useComplianceAlerts] drivers chunk failed — skipping chunk', derr.message);
@@ -612,7 +495,6 @@ export function useComplianceAlerts() {
             driverById.set(d.id, {
               full_name: d.full_name ?? null,
               org_id: d.org_id ?? null,
-              managed_by_user_id: d.managed_by_user_id ?? null,
               status: (d as { status?: string | null }).status ?? null,
             });
           }
@@ -626,35 +508,6 @@ export function useComplianceAlerts() {
             if (isDriverContextOnly) {
               if (!scopedDriverId) continue;
               if (v.assigned_driver_id !== scopedDriverId) continue;
-            } else {
-              if (
-                effectiveOrgId &&
-                effectiveUserId &&
-                !rowMatchesPlatformOrTenantFleetScope(
-                  v.org_id,
-                  v.managed_by_user_id,
-                  effectiveOrgId,
-                  {
-                    isPlatformSuperOwner,
-                    platformOwnerProfileId: effectiveUserId,
-                    tenantViewProfile: platformTenantViewProfile ?? undefined,
-                    tenantViewLookupFailed: platformTenantViewLookupFailed,
-                  },
-                )
-              ) {
-                continue;
-              }
-              if (
-                applyFleetManagerSlice &&
-                fleetManagerListUserId &&
-                !fleetRowVisibleUnderManagerSlice(
-                  v.managed_by_user_id,
-                  fleetManagerListUserId,
-                  fleetManagerParentProfileId,
-                )
-              ) {
-                continue;
-              }
             }
 
             const sk = complianceDedupeSlotFromDb('vehicle', r.entity_id, r.alert_type);
@@ -677,31 +530,6 @@ export function useComplianceAlerts() {
             if (isDriverContextOnly) {
               if (!scopedDriverId) continue;
               if (r.entity_id !== scopedDriverId) continue;
-            } else {
-              if (
-                effectiveOrgId &&
-                effectiveUserId &&
-                !rowInPlatformOwnerFleetScope(
-                  d.org_id,
-                  d.managed_by_user_id,
-                  effectiveOrgId,
-                  effectiveUserId,
-                  isPlatformSuperOwner,
-                )
-              ) {
-                continue;
-              }
-              if (
-                applyFleetManagerSlice &&
-                fleetManagerListUserId &&
-                !fleetRowVisibleUnderManagerSlice(
-                  d.managed_by_user_id,
-                  fleetManagerListUserId,
-                  fleetManagerParentProfileId,
-                )
-              ) {
-                continue;
-              }
             }
 
             const sk = complianceDedupeSlotFromDb('driver', r.entity_id, r.alert_type);
@@ -724,13 +552,6 @@ export function useComplianceAlerts() {
         effectiveOrgId,
         isDriverContextOnly,
         scopedDriverId,
-        applyFleetManagerSlice,
-        fleetManagerListUserId,
-        fleetManagerParentProfileId,
-        isPlatformSuperOwner,
-        platformOwnerProfileId: effectiveUserId,
-        platformTenantViewProfile: platformTenantViewProfile ?? null,
-        platformTenantViewLookupFailed,
       });
 
       return out;

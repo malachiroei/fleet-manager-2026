@@ -164,10 +164,5 @@ export const supabase: SupabaseClientType = shouldInitSupabase
         persistSession: true,
         autoRefreshToken: true,
       },
-      global: {
-        headers: {
-          apikey: SUPABASE_ANON_KEY,
-        },
-      },
     })
   : createBlockedSupabaseClient(supabaseBlockedMessage);

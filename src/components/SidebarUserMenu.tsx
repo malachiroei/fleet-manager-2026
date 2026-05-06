@@ -45,8 +45,7 @@ export function SidebarUserMenu() {
   }, [open]);
 
   const email = user?.email ?? '';
-  const isRoeyMainAdmin =
-    (profile?.email ?? user?.email ?? '').trim().toLowerCase() === 'malachiroei@gmail.com';
+  const isRoeyMainAdmin = profile?.is_system_admin === true;
   const name = (profile?.full_name?.trim()) || user?.user_metadata?.full_name || email.split('@')[0] || 'משתמש';
   const initials = name.slice(0, 2).toUpperCase();
   const { data: organization } = useOrganization(activeOrgId ?? null);
