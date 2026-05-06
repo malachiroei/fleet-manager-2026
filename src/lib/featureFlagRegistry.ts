@@ -155,7 +155,7 @@ export const FEATURE_FLAG_REGISTRY: FeatureFlagRegistryEntry[] = [
     key: 'qa_users',
     display_name_he: 'ניהול משתמשים',
     description: 'קישור מהיר — משתמשים ואישורים',
-    ui_mapping: 'Dashboard quick actions -> ניהול משתמשים',
+    ui_mapping: 'Legacy / דגל פנימי — קישור דשבורד הוסר; ניהול דרך ניהול צוות',
     category: 'quick_actions',
   },
   {

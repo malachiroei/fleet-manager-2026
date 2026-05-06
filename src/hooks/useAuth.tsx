@@ -459,7 +459,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data: invitations, error: listError } = await (supabase as any)
         .from('org_invitations')
         .select('id, org_id, permissions, invited_by, role')
-        .eq('email', email)
+        .ilike('email', email)
         .order('created_at', { ascending: false })
         .limit(1);
       if (listError || !invitations?.length) return;
@@ -621,12 +621,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const now = new Date().toISOString();
         const { data: inviteRows } = await (supabase as any)
           .from('org_invitations')
-          .select('org_id, permissions, role')
-          .eq('email', userEmail)
+          .select('id, org_id, permissions, role')
+          .ilike('email', userEmail)
           .order('created_at', { ascending: false })
           .limit(1);
         const inv = (inviteRows?.[0] ?? null) as
           | {
+              id?: string;
               org_id?: string | null;
               permissions?: unknown;
               role?: string | null;
@@ -652,6 +653,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (profileError) {
           console.error('Failed to create invited profile after signUp', profileError);
+        }
+
+        if (!profileError && inviteOrgId && inv?.id) {
+          const { error: inviteDeleteError } = await (supabase as any)
+            .from('org_invitations')
+            .delete()
+            .eq('id', inv.id);
+          if (inviteDeleteError) {
+            console.warn('Failed to delete org_invitation after signUp', inviteDeleteError);
+          }
         }
 
         if (inviteOrgId) {

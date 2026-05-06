@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import {
   useTeamMembers,
@@ -97,13 +97,47 @@ export default function TeamManagementPage() {
     return set;
   }, [memberRows]);
 
+  /** אימיילים מההזמנות — לבדיקה כפולה כשלפרופיל יש org_id שלא חוזר ברשימת החברים (RLS/סנכרון) */
+  const invitationEmailsNorm = useMemo(() => {
+    const u = new Set<string>();
+    for (const inv of invitationRows) {
+      const e = inv.email?.trim().toLowerCase();
+      if (e) u.add(e);
+    }
+    return [...u];
+  }, [invitationRows]);
+
+  const { data: inviteEmailsFoundInOrgProfiles } = useQuery({
+    queryKey: ['team-invite-emails-in-profiles', orgId, invitationEmailsNorm.join('|')],
+    enabled: Boolean(orgId) && invitationEmailsNorm.length > 0,
+    queryFn: async (): Promise<Set<string>> => {
+      const found = new Set<string>();
+      await Promise.all(
+        invitationEmailsNorm.map(async (em) => {
+          const { data, error } = await supabase
+            .from('profiles')
+            .select('email')
+            .eq('org_id', orgId as string)
+            .ilike('email', em)
+            .maybeSingle();
+          if (error || !data?.email) return;
+          found.add(em);
+        }),
+      );
+      return found;
+    },
+    staleTime: 30_000,
+  });
+
   const invitationRowsVisible = useMemo(() => {
     return invitationRows.filter((inv) => {
       const e = inv.email?.trim().toLowerCase();
       if (!e) return true;
-      return !registeredEmails.has(e);
+      if (registeredEmails.has(e)) return false;
+      if (inviteEmailsFoundInOrgProfiles?.has(e)) return false;
+      return true;
     });
-  }, [invitationRows, registeredEmails]);
+  }, [invitationRows, registeredEmails, inviteEmailsFoundInOrgProfiles]);
 
   const listLoading = isLoading || invitationsLoading || membersFetching || invitationsFetching;
   const [modalOpen, setModalOpen] = useState(false);

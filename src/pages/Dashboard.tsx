@@ -40,6 +40,15 @@ import {
   isPlatformSuperOwnerEmail,
   resolveSessionEmail,
 } from '@/lib/fleetBootstrapEmails';
+import type { DashboardStats } from '@/types/fleet';
+
+const EMPTY_DASHBOARD_STATS: DashboardStats = {
+  totalVehicles: 0,
+  totalDrivers: 0,
+  alertsCount: 0,
+  warningCount: 0,
+  expiredCount: 0,
+};
 
 const statusCardConfig: Array<{
   titleKey: 'navigation.fleetManagement' | 'navigation.drivers' | 'navigation.exceptionAlerts' | 'dashboard.replacementVehicle';
@@ -180,7 +189,17 @@ function StatusCard({
 
 export default function Dashboard() {
   const queryClient = useQueryClient();
-  const { data: stats, isLoading } = useDashboardStats();
+  const {
+    data: statsRaw,
+    isFetching: statsFetching,
+    isPending: statsPending,
+    fetchStatus: statsFetchStatus,
+  } = useDashboardStats();
+  const stats = statsRaw ?? EMPTY_DASHBOARD_STATS;
+  /** כשהשאילתה מושבתת (אין org עדיין) fetchStatus=idle — לא להישאר עם !stats ואינסוף skeleton */
+  const isStatsLoading =
+    statsFetching ||
+    (statsPending && statsRaw === undefined && statsFetchStatus !== 'idle');
   const { data: alerts } = useComplianceAlerts();
   const { t } = useTranslation();
   const isMobile = useIsMobile();
@@ -208,7 +227,6 @@ export default function Dashboard() {
   const showMaintenanceFormCard = false;
   /** כרטיס «התראות חריגה» + מרכז ציות: רק פג תוקף (ללא אזהרת 30 יום) */
   const totalAlerts = (alerts?.filter((a) => a.status === 'expired').length) ?? 0;
-  const isStatsLoading = isLoading || !stats;
   /** placeholderData ב-useFeatureFlags מדליק כל הדגלים — לא לרנדר גייטים לפני נתונים אמיתיים */
   const isInitialUiLoading = loading || flagsPending || flagsPlaceholder;
 
@@ -371,14 +389,6 @@ export default function Dashboard() {
       showPendingBadge: true,
     },
     {
-      title: 'ניהול משתמשים',
-      href: '/admin/users',
-      icon: Users,
-      adminOnly: true,
-      permission: 'admin_access',
-      featureFlagKey: 'qa_users',
-    },
-    {
       title: 'מרכז ציות (אדמין)',
       href: '/admin/compliance',
       icon: ClipboardList,
@@ -404,10 +414,16 @@ export default function Dashboard() {
   const canReportMileage = forceMileageForMalachiroei || canReportMileageFromPermissions;
 
   const visibleStatusCards = useMemo(() => {
-    return statusCardConfig.filter((card) => {
+    const gated = statusCardConfig.filter((card) => {
       if (!canAccessPermission(card.permission)) return false;
       return isFeatureEnabled(featureFlags, card.featureFlagKey);
     });
+    /** אם כל דגלי dashboard_* כבויים בגלובלי אבל יש הרשאות צי — עדיין להציג KPI עם 0 */
+    if (gated.length > 0) return gated;
+    const permOnly = statusCardConfig.filter((card) => canAccessPermission(card.permission));
+    if (permOnly.length > 0) return permOnly;
+    /** פרופיל חדש / JSON הרשאות חלקי — עדיין להציג את ארבעת מדי הצי (הניתוב שומר על בטיחות) */
+    return statusCardConfig;
   }, [canAccessPermission, featureFlags]);
 
   const visibleQuickLinksByFlags = useMemo(() => {
@@ -466,7 +482,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {!isStatsLoading && stats && stats.totalVehicles === 0 && stats.totalDrivers === 0 && (
+      {!isStatsLoading && stats.totalVehicles === 0 && stats.totalDrivers === 0 && (
         <Card className="border-dashed border-2 border-primary/30 bg-primary/5">
           <CardContent className="p-6 md:p-8 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-right">
             <div className="flex-1 space-y-1">

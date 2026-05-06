@@ -1,5 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import type { DashboardStats, ComplianceStatus } from '@/types/fleet';
+
+const EMPTY_DASHBOARD_STATS: DashboardStats = {
+  totalVehicles: 0,
+  totalDrivers: 0,
+  alertsCount: 0,
+  warningCount: 0,
+  expiredCount: 0,
+};
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useViewAs } from '@/contexts/ViewAsContext';
@@ -330,6 +338,7 @@ export function useDashboardStats() {
       sessionEmailSig,
     ],
     enabled: dashboardStatsEnabled,
+    placeholderData: EMPTY_DASHBOARD_STATS,
     queryFn: async (): Promise<DashboardStats> => {
       if (!effectiveUserId) {
         return { totalVehicles: 0, totalDrivers: 0, alertsCount: 0, warningCount: 0, expiredCount: 0 };
