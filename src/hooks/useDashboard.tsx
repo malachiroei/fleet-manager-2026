@@ -293,7 +293,7 @@ async function appendDerivedComplianceFromFleetDates(
 }
 
 export function useDashboardStats() {
-  const { roles: loggedInRoles, user, profile, loading: authLoading, activeOrgId } = useAuth();
+  const { roles: loggedInRoles, user, profile, activeOrgId } = useAuth();
   const { viewAsEmail } = useViewAs();
   const {
     effectiveOrgId,
@@ -314,14 +314,9 @@ export function useDashboardStats() {
   const isPlatformSuperOwner = isPlatformSuperOwnerEmail(normalizedEmail);
   const orgIdForCounts = (effectiveOrgId ?? '').trim();
   /**
-   * לא לרוץ לפני Auth + fleet scope; חובה org מפורש לספירה ארגונית (מונע cache של «אפסים» לפני activeOrgId).
-   * חשבון על: כשאין עדיין org — נופלים לספירה גלובלית (RLS) רק אחרי auth stable.
+   * סטטיסטיקות דשבורד: רק כשיש מזהה ארגון בהיקף הצי — בלי org לא שולחים שאילתה בכלל.
    */
-  const dashboardStatsEnabled =
-    !authLoading &&
-    fleetListReady &&
-    effectiveUserId != null &&
-    (orgIdForCounts.length > 0 || isPlatformSuperOwner);
+  const statsQueryEnabled = !!effectiveOrgId && fleetListReady;
 
   return useQuery({
     queryKey: [
@@ -337,7 +332,7 @@ export function useDashboardStats() {
       loggedInRolesSig,
       sessionEmailSig,
     ],
-    enabled: dashboardStatsEnabled,
+    enabled: statsQueryEnabled,
     placeholderData: EMPTY_DASHBOARD_STATS,
     queryFn: async (): Promise<DashboardStats> => {
       if (!effectiveUserId) {
