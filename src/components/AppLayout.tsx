@@ -23,6 +23,7 @@ import { setLanguageDirection } from '@/i18n/config';
 import { usePwaInstall } from '@/hooks/usePwaInstall';
 import { toast } from '@/hooks/use-toast';
 import { Button } from './ui/button';
+import { getBrandLogoUrl } from '@/components/BrandLogo';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import {
   DropdownMenu,
@@ -621,55 +622,79 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   /** מובייל: שורה ייעודית — בית + חזרה צמודים, ניהול בזהב */
   const MobilePrimaryNav = () => (
-    <nav
-      className="flex w-full min-w-0 flex-wrap items-stretch justify-around gap-2 rounded-lg border border-white/10 bg-black/30 px-0.5 py-1 md:hidden"
-      aria-label="ניווט ראשי"
-    >
-      <div className="flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1.5">
-        <Link
-          to="/"
-          onClick={handleGoHomeNav}
-          className={cn(
-            'flex min-h-[48px] min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-2 text-base font-medium transition-colors active:opacity-90',
-            isHomeActive
-              ? 'bg-white/10 text-cyan-100 ring-1 ring-cyan-400/35'
-              : 'bg-white/[0.05] text-white/75 hover:bg-white/10'
-          )}
-        >
-          <Home className="h-5 w-5 shrink-0 opacity-90" />
-          <span className="truncate">בית</span>
-        </Link>
-        {location.pathname !== '/' ? (
-          <div className="flex shrink-0 items-center pr-0.5">
-            <BackButton />
-          </div>
+    <div className="md:hidden">
+      <nav
+        className="flex w-full min-w-0 flex-wrap items-stretch justify-around gap-2 rounded-lg border border-white/10 bg-black/30 px-0.5 py-1"
+        aria-label="ניווט ראשי"
+      >
+        <div className="flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1.5">
+          <Link
+            to="/"
+            onClick={handleGoHomeNav}
+            className={cn(
+              'flex min-h-[48px] min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-2 text-base font-medium transition-colors active:opacity-90',
+              isHomeActive
+                ? 'bg-white/10 text-cyan-100 ring-1 ring-cyan-400/35'
+                : 'bg-white/[0.05] text-white/75 hover:bg-white/10'
+            )}
+          >
+            <Home className="h-5 w-5 shrink-0 opacity-90" />
+            <span className="truncate">בית</span>
+          </Link>
+          {location.pathname !== '/' ? (
+            <div className="flex shrink-0 items-center pr-0.5">
+              <BackButton />
+            </div>
+          ) : null}
+        </div>
+        {canManageOrgUi ? (
+          <Link
+            to="/admin/org-settings"
+            className={cn(
+              'flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1 rounded-md border-2 px-2 text-sm font-medium transition-colors active:opacity-90',
+              managementNavClass
+            )}
+          >
+            <Building2 className="h-4 w-4 shrink-0 text-amber-200" />
+            <span className="truncate">ניהול</span>
+          </Link>
         ) : null}
-      </div>
-      {canManageOrgUi ? (
-        <Link
-          to="/admin/org-settings"
-          className={cn(
-            'flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1 rounded-md border-2 px-2 text-sm font-medium transition-colors active:opacity-90',
-            managementNavClass
-          )}
-        >
-          <Building2 className="h-4 w-4 shrink-0 text-amber-200" />
-          <span className="truncate">ניהול</span>
-        </Link>
+        {canManageTeamUi ? (
+          <Link
+            to="/team"
+            className={cn(
+              'flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1 rounded-md border-2 px-2 text-sm font-medium transition-colors active:opacity-90',
+              managementNavClass
+            )}
+          >
+            <UserCog className="h-4 w-4 shrink-0 text-amber-200" />
+            <span className="truncate">ניהול צוות</span>
+          </Link>
+        ) : null}
+      </nav>
+
+      {/* דף הבית במובייל/מסכים קטנים: כותרת קומפקטית במקום כרטיס Hero גדול */}
+      {isHomeActive ? (
+        <div className="pt-2 pb-1">
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/25 px-3 py-2">
+            <div className="min-w-0">
+              <div className="text-sm font-bold text-white">לוח בקרה</div>
+              <div className="text-[11px] text-white/60 truncate">ניהול צי — תצוגה מהירה</div>
+            </div>
+            <div className="h-10 w-16 shrink-0 overflow-hidden rounded-md bg-[#0a1525]">
+              <img
+                src={getBrandLogoUrl()}
+                alt=""
+                className="h-full w-full object-contain object-center scale-[1.8]"
+                loading="lazy"
+                decoding="async"
+                aria-hidden
+              />
+            </div>
+          </div>
+        </div>
       ) : null}
-      {canManageTeamUi ? (
-        <Link
-          to="/team"
-          className={cn(
-            'flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1 rounded-md border-2 px-2 text-sm font-medium transition-colors active:opacity-90',
-            managementNavClass
-          )}
-        >
-          <UserCog className="h-4 w-4 shrink-0 text-amber-200" />
-          <span className="truncate">ניהול צוות</span>
-        </Link>
-      ) : null}
-    </nav>
+    </div>
   );
 
   const HomeNavLinkDesktop = () => (
@@ -695,6 +720,17 @@ export function AppLayout({ children }: AppLayoutProps) {
         isRtl && 'flex-row-reverse'
       )}
     >
+      {/* מסכים קטנים: לוגו הרכב ליד "מנהל צי" בסרגל העליון */}
+      <div className="md:hidden mr-2 ml-0 rtl:ml-2 rtl:mr-0 h-9 w-14 shrink-0 overflow-hidden rounded-md bg-[#0a1525]">
+        <img
+          src={getBrandLogoUrl()}
+          alt=""
+          className="h-full w-full object-contain object-center scale-[1.9]"
+          loading="lazy"
+          decoding="async"
+          aria-hidden
+        />
+      </div>
       <div className={cn('min-w-0', isRtl ? 'text-right' : 'text-left')}>
         <span className="block max-w-[min(100%,70vw)] truncate text-sm font-bold leading-tight text-white md:max-w-[min(100%,28rem)]">
           {t('navigation.fleetManager')}
