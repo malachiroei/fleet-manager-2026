@@ -34,6 +34,11 @@ import { FleetDatePicker } from '@/components/ui/FleetDatePicker';
 import { cn } from '@/lib/utils';
 import { Columns3, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  isFleetOrgAdminFallbackEmail,
+  isPlatformSuperOwnerEmail,
+  resolveSessionEmail,
+} from '@/lib/fleetBootstrapEmails';
 
 type ComplianceTabKey =
   | 'annual_licensing'
@@ -1070,6 +1075,13 @@ export default function AdminCompliancePage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const orgId = activeOrgId ?? profile?.org_id ?? null;
+
+  const canAccessAdminComplianceCenter = Boolean(
+    isAdmin ||
+      profile?.is_system_admin === true ||
+      isPlatformSuperOwnerEmail(resolveSessionEmail(profile, user)) ||
+      isFleetOrgAdminFallbackEmail(resolveSessionEmail(profile, user)),
+  );
   const [leasingOpen, setLeasingOpen] = useState(false);
   const [leasingContext, setLeasingContext] = useState<{
     row: Record<string, unknown>;
@@ -1088,7 +1100,7 @@ export default function AdminCompliancePage() {
   const { data: vehicles = [], isLoading: vehiclesLoading } = useVehicles();
   const { data: drivers = [], isLoading: driversLoading, refetch: refetchDrivers } = useQuery({
     queryKey: ['admin-compliance-drivers', orgId],
-    enabled: isAdmin && orgId != null,
+    enabled: canAccessAdminComplianceCenter && orgId != null,
     staleTime: 0,
     queryFn: async () => {
       if (!orgId) return [] as Driver[];
@@ -1118,7 +1130,7 @@ export default function AdminCompliancePage() {
     isError: openComplianceRequestsIsError,
   } = useQuery({
     queryKey: ['admin-compliance-open-requests', orgId],
-    enabled: Boolean(isAdmin && orgId),
+    enabled: Boolean(canAccessAdminComplianceCenter && orgId),
     staleTime: 0,
     retry: 2,
     queryFn: async (): Promise<OpenComplianceRow[]> => {
@@ -1150,7 +1162,7 @@ export default function AdminCompliancePage() {
     refetch: refetchPendingVehicleRenewals,
   } = useQuery({
     queryKey: ['admin-pending-vehicle-renewals', orgId],
-    enabled: Boolean(isAdmin && orgId),
+    enabled: Boolean(canAccessAdminComplianceCenter && orgId),
     staleTime: 0,
     retry: 1,
     queryFn: async (): Promise<PendingVehicleRenewalRow[]> => {
@@ -1252,7 +1264,7 @@ export default function AdminCompliancePage() {
 
   /** עדכון מיידי כשעובד חותם בטופס ציבורי — בלי רענון ידני */
   useEffect(() => {
-    if (!isAdmin || !orgId) return;
+    if (!canAccessAdminComplianceCenter || !orgId) return;
 
     const invalidateTower = () => {
       void queryClient.invalidateQueries({ queryKey: ['admin-compliance-drivers', orgId] });
@@ -1290,7 +1302,7 @@ export default function AdminCompliancePage() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [isAdmin, orgId, queryClient]);
+  }, [canAccessAdminComplianceCenter, orgId, queryClient]);
 
   /** בקשות פתוחות (sent/opened) לפי ישות+משימה — נהג או רכב; כולל אופטימיסטי מיד אחרי שליחה */
   const openComplianceByEntityTask = useMemo(() => {
@@ -2156,7 +2168,7 @@ export default function AdminCompliancePage() {
     }
   };
 
-  if (!isAdmin) {
+  if (!canAccessAdminComplianceCenter) {
     return <Navigate to="/" replace />;
   }
 

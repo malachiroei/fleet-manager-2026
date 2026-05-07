@@ -33,7 +33,7 @@ export const PERMISSION_LABELS: Record<PermissionKey, string> = {
   report_mileage: 'דיווח קילומטראז׳',
   reports: 'דוחות',
   forms: 'טפסים',
-  compliance: 'התראות ותקינות',
+  compliance: 'מרכז ציות',
   maintenance: 'תחזוקה',
   manage_team: 'ניהול צוות',
   edit_rights: 'זכויות עריכה',

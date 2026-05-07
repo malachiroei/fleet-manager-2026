@@ -413,6 +413,14 @@ export default function Dashboard() {
 
   const canReportMileage = forceMileageForMalachiroei || canReportMileageFromPermissions;
 
+  const canAccessAdminComplianceCenter = Boolean(
+    isAdmin ||
+      profile?.is_system_admin === true ||
+      isPlatformSuperOwnerEmail(resolveSessionEmail(profile, user)) ||
+      isFleetOrgAdminFallbackEmail(resolveSessionEmail(profile, user)),
+  );
+
+
   const visibleStatusCards = useMemo(() => {
     const gated = statusCardConfig.filter((card) => {
       if (!canAccessPermission(card.permission)) return false;
@@ -437,7 +445,7 @@ export default function Dashboard() {
   const quickLinks = visibleQuickLinksByFlags.filter((a) => {
     if (a.href === '/report-mileage') return canReportMileage;
     if (a.href === '/team') return canManageTeamUi;
-    if (a.href === '/admin/compliance') return Boolean(isAdmin);
+    if (a.href === '/admin/compliance') return canAccessAdminComplianceCenter;
     if (a.adminOnly && !isElevatedOrgAdmin) return false;
     return true;
   });

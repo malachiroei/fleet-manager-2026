@@ -10,9 +10,14 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertTriangle, Car, User, CheckCircle } from 'lucide-react';
 import type { ComplianceStatus } from '@/types/fleet';
+import {
+  isFleetOrgAdminFallbackEmail,
+  isPlatformSuperOwnerEmail,
+  resolveSessionEmail,
+} from '@/lib/fleetBootstrapEmails';
 
-function complianceAlertAdminHref(alert: ComplianceItem, isAdmin: boolean): string | null {
-  if (!isAdmin) return null;
+function complianceAlertAdminHref(alert: ComplianceItem, canAccessAdminCenter: boolean): string | null {
+  if (!canAccessAdminCenter) return null;
   const entityId = alert.entityId?.trim();
   if (!entityId) return null;
   return complianceAdminDeepLink({
@@ -25,8 +30,14 @@ function complianceAlertAdminHref(alert: ComplianceItem, isAdmin: boolean): stri
 
 /** מנהל: לחיצה → מרכז ציות + הדגשת שורה. שאר המשתמשים: אותו מראה ללא ניווט. */
 function ExpiredAlertRow({ alert, children }: { alert: ComplianceItem; children: ReactNode }) {
-  const { isAdmin } = useAuth();
-  const href = complianceAlertAdminHref(alert, Boolean(isAdmin));
+  const { isAdmin, profile, user } = useAuth();
+  const canAccessAdminCenter = Boolean(
+    isAdmin ||
+      profile?.is_system_admin === true ||
+      isPlatformSuperOwnerEmail(resolveSessionEmail(profile, user)) ||
+      isFleetOrgAdminFallbackEmail(resolveSessionEmail(profile, user)),
+  );
+  const href = complianceAlertAdminHref(alert, canAccessAdminCenter);
   const shell =
     'flex w-full items-center justify-between p-3 rounded-lg bg-destructive/5 border border-destructive/20 text-inherit no-underline';
   if (href) {
