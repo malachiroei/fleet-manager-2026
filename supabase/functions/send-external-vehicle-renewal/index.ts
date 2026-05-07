@@ -173,7 +173,16 @@ serve(async (req) => {
       .eq('task_key', taskKey)
       .eq('status', 'pending_admin_review')
       .maybeSingle();
-    if (pending?.id) return json({ error: 'יש הגשה קיימת הממתינה לאישור מנהל למסמך זה' }, 409);
+    if (pending?.id) {
+      return json(
+        {
+          error: 'יש הגשה קיימת הממתינה לאישור מנהל למסמך זה',
+          existing_request_id: pending.id,
+          code: 'pending_admin_review_exists',
+        },
+        409,
+      );
+    }
 
     await admin
       .from('compliance_requests')

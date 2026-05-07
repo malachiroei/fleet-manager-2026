@@ -262,6 +262,32 @@ function normalizeInvokePayload(raw: unknown): Record<string, unknown> | null {
   return null;
 }
 
+/** גוף JSON מ־Response של functions.invoke כשמתקבל 4xx/5xx — כולל existing_request_id ב־409 לליסינג */
+async function readEdgeFunctionInvokeErrorPayload(err: unknown): Promise<{
+  message: string;
+  existing_request_id?: string;
+}> {
+  const fallbackMsg = err instanceof Error ? err.message : String(err);
+  const ctx = (err as { context?: Response }).context;
+  if (!ctx?.clone) {
+    return { message: fallbackMsg };
+  }
+  try {
+    const body = (await ctx.clone().json()) as Record<string, unknown>;
+    const er =
+      typeof body.error === 'string' && body.error.trim().length > 0 ? body.error.trim() : '';
+    const m =
+      typeof body.message === 'string' && body.message.trim().length > 0 ? body.message.trim() : '';
+    const rid = body.existing_request_id;
+    const existing_request_id =
+      typeof rid === 'string' && rid.trim().length > 0 ? rid.trim() : undefined;
+    const messageFromBody = er || m;
+    return { message: messageFromBody || fallbackMsg, ...(existing_request_id ? { existing_request_id } : {}) };
+  } catch {
+    return { message: fallbackMsg };
+  }
+}
+
 function prettifyKey(key: string): string {
   const dict: Record<string, string> = {
     id: 'מזהה',
@@ -2030,15 +2056,19 @@ export default function AdminCompliancePage() {
         if (earlyErr && earlyPayload.success !== true) throw new Error(earlyErr);
       }
       if (error) {
-        let detailed = error.message ?? 'שגיאה';
-        const context = (error as unknown as { context?: Response }).context;
-        if (context) {
-          try {
-            const body = (await context.json()) as { error?: string };
-            if (body.error) detailed = body.error;
-          } catch {
-            /* ignore */
-          }
+        const { message: detailed, existing_request_id } = await readEdgeFunctionInvokeErrorPayload(error);
+        if (existing_request_id) {
+          await queryClient.invalidateQueries({ queryKey: ['admin-pending-vehicle-renewals', orgId] });
+          await queryClient.refetchQueries({ queryKey: ['admin-pending-vehicle-renewals', orgId] });
+          void refetchPendingVehicleRenewals();
+          setLeasingOpen(false);
+          setLeasingContext(null);
+          setLeasingEmail('');
+          setLeasingApprovalsOpen(true);
+          toast.message(detailed, {
+            description: 'נפתח חלון «ממתין לאישור מנהל» עם ההגשה הקיימת.',
+          });
+          return;
         }
         throw new Error(detailed);
       }

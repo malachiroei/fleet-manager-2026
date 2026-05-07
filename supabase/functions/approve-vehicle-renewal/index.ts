@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { callerMayManageOrgForTeamActions } from '../_shared/teamAdminActionPermission.ts';
+import { callerMayManageOrgForComplianceActions } from '../_shared/complianceActionPermission.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -80,7 +80,7 @@ serve(async (req) => {
     }
     if (!docUrl) return json({ error: 'חסר קישור למסמך מההגשה' }, 400);
 
-    const mayManage = await callerMayManageOrgForTeamActions(
+    const mayManage = await callerMayManageOrgForComplianceActions(
       admin,
       viewerId,
       String(reqRow.org_id),
