@@ -60,6 +60,14 @@ export default defineConfig(({ mode }) => {
           entryFileNames: "assets/[name]-[hash].js",
           chunkFileNames: "assets/[name]-[hash].js",
           assetFileNames: "assets/[name]-[hash][extname]",
+          manualChunks: (rawId) => {
+            const id = String(rawId ?? '').replace(/\\/g, '/');
+            if (!id.includes('/node_modules/')) return;
+            if (id.includes('/node_modules/recharts/')) return 'recharts';
+            if (id.includes('/node_modules/xlsx/')) return 'xlsx';
+            if (id.includes('/node_modules/jspdf/')) return 'jspdf';
+            return;
+          },
         },
       },
     },

@@ -2,13 +2,12 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { lazy, Suspense, useEffect, type ReactNode } from "react";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { AppLayout } from "@/components/AppLayout";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import AuthPage from "./pages/AuthPage";
-import Dashboard from "./pages/Dashboard";
 import { ThemeProvider } from '@/hooks/useTheme';
 import { ViewAsProvider } from '@/contexts/ViewAsContext';
 import Footer from "@/components/layout/Footer";
@@ -22,6 +21,7 @@ import { UpdateModal } from "@/components/UpdateModal";
 
 const AuthCallbackPage = lazy(() => import("./pages/AuthCallbackPage"));
 const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
 const VehicleListPage = lazy(() => import("./pages/VehicleListPage"));
 const AddVehiclePage = lazy(() => import("./pages/AddVehiclePage"));
 const VehicleDetailPage = lazy(() => import("./pages/VehicleDetailPage"));
@@ -97,7 +97,7 @@ function ForceUpdateProHandler() {
   return null;
 }
 
-function ProtectedRoute({ children }: { children: ReactNode }) {
+function ProtectedLayout() {
   const { user, loading } = useAuth();
 
   if (loading) {
@@ -112,7 +112,11 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
     return <Navigate to="/auth" replace />;
   }
 
-  return <AppLayout>{children}</AppLayout>;
+  return (
+    <AppLayout>
+      <Outlet />
+    </AppLayout>
+  );
 }
 
 function AuthRoute({ children }: { children: ReactNode }) {
@@ -148,51 +152,39 @@ function AppRoutes() {
         <Route path="/auth" element={<AuthRoute><AuthPage /></AuthRoute>} />
         <Route path="/auth/callback" element={<AuthCallbackPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
-        <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-        <Route path="/vehicles" element={<ProtectedRoute><PermissionGuard permission="vehicles"><VehicleListPage /></PermissionGuard></ProtectedRoute>} />
-        <Route path="/vehicles/add" element={<ProtectedRoute><PermissionGuard permission="vehicles"><AddVehiclePage /></PermissionGuard></ProtectedRoute>} />
-        <Route path="/vehicles/odometer" element={<ProtectedRoute><PermissionGuard permission="vehicles"><UpdateOdometerPage /></PermissionGuard></ProtectedRoute>} />
-        <Route path="/vehicles/service-update" element={<ProtectedRoute><PermissionGuard permission="vehicles"><ServiceUpdatePage /></PermissionGuard></ProtectedRoute>} />
-        <Route path="/vehicles/:id" element={<ProtectedRoute><PermissionGuard permission="vehicles"><VehicleDetailPage /></PermissionGuard></ProtectedRoute>} />
-        <Route path="/vehicles/:id/edit" element={<ProtectedRoute><PermissionGuard permission="vehicles"><EditVehiclePage /></PermissionGuard></ProtectedRoute>} />
-        <Route path="/drivers" element={<ProtectedRoute><PermissionGuard permission="drivers"><DriverListPage /></PermissionGuard></ProtectedRoute>} />
-        <Route path="/drivers/add" element={<ProtectedRoute><PermissionGuard permission="drivers"><AddDriverPage /></PermissionGuard></ProtectedRoute>} />
-        <Route path="/drivers/:id/section/:sectionId" element={<ProtectedRoute><PermissionGuard permission="drivers"><DriverSectionEditPage /></PermissionGuard></ProtectedRoute>} />
-        <Route path="/drivers/:id/edit" element={<ProtectedRoute><PermissionGuard permission="drivers"><EditDriverPage /></PermissionGuard></ProtectedRoute>} />
-        <Route path="/drivers/:id" element={<ProtectedRoute><PermissionGuard permission="drivers"><DriverDetailPage /></PermissionGuard></ProtectedRoute>} />
-        <Route path="/compliance" element={<ProtectedRoute><PermissionGuard permission="compliance"><CompliancePage /></PermissionGuard></ProtectedRoute>} />
-        <Route path="/procedure6-complaints" element={<ProtectedRoute><PermissionGuard permission="compliance"><Procedure6ComplaintsPage /></PermissionGuard></ProtectedRoute>} />
-        <Route path="/maintenance/add" element={<ProtectedRoute><PermissionGuard permission="maintenance"><AddMaintenancePage /></PermissionGuard></ProtectedRoute>} />
-        <Route path="/vehicles/transfers" element={<ProtectedRoute><PermissionGuard permission="handover"><TransfersPage /></PermissionGuard></ProtectedRoute>} />
-        <Route path="/handover/delivery" element={<ProtectedRoute><PermissionGuard permission="vehicle_delivery"><VehicleDeliveryPage /></PermissionGuard></ProtectedRoute>} />
-        <Route path="/handover/return" element={<ProtectedRoute><PermissionGuard permission="handover"><VehicleReturnPage /></PermissionGuard></ProtectedRoute>} />
-        <Route path="/handover/replacement" element={<ProtectedRoute><PermissionGuard permission="replacement_car"><ReplacementVehicleHubPage /></PermissionGuard></ProtectedRoute>} />
-        <Route path="/handover/wizard" element={<ProtectedRoute><PermissionGuard permission="handover"><VehicleHandoverWizard /></PermissionGuard></ProtectedRoute>} />
-        <Route path="/report-mileage" element={<ProtectedRoute><PermissionGuard permission="report_mileage"><ReportMileagePage /></PermissionGuard></ProtectedRoute>} />
-        <Route
-          path="/admin/settings"
-          element={
-            <ProtectedRoute>
-              <AdminSettingsPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/admin-settings"
-          element={
-            <ProtectedRoute>
-              <AdminSettingsPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route path="/admin/dashboard" element={<ProtectedRoute><AdminDashboardPage /></ProtectedRoute>} />
-        <Route path="/admin/compliance" element={<ProtectedRoute><AdminCompliancePage /></ProtectedRoute>} />
-        <Route path="/admin/users" element={<ProtectedRoute><AdminUsersPage /></ProtectedRoute>} />
-        <Route path="/admin/org-settings" element={<ProtectedRoute><OrgSettingsPage /></ProtectedRoute>} />
-        <Route path="/team" element={<ProtectedRoute><TeamManagementPage /></ProtectedRoute>} />
-        <Route path="/reports" element={<ProtectedRoute><PermissionGuard permission="reports"><ReportsPage /></PermissionGuard></ProtectedRoute>} />
-        <Route path="/reports/scan" element={<ProtectedRoute><PermissionGuard permission="reports"><ScanReportPage /></PermissionGuard></ProtectedRoute>} />
-        <Route path="/forms" element={<ProtectedRoute><PermissionGuard permission="forms"><FormsPage /></PermissionGuard></ProtectedRoute>} />
+        <Route element={<ProtectedLayout />}>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/vehicles" element={<PermissionGuard permission="vehicles"><VehicleListPage /></PermissionGuard>} />
+          <Route path="/vehicles/add" element={<PermissionGuard permission="vehicles"><AddVehiclePage /></PermissionGuard>} />
+          <Route path="/vehicles/odometer" element={<PermissionGuard permission="vehicles"><UpdateOdometerPage /></PermissionGuard>} />
+          <Route path="/vehicles/service-update" element={<PermissionGuard permission="vehicles"><ServiceUpdatePage /></PermissionGuard>} />
+          <Route path="/vehicles/:id" element={<PermissionGuard permission="vehicles"><VehicleDetailPage /></PermissionGuard>} />
+          <Route path="/vehicles/:id/edit" element={<PermissionGuard permission="vehicles"><EditVehiclePage /></PermissionGuard>} />
+          <Route path="/drivers" element={<PermissionGuard permission="drivers"><DriverListPage /></PermissionGuard>} />
+          <Route path="/drivers/add" element={<PermissionGuard permission="drivers"><AddDriverPage /></PermissionGuard>} />
+          <Route path="/drivers/:id/section/:sectionId" element={<PermissionGuard permission="drivers"><DriverSectionEditPage /></PermissionGuard>} />
+          <Route path="/drivers/:id/edit" element={<PermissionGuard permission="drivers"><EditDriverPage /></PermissionGuard>} />
+          <Route path="/drivers/:id" element={<PermissionGuard permission="drivers"><DriverDetailPage /></PermissionGuard>} />
+          <Route path="/compliance" element={<PermissionGuard permission="compliance"><CompliancePage /></PermissionGuard>} />
+          <Route path="/procedure6-complaints" element={<PermissionGuard permission="compliance"><Procedure6ComplaintsPage /></PermissionGuard>} />
+          <Route path="/maintenance/add" element={<PermissionGuard permission="maintenance"><AddMaintenancePage /></PermissionGuard>} />
+          <Route path="/vehicles/transfers" element={<PermissionGuard permission="handover"><TransfersPage /></PermissionGuard>} />
+          <Route path="/handover/delivery" element={<PermissionGuard permission="vehicle_delivery"><VehicleDeliveryPage /></PermissionGuard>} />
+          <Route path="/handover/return" element={<PermissionGuard permission="handover"><VehicleReturnPage /></PermissionGuard>} />
+          <Route path="/handover/replacement" element={<PermissionGuard permission="replacement_car"><ReplacementVehicleHubPage /></PermissionGuard>} />
+          <Route path="/handover/wizard" element={<PermissionGuard permission="handover"><VehicleHandoverWizard /></PermissionGuard>} />
+          <Route path="/report-mileage" element={<PermissionGuard permission="report_mileage"><ReportMileagePage /></PermissionGuard>} />
+          <Route path="/admin/settings" element={<AdminSettingsPage />} />
+          <Route path="/admin-settings" element={<AdminSettingsPage />} />
+          <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
+          <Route path="/admin/compliance" element={<AdminCompliancePage />} />
+          <Route path="/admin/users" element={<AdminUsersPage />} />
+          <Route path="/admin/org-settings" element={<OrgSettingsPage />} />
+          <Route path="/team" element={<TeamManagementPage />} />
+          <Route path="/reports" element={<PermissionGuard permission="reports"><ReportsPage /></PermissionGuard>} />
+          <Route path="/reports/scan" element={<PermissionGuard permission="reports"><ScanReportPage /></PermissionGuard>} />
+          <Route path="/forms" element={<PermissionGuard permission="forms"><FormsPage /></PermissionGuard>} />
+        </Route>
         <Route path="/employee/forms/:token" element={<EmployeeComplianceFormPage />} />
         <Route path="/update/:token" element={<UpdateComplianceRequestPage />} />
         <Route path="/vehicle-renewal/:token" element={<VehicleExternalRenewalPage />} />

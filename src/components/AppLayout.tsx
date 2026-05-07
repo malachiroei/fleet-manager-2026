@@ -76,6 +76,7 @@ interface AppLayoutProps {
 export function AppLayout({ children }: AppLayoutProps) {
   const location = useLocation();
   const mainScrollRef = useRef<HTMLElement>(null);
+  const prefetchedRouteChunksRef = useRef<Set<string>>(new Set());
   const [isShortHeightDesktop, setIsShortHeightDesktop] = useState(false);
 
   useEffect(() => {
@@ -301,6 +302,38 @@ export function AppLayout({ children }: AppLayoutProps) {
     void signOut();
   };
 
+  const prefetchRouteChunk = useCallback((to: string) => {
+    const path = String(to ?? '').trim();
+    if (!path) return;
+    if (prefetchedRouteChunksRef.current.has(path)) return;
+    prefetchedRouteChunksRef.current.add(path);
+
+    if (path === '/team' || path.startsWith('/team/')) {
+      void import('../pages/TeamManagementPage');
+      return;
+    }
+    if (path === '/admin/org-settings' || path.startsWith('/admin/org-settings/')) {
+      void import('../pages/OrgSettingsPage');
+      return;
+    }
+    if (path === '/admin/settings' || path === '/admin-settings') {
+      void import('../pages/AdminSettingsPage');
+      return;
+    }
+    if (path === '/vehicles' || path.startsWith('/vehicles/')) {
+      void import('../pages/VehicleListPage');
+      return;
+    }
+  }, []);
+
+  const linkPrefetchProps = useCallback(
+    (to: string) => ({
+      onMouseEnter: () => prefetchRouteChunk(to),
+      onFocus: () => prefetchRouteChunk(to),
+    }),
+    [prefetchRouteChunk],
+  );
+
   type HeaderAction =
     | { key: 'manage_org'; label: string; to: string; icon: ElementType; showOn: 'mobileMenu' | 'desktop' | 'both' }
     | { key: 'manage_team'; label: string; to: string; icon: ElementType; showOn: 'mobileMenu' | 'desktop' | 'both' }
@@ -374,7 +407,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                 if (!('to' in a)) return null;
                 return (
                   <DropdownMenuItem key={`short-${a.key}`} asChild className="cursor-pointer">
-                    <Link to={a.to} className="w-full flex items-center justify-between text-xs">
+                    <Link to={a.to} className="w-full flex items-center justify-between text-xs" {...linkPrefetchProps(a.to)}>
                       <span className="font-medium">{a.label}</span>
                       <Icon className="h-4 w-4 shrink-0" />
                     </Link>
@@ -541,7 +574,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             }
             return (
               <DropdownMenuItem key={a.key} asChild className="cursor-pointer">
-                <Link to={a.to} className="w-full flex items-center justify-between text-xs">
+                <Link to={a.to} className="w-full flex items-center justify-between text-xs" {...linkPrefetchProps(a.to)}>
                   <span className="font-medium">{a.label}</span>
                   <Icon className="h-4 w-4 shrink-0" />
                 </Link>
@@ -623,6 +656,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               to={a.to}
               title={a.label}
               aria-label={a.label}
+              {...linkPrefetchProps(a.to)}
               className={cn(
                 'relative z-[9999] flex h-10 min-h-10 min-w-[9rem] items-center justify-center gap-2 rounded-lg border-2 px-6 text-sm font-medium transition-colors',
                 managementNavClass
@@ -680,6 +714,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         {canManageOrgUi ? (
           <Link
             to="/admin/org-settings"
+            {...linkPrefetchProps('/admin/org-settings')}
             className={cn(
               'flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1 rounded-md border-2 px-2 text-sm font-medium transition-colors active:opacity-90',
               managementNavClass
@@ -692,6 +727,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         {canManageTeamUi ? (
           <Link
             to="/team"
+            {...linkPrefetchProps('/team')}
             className={cn(
               'flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1 rounded-md border-2 px-2 text-sm font-medium transition-colors active:opacity-90',
               managementNavClass
