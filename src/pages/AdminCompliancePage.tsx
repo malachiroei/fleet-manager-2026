@@ -52,7 +52,15 @@ type ComplianceTabKey =
 
 type TowerViewFilter = 'all' | 'custom_range' | 'expiring_soon' | 'urgent';
 type ComplianceSource = 'vehicle' | 'driver';
-const COMPLIANCE_COLUMNS_DEFAULTS_KEY = 'admin_compliance_default_columns_v1';
+/** v2: כולל מפתח סינתטי לעמודת «סטטוס שליחה»; v1 נטען פעם אחת וממיגרץ */
+const COMPLIANCE_COLUMNS_DEFAULTS_KEY = 'admin_compliance_default_columns_v2';
+const COMPLIANCE_COLUMNS_DEFAULTS_LEGACY_KEY = 'admin_compliance_default_columns_v1';
+/** מפתח סינתטי בבורר העמודות — מציג עמודת «סטטוס שליחה» (בקשות/מעקב), לא שדה DB */
+const COMPLIANCE_COLUMN_SEND_STATUS = '__send_status';
+
+function appendSendStatusColumnKey(keys: string[]): string[] {
+  return keys.includes(COMPLIANCE_COLUMN_SEND_STATUS) ? keys : [...keys, COMPLIANCE_COLUMN_SEND_STATUS];
+}
 
 /** שליחת בקשה זמינה רק עם עד N ימים לפני פקיעה (וכשפג) — למעלה מזה לא לוחצים. */
 const COMPLIANCE_SEND_MAX_DAYS_REMAINING = 60;
@@ -96,9 +104,8 @@ const DRIVER_KEYS: string[] = [
   'birth_date', 'family_permit_date', 'driving_permit', 'is_field_person', 'practical_driving_test_date',
 ];
 
-/** ללא status — סטטוס ציות מוצג בעמודה אחת לפי תאריך התוקף (לא שדה status מה-DB שלעיתים לא מסונכרן) */
+/** ללא עמודת DB של status — דחיפות/פג תוקף מוצגים ב«ימים נותרו» */
 const VEHICLE_DEFAULT_COLUMNS = ['plate_number', 'manufacturer', 'model'];
-/** ללא status — תצוגת סטטוס מרוכזת בעמודה הייעודית «סטטוס» (עברית) */
 const DRIVER_DEFAULT_COLUMNS = ['full_name', 'id_number', 'phone', 'email'];
 
 const TAB_DEFS: Array<{ key: ComplianceTabKey; label: string; source: 'vehicle' | 'driver'; dueField: string }> = [
@@ -144,7 +151,7 @@ function availableKeysFromRows(rows: Array<Record<string, unknown>>): Set<string
 }
 
 function filterKeysByAvailable(keys: string[], available: Set<string>): string[] {
-  return keys.filter((k) => available.has(k));
+  return keys.filter((k) => k === COMPLIANCE_COLUMN_SEND_STATUS || available.has(k));
 }
 
 function toStartOfDay(d: Date): Date {
@@ -420,6 +427,7 @@ function prettifyKey(key: string): string {
     driving_permit: 'היתר נהיגה',
     is_field_person: 'עובד שטח',
     practical_driving_test_date: 'תאריך מבחן נהיגה מעשי',
+    [COMPLIANCE_COLUMN_SEND_STATUS]: 'סטטוס שליחה',
   };
   if (dict[key]) return dict[key];
   return key.replace(/_/g, ' ');
@@ -517,38 +525,6 @@ function renderValue(raw: unknown, col?: string): string {
   } catch {
     return String(raw);
   }
-}
-
-/** סטטוס תצוגה לפי תאריך התוקף של הטאב — לא רק `status` מה-DB (שלעיתים לא מסונכרן) */
-function complianceTableStatusNode(dueField: string, row: Record<string, unknown>) {
-  if (String(row.status ?? '').trim().toLowerCase() === 'pending_approval') {
-    return (
-      <span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200">
-        ממתין לאישור מנהל
-      </span>
-    );
-  }
-  const dueDays = daysUntil(row[dueField]);
-  const db = String(row.status ?? '—').trim() || '—';
-  if (dueDays != null && dueDays < 0) {
-    return (
-      <span className="text-xs font-semibold text-red-300" title={`סטטוס במערכת: ${db}`}>
-        פג תוקף
-      </span>
-    );
-  }
-  if (dueDays != null && dueDays <= 30 && dueDays >= 0 && db.toLowerCase() === 'valid') {
-    return (
-      <span className="text-xs font-medium text-amber-200" title={`סטטוס במערכת: ${db}`}>
-        לטיפול
-      </span>
-    );
-  }
-  return (
-    <span className="text-xs text-muted-foreground" title={`ערך גולמי במערכת: ${db}`}>
-      {driverSystemStatusLabelHe(row.status)}
-    </span>
-  );
 }
 
 function SearchableColumnPicker({
@@ -687,6 +663,8 @@ type TabTableProps<T extends Record<string, unknown>> = {
   hideLeasingPendingInlineActions?: boolean;
   /** הדגשה מקישור מרכז ציות (?focus=entityId) */
   focusHighlightId?: string;
+  /** עמודת מעקב שליחת בקשות / התראות — ניתן להסתיר מבורר העמודות */
+  showSendStatusColumn?: boolean;
 };
 
 function ComplianceTable<T extends Record<string, unknown>>({
@@ -714,6 +692,7 @@ function ComplianceTable<T extends Record<string, unknown>>({
   approvingVehicleRenewalId,
   hideLeasingPendingInlineActions,
   focusHighlightId,
+  showSendStatusColumn = true,
 }: TabTableProps<T>) {
   /** עמודת «סטטוס» ייעודית קיימת — לא לשכפל את שדה status מהרכב בעמודות הנתונים */
   const baseCols = columns.length > 0 ? columns : [dueField];
@@ -782,7 +761,10 @@ function ComplianceTable<T extends Record<string, unknown>>({
         <TableBody>
           {rows.length === 0 ? (
             <TableRow>
-              <TableCell className="text-right text-muted-foreground" colSpan={safeColumns.length + 5}>
+              <TableCell
+                className="text-right text-muted-foreground"
+                colSpan={safeColumns.length + 5 + (showSendStatusColumn ? 1 : 0)}
+              >
                 {emptyLabel}
               </TableCell>
             </TableRow>
@@ -908,119 +890,112 @@ function ComplianceTable<T extends Record<string, unknown>>({
                       </span>
                     )}
                   </TableCell>
-                  <TableCell className="text-right">
-                    {(() => {
-                      const sentMeta = (row as Record<string, unknown>).__complianceSentMeta as
-                        | {
-                            sentAt?: string;
-                            status?: string;
-                            notifySequence?: number;
-                            updatedAt?: string;
-                          }
-                        | null
-                        | undefined;
-                      const showSentBadge =
-                        Boolean(sentMeta?.sentAt) && !(tabKey === 'health_declaration' && awaitingEmp);
-                      if (showSentBadge) {
-                        const st = String(sentMeta?.status ?? 'sent');
-                        const sa = String(sentMeta?.sentAt ?? '').trim();
-                        const seq = sentMeta?.notifySequence;
-                        const isLeaseTab = tabKey === 'annual_licensing' || tabKey === 'insurance';
-                        if (isComplianceRichSentTab(tabKey) && sa) {
-                          const isPendingReview = st === 'pending_admin_review';
-                          const title = isPendingReview
-                            ? 'הוגש מסמך — ממתין לאישור מנהל'
-                            : st === 'opened'
-                              ? isLeaseTab
-                                ? 'הקישור לנציג נפתח'
-                                : 'הקישור לנהג נפתח'
-                              : isLeaseTab
-                                ? 'ממתין לתגובת נציג'
-                                : 'ממתין לתגובת הנהג';
-                          const badgeClass = isPendingReview
-                            ? 'inline-flex items-center rounded-full border border-amber-300/40 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200'
-                            : 'inline-flex items-center rounded-full border border-sky-400/40 bg-sky-500/15 px-2 py-0.5 text-xs font-semibold text-sky-200';
-                          return (
-                            <div className="flex max-w-[16rem] flex-col items-end gap-0.5 text-right">
-                              <span className={badgeClass}>{title}</span>
-                              {seq != null && seq > 0 ? (
-                                <span className="text-[10px] font-medium leading-snug text-muted-foreground">
-                                  התראה מספר {seq}
+                  {/** עמודת «סטטוס»: ללא שכפול דחיפות/פג תוקף — רואים ב«ימים נותרו» */}
+                  <TableCell className="text-right text-muted-foreground">—</TableCell>
+                  {showSendStatusColumn ? (
+                    <TableCell className="text-right align-top">
+                      {(() => {
+                        const sentMeta = (row as Record<string, unknown>).__complianceSentMeta as
+                          | {
+                              sentAt?: string;
+                              status?: string;
+                              notifySequence?: number;
+                              updatedAt?: string;
+                            }
+                          | null
+                          | undefined;
+                        const showSentBadge =
+                          Boolean(sentMeta?.sentAt) && !(tabKey === 'health_declaration' && awaitingEmp);
+                        if (showSentBadge) {
+                          const st = String(sentMeta?.status ?? 'sent');
+                          const sa = String(sentMeta?.sentAt ?? '').trim();
+                          const seq = sentMeta?.notifySequence;
+                          const isLeaseTab = tabKey === 'annual_licensing' || tabKey === 'insurance';
+                          if (isComplianceRichSentTab(tabKey) && sa) {
+                            const isPendingReview = st === 'pending_admin_review';
+                            const title = isPendingReview
+                              ? 'הוגש מסמך — ממתין לאישור מנהל'
+                              : st === 'opened'
+                                ? isLeaseTab
+                                  ? 'הקישור לנציג נפתח'
+                                  : 'הקישור לנהג נפתח'
+                                : isLeaseTab
+                                  ? 'ממתין לתגובת נציג'
+                                  : 'ממתין לתגובת הנהג';
+                            const badgeClass = isPendingReview
+                              ? 'inline-flex items-center rounded-full border border-amber-300/40 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200'
+                              : 'inline-flex items-center rounded-full border border-sky-400/40 bg-sky-500/15 px-2 py-0.5 text-xs font-semibold text-sky-200';
+                            return (
+                              <div className="flex max-w-[16rem] flex-col items-end gap-0.5 text-right">
+                                <span className={badgeClass}>{title}</span>
+                                {seq != null && seq > 0 ? (
+                                  <span className="text-[10px] font-medium leading-snug text-muted-foreground">
+                                    התראה מספר {seq}
+                                  </span>
+                                ) : null}
+                                <span className="text-[10px] leading-snug text-muted-foreground tabular-nums">
+                                  {isPendingReview
+                                    ? `${isLeaseTab ? 'נשלח לנציג' : 'נשלח לנהג'}: ${formatComplianceSentAt(sa)}`
+                                    : `נשלח: ${formatComplianceSentAt(sa)}`}
                                 </span>
-                              ) : null}
-                              <span className="text-[10px] leading-snug text-muted-foreground tabular-nums">
-                                {isPendingReview
-                                  ? `${isLeaseTab ? 'נשלח לנציג' : 'נשלח לנהג'}: ${formatComplianceSentAt(sa)}`
-                                  : `נשלח: ${formatComplianceSentAt(sa)}`}
-                              </span>
-                            </div>
+                              </div>
+                            );
+                          }
+                          return (
+                            <span className="inline-flex items-center rounded-full border border-sky-400/40 bg-sky-500/15 px-2 py-0.5 text-xs font-semibold text-sky-200">
+                              נשלחה בקשה
+                            </span>
                           );
                         }
-                        return (
-                          <span className="inline-flex items-center rounded-full border border-sky-400/40 bg-sky-500/15 px-2 py-0.5 text-xs font-semibold text-sky-200">
-                            נשלחה בקשה
-                          </span>
-                        );
-                      }
-                      if (tabKey === 'health_declaration') {
-                        return awaitingEmp ? (
-                          <div className="flex flex-col items-end gap-0.5 text-right">
-                            <span className="inline-flex items-center rounded-full border border-sky-400/40 bg-sky-500/15 px-2 py-0.5 text-xs font-semibold text-sky-200">
-                              {(() => {
-                                const meta = (row as Record<string, unknown>).__compliancePendingMeta as
-                                  | { sentAt?: string; status?: string }
-                                  | null
-                                  | undefined;
-                                return meta?.status === 'opened'
-                                  ? 'ממתין לחתימת העובד (הקישור נפתח)'
-                                  : 'ממתין לחתימת העובד';
-                              })()}
-                            </span>
-                            {(() => {
-                              const meta = (row as Record<string, unknown>).__compliancePendingMeta as
-                                | { sentAt?: string }
-                                | null
-                                | undefined;
-                              const sa = meta?.sentAt?.trim();
-                              return sa ? (
-                                <span className="max-w-[14rem] text-[10px] leading-snug text-muted-foreground tabular-nums">
-                                  נשלח {formatComplianceSentAt(sa)}
+                        if (tabKey === 'health_declaration') {
+                          if (awaitingEmp) {
+                            return (
+                              <div className="flex flex-col items-end gap-0.5 text-right">
+                                <span className="inline-flex items-center rounded-full border border-sky-400/40 bg-sky-500/15 px-2 py-0.5 text-xs font-semibold text-sky-200">
+                                  {(() => {
+                                    const meta = (row as Record<string, unknown>).__compliancePendingMeta as
+                                      | { sentAt?: string; status?: string }
+                                      | null
+                                      | undefined;
+                                    return meta?.status === 'opened'
+                                      ? 'ממתין לחתימת העובד (הקישור נפתח)'
+                                      : 'ממתין לחתימת העובד';
+                                  })()}
                                 </span>
-                              ) : null;
-                            })()}
-                          </div>
-                        ) : dueDays == null ? (
-                          <span className="inline-flex items-center rounded-full border border-slate-500/40 bg-slate-700/40 px-2 py-0.5 text-xs font-semibold text-slate-200">
-                            ממתין לשליחה
-                          </span>
-                        ) : complianceDueBand(dueDays) === 'red' ? (
-                          <span className="inline-flex items-center rounded-full border border-red-400/40 bg-red-500/15 px-2 py-0.5 text-xs font-semibold text-red-300">
-                            {dueDays < 0 ? 'פג תוקף' : 'דחוף'}
-                          </span>
-                        ) : complianceDueBand(dueDays) === 'yellow' ? (
-                          <span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200">
-                            קרוב לפקיעה
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center rounded-full border border-emerald-400/40 bg-emerald-600/20 px-2 py-0.5 text-xs font-semibold text-emerald-200">
-                            תקין
-                          </span>
-                        );
-                      }
-                      if (driverLicPending) {
-                        return (
-                          <span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200">
-                            ממתין לאישור מנהל
-                          </span>
-                        );
-                      }
-                      /** עמודת סטטוס: בעיקר מעקב אחר בקשות/התראות — «פג תוקף» / דחיפות כבר בעמודת «ימים נותרו» */
-                      if (tabKey !== 'health_declaration') {
+                                {(() => {
+                                  const meta = (row as Record<string, unknown>).__compliancePendingMeta as
+                                    | { sentAt?: string }
+                                    | null
+                                    | undefined;
+                                  const sa = meta?.sentAt?.trim();
+                                  return sa ? (
+                                    <span className="max-w-[14rem] text-[10px] leading-snug text-muted-foreground tabular-nums">
+                                      נשלח {formatComplianceSentAt(sa)}
+                                    </span>
+                                  ) : null;
+                                })()}
+                              </div>
+                            );
+                          }
+                          if (dueDays == null) {
+                            return (
+                              <span className="inline-flex items-center rounded-full border border-slate-500/40 bg-slate-700/40 px-2 py-0.5 text-xs font-semibold text-slate-200">
+                                ממתין לשליחה
+                              </span>
+                            );
+                          }
+                        }
+                        if (driverLicPending) {
+                          return (
+                            <span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200">
+                              ממתין לאישור מנהל (רישיון הוגש)
+                            </span>
+                          );
+                        }
                         return <span className="text-sm text-muted-foreground">—</span>;
-                      }
-                      return complianceTableStatusNode(dueField, row as Record<string, unknown>);
-                    })()}
-                  </TableCell>
+                      })()}
+                    </TableCell>
+                  ) : null}
                   <TableCell className="text-right">
                     <div className="flex flex-wrap justify-end gap-2">
                       {!driverLicPending ? (
@@ -1564,22 +1539,22 @@ export default function AdminCompliancePage() {
   const [bulkSendSelectionIds, setBulkSendSelectionIds] = useState<Set<string>>(() => new Set());
   const [bulkSending, setBulkSending] = useState(false);
   const [visibleByTab, setVisibleByTab] = useState<Record<ComplianceTabKey, string[]>>({
-    annual_licensing: [...VEHICLE_DEFAULT_COLUMNS],
-    insurance: [...VEHICLE_DEFAULT_COLUMNS],
-    periodic_inspection: [...VEHICLE_DEFAULT_COLUMNS],
-    maintenance: [...VEHICLE_DEFAULT_COLUMNS],
-    driver_license: [...DRIVER_DEFAULT_COLUMNS],
-    health_declaration: [...DRIVER_DEFAULT_COLUMNS],
-    regulation_585: [...DRIVER_DEFAULT_COLUMNS],
+    annual_licensing: appendSendStatusColumnKey([...VEHICLE_DEFAULT_COLUMNS]),
+    insurance: appendSendStatusColumnKey([...VEHICLE_DEFAULT_COLUMNS]),
+    periodic_inspection: appendSendStatusColumnKey([...VEHICLE_DEFAULT_COLUMNS]),
+    maintenance: appendSendStatusColumnKey([...VEHICLE_DEFAULT_COLUMNS]),
+    driver_license: appendSendStatusColumnKey([...DRIVER_DEFAULT_COLUMNS]),
+    health_declaration: appendSendStatusColumnKey([...DRIVER_DEFAULT_COLUMNS]),
+    regulation_585: appendSendStatusColumnKey([...DRIVER_DEFAULT_COLUMNS]),
   });
   const [defaultVisibleByTab, setDefaultVisibleByTab] = useState<Record<ComplianceTabKey, string[]>>({
-    annual_licensing: [...VEHICLE_DEFAULT_COLUMNS],
-    insurance: [...VEHICLE_DEFAULT_COLUMNS],
-    periodic_inspection: [...VEHICLE_DEFAULT_COLUMNS],
-    maintenance: [...VEHICLE_DEFAULT_COLUMNS],
-    driver_license: [...DRIVER_DEFAULT_COLUMNS],
-    health_declaration: [...DRIVER_DEFAULT_COLUMNS],
-    regulation_585: [...DRIVER_DEFAULT_COLUMNS],
+    annual_licensing: appendSendStatusColumnKey([...VEHICLE_DEFAULT_COLUMNS]),
+    insurance: appendSendStatusColumnKey([...VEHICLE_DEFAULT_COLUMNS]),
+    periodic_inspection: appendSendStatusColumnKey([...VEHICLE_DEFAULT_COLUMNS]),
+    maintenance: appendSendStatusColumnKey([...VEHICLE_DEFAULT_COLUMNS]),
+    driver_license: appendSendStatusColumnKey([...DRIVER_DEFAULT_COLUMNS]),
+    health_declaration: appendSendStatusColumnKey([...DRIVER_DEFAULT_COLUMNS]),
+    regulation_585: appendSendStatusColumnKey([...DRIVER_DEFAULT_COLUMNS]),
   });
 
   const todayIso = useMemo(() => isoYmdTodayLocal(), []);
@@ -1758,32 +1733,88 @@ export default function AdminCompliancePage() {
     () => filterKeysByAvailable(DRIVER_KEYS, availableDriverKeys),
     [availableDriverKeys],
   );
-  const currentAllColumns = activeDef.source === 'vehicle' ? filteredVehicleColumns : filteredDriverColumns;
+  const currentAllColumns = useMemo(() => {
+    const base = activeDef.source === 'vehicle' ? filteredVehicleColumns : filteredDriverColumns;
+    return [...base, COMPLIANCE_COLUMN_SEND_STATUS];
+  }, [activeDef.source, filteredVehicleColumns, filteredDriverColumns]);
   const currentSelectedForTab = visibleByTab[activeTab] ?? [];
   const effectiveSelectedCount = currentSelectedForTab.length > 0 ? currentSelectedForTab.length : 1;
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(COMPLIANCE_COLUMNS_DEFAULTS_KEY);
+      let raw = localStorage.getItem(COMPLIANCE_COLUMNS_DEFAULTS_KEY);
+      if (!raw) {
+        const legacyRaw = localStorage.getItem(COMPLIANCE_COLUMNS_DEFAULTS_LEGACY_KEY);
+        if (legacyRaw) {
+          const legacyParsed = JSON.parse(legacyRaw) as Partial<Record<ComplianceTabKey, string[]>>;
+          const migrated: Record<ComplianceTabKey, string[]> = {
+            annual_licensing: appendSendStatusColumnKey(
+              legacyParsed.annual_licensing?.length ? [...legacyParsed.annual_licensing] : [...VEHICLE_DEFAULT_COLUMNS],
+            ),
+            insurance: appendSendStatusColumnKey(
+              legacyParsed.insurance?.length ? [...legacyParsed.insurance] : [...VEHICLE_DEFAULT_COLUMNS],
+            ),
+            periodic_inspection: appendSendStatusColumnKey(
+              legacyParsed.periodic_inspection?.length ? [...legacyParsed.periodic_inspection] : [...VEHICLE_DEFAULT_COLUMNS],
+            ),
+            maintenance: appendSendStatusColumnKey(
+              legacyParsed.maintenance?.length ? [...legacyParsed.maintenance] : [...VEHICLE_DEFAULT_COLUMNS],
+            ),
+            driver_license: appendSendStatusColumnKey(
+              legacyParsed.driver_license?.length ? [...legacyParsed.driver_license] : [...DRIVER_DEFAULT_COLUMNS],
+            ),
+            health_declaration: appendSendStatusColumnKey(
+              legacyParsed.health_declaration?.length ? [...legacyParsed.health_declaration] : [...DRIVER_DEFAULT_COLUMNS],
+            ),
+            regulation_585: appendSendStatusColumnKey(
+              legacyParsed.regulation_585?.length ? [...legacyParsed.regulation_585] : [...DRIVER_DEFAULT_COLUMNS],
+            ),
+          };
+          localStorage.setItem(COMPLIANCE_COLUMNS_DEFAULTS_KEY, JSON.stringify(migrated));
+          localStorage.removeItem(COMPLIANCE_COLUMNS_DEFAULTS_LEGACY_KEY);
+          raw = JSON.stringify(migrated);
+        }
+      }
       if (!raw) return;
       const parsed = JSON.parse(raw) as Partial<Record<ComplianceTabKey, string[]>>;
       const merged = {
-        annual_licensing: parsed.annual_licensing ?? VEHICLE_DEFAULT_COLUMNS,
-        insurance: parsed.insurance ?? VEHICLE_DEFAULT_COLUMNS,
-        periodic_inspection: parsed.periodic_inspection ?? VEHICLE_DEFAULT_COLUMNS,
-        maintenance: parsed.maintenance ?? VEHICLE_DEFAULT_COLUMNS,
-        driver_license: parsed.driver_license ?? DRIVER_DEFAULT_COLUMNS,
-        health_declaration: parsed.health_declaration ?? DRIVER_DEFAULT_COLUMNS,
-        regulation_585: parsed.regulation_585 ?? DRIVER_DEFAULT_COLUMNS,
+        annual_licensing:
+          parsed.annual_licensing != null && parsed.annual_licensing.length > 0
+            ? parsed.annual_licensing
+            : appendSendStatusColumnKey([...VEHICLE_DEFAULT_COLUMNS]),
+        insurance:
+          parsed.insurance != null && parsed.insurance.length > 0
+            ? parsed.insurance
+            : appendSendStatusColumnKey([...VEHICLE_DEFAULT_COLUMNS]),
+        periodic_inspection:
+          parsed.periodic_inspection != null && parsed.periodic_inspection.length > 0
+            ? parsed.periodic_inspection
+            : appendSendStatusColumnKey([...VEHICLE_DEFAULT_COLUMNS]),
+        maintenance:
+          parsed.maintenance != null && parsed.maintenance.length > 0
+            ? parsed.maintenance
+            : appendSendStatusColumnKey([...VEHICLE_DEFAULT_COLUMNS]),
+        driver_license:
+          parsed.driver_license != null && parsed.driver_license.length > 0
+            ? parsed.driver_license
+            : appendSendStatusColumnKey([...DRIVER_DEFAULT_COLUMNS]),
+        health_declaration:
+          parsed.health_declaration != null && parsed.health_declaration.length > 0
+            ? parsed.health_declaration
+            : appendSendStatusColumnKey([...DRIVER_DEFAULT_COLUMNS]),
+        regulation_585:
+          parsed.regulation_585 != null && parsed.regulation_585.length > 0
+            ? parsed.regulation_585
+            : appendSendStatusColumnKey([...DRIVER_DEFAULT_COLUMNS]),
       } as Record<ComplianceTabKey, string[]>;
       setDefaultVisibleByTab((prev) => ({
-        annual_licensing: parsed.annual_licensing ?? prev.annual_licensing,
-        insurance: parsed.insurance ?? prev.insurance,
-        periodic_inspection: parsed.periodic_inspection ?? prev.periodic_inspection,
-        maintenance: parsed.maintenance ?? prev.maintenance,
-        driver_license: parsed.driver_license ?? prev.driver_license,
-        health_declaration: parsed.health_declaration ?? prev.health_declaration,
-        regulation_585: parsed.regulation_585 ?? prev.regulation_585,
+        annual_licensing: merged.annual_licensing ?? prev.annual_licensing,
+        insurance: merged.insurance ?? prev.insurance,
+        periodic_inspection: merged.periodic_inspection ?? prev.periodic_inspection,
+        maintenance: merged.maintenance ?? prev.maintenance,
+        driver_license: merged.driver_license ?? prev.driver_license,
+        health_declaration: merged.health_declaration ?? prev.health_declaration,
+        regulation_585: merged.regulation_585 ?? prev.regulation_585,
       }));
       setVisibleByTab(merged);
     } catch {
@@ -1825,13 +1856,27 @@ export default function AdminCompliancePage() {
   useEffect(() => {
     setVisibleByTab((prev) => {
       const next = { ...prev };
-      if (next.annual_licensing.length === 0) next.annual_licensing = filterKeysByAvailable(VEHICLE_DEFAULT_COLUMNS, availableVehicleKeys);
-      if (next.insurance.length === 0) next.insurance = filterKeysByAvailable(VEHICLE_DEFAULT_COLUMNS, availableVehicleKeys);
-      if (next.periodic_inspection.length === 0) next.periodic_inspection = filterKeysByAvailable(VEHICLE_DEFAULT_COLUMNS, availableVehicleKeys);
-      if (next.maintenance.length === 0) next.maintenance = filterKeysByAvailable(VEHICLE_DEFAULT_COLUMNS, availableVehicleKeys);
-      if (next.driver_license.length === 0) next.driver_license = filterKeysByAvailable(DRIVER_DEFAULT_COLUMNS, availableDriverKeys);
-      if (next.health_declaration.length === 0) next.health_declaration = filterKeysByAvailable(DRIVER_DEFAULT_COLUMNS, availableDriverKeys);
-      if (next.regulation_585.length === 0) next.regulation_585 = filterKeysByAvailable(DRIVER_DEFAULT_COLUMNS, availableDriverKeys);
+      if (next.annual_licensing.length === 0) {
+        next.annual_licensing = appendSendStatusColumnKey(filterKeysByAvailable(VEHICLE_DEFAULT_COLUMNS, availableVehicleKeys));
+      }
+      if (next.insurance.length === 0) {
+        next.insurance = appendSendStatusColumnKey(filterKeysByAvailable(VEHICLE_DEFAULT_COLUMNS, availableVehicleKeys));
+      }
+      if (next.periodic_inspection.length === 0) {
+        next.periodic_inspection = appendSendStatusColumnKey(filterKeysByAvailable(VEHICLE_DEFAULT_COLUMNS, availableVehicleKeys));
+      }
+      if (next.maintenance.length === 0) {
+        next.maintenance = appendSendStatusColumnKey(filterKeysByAvailable(VEHICLE_DEFAULT_COLUMNS, availableVehicleKeys));
+      }
+      if (next.driver_license.length === 0) {
+        next.driver_license = appendSendStatusColumnKey(filterKeysByAvailable(DRIVER_DEFAULT_COLUMNS, availableDriverKeys));
+      }
+      if (next.health_declaration.length === 0) {
+        next.health_declaration = appendSendStatusColumnKey(filterKeysByAvailable(DRIVER_DEFAULT_COLUMNS, availableDriverKeys));
+      }
+      if (next.regulation_585.length === 0) {
+        next.regulation_585 = appendSendStatusColumnKey(filterKeysByAvailable(DRIVER_DEFAULT_COLUMNS, availableDriverKeys));
+      }
       return next;
     });
   }, [availableVehicleKeys, availableDriverKeys]);
@@ -2098,7 +2143,8 @@ export default function AdminCompliancePage() {
   );
 
   const saveColumnsDefaults = (next: string[]) => {
-    const normalized = next.length > 0 ? next : [activeDef.dueField];
+    const normalized =
+      next.length > 0 ? next : appendSendStatusColumnKey([activeDef.dueField]);
     const nextDefaults = { ...defaultVisibleByTab, [activeTab]: normalized };
     setDefaultVisibleByTab(nextDefaults);
     try {
@@ -2111,7 +2157,8 @@ export default function AdminCompliancePage() {
   };
 
   const saveColumnsSessionOnly = (next: string[]) => {
-    const normalized = next.length > 0 ? next : [activeDef.dueField];
+    const normalized =
+      next.length > 0 ? next : appendSendStatusColumnKey([activeDef.dueField]);
     setVisibleByTab((prev) => ({ ...prev, [activeTab]: normalized }));
     toast.success('התצוגה נשמרה לסשן הנוכחי');
   };
@@ -2602,7 +2649,8 @@ export default function AdminCompliancePage() {
                     ) : null}
                     <ComplianceTable
                       rows={tabData[tab.key]}
-                      columns={visibleByTab[tab.key]}
+                      columns={visibleByTab[tab.key].filter((c) => c !== COMPLIANCE_COLUMN_SEND_STATUS)}
+                      showSendStatusColumn={visibleByTab[tab.key].includes(COMPLIANCE_COLUMN_SEND_STATUS)}
                       dueField={tab.dueField}
                       tabKey={tab.key}
                       rowSource={tab.source}
