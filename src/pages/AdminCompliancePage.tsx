@@ -2160,6 +2160,7 @@ export default function AdminCompliancePage() {
       const vid = typeof payload?.vehicle_id === 'string' ? payload.vehicle_id.trim() : '';
       if (vid) {
         await queryClient.invalidateQueries({ queryKey: ['vehicle', vid] });
+        await queryClient.invalidateQueries({ queryKey: ['vehicle-documents', vid] });
       }
 
       const de = payload?.driver_email as

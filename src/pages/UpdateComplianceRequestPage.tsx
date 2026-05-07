@@ -272,16 +272,24 @@ export default function UpdateComplianceRequestPage() {
         setError('תאריך תוקף ההצהרה — נא למלא תאריך מלא או למחוק את השדה.');
         return;
       }
-    } else if (taskKey === 'driver_license') {
+    } else if (taskKey === 'driver_license' || taskKey === 'regulation_585') {
       if (!licensePhotoFile) {
-        setError('נא לצלם או להעלות תמונת רישיון ברורה לפני השליחה.');
+        setError(
+          taskKey === 'regulation_585'
+            ? 'נא לצלם או להעלות את סריקת בדיקת תקנה 585 לפני השליחה.'
+            : 'נא לצלם או להעלות תמונת רישיון ברורה לפני השליחה.',
+        );
         return;
       }
       if (
         declaredLicenseExpiry.trim() &&
         !/^\d{4}-\d{2}-\d{2}$/.test(declaredLicenseExpiry.trim())
       ) {
-        setError('תאריך תוקף הרישיון — נא למלא תאריך מלא או למחוק את השדה.');
+        setError(
+          taskKey === 'regulation_585'
+            ? 'תאריך הבדיקה — נא למלא תאריך מלא או למחוק את השדה.'
+            : 'תאריך תוקף הרישיון — נא למלא תאריך מלא או למחוק את השדה.',
+        );
         return;
       }
     }
@@ -319,6 +327,18 @@ export default function UpdateComplianceRequestPage() {
         }
         if (declaredLicenseExpiry.trim()) {
           payload.declared_license_expiry = declaredLicenseExpiry.trim();
+        }
+      }
+      if (taskKey === 'regulation_585') {
+        let dataUrl = await fileToDataUrl(licensePhotoFile!);
+        dataUrl = await compressImageDataUrl(dataUrl);
+        if (JSON.stringify({ ...payload, license_image_data_url: dataUrl }).length > 5_500_000) {
+          const again = await fileToDataUrl(licensePhotoFile!);
+          dataUrl = await compressImageDataUrl(again, 1200, 0.72);
+        }
+        payload.license_image_data_url = dataUrl;
+        if (declaredLicenseExpiry.trim()) {
+          payload.declared_regulation_585_date = declaredLicenseExpiry.trim();
         }
       }
       const { data, error: invokeErr } = await invokeSupabaseEdgeFunction('public-compliance-submit', payload);
@@ -503,6 +523,29 @@ export default function UpdateComplianceRequestPage() {
                     className={publicFormDatePickerClass}
                   />
                 </div>
+              </div>
+            ) : null}
+
+            {!done && item?.task_key === 'regulation_585' ? (
+              <div className="space-y-3 rounded-lg border border-white/10 bg-slate-950/60 p-3">
+                <p className="text-sm leading-relaxed text-slate-200">
+                  צלמו או העלו את <strong>אישור בדיקת רישיון לפי תקנה 585 ב׳</strong> (טופס/סריקה ברורה). אם לא צויין תאריך
+                  בדיקה — יישמר תאריך של היום במערכת.
+                </p>
+                <div className="[&_.border-success]:border-emerald-500/60 [&_.border-border]:border-white/20">
+                  <PhotoUpload
+                    label="צילום / סריקת תקנה 585 — מצלמה או גלריה"
+                    onPhotoCapture={onLicensePhoto}
+                    disabled={submitting}
+                  />
+                </div>
+                <FleetDatePicker
+                  id="public-reg585-inspection"
+                  label="תאריך בדיקה (אופציונלי — ברירת מחדל: היום)"
+                  value={declaredLicenseExpiry}
+                  onChange={setDeclaredLicenseExpiry}
+                  className={publicFormDatePickerClass}
+                />
               </div>
             ) : null}
 

@@ -21,6 +21,8 @@ type SubmitBody = {
   /** השלמה ידנית לפני OCR */
   declared_license_number?: string;
   declared_license_expiry?: string;
+  /** תאריך בדיקת תקנה 585 (YYYY-MM-DD) — אופציונלי */
+  declared_regulation_585_date?: string;
 };
 
 function json(body: unknown, status = 200): Response {
@@ -211,6 +213,51 @@ serve(async (req) => {
         file_url: fileUrl,
       });
       if (ddLicenseErr) return json({ error: ddLicenseErr.message }, 500);
+    } else if (requestRow.task_key === 'regulation_585') {
+      const scanUrl = clean(body.license_image_data_url);
+      if (!scanUrl) return json({ error: 'Missing regulation 585 scan image' }, 400);
+      const declaredInspectYmd = ymdOrNull(body.declared_regulation_585_date);
+      const inspectionDateForDriver = declaredInspectYmd ?? nowIsoDate;
+      const parsed = parseDataUrl(scanUrl);
+      const path = `compliance-requests/${requestRow.org_id}/${requestRow.driver_id}/${requestRow.id}-reg585.${parsed.ext}`;
+      const up = await admin.storage.from(DOC_BUCKET).upload(path, parsed.bytes, {
+        contentType: parsed.ext === 'png' ? 'image/png' : 'image/jpeg',
+        upsert: true,
+      });
+      if (up.error) return json({ error: up.error.message }, 500);
+      const pub = admin.storage.from(DOC_BUCKET).getPublicUrl(path);
+      const fileUrl = clean(pub.data.publicUrl);
+
+      const { error: docErr } = await admin.from('compliance_docs').insert({
+        request_id: requestRow.id,
+        org_id: requestRow.org_id,
+        driver_id: requestRow.driver_id,
+        task_key: requestRow.task_key,
+        file_url: fileUrl,
+        file_kind: 'regulation_585_scan',
+        metadata: {
+          declared_regulation_585_date: declaredInspectYmd,
+          submitted_on_date: nowIsoDate,
+        },
+      });
+      if (docErr) return json({ error: docErr.message }, 500);
+
+      const { error: ddErr } = await admin.from('driver_documents').insert({
+        driver_id: requestRow.driver_id,
+        title: 'תקנה 585 ב׳ — סריקת בדיקה',
+        file_url: fileUrl,
+      });
+      if (ddErr) return json({ error: ddErr.message }, 500);
+
+      const { error: updErr } = await admin
+        .from('drivers')
+        .update({
+          regulation_585b_date: inspectionDateForDriver,
+          status: 'active',
+        })
+        .eq('id', requestRow.driver_id)
+        .eq('org_id', requestRow.org_id);
+      if (updErr) return json({ error: updErr.message }, 500);
     } else {
       return json({ error: 'This task is not yet supported in public submit flow' }, 400);
     }
@@ -245,6 +292,7 @@ serve(async (req) => {
         driver_license:
           'הרישיון הועלה בהצלחה. העדכון הועבר לאישור מנהל בארגון — רק לאחר האישור יעודכנו הצילום ותאריך התוקף בכרטיס הנהג.',
         health_declaration: 'הצהרת הבריאות נשמרה בהצלחה. תודה.',
+        regulation_585: 'סריקת תקנה 585 נשמרה בכרטיס הנהג. תודה.',
       };
       const messagePartial =
         thankByTaskPartial[String(requestRow.task_key) ?? ''] ?? 'העדכון נקלט בהצלחה. תודה.';
@@ -260,6 +308,7 @@ serve(async (req) => {
       driver_license:
         'הרישיון הועלה בהצלחה. העדכון הועבר לאישור מנהל בארגון — רק לאחר האישור יעודכנו הצילום ותאריך התוקף בכרטיס הנהג.',
       health_declaration: 'הצהרת הבריאות נשמרה בהצלחה. תודה.',
+      regulation_585: 'סריקת תקנה 585 נשמרה בכרטיס הנהג. תודה.',
     };
     const message =
       thankByTask[String(requestRow.task_key) ?? ''] ??

@@ -126,21 +126,25 @@ serve(async (req) => {
 
     if (Object.keys(vUp).length === 0) return json({ error: 'Unsupported task' }, 400);
 
-    const { error: vuErr } = await admin.from('vehicles').update(vUp).eq('id', vehicle.id);
-    if (vuErr) return json({ error: vuErr.message }, 500);
-
     const docTitle =
       taskKey === 'annual_licensing'
         ? 'רישיון רכב (טסט) — אושר מליסינג'
         : 'פוליסת ביטוח — אושר מליסינג';
     const docType = taskKey === 'annual_licensing' ? 'annual_license' : 'insurance_policy';
 
-    await admin.from('vehicle_documents').insert({
+    /** מסמך לפני עדכון שדות הרכב — אם INSERT נכשל לא משאירים תאריך בלי רשומת מסמך */
+    const { error: vdocErr } = await admin.from('vehicle_documents').insert({
       vehicle_id: vehicle.id,
       title: docTitle,
       file_url: docUrl,
       document_type: docType,
     });
+    if (vdocErr) {
+      return json({ error: `שמירת צילום במסמכי הרכב נכשלה: ${vdocErr.message}` }, 500);
+    }
+
+    const { error: vuErr } = await admin.from('vehicles').update(vUp).eq('id', vehicle.id);
+    if (vuErr) return json({ error: vuErr.message }, 500);
 
     const { error: closeErr } = await admin
       .from('compliance_requests')
