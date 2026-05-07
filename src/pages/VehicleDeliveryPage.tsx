@@ -402,6 +402,7 @@ export default function VehicleDeliveryPage() {
         reportUrl = archived.handover.pdf_url;
         queryClient.invalidateQueries({ queryKey: ['active-driver-vehicle-assignments'] });
         queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+        queryClient.invalidateQueries({ queryKey: ['vehicles-assigned-to-driver'] });
         queryClient.invalidateQueries({ queryKey: ['drivers'] });
         queryClient.invalidateQueries({ queryKey: ['driver', selectedDriver] });
         queryClient.invalidateQueries({ queryKey: ['handover-history'] });

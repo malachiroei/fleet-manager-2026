@@ -1256,6 +1256,7 @@ export function useCreateHandover() {
       queryClient.invalidateQueries({ queryKey: ['handovers'] });
       queryClient.invalidateQueries({ queryKey: ['handover-history'] });
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+      queryClient.invalidateQueries({ queryKey: ['vehicles-assigned-to-driver'] });
       queryClient.invalidateQueries({ queryKey: ['active-driver-vehicle-assignments'] });
       queryClient.invalidateQueries({ queryKey: ['driver-documents'] });
     }

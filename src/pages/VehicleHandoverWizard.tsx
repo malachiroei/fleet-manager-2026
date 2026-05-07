@@ -2480,6 +2480,7 @@ export default function VehicleHandoverWizard() {
     setSubmitting(false);
     setDirty(DIRTY_SOURCE_HANDOVER_WIZARD, false);
     queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+    queryClient.invalidateQueries({ queryKey: ['vehicles-assigned-to-driver'] });
     queryClient.invalidateQueries({ queryKey: ['active-driver-vehicle-assignments'] });
     queryClient.invalidateQueries({ queryKey: ['drivers'] });
     if (driverId) {

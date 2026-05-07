@@ -129,6 +129,35 @@ export function useVehicles() {
   });
 }
 
+/** רכבים שיש להם כרגע assigned_driver_id לנהג — ללא מסנן הקשר‑נהג של רשימת הצי הגדולה. */
+export function useVehiclesAssignedToDriver(driverId: string | undefined, driverOrgId?: string | null) {
+  const { user, profile } = useAuth();
+  const { effectiveOrgId, fleetListReady } = useImpersonationFleetScope();
+  const orgId = driverOrgId ?? effectiveOrgId;
+
+  return useQuery({
+    queryKey: [
+      'vehicles-assigned-to-driver',
+      driverId ?? null,
+      orgId,
+      resolveSessionEmail(profile, user),
+      user?.id,
+    ],
+    enabled: fleetListReady && orgId != null && Boolean(driverId),
+    queryFn: async () => {
+      if (orgId == null || driverId == null || driverId === '') return [] as Vehicle[];
+      const { data, error } = await supabase
+        .from('vehicles')
+        .select('*')
+        .eq('org_id', orgId)
+        .eq('assigned_driver_id', driverId)
+        .order('plate_number');
+      if (error) throw error;
+      return ((data ?? []) as Vehicle[]).map((v) => vehicleWithNormalizedPlate(v));
+    },
+  });
+}
+
 export function useVehicle(id: string) {
   const { user, profile } = useAuth();
   const { effectiveOrgId, fleetListReady } = useImpersonationFleetScope();
@@ -229,6 +258,7 @@ export function useUpdateVehicle() {
       // עדכון מיידי של מסך הסקירה בלי להמתין ל-refetch
       queryClient.setQueryData(['vehicle', data.id], vehicleWithNormalizedPlate(data as Vehicle));
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+      queryClient.invalidateQueries({ queryKey: ['vehicles-assigned-to-driver'] });
       queryClient.invalidateQueries({ queryKey: ['vehicle', data.id] });
       toast({ title: 'הרכב עודכן בהצלחה' });
     },
@@ -373,6 +403,7 @@ export function useAssignDriverToVehicle() {
     },
     onSuccess: ({ driverId }) => {
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+      queryClient.invalidateQueries({ queryKey: ['vehicles-assigned-to-driver'] });
       queryClient.invalidateQueries({ queryKey: ['drivers'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['active-driver-vehicle-assignments'] });

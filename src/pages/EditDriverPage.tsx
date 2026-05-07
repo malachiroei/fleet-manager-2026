@@ -25,7 +25,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Loader2, User, CreditCard, Briefcase, ShieldCheck, FileText, Car } from 'lucide-react';
-import { useActiveDriverVehicleAssignments, useVehicles } from '@/hooks/useVehicles';
+import { useActiveDriverVehicleAssignments, useVehicles, useVehiclesAssignedToDriver } from '@/hooks/useVehicles';
+import type { AssignedVehicleTile } from '@/lib/mergeDriverAssignedVehicles';
 import { mergeAssignedVehiclesForDriver } from '@/lib/mergeDriverAssignedVehicles';
 import DriverFolders from '@/components/DriverFolders';
 import { toast } from 'sonner';
@@ -41,6 +42,7 @@ export default function EditDriverPage() {
   const deleteDriver = useDeleteDriver();
   const { data: activeAssignments = [] } = useActiveDriverVehicleAssignments();
   const { data: vehicles = [] } = useVehicles();
+  const { data: assignedByVehicleColumn = [] } = useVehiclesAssignedToDriver(id, driver?.org_id);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
@@ -106,10 +108,24 @@ export default function EditDriverPage() {
     setHealthDeclarationImgBroken(false);
   }, [driver?.health_declaration_url]);
 
-  const assignedVehicles = useMemo(() => {
+  const assignedVehicles = useMemo((): AssignedVehicleTile[] => {
     if (!id) return [];
-    return mergeAssignedVehiclesForDriver(id, activeAssignments, vehicles);
-  }, [id, activeAssignments, vehicles]);
+    const fromMerge = mergeAssignedVehiclesForDriver(id, activeAssignments, vehicles);
+    const byId = new Map<string, AssignedVehicleTile>();
+    for (const v of fromMerge) {
+      byId.set(v.id, v);
+    }
+    for (const v of assignedByVehicleColumn) {
+      if (byId.has(v.id)) continue;
+      byId.set(v.id, {
+        id: v.id,
+        manufacturer: v.manufacturer,
+        model: v.model,
+        plate_number: v.plate_number,
+      });
+    }
+    return [...byId.values()];
+  }, [id, activeAssignments, vehicles, assignedByVehicleColumn]);
 
   if (isLoading) {
     return (
