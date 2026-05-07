@@ -62,6 +62,95 @@ function appendSendStatusColumnKey(keys: string[]): string[] {
   return keys.includes(COMPLIANCE_COLUMN_SEND_STATUS) ? keys : [...keys, COMPLIANCE_COLUMN_SEND_STATUS];
 }
 
+/** נשמר ב-sessionStorage — שורד רענון עמוד; מנוקה כשהשרת מחזיר בקשה פתוחה או כשנסגרת (הושלמה/פגה) */
+const TOWER_SENT_HINTS_SS_KEY = 'fleet_compliance_tower_sent_hints_v1';
+const TOWER_HINT_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+
+type TowerSentHint = { sentAt: string; notifySequence?: number };
+
+function towerHintStorageKey(orgId: string, entityId: string, taskKey: string): string {
+  return `${orgId}|${entityId}|${taskKey}`;
+}
+
+function readTowerSentHints(): Record<string, TowerSentHint> {
+  try {
+    const raw = sessionStorage.getItem(TOWER_SENT_HINTS_SS_KEY);
+    if (!raw) return {};
+    const p = JSON.parse(raw) as Record<string, TowerSentHint>;
+    return p && typeof p === 'object' ? p : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeTowerSentHints(all: Record<string, TowerSentHint>) {
+  try {
+    sessionStorage.setItem(TOWER_SENT_HINTS_SS_KEY, JSON.stringify(all));
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+function setTowerSentHint(orgId: string, entityId: string, taskKey: string, hint: TowerSentHint) {
+  const k = towerHintStorageKey(orgId, entityId, taskKey);
+  const all = readTowerSentHints();
+  all[k] = hint;
+  writeTowerSentHints(all);
+}
+
+function removeTowerSentHintByStorageKey(storageKey: string) {
+  const all = readTowerSentHints();
+  if (!all[storageKey]) return;
+  delete all[storageKey];
+  writeTowerSentHints(all);
+}
+
+function removeTowerSentHint(orgId: string, entityId: string, taskKey: string) {
+  removeTowerSentHintByStorageKey(towerHintStorageKey(orgId, entityId, taskKey));
+}
+
+function parseTowerHintStorageKey(key: string): { orgId: string; entityId: string; taskKey: string } | null {
+  const parts = key.split('|');
+  if (parts.length < 3) return null;
+  const orgId = parts[0] ?? '';
+  const entityId = parts[1] ?? '';
+  const taskKey = parts.slice(2).join('|');
+  if (!orgId || !entityId || !taskKey) return null;
+  return { orgId, entityId, taskKey };
+}
+
+function mapKeyFromEntityTask(entityId: string, taskKey: string): string {
+  return `${entityId}::${taskKey}`;
+}
+
+function pruneExpiredTowerHintsPersisted() {
+  const now = Date.now();
+  const all = readTowerSentHints();
+  let changed = false;
+  const next = { ...all };
+  for (const [k, v] of Object.entries(all)) {
+    const sent = Date.parse(v.sentAt);
+    if (!Number.isFinite(sent) || now - sent > TOWER_HINT_MAX_AGE_MS) {
+      delete next[k];
+      changed = true;
+    }
+  }
+  if (changed) writeTowerSentHints(next);
+}
+
+/** יישור מפתח רמז עם entity_id או driver_id בשורת compliance_requests */
+function removeTowerHintsMatchingComplianceRow(
+  orgId: string,
+  row: { entity_id?: unknown; driver_id?: unknown; task_key?: unknown },
+) {
+  const tk = String(row.task_key ?? '').trim();
+  if (!tk) return;
+  const eid = String(row.entity_id ?? '').trim();
+  const did = String(row.driver_id ?? '').trim();
+  if (eid) removeTowerSentHint(orgId, eid, tk);
+  if (did && did !== eid) removeTowerSentHint(orgId, did, tk);
+}
+
 /** שליחת בקשה זמינה רק עם עד N ימים לפני פקיעה (וכשפג) — למעלה מזה לא לוחצים. */
 const COMPLIANCE_SEND_MAX_DAYS_REMAINING = 60;
 
@@ -152,6 +241,19 @@ function availableKeysFromRows(rows: Array<Record<string, unknown>>): Set<string
 
 function filterKeysByAvailable(keys: string[], available: Set<string>): string[] {
   return keys.filter((k) => k === COMPLIANCE_COLUMN_SEND_STATUS || available.has(k));
+}
+
+/** סינכרון בורר ↔ טבלה: רק מפתחות קיימים בנתונים; אם לא נשאר כלום — תאריך יעד לטאב + סטטוס שליחה */
+function normalizeComplianceTabColumns(
+  tab: { key: ComplianceTabKey; dueField: string; source: 'vehicle' | 'driver' },
+  keys: string[],
+  available: Set<string>,
+): string[] {
+  const filtered = filterKeysByAvailable(keys, available);
+  if (filtered.length === 0) {
+    return appendSendStatusColumnKey([tab.dueField]);
+  }
+  return filtered;
 }
 
 function toStartOfDay(d: Date): Date {
@@ -539,7 +641,8 @@ function SearchableColumnPicker({
   selected: string[];
   onSaveSession: (next: string[]) => void;
   onSaveDefault: (next: string[]) => void;
-  onRestoreDefault: () => void;
+  /** מחזיר את רשימת העמודות אחרי שחזור — לסנכרון טיוטת הבורר (לפני עדכון React ל-props) */
+  onRestoreDefault: () => string[];
   /** טקסט כפתור — כולל ספירה שמתאימה לטבלה (עמודות קבועות + שדות מהבורר) */
   triggerLabel: string;
 }) {
@@ -566,7 +669,13 @@ function SearchableColumnPicker({
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (nextOpen) setDraftSelected(selected);
+      }}
+    >
       <PopoverTrigger asChild>
         <Button type="button" variant="outline" className="h-9 gap-2 max-w-[min(100%,22rem)]">
           <Columns3 className="h-4 w-4 shrink-0" />
@@ -588,8 +697,8 @@ function SearchableColumnPicker({
               size="sm"
               variant="outline"
               onClick={() => {
-                onRestoreDefault();
-                setDraftSelected(selected);
+                const restored = onRestoreDefault();
+                setDraftSelected(restored);
               }}
             >
               שחזר ברירת מחדל
@@ -1387,6 +1496,36 @@ export default function AdminCompliancePage() {
   }, [openComplianceRequestsIsError, openComplianceRequestsError]);
 
   useEffect(() => {
+    pruneExpiredTowerHintsPersisted();
+  }, [orgId]);
+
+  /** כשהשרת מחזיר שורת בקשה פתוחה — הרמז ב-sessionStorage מיותר */
+  useEffect(() => {
+    const oid = String(orgId ?? '').trim();
+    if (!oid) return;
+    const all = readTowerSentHints();
+    let changed = false;
+    const next = { ...all };
+    for (const r of openComplianceRequests) {
+      const t = String(r.task_key ?? '').trim();
+      if (!t) continue;
+      const ids = new Set<string>();
+      const eid = String(r.entity_id ?? '').trim();
+      const did = String(r.driver_id ?? '').trim();
+      if (eid) ids.add(eid);
+      if (did) ids.add(did);
+      for (const id of ids) {
+        const sk = towerHintStorageKey(oid, id, t);
+        if (next[sk]) {
+          delete next[sk];
+          changed = true;
+        }
+      }
+    }
+    if (changed) writeTowerSentHints(next);
+  }, [openComplianceRequests, orgId]);
+
+  useEffect(() => {
     setOptimisticCompliancePending((prev) => {
       if (Object.keys(prev).length === 0) return prev;
       const next = { ...prev };
@@ -1447,7 +1586,22 @@ export default function AdminCompliancePage() {
           table: 'compliance_requests',
           filter: `org_id=eq.${orgId}`,
         },
-        invalidateTower,
+        (payload) => {
+          invalidateTower();
+          const oid = String(orgId ?? '').trim();
+          if (!oid) return;
+          type Rowish = { entity_id?: unknown; driver_id?: unknown; task_key?: unknown; status?: unknown };
+          if (payload.eventType === 'DELETE') {
+            removeTowerHintsMatchingComplianceRow(oid, (payload.old ?? {}) as Rowish);
+            return;
+          }
+          const row = payload.new as Rowish | null;
+          if (!row) return;
+          const st = String(row.status ?? '').trim().toLowerCase();
+          if (st === 'completed' || st === 'expired') {
+            removeTowerHintsMatchingComplianceRow(oid, row);
+          }
+        },
       )
       .subscribe();
 
@@ -1521,8 +1675,25 @@ export default function AdminCompliancePage() {
         m.set(k, entry);
       }
     }
+    const oid = String(orgId ?? '').trim();
+    if (oid) {
+      const now = Date.now();
+      const hints = readTowerSentHints();
+      for (const [storageKey, hint] of Object.entries(hints)) {
+        const parsed = parseTowerHintStorageKey(storageKey);
+        if (!parsed || parsed.orgId !== oid) continue;
+        const sent = Date.parse(hint.sentAt);
+        if (!Number.isFinite(sent) || now - sent > TOWER_HINT_MAX_AGE_MS) continue;
+        const mapKey = mapKeyFromEntityTask(parsed.entityId, parsed.taskKey);
+        if (!m.has(mapKey)) {
+          const entry: SentMeta = { sentAt: hint.sentAt, status: 'sent' };
+          if (hint.notifySequence != null) entry.notifySequence = hint.notifySequence;
+          m.set(mapKey, entry);
+        }
+      }
+    }
     return m;
-  }, [openComplianceRequests, optimisticCompliancePending, optimisticVehicleCompliancePending]);
+  }, [openComplianceRequests, optimisticCompliancePending, optimisticVehicleCompliancePending, orgId]);
 
   const [viewFilter, setViewFilter] = useState<TowerViewFilter>('urgent');
   const [customRangeFromDays, setCustomRangeFromDays] = useState(-30);
@@ -1763,7 +1934,12 @@ export default function AdminCompliancePage() {
     const sendOn = sel.includes(COMPLIANCE_COLUMN_SEND_STATUS);
     /** שדות מהבורר + תאריך יעד לטאב + ימים + סטטוס + [סטטוס שליחה] + פעולות + צ׳קבוקס */
     const totalInTable = dataKeys + 5 + (sendOn ? 1 : 0);
-    return `עמודות — בטבלה ${totalInTable} (${dataKeys} שדות מהרשימה${sendOn ? ' · שליחה' : ''})`;
+    const parts: string[] = [];
+    if (dataKeys > 0) parts.push(`${dataKeys} שדות מהרשימה`);
+    if (sendOn) parts.push('סטטוס שליחה');
+    const selText =
+      parts.length > 0 ? parts.join(' · ') : 'ללא שדות נתונים נוספים מהרשימה';
+    return `עמודות — בטבלה ${totalInTable} (${selText})`;
   }, [visibleByTab, activeTab]);
 
   useEffect(() => {
@@ -1867,45 +2043,21 @@ export default function AdminCompliancePage() {
   }, [availableVehicleKeys, availableDriverKeys]);
 
   useEffect(() => {
-    setVisibleByTab((prev) => ({
-      ...prev,
-      annual_licensing: filterKeysByAvailable(prev.annual_licensing, availableVehicleKeys),
-      insurance: filterKeysByAvailable(prev.insurance, availableVehicleKeys),
-      periodic_inspection: filterKeysByAvailable(prev.periodic_inspection, availableVehicleKeys),
-      maintenance: filterKeysByAvailable(prev.maintenance, availableVehicleKeys),
-      driver_license: filterKeysByAvailable(prev.driver_license, availableDriverKeys),
-      health_declaration: filterKeysByAvailable(prev.health_declaration, availableDriverKeys),
-      regulation_585: filterKeysByAvailable(prev.regulation_585, availableDriverKeys),
-    }));
-  }, [availableVehicleKeys, availableDriverKeys]);
-
-  useEffect(() => {
+    if (vehiclesLoading || driversLoading) return;
     setVisibleByTab((prev) => {
       const next = { ...prev };
-      if (next.annual_licensing.length === 0) {
-        next.annual_licensing = appendSendStatusColumnKey(filterKeysByAvailable(VEHICLE_DEFAULT_COLUMNS, availableVehicleKeys));
+      let changed = false;
+      for (const tab of TAB_DEFS) {
+        const avail = tab.source === 'vehicle' ? availableVehicleKeys : availableDriverKeys;
+        const norm = normalizeComplianceTabColumns(tab, prev[tab.key], avail);
+        if (prev[tab.key].join('|') !== norm.join('|')) {
+          next[tab.key] = norm;
+          changed = true;
+        }
       }
-      if (next.insurance.length === 0) {
-        next.insurance = appendSendStatusColumnKey(filterKeysByAvailable(VEHICLE_DEFAULT_COLUMNS, availableVehicleKeys));
-      }
-      if (next.periodic_inspection.length === 0) {
-        next.periodic_inspection = appendSendStatusColumnKey(filterKeysByAvailable(VEHICLE_DEFAULT_COLUMNS, availableVehicleKeys));
-      }
-      if (next.maintenance.length === 0) {
-        next.maintenance = appendSendStatusColumnKey(filterKeysByAvailable(VEHICLE_DEFAULT_COLUMNS, availableVehicleKeys));
-      }
-      if (next.driver_license.length === 0) {
-        next.driver_license = appendSendStatusColumnKey(filterKeysByAvailable(DRIVER_DEFAULT_COLUMNS, availableDriverKeys));
-      }
-      if (next.health_declaration.length === 0) {
-        next.health_declaration = appendSendStatusColumnKey(filterKeysByAvailable(DRIVER_DEFAULT_COLUMNS, availableDriverKeys));
-      }
-      if (next.regulation_585.length === 0) {
-        next.regulation_585 = appendSendStatusColumnKey(filterKeysByAvailable(DRIVER_DEFAULT_COLUMNS, availableDriverKeys));
-      }
-      return next;
+      return changed ? next : prev;
     });
-  }, [availableVehicleKeys, availableDriverKeys]);
+  }, [availableVehicleKeys, availableDriverKeys, vehiclesLoading, driversLoading]);
 
   const requestDisabledReason = (
     tab: { source: ComplianceSource; key: ComplianceTabKey },
@@ -2059,7 +2211,8 @@ export default function AdminCompliancePage() {
 
       /** רק אם השרת מחזיר במפורש false — אין שמירת בקשה במסד */
       const persistedExplicitFalse = payload?.persisted_token === false;
-      const pendingKey = `${driverId}::${tab.key}`;
+      /** תואם entity_id ב־compliance_requests: נהג/רכב — תמיד מזהה השורה בטבלה */
+      const pendingKey = `${rowKey}::${tab.key}`;
       const rawSeq = payload?.notify_sequence;
       const notifySeq =
         typeof rawSeq === 'number'
@@ -2068,13 +2221,22 @@ export default function AdminCompliancePage() {
             ? Number(rawSeq)
             : NaN;
       if (!persistedExplicitFalse) {
-        setOptimisticCompliancePending((prev) => ({
-          ...prev,
-          [pendingKey]: {
-            sentAt: new Date().toISOString(),
-            ...(Number.isFinite(notifySeq) && notifySeq > 0 ? { notifySequence: notifySeq } : {}),
-          },
-        }));
+        const optimisticPayload = {
+          sentAt: new Date().toISOString(),
+          ...(Number.isFinite(notifySeq) && notifySeq > 0 ? { notifySequence: notifySeq } : {}),
+        };
+        setTowerSentHint(orgIdRequired, rowKey, tab.key, optimisticPayload);
+        if (entityType === 'vehicle') {
+          setOptimisticVehicleCompliancePending((prev) => ({
+            ...prev,
+            [pendingKey]: optimisticPayload,
+          }));
+        } else {
+          setOptimisticCompliancePending((prev) => ({
+            ...prev,
+            [pendingKey]: optimisticPayload,
+          }));
+        }
       }
       if (persistedExplicitFalse) {
         toast.warning(
@@ -2169,8 +2331,8 @@ export default function AdminCompliancePage() {
   );
 
   const saveColumnsDefaults = (next: string[]) => {
-    const normalized =
-      next.length > 0 ? next : appendSendStatusColumnKey([activeDef.dueField]);
+    const avail = activeDef.source === 'vehicle' ? availableVehicleKeys : availableDriverKeys;
+    const normalized = normalizeComplianceTabColumns(activeDef, next, avail);
     const nextDefaults = { ...defaultVisibleByTab, [activeTab]: normalized };
     setDefaultVisibleByTab(nextDefaults);
     try {
@@ -2183,17 +2345,21 @@ export default function AdminCompliancePage() {
   };
 
   const saveColumnsSessionOnly = (next: string[]) => {
-    const normalized =
-      next.length > 0 ? next : appendSendStatusColumnKey([activeDef.dueField]);
+    const avail = activeDef.source === 'vehicle' ? availableVehicleKeys : availableDriverKeys;
+    const normalized = normalizeComplianceTabColumns(activeDef, next, avail);
     setVisibleByTab((prev) => ({ ...prev, [activeTab]: normalized }));
     toast.success('התצוגה נשמרה לסשן הנוכחי');
   };
 
-  const restoreDefaultForActiveTab = () => {
-    const fallback = [activeDef.dueField];
-    const restored = (defaultVisibleByTab[activeTab] ?? fallback).length > 0 ? defaultVisibleByTab[activeTab] : fallback;
-    setVisibleByTab((prev) => ({ ...prev, [activeTab]: restored }));
-    toast.success('שוחזרה ברירת המחדל');
+  const restoreDefaultForActiveTab = (): string[] => {
+    const fallback = appendSendStatusColumnKey([activeDef.dueField]);
+    const raw = defaultVisibleByTab[activeTab];
+    const candidate = raw != null && raw.length > 0 ? raw : fallback;
+    const avail = activeDef.source === 'vehicle' ? availableVehicleKeys : availableDriverKeys;
+    const normalized = normalizeComplianceTabColumns(activeDef, candidate, avail);
+    setVisibleByTab((prev) => ({ ...prev, [activeTab]: normalized }));
+    toast.success('שוחזרה ברירת מחדל');
+    return normalized;
   };
 
   const saveColumnsPrefs = () => {
@@ -2400,12 +2566,14 @@ export default function AdminCompliancePage() {
           : typeof rawSeq === 'string' && rawSeq.trim()
             ? Number(rawSeq)
             : NaN;
+      const leasingOptimistic = {
+        sentAt: new Date().toISOString(),
+        ...(Number.isFinite(notifySeq) && notifySeq > 0 ? { notifySequence: notifySeq } : {}),
+      };
+      setTowerSentHint(orgId, vid, leasingContext.tab.key, leasingOptimistic);
       setOptimisticVehicleCompliancePending((prev) => ({
         ...prev,
-        [`${vid}::${leasingContext.tab.key}`]: {
-          sentAt: new Date().toISOString(),
-          ...(Number.isFinite(notifySeq) && notifySeq > 0 ? { notifySequence: notifySeq } : {}),
-        },
+        [`${vid}::${leasingContext.tab.key}`]: leasingOptimistic,
       }));
       setLeasingOpen(false);
       setLeasingContext(null);
@@ -2603,6 +2771,7 @@ export default function AdminCompliancePage() {
             )}
             <div className="flex flex-col gap-1">
               <SearchableColumnPicker
+                key={activeTab}
                 allKeys={currentAllColumns}
                 selected={visibleByTab[activeTab]}
                 onSaveSession={saveColumnsSessionOnly}
