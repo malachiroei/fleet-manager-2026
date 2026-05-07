@@ -1014,6 +1014,10 @@ function ComplianceTable<T extends Record<string, unknown>>({
                           </span>
                         );
                       }
+                      /** עמודת סטטוס: בעיקר מעקב אחר בקשות/התראות — «פג תוקף» / דחיפות כבר בעמודת «ימים נותרו» */
+                      if (tabKey !== 'health_declaration') {
+                        return <span className="text-sm text-muted-foreground">—</span>;
+                      }
                       return complianceTableStatusNode(dueField, row as Record<string, unknown>);
                     })()}
                   </TableCell>
