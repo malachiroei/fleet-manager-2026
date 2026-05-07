@@ -193,6 +193,16 @@ serve(async (req) => {
       .eq('task_key', taskKey)
       .in('status', ['sent', 'opened']);
 
+    const { count: priorRowsCount, error: countErr } = await admin
+      .from('compliance_requests')
+      .select('id', { count: 'exact', head: true })
+      .eq('org_id', orgId)
+      .eq('entity_type', 'vehicle')
+      .eq('entity_id', vehicleId)
+      .eq('task_key', taskKey);
+    if (countErr) return json({ error: countErr.message }, 500);
+    const notifySequence = (priorRowsCount ?? 0) + 1;
+
     const baseUrl = clean(Deno.env.get('COMPLIANCE_UPDATE_BASE_URL')) || APP_URL_DEFAULT;
     const appBase = baseUrl.replace(/\/+$/, '');
     const token = randomToken();
@@ -220,6 +230,7 @@ serve(async (req) => {
           vehicle_plate: v.plate_number,
           manufacturer: v.manufacturer,
           model: v.model,
+          notify_sequence: notifySequence,
         },
       })
       .select('id')
@@ -286,7 +297,7 @@ serve(async (req) => {
 
     await admin.from('compliance_requests').update({ email_id: emailId }).eq('id', ins.data!.id);
 
-    return json({ success: true, sent_to: externalTo, token });
+    return json({ success: true, sent_to: externalTo, token, notify_sequence: notifySequence });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return json({ error: message }, 500);

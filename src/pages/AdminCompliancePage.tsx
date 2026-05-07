@@ -247,6 +247,14 @@ function formatComplianceSentAt(iso: string): string {
   return d.toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' });
 }
 
+function parseComplianceNotifySequence(metadata: unknown): number | undefined {
+  if (!metadata || typeof metadata !== 'object' || metadata === null || Array.isArray(metadata)) {
+    return undefined;
+  }
+  const n = Number((metadata as Record<string, unknown>).notify_sequence);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
+}
+
 /** תשובת Edge לפעמים מחרוזת JSON או אובייקט — נרמול לשדות כמו persisted_token */
 function normalizeInvokePayload(raw: unknown): Record<string, unknown> | null {
   if (raw == null) return null;
@@ -889,12 +897,49 @@ function ComplianceTable<T extends Record<string, unknown>>({
                   <TableCell className="text-right">
                     {(() => {
                       const sentMeta = (row as Record<string, unknown>).__complianceSentMeta as
-                        | { sentAt?: string }
+                        | {
+                            sentAt?: string;
+                            status?: string;
+                            notifySequence?: number;
+                            updatedAt?: string;
+                          }
                         | null
                         | undefined;
                       const showSentBadge =
                         Boolean(sentMeta?.sentAt) && !(tabKey === 'health_declaration' && awaitingEmp);
                       if (showSentBadge) {
+                        const isLeasingVehicleTab =
+                          tabKey === 'annual_licensing' || tabKey === 'insurance';
+                        const st = String(sentMeta?.status ?? 'sent');
+                        const sa = String(sentMeta?.sentAt ?? '').trim();
+                        const seq = sentMeta?.notifySequence;
+                        if (isLeasingVehicleTab && sa) {
+                          const isPendingReview = st === 'pending_admin_review';
+                          const title =
+                            isPendingReview
+                              ? 'הוגש מסמך — ממתין לאישור מנהל'
+                              : st === 'opened'
+                                ? 'הקישור לנציג נפתח'
+                                : 'ממתין לתגובת נציג';
+                          const badgeClass = isPendingReview
+                            ? 'inline-flex items-center rounded-full border border-amber-300/40 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200'
+                            : 'inline-flex items-center rounded-full border border-sky-400/40 bg-sky-500/15 px-2 py-0.5 text-xs font-semibold text-sky-200';
+                          return (
+                            <div className="flex max-w-[16rem] flex-col items-end gap-0.5 text-right">
+                              <span className={badgeClass}>{title}</span>
+                              {seq != null && seq > 0 ? (
+                                <span className="text-[10px] font-medium leading-snug text-muted-foreground">
+                                  התראה מספר {seq}
+                                </span>
+                              ) : null}
+                              <span className="text-[10px] leading-snug text-muted-foreground tabular-nums">
+                                {isPendingReview
+                                  ? `נשלח לנציג: ${formatComplianceSentAt(sa)}`
+                                  : `נשלח: ${formatComplianceSentAt(sa)}`}
+                              </span>
+                            </div>
+                          );
+                        }
                         return (
                           <span className="inline-flex items-center rounded-full border border-sky-400/40 bg-sky-500/15 px-2 py-0.5 text-xs font-semibold text-sky-200">
                             נשלחה בקשה
@@ -1154,6 +1199,8 @@ export default function AdminCompliancePage() {
     task_key: string | null;
     status: string;
     sent_at: string;
+    metadata: unknown;
+    updated_at: string | null;
   };
   const {
     data: openComplianceRequests = [],
@@ -1168,9 +1215,9 @@ export default function AdminCompliancePage() {
       if (!orgId) return [];
       const { data, error } = await supabase
         .from('compliance_requests')
-        .select('driver_id, entity_type, entity_id, task_key, status, sent_at')
+        .select('driver_id, entity_type, entity_id, task_key, status, sent_at, metadata, updated_at')
         .eq('org_id', orgId)
-        .in('status', ['sent', 'opened']);
+        .in('status', ['sent', 'opened', 'pending_admin_review']);
       if (error) throw error;
       return (data ?? []) as OpenComplianceRow[];
     },
@@ -1299,7 +1346,7 @@ export default function AdminCompliancePage() {
     Record<string, { sentAt: string }>
   >({});
   const [optimisticVehicleCompliancePending, setOptimisticVehicleCompliancePending] = useState<
-    Record<string, { sentAt: string }>
+    Record<string, { sentAt: string; notifySequence?: number }>
   >({});
 
   const openComplianceLoadErrShown = useRef(false);
@@ -1383,28 +1430,42 @@ export default function AdminCompliancePage() {
     };
   }, [canAccessAdminComplianceCenter, orgId, queryClient]);
 
-  /** בקשות פתוחות (sent/opened) לפי ישות+משימה — נהג או רכב; כולל אופטימיסטי מיד אחרי שליחה */
+  /** בקשות שלא נסגרו (כולל ממתין לאישור מנהל אחרי הגשת נציג) — כדי שהסטטוס לא ייעלם ברענון */
   const openComplianceByEntityTask = useMemo(() => {
-    const m = new Map<string, { sentAt: string; status: string }>();
-    for (const r of openComplianceRequests) {
+    type SentMeta = { sentAt: string; status: string; notifySequence?: number; updatedAt?: string };
+    const m = new Map<string, SentMeta>();
+    const statusRank: Record<string, number> = { pending_admin_review: 3, opened: 2, sent: 1 };
+    const sorted = [...openComplianceRequests].sort((a, b) => {
+      const ra = statusRank[String(a.status)] ?? 0;
+      const rb = statusRank[String(b.status)] ?? 0;
+      if (rb !== ra) return rb - ra;
+      return Date.parse(String(b.sent_at ?? '')) - Date.parse(String(a.sent_at ?? ''));
+    });
+    const seen = new Set<string>();
+    const push = (key: string, r: OpenComplianceRow) => {
+      if (seen.has(key)) return;
+      seen.add(key);
+      const seq = parseComplianceNotifySequence(r.metadata);
+      const entry: SentMeta = {
+        sentAt: String(r.sent_at ?? ''),
+        status: String(r.status ?? '').trim() || 'sent',
+      };
+      if (seq != null) entry.notifySequence = seq;
+      const ua = r.updated_at != null ? String(r.updated_at).trim() : '';
+      if (ua) entry.updatedAt = ua;
+      m.set(key, entry);
+    };
+    for (const r of sorted) {
       const t = String(r.task_key ?? '').trim();
       if (!t) continue;
       const et = String(r.entity_type ?? '').trim();
       const eid = String(r.entity_id ?? '').trim();
       if (et === 'vehicle' && eid) {
-        m.set(`${eid}::${t}`, {
-          sentAt: String(r.sent_at ?? ''),
-          status: String(r.status ?? '').trim() || 'sent',
-        });
+        push(`${eid}::${t}`, r);
         continue;
       }
       const d = String(r.driver_id ?? '').trim();
-      if (d) {
-        m.set(`${d}::${t}`, {
-          sentAt: String(r.sent_at ?? ''),
-          status: String(r.status ?? '').trim() || 'sent',
-        });
-      }
+      if (d) push(`${d}::${t}`, r);
     }
     for (const [k, v] of Object.entries(optimisticCompliancePending)) {
       if (!m.has(k) && v?.sentAt) {
@@ -1413,7 +1474,9 @@ export default function AdminCompliancePage() {
     }
     for (const [k, v] of Object.entries(optimisticVehicleCompliancePending)) {
       if (!m.has(k) && v?.sentAt) {
-        m.set(k, { sentAt: v.sentAt, status: 'sent' });
+        const entry: SentMeta = { sentAt: v.sentAt, status: 'sent' };
+        if (v.notifySequence != null) entry.notifySequence = v.notifySequence;
+        m.set(k, entry);
       }
     }
     return m;
@@ -2194,9 +2257,19 @@ export default function AdminCompliancePage() {
       if (payload?.error) throw new Error(String(payload.error));
       if (payload?.success !== true) throw new Error('תשובת שרת לא תקינה');
       toast.success('המייל נשלח לנציג הליסינג');
+      const rawSeq = payload?.notify_sequence;
+      const notifySeq =
+        typeof rawSeq === 'number'
+          ? rawSeq
+          : typeof rawSeq === 'string' && rawSeq.trim()
+            ? Number(rawSeq)
+            : NaN;
       setOptimisticVehicleCompliancePending((prev) => ({
         ...prev,
-        [`${vid}::${leasingContext.tab.key}`]: { sentAt: new Date().toISOString() },
+        [`${vid}::${leasingContext.tab.key}`]: {
+          sentAt: new Date().toISOString(),
+          ...(Number.isFinite(notifySeq) && notifySeq > 0 ? { notifySequence: notifySeq } : {}),
+        },
       }));
       setLeasingOpen(false);
       setLeasingContext(null);

@@ -225,6 +225,8 @@ serve(async (req) => {
       !Array.isArray((curRow as { metadata?: unknown }).metadata)
         ? ({ ...((curRow as { metadata: Record<string, unknown> }).metadata as Record<string, unknown>) })
         : ({} as Record<string, unknown>);
+    const prevSeq = Number(prevMeta.notify_sequence);
+    const nextNotifySeq = Number.isFinite(prevSeq) && prevSeq > 0 ? prevSeq + 1 : 2;
 
     /** מחזיר את הנציג לשליחה מחדש — טופס ציבורי יקבל שוב (לא pending_admin_review) */
     const { error: updErr } = await admin
@@ -233,8 +235,10 @@ serve(async (req) => {
         status: 'sent',
         proposed_expiry_date: null,
         submitted_document_url: null,
+        sent_at: new Date().toISOString(),
         metadata: {
           ...prevMeta,
+          notify_sequence: nextNotifySeq,
           last_admin_resend_note: adminNote || null,
           last_admin_resend_at: new Date().toISOString(),
         },
@@ -243,7 +247,7 @@ serve(async (req) => {
 
     if (updErr) return json({ error: updErr.message }, 500);
 
-    return json({ success: true, sent_to: externalTo });
+    return json({ success: true, sent_to: externalTo, notify_sequence: nextNotifySeq });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return json({ error: message }, 500);

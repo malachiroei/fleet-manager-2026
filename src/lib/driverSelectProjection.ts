@@ -22,6 +22,8 @@ export function canViewDriverSensitivePii(options: {
   if (options.profile?.is_system_admin === true) return true;
   if (isPlatformSuperOwnerEmail(email) || isFleetOrgAdminFallbackEmail(email)) return true;
   if (options.hasPermission('manage_team') || options.hasPermission('admin_access')) return true;
+  /** הרשאת «נהגים» כבר מאפשרת עריכה — בלי זה הבחירה בלקוח מחזירה פרופיל מצומצם והשדות נראים ריקים אחרי רענון. */
+  if (options.hasPermission('drivers')) return true;
   return false;
 }
 
