@@ -163,18 +163,18 @@ export default function AuthPage() {
       <div className="absolute top-3 left-3 rtl:left-auto rtl:right-3">
         <PwaInstallButton variant="auth" />
       </div>
-      <Card className="w-full max-w-md border-white/10 bg-[#0d1b2e] text-white shadow-xl shadow-black/40 max-h-[calc(100dvh-3.25rem)] overflow-y-hidden [@media(max-height:700px)]:overflow-y-auto">
-        <CardHeader className="text-center space-y-1 py-4 sm:py-6 [@media(max-height:740px)]:py-3">
+      <Card className="w-full max-w-md border-white/10 bg-[#0d1b2e] text-white shadow-xl shadow-black/40 max-h-[calc(100dvh-1.5rem)] overflow-y-auto">
+        <CardHeader className="text-center space-y-1 py-4 sm:py-5 [@media(max-height:760px)]:py-2 [@media(max-height:760px)]:space-y-0.5">
           {/* Dark strip so the white car pops; same idea as dashboard logo box */}
-          <div className="mx-auto -mt-1 mb-3 flex justify-center rounded-2xl bg-[#0a1525] px-6 py-4 sm:px-8 sm:py-6 [@media(max-height:760px)]:px-5 [@media(max-height:760px)]:py-3">
+          <div className="mx-auto -mt-1 mb-2 flex justify-center rounded-2xl bg-[#0a1525] px-6 py-4 sm:px-8 sm:py-5 [@media(max-height:760px)]:mb-1 [@media(max-height:760px)]:px-4 [@media(max-height:760px)]:py-2">
             <img
               src={getBrandLogoUrl()}
               alt="Fleet Manager"
-              className="h-auto w-64 sm:w-72 max-w-full max-h-[22vh] object-contain object-center drop-shadow-[0_0_24px_rgba(255,255,255,0.4)] [@media(max-height:760px)]:w-56 [@media(max-height:760px)]:max-h-[16vh]"
+              className="h-auto w-56 sm:w-64 max-w-full max-h-[18vh] object-contain object-center drop-shadow-[0_0_24px_rgba(255,255,255,0.4)] [@media(max-height:760px)]:w-44 [@media(max-height:760px)]:max-h-[12vh]"
             />
           </div>
-          <CardTitle className="text-2xl font-bold text-white">Fleet Manager Pro</CardTitle>
-          <CardDescription className="text-cyan-400/70">
+          <CardTitle className="text-2xl font-bold text-white [@media(max-height:760px)]:text-xl">Fleet Manager Pro</CardTitle>
+          <CardDescription className="text-cyan-400/70 [@media(max-height:760px)]:text-xs">
             מערכת ניהול צי רכבים מקצועית
           </CardDescription>
         </CardHeader>
@@ -292,27 +292,27 @@ export default function AuthPage() {
             </TabsContent>
             
             <TabsContent value="signup">
-              <form onSubmit={handleSignUp} className="space-y-4">
-                <div className="space-y-2">
+              <form onSubmit={handleSignUp} className="space-y-3 [@media(max-height:760px)]:space-y-2">
+                <div className="space-y-1">
                   <Label htmlFor="signup-name" className="text-white/90">
                     שם מלא
                   </Label>
                   <Input
                     id="signup-name"
-                    className="border-white/15 bg-white/5 text-white placeholder:text-white/40" 
-                    name="fullName" 
-                    type="text" 
+                    className="h-9 border-white/15 bg-white/5 text-white placeholder:text-white/40"
+                    name="fullName"
+                    type="text"
                     placeholder="ישראל ישראלי"
                     required
                   />
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-1">
                   <Label htmlFor="signup-email" className="text-white/90">
                     אימייל
                   </Label>
                   <Input
                     id="signup-email"
-                    className="border-white/15 bg-white/5 text-white placeholder:text-white/40"
+                    className="h-9 border-white/15 bg-white/5 text-white placeholder:text-white/40"
                     name="email"
                     type="email"
                     placeholder="your@email.com"
@@ -323,29 +323,29 @@ export default function AuthPage() {
                     readOnly={Boolean(inviteEmail)}
                   />
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-1">
                   <Label htmlFor="signup-password" className="text-white/90">
                     סיסמה
                   </Label>
                   <Input
                     id="signup-password"
-                    className="border-white/15 bg-white/5 text-white placeholder:text-white/40" 
-                    name="password" 
-                    type="password" 
+                    className="h-9 border-white/15 bg-white/5 text-white placeholder:text-white/40"
+                    name="password"
+                    type="password"
                     minLength={6}
                     required
                     dir="ltr"
                   />
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-1">
                   <Label htmlFor="signup-confirm" className="text-white/90">
                     אימות סיסמה
                   </Label>
                   <Input
                     id="signup-confirm"
-                    className="border-white/15 bg-white/5 text-white placeholder:text-white/40" 
-                    name="confirmPassword" 
-                    type="password" 
+                    className="h-9 border-white/15 bg-white/5 text-white placeholder:text-white/40"
+                    name="confirmPassword"
+                    type="password"
                     required
                     dir="ltr"
                   />
