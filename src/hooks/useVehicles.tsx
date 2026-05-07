@@ -129,31 +129,104 @@ export function useVehicles() {
   });
 }
 
-/** רכבים שיש להם כרגע assigned_driver_id לנהג — ללא מסנן הקשר‑נהג של רשימת הצי הגדולה. */
-export function useVehiclesAssignedToDriver(driverId: string | undefined, driverOrgId?: string | null) {
+/** מקור הנתון לכותרת רכב־נהג: עמודת שיוך ברכב, או היסטוריית מסירה קבועה אם בעמודה חסר. */
+export type DriverAssociatedVehiclesSource = 'vehicle_column' | 'permanent_handover_history';
+
+export type DriverAssociatedVehiclesPayload = {
+  vehicles: Vehicle[];
+  source: DriverAssociatedVehiclesSource;
+};
+
+async function fetchVehiclesByPermanentDeliveries(driverId: string): Promise<Vehicle[]> {
+  const { data: hops, error: hopsErr } = await supabase
+    .from('vehicle_handovers')
+    .select('vehicle_id, handover_type, assignment_mode, handover_date')
+    .eq('driver_id', driverId)
+    .order('handover_date', { ascending: false })
+    .limit(80);
+  if (hopsErr) throw hopsErr;
+
+  type Hop = {
+    vehicle_id?: string | null;
+    handover_type?: string | null;
+    assignment_mode?: string | null;
+    handover_date?: string | null;
+  };
+
+  const latestByVehicle = new Map<string, { type: string; mode: string; at: string }>();
+  for (const row of (hops as Hop[]) ?? []) {
+    const vid = typeof row?.vehicle_id === 'string' ? row.vehicle_id.trim() : '';
+    if (!vid || latestByVehicle.has(vid)) continue;
+    latestByVehicle.set(vid, {
+      type: String(row?.handover_type ?? '').trim().toLowerCase(),
+      mode: String(row?.assignment_mode ?? 'permanent').trim().toLowerCase(),
+      at: String(row?.handover_date ?? ''),
+    });
+  }
+
+  const active: { vid: string; at: string }[] = [];
+  for (const [vid, m] of latestByVehicle) {
+    if (m.type === 'return') continue;
+    if (m.type === 'delivery' && m.mode === 'permanent') {
+      active.push({ vid, at: m.at });
+    }
+  }
+  active.sort((a, b) => {
+    const ta = new Date(a.at).getTime();
+    const tb = new Date(b.at).getTime();
+    return (Number.isNaN(tb) ? 0 : tb) - (Number.isNaN(ta) ? 0 : ta);
+  });
+  const idsOrdered = active.map((x) => x.vid).slice(0, 5);
+
+  if (idsOrdered.length === 0) return [];
+
+  const { data: rows, error: vErr } = await supabase
+    .from('vehicles')
+    .select('*')
+    .in('id', idsOrdered);
+  if (vErr) throw vErr;
+
+  const byId = new Map(((rows ?? []) as Vehicle[]).map((v) => [v.id, vehicleWithNormalizedPlate(v)]));
+  return idsOrdered.map((vid) => byId.get(vid)).filter(Boolean) as Vehicle[];
+}
+
+/**
+ * רכבים המשויכים לנהג: קודם `assigned_driver_id` (כולל ארגון שמתעדכן ב-RLS),
+ * ובהעדר — רכבים ממסירות קבועות אחרונות (מתאים כששרת לא עדכן עמודה).
+ */
+export function useVehiclesAssignedToDriver(driverId: string | undefined) {
   const { user, profile } = useAuth();
-  const { effectiveOrgId, fleetListReady } = useImpersonationFleetScope();
-  const orgId = driverOrgId ?? effectiveOrgId;
+  const { fleetListReady } = useImpersonationFleetScope();
 
   return useQuery({
     queryKey: [
       'vehicles-assigned-to-driver',
       driverId ?? null,
-      orgId,
       resolveSessionEmail(profile, user),
       user?.id,
     ],
-    enabled: fleetListReady && orgId != null && Boolean(driverId),
-    queryFn: async () => {
-      if (orgId == null || driverId == null || driverId === '') return [] as Vehicle[];
-      const { data, error } = await supabase
+    enabled: fleetListReady && Boolean(driverId),
+    queryFn: async (): Promise<DriverAssociatedVehiclesPayload> => {
+      if (driverId == null || driverId === '') {
+        return { vehicles: [], source: 'vehicle_column' };
+      }
+
+      const { data: directRows, error: directErr } = await supabase
         .from('vehicles')
         .select('*')
-        .eq('org_id', orgId)
         .eq('assigned_driver_id', driverId)
         .order('plate_number');
-      if (error) throw error;
-      return ((data ?? []) as Vehicle[]).map((v) => vehicleWithNormalizedPlate(v));
+      if (directErr) throw directErr;
+      const fromColumn = ((directRows ?? []) as Vehicle[]).map((v) => vehicleWithNormalizedPlate(v));
+      if (fromColumn.length > 0) {
+        return { vehicles: fromColumn, source: 'vehicle_column' };
+      }
+
+      const fromHistory = await fetchVehiclesByPermanentDeliveries(driverId);
+      return {
+        vehicles: fromHistory,
+        source: fromHistory.length > 0 ? 'permanent_handover_history' : 'vehicle_column',
+      };
     },
   });
 }

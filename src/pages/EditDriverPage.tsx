@@ -42,7 +42,10 @@ export default function EditDriverPage() {
   const deleteDriver = useDeleteDriver();
   const { data: activeAssignments = [] } = useActiveDriverVehicleAssignments();
   const { data: vehicles = [] } = useVehicles();
-  const { data: assignedByVehicleColumn = [] } = useVehiclesAssignedToDriver(id, driver?.org_id);
+  const { data: associatedFromServer } = useVehiclesAssignedToDriver(id);
+  const assignedByVehicleColumn = associatedFromServer?.vehicles ?? [];
+  const vehicleAssociationIsFromHandoverOnly =
+    associatedFromServer?.source === 'permanent_handover_history';
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
@@ -301,6 +304,14 @@ export default function EditDriverPage() {
                 ) : (
                   <span className="text-sm text-muted-foreground">אין רכב משויך</span>
                 )}
+                {vehicleAssociationIsFromHandoverOnly && assignedVehicles.length > 0 ? (
+                  <span
+                    className="w-full basis-full text-[11px] leading-snug text-amber-400/95 sm:text-xs"
+                    title="במסד לא מסומן assigned_driver_id לרכב — מוצג לפי מסירות קבועות אחרונות"
+                  >
+                    שיוך לא מעודכן בטבלת הרכב — הצגה לפי מסירות קבועות אחרונות. כדאי לבדוק טריגר מסירה או הרצת migrations.
+                  </span>
+                ) : null}
               </div>
             </div>
           </CardContent>
