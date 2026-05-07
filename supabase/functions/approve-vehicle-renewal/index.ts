@@ -43,6 +43,12 @@ function storageObjectPathFromPublicUrl(urlStr: string, bucket: string): string 
   }
 }
 
+interface VehicleHandoverPick {
+  driver_id?: string | null;
+  handover_type?: string | null;
+  assignment_mode?: string | null;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
@@ -162,7 +168,8 @@ serve(async (req) => {
         .eq('vehicle_id', vehicle.id)
         .order('handover_date', { ascending: false })
         .limit(12);
-      for (const ho of ((hoRow as { driver_id?: string; handover_type?: string; assignment_mode?: string }[]) ?? []) {
+      const hoRows: VehicleHandoverPick[] = Array.isArray(hoRow) ? (hoRow as VehicleHandoverPick[]) : [];
+      for (const ho of hoRows) {
         const hid = clean(String(ho?.driver_id ?? ''));
         if (!hid) continue;
         const htype = String(ho.handover_type ?? '').toLowerCase();
