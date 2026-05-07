@@ -1221,6 +1221,7 @@ export default function AdminCompliancePage() {
     sent_at: string;
     metadata: unknown;
     updated_at: string | null;
+    created_at: string | null;
   };
   const {
     data: openComplianceRequests = [],
@@ -1235,7 +1236,7 @@ export default function AdminCompliancePage() {
       if (!orgId) return [];
       const { data, error } = await supabase
         .from('compliance_requests')
-        .select('driver_id, entity_type, entity_id, task_key, status, sent_at, metadata, updated_at')
+        .select('driver_id, entity_type, entity_id, task_key, status, sent_at, metadata, updated_at, created_at')
         .eq('org_id', orgId)
         .in('status', ['sent', 'opened', 'pending_admin_review']);
       if (error) throw error;
@@ -1389,9 +1390,13 @@ export default function AdminCompliancePage() {
       if (Object.keys(prev).length === 0) return prev;
       const next = { ...prev };
       for (const r of openComplianceRequests) {
-        const d = String(r.driver_id ?? '').trim();
         const t = String(r.task_key ?? '').trim();
-        if (d && t) delete next[`${d}::${t}`];
+        if (!t) continue;
+        const d = String(r.driver_id ?? '').trim();
+        const et = String(r.entity_type ?? '').trim();
+        const eid = String(r.entity_id ?? '').trim();
+        if (d) delete next[`${d}::${t}`];
+        if (et === 'driver' && eid) delete next[`${eid}::${t}`];
       }
       return next;
     });
@@ -1459,15 +1464,24 @@ export default function AdminCompliancePage() {
       const ra = statusRank[String(a.status)] ?? 0;
       const rb = statusRank[String(b.status)] ?? 0;
       if (rb !== ra) return rb - ra;
-      return Date.parse(String(b.sent_at ?? '')) - Date.parse(String(a.sent_at ?? ''));
+      const ts = (x: OpenComplianceRow) =>
+        Date.parse(String(x.sent_at ?? '').trim()) ||
+        Date.parse(String(x.created_at ?? '').trim()) ||
+        Date.parse(String(x.updated_at ?? '').trim()) ||
+        0;
+      return ts(b) - ts(a);
     });
     const seen = new Set<string>();
     const push = (key: string, r: OpenComplianceRow) => {
       if (seen.has(key)) return;
       seen.add(key);
       const seq = parseComplianceNotifySequence(r.metadata);
+      const rawSent = String(r.sent_at ?? '').trim();
+      const rawCreated = String(r.created_at ?? '').trim();
+      const rawUpd = String(r.updated_at ?? '').trim();
+      const sentAtEffective = rawSent || rawCreated || rawUpd;
       const entry: SentMeta = {
-        sentAt: String(r.sent_at ?? ''),
+        sentAt: sentAtEffective,
         status: String(r.status ?? '').trim() || 'sent',
       };
       if (seq != null) entry.notifySequence = seq;

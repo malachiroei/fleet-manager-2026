@@ -234,8 +234,10 @@ serve(async (req) => {
         driver_id: requestRow.driver_id,
         task_key: requestRow.task_key,
         file_url: fileUrl,
-        file_kind: 'regulation_585_scan',
+        /** תואם CHECK קיים בפרו (signature | license_photo) — ללא מיגרציה */
+        file_kind: 'license_photo',
         metadata: {
+          regulation_585: true,
           declared_regulation_585_date: declaredInspectYmd,
           submitted_on_date: nowIsoDate,
         },
