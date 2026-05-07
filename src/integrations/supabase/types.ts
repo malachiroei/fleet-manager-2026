@@ -900,6 +900,32 @@ export type Database = {
         Returns: boolean
       }
       sync_vehicles_from_pricing: { Args: never; Returns: Json }
+      compliance_pending_vehicle_renewal_for_viewer: {
+        Args: { p_request_id: string }
+        Returns: {
+          id: string
+          entity_id: string
+          task_key: string
+          task_label: string | null
+          proposed_expiry_date: string | null
+          submitted_document_url: string | null
+          external_recipient_email: string | null
+          request_url: string | null
+        }[]
+      }
+      compliance_pending_vehicle_renewals_for_org: {
+        Args: { p_org_id: string }
+        Returns: {
+          id: string
+          entity_id: string
+          task_key: string
+          task_label: string | null
+          proposed_expiry_date: string | null
+          submitted_document_url: string | null
+          external_recipient_email: string | null
+          request_url: string | null
+        }[]
+      }
     }
     Enums: {
       app_role: "admin" | "fleet_manager" | "viewer" | "driver"

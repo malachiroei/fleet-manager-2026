@@ -1195,6 +1195,8 @@ export default function AdminCompliancePage() {
   const {
     data: pendingVehicleRenewalsRaw = [],
     refetch: refetchPendingVehicleRenewals,
+    error: pendingVehicleRenewalsError,
+    isError: pendingVehicleRenewalsIsError,
   } = useQuery({
     queryKey: ['admin-pending-vehicle-renewals', orgId],
     enabled: Boolean(canAccessAdminComplianceCenter && orgId),
@@ -1202,21 +1204,46 @@ export default function AdminCompliancePage() {
     retry: 1,
     queryFn: async (): Promise<PendingVehicleRenewalRow[]> => {
       if (!orgId) return [];
-      const { data, error } = await supabase
-        .from('compliance_requests')
-        .select(
-          'id, entity_id, task_key, task_label, proposed_expiry_date, submitted_document_url, external_recipient_email, request_url',
-        )
-        .eq('org_id', orgId)
-        .eq('entity_type', 'vehicle')
-        .eq('status', 'pending_admin_review')
-        .in('task_key', ['annual_licensing', 'insurance']);
+      /** RPC כדי לעקוף RLS צר על SELECT ישיר; מיגרציה 20260512100000 */
+      const { data, error } = await supabase.rpc('compliance_pending_vehicle_renewals_for_org', {
+        p_org_id: orgId,
+      });
       if (error) throw error;
-      return (data ?? []) as PendingVehicleRenewalRow[];
+      const rows = (data ?? []) as Record<string, unknown>[];
+      return rows
+        .map((raw) => ({
+          id: String(raw.id ?? '').trim(),
+          entity_id: String(raw.entity_id ?? '').trim(),
+          task_key: String(raw.task_key ?? '').trim(),
+          task_label: raw.task_label != null ? String(raw.task_label) : null,
+          proposed_expiry_date:
+            raw.proposed_expiry_date != null ? String(raw.proposed_expiry_date).slice(0, 10) : null,
+          submitted_document_url:
+            raw.submitted_document_url != null ? String(raw.submitted_document_url) : null,
+          external_recipient_email:
+            raw.external_recipient_email != null ? String(raw.external_recipient_email) : null,
+          request_url: raw.request_url != null ? String(raw.request_url) : null,
+        }))
+        .filter((r) => r.id.length > 0);
     },
     refetchOnWindowFocus: true,
     refetchInterval: 5000,
   });
+
+  const pendingRenewalsLoadErrShown = useRef(false);
+  useEffect(() => {
+    if (pendingVehicleRenewalsIsError && pendingVehicleRenewalsError) {
+      if (!pendingRenewalsLoadErrShown.current) {
+        pendingRenewalsLoadErrShown.current = true;
+        toast.error(
+          `לא נטענו הגשות ליסינג ממתינות (הרץ מיגרציה 20260512100000 אם חסר RPC): ${pendingVehicleRenewalsError.message}`,
+          { duration: 14_000 },
+        );
+      }
+    } else {
+      pendingRenewalsLoadErrShown.current = false;
+    }
+  }, [pendingVehicleRenewalsIsError, pendingVehicleRenewalsError]);
 
   useEffect(() => {
     const rawIds = new Set(pendingVehicleRenewalsRaw.map((r) => String(r.id)));
