@@ -1102,14 +1102,15 @@ export function useHandovers(vehicleId?: string) {
   });
 }
 
-function isCreateVehicleHandoverRpcMissingError(error: { message?: string; details?: string } | null): boolean {
+/** רק שגיאות «הפונקציה לא קיימת ב-API» — לא לכל מחרוזת עם schema cache (זה גרם ל-fallback מזיק ל-INSERT + RLS 403). */
+function isCreateVehicleHandoverRpcMissingError(error: { message?: string; details?: string; code?: string } | null): boolean {
   if (!error) return false;
-  const msg = `${error.message ?? ''} ${error.details ?? ''}`.toLowerCase();
+  const code = String((error as { code?: string }).code ?? '').toLowerCase();
+  const msg = `${code} ${error.message ?? ''} ${error.details ?? ''}`.toLowerCase();
   return (
+    code === 'pgrst202' ||
     msg.includes('could not find the function') ||
-    msg.includes('function public.create_vehicle_handover') ||
-    msg.includes('does not exist') ||
-    msg.includes('schema cache')
+    (msg.includes('could not find') && msg.includes('function'))
   );
 }
 
@@ -1138,43 +1139,22 @@ export function useCreateHandover() {
         p_created_by: h.created_by,
       });
 
-      if (!rpcError && rpcData) {
-        return rpcData as VehicleHandover;
-      }
-
-      if (rpcError && !isCreateVehicleHandoverRpcMissingError(rpcError)) {
+      if (rpcError) {
+        if (isCreateVehicleHandoverRpcMissingError(rpcError)) {
+          throw new Error(
+            `אין בפרו את פונקציית create_vehicle_handover (או cache ישן). הרץ מיגרציה 20260413100000_create_vehicle_handover_rpc.sql ואז ב-SQL: NOTIFY pgrst, 'reload schema'; — פירוט: ${rpcError.message ?? ''}`,
+          );
+        }
         throw rpcError;
       }
 
-      const { data, error } = await supabase
-        .from('vehicle_handovers')
-        .insert(handover as any)
-        .select()
-        .single();
-
-      if (!error) {
-        return data;
+      if (rpcData == null) {
+        throw new Error(
+          'create_vehicle_handover החזירה תשובה ריקה. ב-Supabase Dashboard: Database → Functions — ודא שהפונקציה קיימת; הרץ NOTIFY pgrst, \'reload schema\';',
+        );
       }
 
-      const errorMessage = `${error.message ?? ''} ${error.details ?? ''}`.toLowerCase();
-      const shouldRetryWithoutAssignmentMode =
-        errorMessage.includes('assignment_mode') ||
-        errorMessage.includes('column') ||
-        errorMessage.includes('schema cache');
-
-      if (!shouldRetryWithoutAssignmentMode) {
-        throw error;
-      }
-
-      const { assignment_mode, ...fallbackPayload } = handover as any;
-      const { data: fallbackData, error: fallbackError } = await supabase
-        .from('vehicle_handovers')
-        .insert(fallbackPayload)
-        .select()
-        .single();
-
-      if (fallbackError) throw fallbackError;
-      return fallbackData;
+      return rpcData as VehicleHandover;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['handovers'] });
