@@ -309,6 +309,14 @@ export interface VehicleHandover {
   created_at: string;
   vehicle?: Vehicle;
   driver?: Driver;
+  /** מתמלא מ-useHandovers כאשר טוענים vehicle_documents לאותה העברה */
+  handover_documents?: Array<{
+    id: string;
+    title: string;
+    file_url: string;
+    created_at: string;
+    metadata?: unknown;
+  }>;
 }
 
 export interface ComplianceAlert {

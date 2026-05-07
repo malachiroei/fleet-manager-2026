@@ -81,6 +81,28 @@ async function imageUrlToDataUrl(url: string): Promise<{ dataUrl: string; format
   }
 }
 
+/** פרסור URL ציבורי של Supabase Storage — ליצירת signed URL כש-fetch ל-public נכשל (בקט לא public או הרשאות). */
+function parseSupabasePublicStorageLocation(urlString: string): { bucket: string; objectPath: string } | null {
+  try {
+    const url = new URL(urlString);
+    const m = url.pathname.match(/^\/storage\/v1\/object\/public\/([^/]+)\/(.+)$/i);
+    if (!m) return null;
+    return { bucket: m[1], objectPath: m[2] };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchImageAsDataUrlForPdf(url: string): Promise<{ dataUrl: string; format: 'PNG' | 'JPEG' } | null> {
+  const direct = await imageUrlToDataUrl(url);
+  if (direct) return direct;
+  const parsed = parseSupabasePublicStorageLocation(url);
+  if (!parsed) return null;
+  const { data, error } = await supabase.storage.from(parsed.bucket).createSignedUrl(parsed.objectPath, 180);
+  if (error || !data?.signedUrl) return null;
+  return imageUrlToDataUrl(data.signedUrl);
+}
+
 function arrayBufferToBase64(buffer: ArrayBuffer) {
   let binary = '';
   const bytes = new Uint8Array(buffer);
@@ -340,20 +362,39 @@ async function createPdfBlob(
     currentY = await drawDamageDiagramInPdf(doc, pageWidth, rightX, currentY, damageReport);
   }
 
-  const photoEntries = photos.filter((photo) => !!photo.url) as Array<{ key: string; url: string }>;
-  const photoImages = await Promise.all(
-    photoEntries.map(async (photo) => ({ key: photo.key, image: await imageUrlToDataUrl(photo.url) }))
-  );
-
-  const validPhotoImages = photoImages.filter((photo) => !!photo.image) as Array<{ key: string; image: { dataUrl: string; format: 'PNG' | 'JPEG' } }>;
   const photoLabels: Record<string, string> = {
     front: 'קדימה',
     back: 'אחורה',
     right: 'ימין',
     left: 'שמאל',
   };
-  const photoStatusLine = (['front', 'back', 'right', 'left'] as const)
-    .map((key) => `${photoLabels[key]}: ${photos.find((p) => p.key === key)?.url ? 'צורפה' : 'חסרה'}`)
+
+  const photoSides = (['front', 'back', 'right', 'left'] as const).map((key) => {
+    const url = photos.find((p) => p.key === key)?.url ?? null;
+    return { key, url };
+  });
+
+  const loadedPhotos = await Promise.all(
+    photoSides.map(async ({ key, url }) => ({
+      key,
+      url,
+      image: url ? await fetchImageAsDataUrlForPdf(url) : null,
+    }))
+  );
+
+  const validPhotoImages = loadedPhotos.filter((p): p is {
+    key: string;
+    url: string | null;
+    image: { dataUrl: string; format: 'PNG' | 'JPEG' };
+  } => p.image != null);
+
+  const photoStatusLine = loadedPhotos
+    .map(({ key, url, image }) => {
+      const label = photoLabels[key];
+      if (!url) return `${label}: חסרה`;
+      if (image) return `${label}: צורפה ל-PDF`;
+      return `${label}: קישור קיים — טעינה ל-PDF נכשלה`;
+    })
     .join(' | ');
 
   if (validPhotoImages.length > 0) {
@@ -424,7 +465,7 @@ async function createPdfBlob(
   currentY += 16;
 
   if (signatureUrl) {
-    const signatureImage = await imageUrlToDataUrl(signatureUrl);
+    const signatureImage = await fetchImageAsDataUrlForPdf(signatureUrl);
     if (signatureImage) {
       currentY = ensurePageSpace(currentY, 112);
       const signatureBlockHeight = 96;
@@ -1071,7 +1112,23 @@ export interface HandoverHistoryItem {
   driver_label: string;
   vehicle_label: string;
   form_url: string | null;
+  /** כל המסמכים מ-vehicle_documents לאותה העברה (כרונולוגי) */
+  form_documents?: Array<{ title: string; file_url: string }>;
   photo_urls: string[];
+}
+
+export function handoverFormDocumentLinks(item: HandoverHistoryItem): Array<{ title: string; url: string }> {
+  const docs = item.form_documents;
+  if (docs && docs.length > 0) {
+    return docs.map((d, i) => ({
+      title: (d.title || `מסמך ${i + 1}`).trim(),
+      url: d.file_url,
+    }));
+  }
+  if (item.form_url) {
+    return [{ title: 'טופס PDF', url: item.form_url }];
+  }
+  return [];
 }
 
 export function buildHandoverRecordUrl(vehicleId: string, handoverId: string) {
@@ -1097,7 +1154,46 @@ export function useHandovers(vehicleId?: string) {
       }
       const { data, error } = await query;
       if (error) throw error;
-      return (data ?? []) as VehicleHandover[];
+      const handovers = (data ?? []) as VehicleHandover[];
+      const handoverIds = handovers.map((h) => h.id).filter(Boolean);
+      const docsByHandover = new Map<string, Array<{ id: string; title: string; file_url: string; created_at: string; metadata?: unknown }>>();
+
+      if (handoverIds.length > 0) {
+        const { data: docRows, error: docErr } = await supabase
+          .from('vehicle_documents' as any)
+          .select('id, title, file_url, created_at, handover_id, metadata')
+          .in('handover_id', handoverIds)
+          .order('created_at', { ascending: true });
+
+        if (docErr) {
+          console.warn('[useHandovers] vehicle_documents batch failed:', docErr.message);
+        } else {
+          for (const row of ((docRows as any[]) ?? []) as Array<{
+            id: string;
+            title: string;
+            file_url: string;
+            created_at: string;
+            handover_id: string | null;
+            metadata?: unknown;
+          }>) {
+            if (!row.handover_id) continue;
+            const list = docsByHandover.get(row.handover_id) ?? [];
+            list.push({
+              id: row.id,
+              title: row.title,
+              file_url: row.file_url,
+              created_at: row.created_at,
+              metadata: row.metadata,
+            });
+            docsByHandover.set(row.handover_id, list);
+          }
+        }
+      }
+
+      return handovers.map((h) => ({
+        ...h,
+        handover_documents: docsByHandover.get(h.id) ?? [],
+      })) as VehicleHandover[];
     },
   });
 }
@@ -1195,34 +1291,44 @@ async function loadHandoverHistoryForOrg(
   const handovers = (handoversData ?? []) as any[];
   const handoverIds = handovers.map((handover) => handover.id);
 
-  let docsByHandover = new Map<string, any>();
+  const docsByHandover = new Map<string, Array<{ file_url: string; metadata?: any; title: string; created_at: string }>>();
 
   if (handoverIds.length > 0) {
     const { data: docsData, error: docsError } = await supabase
       .from('vehicle_documents' as any)
-      .select('handover_id, file_url, metadata, created_at')
+      .select('handover_id, file_url, metadata, title, created_at')
       .in('handover_id', handoverIds)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: true });
 
     if (docsError) {
       console.warn('Vehicle documents query failed:', docsError.message);
     } else {
-      docsByHandover = new Map(
-        ((docsData as any[]) ?? [])
-          .filter((doc) => !!doc.handover_id)
-          .map((doc) => [doc.handover_id as string, doc])
-      );
+      for (const doc of (docsData as any[]) ?? []) {
+        if (!doc.handover_id) continue;
+        const hid = doc.handover_id as string;
+        const list = docsByHandover.get(hid) ?? [];
+        list.push({
+          file_url: doc.file_url,
+          metadata: doc.metadata,
+          title: doc.title,
+          created_at: doc.created_at,
+        });
+        docsByHandover.set(hid, list);
+      }
     }
   }
 
   return handovers.map((handover): HandoverHistoryItem => {
-    const doc = docsByHandover.get(handover.id) ?? null;
-    const metadataPhotoUrls = [
-      doc?.metadata?.photoUrls?.front,
-      doc?.metadata?.photoUrls?.back,
-      doc?.metadata?.photoUrls?.right,
-      doc?.metadata?.photoUrls?.left,
-    ].filter(Boolean) as string[];
+    const docList = docsByHandover.get(handover.id) ?? [];
+    const photoDoc = [...docList].reverse().find((d) => d.metadata?.photoUrls);
+    const metadataPhotoUrls = photoDoc
+      ? [
+          photoDoc.metadata?.photoUrls?.front,
+          photoDoc.metadata?.photoUrls?.back,
+          photoDoc.metadata?.photoUrls?.right,
+          photoDoc.metadata?.photoUrls?.left,
+        ].filter(Boolean)
+      : ([] as string[]);
 
     const rowPhotoUrls = [
       handover.photo_front_url,
@@ -1236,6 +1342,14 @@ async function loadHandoverHistoryForOrg(
       ? `${handover.vehicle.manufacturer} ${handover.vehicle.model} (${handover.vehicle.plate_number})`
       : 'ללא רכב';
 
+    const form_documents =
+      docList.length > 0
+        ? docList.map((d) => ({
+            title: d.title || 'מסמך',
+            file_url: d.file_url,
+          }))
+        : undefined;
+
     return {
       id: handover.id,
       vehicle_id: handover.vehicle_id,
@@ -1244,7 +1358,8 @@ async function loadHandoverHistoryForOrg(
       handover_date: handover.handover_date,
       driver_label: driverLabel,
       vehicle_label: vehicleLabel,
-      form_url: doc?.file_url ?? handover.pdf_url ?? null,
+      form_url: docList[0]?.file_url ?? handover.pdf_url ?? null,
+      form_documents,
       photo_urls: Array.from(new Set([...metadataPhotoUrls, ...rowPhotoUrls])),
     };
   });

@@ -10,7 +10,7 @@ import {
   type DriverIncidentType,
 } from '@/hooks/useDriverFolders';
 import { useComplaints, useCreateComplaint, type Complaint } from '@/hooks/useComplaints';
-import { useDriverHandoverHistory, type HandoverHistoryItem } from '@/hooks/useHandovers';
+import { useDriverHandoverHistory, handoverFormDocumentLinks, type HandoverHistoryItem } from '@/hooks/useHandovers';
 import { useDriverDocuments } from '@/hooks/useDriverDocuments';
 import { useDriverStorageFiles } from '@/hooks/useDriverStorageFiles';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -736,18 +736,38 @@ function TransfersTab({ driver }: { driver: Driver }) {
                   </span>
                 </td>
                 <td className="py-2 pr-2">
-                  {h.form_url ? (
-                    <a
-                      href={h.form_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary hover:underline text-xs"
-                    >
-                      PDF
-                    </a>
-                  ) : (
-                    '—'
-                  )}
+                  {(() => {
+                    const links = handoverFormDocumentLinks(h);
+                    if (links.length === 0) return '—';
+                    if (links.length === 1) {
+                      return (
+                        <a
+                          href={links[0].url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline text-xs"
+                        >
+                          PDF
+                        </a>
+                      );
+                    }
+                    return (
+                      <span className="flex flex-wrap gap-1">
+                        {links.map((l, i) => (
+                          <a
+                            key={`${l.url}-${i}`}
+                            href={l.url}
+                            title={l.title}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline text-[10px]"
+                          >
+                            [{i + 1}]
+                          </a>
+                        ))}
+                      </span>
+                    );
+                  })()}
                 </td>
               </tr>
             ))}

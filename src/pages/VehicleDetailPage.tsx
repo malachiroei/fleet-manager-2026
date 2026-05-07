@@ -279,18 +279,39 @@ function HandoverHistoryList({ handovers }: { handovers: any[] }) {
                 )}
                 {h.notes && <p className="text-sm text-muted-foreground">{h.notes}</p>}
                 {damageSummary && <VehicleDamageSnapshot summary={damageSummary} />}
-                {h.pdf_url && (
-                  <a
-                    href={h.pdf_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
-                  >
-                    <FileText className="h-3.5 w-3.5" />
-                    צפה בטופס PDF
-                    <ExternalLink className="h-3 w-3 opacity-60" />
-                  </a>
-                )}
+                {(() => {
+                  const extra = (
+                    h as { handover_documents?: Array<{ id: string; title: string; file_url: string }> }
+                  ).handover_documents;
+                  const pdf = (h as { pdf_url?: string | null }).pdf_url;
+                  const links =
+                    extra && extra.length > 0
+                      ? extra.map((d) => ({
+                          key: d.id,
+                          title: (d.title || 'מסמך').trim(),
+                          url: d.file_url,
+                        }))
+                      : pdf
+                        ? [{ key: 'pdf-legacy', title: 'טופס מסירה / החזרה (PDF)', url: pdf }]
+                        : [];
+                  return links.length > 0 ? (
+                    <div className="flex flex-col gap-2">
+                      {links.map((link) => (
+                        <a
+                          key={link.key}
+                          href={link.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+                        >
+                          <FileText className="h-3.5 w-3.5" />
+                          {link.title}
+                          <ExternalLink className="h-3 w-3 opacity-60" />
+                        </a>
+                      ))}
+                    </div>
+                  ) : null;
+                })()}
               </div>
             )}
           </div>

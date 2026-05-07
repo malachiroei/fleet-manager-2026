@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FleetHudPageShell } from '@/components/FleetHudPageShell';
 import { ArrowUpDown, Car, Search, Truck, RotateCcw, Filter } from 'lucide-react';
-import { useHandoverHistory } from '@/hooks/useHandovers';
+import { useHandoverHistory, handoverFormDocumentLinks } from '@/hooks/useHandovers';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -210,18 +210,40 @@ export default function TransfersPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-center">
-                        {h.form_url ? (
-                          <a
-                            href={h.form_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-primary hover:bg-muted/40 transition-colors inline-block"
-                          >
-                            PDF
-                          </a>
-                        ) : (
-                          <span className="text-muted-foreground text-xs">—</span>
-                        )}
+                        {(() => {
+                          const links = handoverFormDocumentLinks(h);
+                          if (links.length === 0) {
+                            return <span className="text-muted-foreground text-xs">—</span>;
+                          }
+                          if (links.length === 1) {
+                            return (
+                              <a
+                                href={links[0].url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-primary hover:bg-muted/40 transition-colors inline-block"
+                              >
+                                PDF
+                              </a>
+                            );
+                          }
+                          return (
+                            <div className="flex flex-wrap items-center justify-center gap-1">
+                              {links.map((l, i) => (
+                                <a
+                                  key={`${l.url}-${i}`}
+                                  href={l.url}
+                                  title={l.title}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="rounded-lg border border-border px-1.5 py-0.5 text-[10px] font-medium text-primary hover:bg-muted/40 transition-colors"
+                                >
+                                  {i + 1}
+                                </a>
+                              ))}
+                            </div>
+                          );
+                        })()}
                       </td>
                     </tr>
                   );

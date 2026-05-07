@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo, RefObject } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   useVehicleSpecDirty,
   DIRTY_SOURCE_HANDOVER_WIZARD,
@@ -1631,6 +1632,7 @@ function getStepKindForDoc(doc: DeliveryFormDoc): WizardStepKind {
 // ─────────────────────────────────────────────
 export default function VehicleHandoverWizard() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { setDirty } = useVehicleSpecDirty();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -2364,6 +2366,90 @@ export default function VehicleHandoverWizard() {
       if (docsToInsert.length > 0) {
         const { error: insertErr } = await supabase.from('driver_documents').insert(docsToInsert as never);
         if (insertErr) console.error('[Wizard] driver_documents insert error:', insertErr.message);
+      }
+
+      const uuidLike = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (vehicleId && handoverId && uuidLike.test(vehicleId) && uuidLike.test(handoverId)) {
+        const vehicleDocRows: Array<{
+          vehicle_id: string;
+          handover_id: string;
+          title: string;
+          file_url: string;
+          document_type: string;
+          metadata?: Record<string, unknown>;
+        }> = [];
+        if (sig1Url) {
+          vehicleDocRows.push({
+            vehicle_id: vehicleId,
+            handover_id: handoverId,
+            title: `${receptionFormDoc?.title || 'טופס קבלת רכב'} (חתום)`,
+            file_url: sig1Url,
+            document_type: 'delivery',
+            metadata: { source: 'handover_wizard', kind: 'reception' },
+          });
+        }
+        if (hasProcedureStep && sig2Url) {
+          vehicleDocRows.push({
+            vehicle_id: vehicleId,
+            handover_id: handoverId,
+            title: `${procedureFormDoc?.title || 'התחייבות נוהל שימוש ברכב'} (חתום)`,
+            file_url: sig2Url,
+            document_type: 'delivery',
+            metadata: { source: 'handover_wizard', kind: 'procedure' },
+          });
+        }
+        if (hasHealthStep && sig3Url) {
+          vehicleDocRows.push({
+            vehicle_id: vehicleId,
+            handover_id: handoverId,
+            title: `${healthFormDoc?.title || 'הצהרת בריאות'} (חתום)`,
+            file_url: sig3Url,
+            document_type: 'delivery',
+            metadata: { source: 'handover_wizard', kind: 'health' },
+          });
+        }
+        for (const [docId, genUrl] of genericGeneratedUrlByDocId.entries()) {
+          if (!genUrl) continue;
+          const doc = availableDeliveryForms.find((form) => form.id === docId);
+          vehicleDocRows.push({
+            vehicle_id: vehicleId,
+            handover_id: handoverId,
+            title: `${doc?.title || 'מסמך מסירה'} (חתום)`,
+            file_url: genUrl,
+            document_type: 'delivery',
+            metadata: { source: 'handover_wizard', kind: 'generic', org_document_id: docId },
+          });
+        }
+        if (hasLicenseStep && !skipLicenseStep && frontUrl) {
+          vehicleDocRows.push({
+            vehicle_id: vehicleId,
+            handover_id: handoverId,
+            title: `רישיון נהיגה (קדמי) — מסירה`,
+            file_url: frontUrl,
+            document_type: 'delivery',
+            metadata: { source: 'handover_wizard', kind: 'license_front' },
+          });
+        }
+        if (hasLicenseStep && !skipLicenseStep && backUrl) {
+          vehicleDocRows.push({
+            vehicle_id: vehicleId,
+            handover_id: handoverId,
+            title: `רישיון נהיגה (אחורי) — מסירה`,
+            file_url: backUrl,
+            document_type: 'delivery',
+            metadata: { source: 'handover_wizard', kind: 'license_back' },
+          });
+        }
+        if (vehicleDocRows.length > 0) {
+          const { error: vdocErr } = await supabase.from('vehicle_documents').insert(vehicleDocRows as never);
+          if (vdocErr) {
+            console.error('[Wizard] vehicle_documents insert error:', vdocErr.message);
+          } else {
+            queryClient.invalidateQueries({ queryKey: ['vehicle-documents', vehicleId] });
+            queryClient.invalidateQueries({ queryKey: ['handovers'] });
+            queryClient.invalidateQueries({ queryKey: ['handover-history'] });
+          }
+        }
       }
 
       if (driverId) {
