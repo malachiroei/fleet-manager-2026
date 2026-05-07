@@ -30,6 +30,19 @@ function uint8ToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+const STORAGE_DOC_BUCKET = 'vehicle-documents';
+
+function storageObjectPathFromPublicUrl(urlStr: string, bucket: string): string | null {
+  try {
+    const u = new URL(urlStr);
+    const pref = `/storage/v1/object/public/${bucket}/`;
+    if (!u.pathname.startsWith(pref)) return null;
+    return decodeURIComponent(u.pathname.slice(pref.length));
+  } catch {
+    return null;
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
@@ -129,20 +142,66 @@ serve(async (req) => {
       .eq('id', requestId);
     if (closeErr) return json({ error: closeErr.message }, 500);
 
+    /** מייל נשלח לנהג רק עם מזהה — לא מספיק להסתמך על assigned_driver_id (לעיתים ריק אחרי מסירה). */
+    let resolvedDriverId = clean(String((vehicle as { assigned_driver_id?: string | null }).assigned_driver_id ?? ''));
+    if (!resolvedDriverId) {
+      const { data: asgRow } = await admin
+        .from('driver_vehicle_assignments')
+        .select('driver_id')
+        .eq('vehicle_id', vehicle.id)
+        .is('unassigned_at', null)
+        .order('assigned_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      resolvedDriverId = clean(String((asgRow as { driver_id?: string })?.driver_id ?? ''));
+    }
+    if (!resolvedDriverId) {
+      const { data: hoRow } = await admin
+        .from('vehicle_handovers')
+        .select('driver_id, handover_date, handover_type, assignment_mode')
+        .eq('vehicle_id', vehicle.id)
+        .order('handover_date', { ascending: false })
+        .limit(12);
+      for (const ho of ((hoRow as { driver_id?: string; handover_type?: string; assignment_mode?: string }[]) ?? []) {
+        const hid = clean(String(ho?.driver_id ?? ''));
+        if (!hid) continue;
+        const htype = String(ho.handover_type ?? '').toLowerCase();
+        const am = String(ho.assignment_mode ?? 'permanent').toLowerCase();
+        if (htype === 'delivery' && am === 'permanent') {
+          resolvedDriverId = hid;
+          break;
+        }
+        if (htype === 'delivery') {
+          resolvedDriverId = hid;
+          break;
+        }
+      }
+    }
+
     let driverEmail = '';
     let driverName = '';
-    if (vehicle.assigned_driver_id) {
+    if (resolvedDriverId) {
       const { data: d } = await admin
         .from('drivers')
         .select('email, full_name')
-        .eq('id', vehicle.assigned_driver_id)
+        .eq('id', resolvedDriverId)
         .eq('org_id', reqRow.org_id)
         .maybeSingle();
       driverEmail = clean(String(d?.email ?? '')).toLowerCase();
       driverName = clean(String(d?.full_name ?? ''));
     }
 
-    if (driverEmail.includes('@')) {
+    type EmailResult =
+      | { sent: false; reason: string }
+      | { sent: true; resend_detail?: string };
+
+    let driverEmailOutcome: EmailResult;
+
+    if (!resolvedDriverId) {
+      driverEmailOutcome = { sent: false, reason: 'no_driver_linked_to_vehicle' };
+    } else if (!driverEmail.includes('@')) {
+      driverEmailOutcome = { sent: false, reason: 'driver_has_no_email' };
+    } else {
       const plate = String(vehicle.plate_number ?? '');
       const vehLabel = `${vehicle.manufacturer ?? ''} ${vehicle.model ?? ''}`.trim();
       const html = `
@@ -159,9 +218,21 @@ serve(async (req) => {
         | { filename: string; content: string }
         | undefined;
       try {
+        let buf: Uint8Array | null = null;
         const imgRes = await fetch(docUrl);
         if (imgRes.ok) {
-          const buf = new Uint8Array(await imgRes.arrayBuffer());
+          buf = new Uint8Array(await imgRes.arrayBuffer());
+        }
+        if (!buf || buf.length === 0) {
+          const path = storageObjectPathFromPublicUrl(docUrl, STORAGE_DOC_BUCKET);
+          if (path) {
+            const dl = await admin.storage.from(STORAGE_DOC_BUCKET).download(path);
+            if (!dl.error && dl.data) {
+              buf = new Uint8Array(await dl.data.arrayBuffer());
+            }
+          }
+        }
+        if (buf && buf.length > 0) {
           const ext = /\.png(\?|$)/i.test(docUrl) ? 'png' : 'jpg';
           attachment = {
             filename: taskKey === 'insurance' ? `bituach-${plate}.${ext}` : `rishayon-${plate}.${ext}`,
@@ -188,13 +259,25 @@ serve(async (req) => {
         },
         body: JSON.stringify(payload),
       });
+      const resendBody = await resendResp.text();
       if (!resendResp.ok) {
-        const t = await resendResp.text();
-        console.warn('[approve-vehicle-renewal] driver email failed', t);
+        console.warn('[approve-vehicle-renewal] driver email failed', resendBody);
+        driverEmailOutcome = { sent: false, reason: `resend_error:${resendBody.slice(0, 500)}` };
+      } else {
+        driverEmailOutcome = { sent: true, resend_detail: resendBody.slice(0, 300) };
       }
     }
 
-    return json({ success: true, message: 'הרכב עודכן והמסמך נרשם' });
+    return json({
+      success: true,
+      message: 'הרכב עודכן והמסמך נרשם',
+      driver_email: {
+        attempted: driverEmail.includes('@'),
+        recipient: driverEmail.includes('@') ? driverEmail : null,
+        resolved_driver_id: resolvedDriverId || null,
+        outcome: driverEmailOutcome,
+      },
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return json({ error: message }, 500);

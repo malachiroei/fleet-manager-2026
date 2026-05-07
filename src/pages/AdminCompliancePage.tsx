@@ -2060,7 +2060,37 @@ export default function AdminCompliancePage() {
       const payload = normalizeInvokePayload(data);
       if (payload?.error) throw new Error(String(payload.error));
       if (payload?.success !== true) throw new Error('תשובת שרת לא תקינה');
-      toast.success('הרכב עודכן; המסמך נרשם בכרטיס הרכב; נשלח מייל לנהג (אם מוגדר).');
+
+      const de = payload?.driver_email as
+        | {
+            attempted?: boolean;
+            recipient?: string | null;
+            resolved_driver_id?: string | null;
+            outcome?: { sent?: boolean; reason?: string; resend_detail?: string };
+          }
+        | undefined;
+      const sent = de?.outcome?.sent === true;
+      const reason = typeof de?.outcome?.reason === 'string' ? de.outcome.reason : '';
+      if (sent && de?.recipient) {
+        toast.success(`הרכב עודכן והמסמך נרשם. המייל נשלח לנהג (${de.recipient}).`);
+      } else if (!de?.attempted && reason === 'no_driver_linked_to_vehicle') {
+        toast.warning('הרכב עודכן והמסמך נרשם, אך לא נמצא נהג מקושר לרכב — המייל לנהג לא נשלח.', {
+          description: 'הגדר שיוך ברכב או שיוך פעיל, או שהיתה מסירה שנרשמה לנהג.',
+        });
+      } else if (!sent && reason === 'driver_has_no_email') {
+        toast.warning('הרכב עודכן והמסמך נרשם; לנהג המשוייך אין מייל בכרטיס — לא ניתן לשלוח.', {
+          description: `נהג בתיק: ${String(de?.resolved_driver_id ?? '—')}`,
+        });
+      } else if (!sent && reason.startsWith('resend_error:')) {
+        toast.warning('הרכב עודכן אך שליחת המייל דרך Resend נכשלה.', {
+          description: reason.replace(/^resend_error:/, '').slice(0, 240),
+          duration: 14_000,
+        });
+      } else {
+        toast.success('הרכב עודכן והמסמך נרשם בכרטיס הרכב.', {
+          description: sent ? '' : reason || 'לא נשלח מייל לנהג.',
+        });
+      }
       await queryClient.invalidateQueries({ queryKey: ['vehicles'] });
       await queryClient.invalidateQueries({ queryKey: ['admin-pending-vehicle-renewals', orgIdRequired] });
       await queryClient.invalidateQueries({ queryKey: ['admin-compliance-open-requests', orgIdRequired] });
