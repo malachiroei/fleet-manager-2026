@@ -533,14 +533,15 @@ function SearchableColumnPicker({
   onSaveSession,
   onSaveDefault,
   onRestoreDefault,
-  selectedCount,
+  triggerLabel,
 }: {
   allKeys: string[];
   selected: string[];
   onSaveSession: (next: string[]) => void;
   onSaveDefault: (next: string[]) => void;
   onRestoreDefault: () => void;
-  selectedCount: number;
+  /** טקסט כפתור — כולל ספירה שמתאימה לטבלה (עמודות קבועות + שדות מהבורר) */
+  triggerLabel: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -567,9 +568,9 @@ function SearchableColumnPicker({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button type="button" variant="outline" className="h-9 gap-2">
-          <Columns3 className="h-4 w-4" />
-          עמודות ({selectedCount})
+        <Button type="button" variant="outline" className="h-9 gap-2 max-w-[min(100%,22rem)]">
+          <Columns3 className="h-4 w-4 shrink-0" />
+          <span className="truncate">{triggerLabel}</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[360px] p-3" dir="rtl">
@@ -697,7 +698,8 @@ function ComplianceTable<T extends Record<string, unknown>>({
   /** עמודת «סטטוס» ייעודית קיימת — לא לשכפל את שדה status מהרכב בעמודות הנתונים */
   const baseCols = columns.length > 0 ? columns : [dueField];
   const filteredCols = baseCols.filter((c) => !(rowSource === 'vehicle' && c === 'status'));
-  const safeColumns = filteredCols.length > 0 ? filteredCols : [dueField];
+  /** תאריך היעד של הטאב מוצג תמיד בעמודה נפרדת — לא לשכפל את אותו שדה בעמודות הנתונים (למשל שני כותרות «תקנה 585») */
+  const safeColumns = filteredCols.filter((c) => c !== dueField);
 
   const eligibilityByRow = rows.map((row) => {
     const dueDays = daysUntil(complianceDueRawForRow(tabKey, dueField, row as Record<string, unknown>));
@@ -742,10 +744,15 @@ function ComplianceTable<T extends Record<string, unknown>>({
             {safeColumns.map((col) => (
               <TableHead key={col} className="text-right">{prettifyKey(col)}</TableHead>
             ))}
-            <TableHead className="text-right">{prettifyKey(dueField)}</TableHead>
-            <TableHead className="text-right">ימים נותרו</TableHead>
-            <TableHead className="text-right">סטטוס</TableHead>
-            <TableHead className="text-right">פעולות</TableHead>
+            <TableHead className="text-right whitespace-nowrap">{prettifyKey(dueField)}</TableHead>
+            <TableHead className="text-right whitespace-nowrap">ימים נותרו</TableHead>
+            <TableHead className="text-right whitespace-nowrap">סטטוס</TableHead>
+            {showSendStatusColumn ? (
+              <TableHead className="text-right min-w-[11rem] whitespace-nowrap">
+                {prettifyKey(COMPLIANCE_COLUMN_SEND_STATUS)}
+              </TableHead>
+            ) : null}
+            <TableHead className="text-right whitespace-nowrap">פעולות</TableHead>
             <TableHead className="w-10 px-2 text-center" aria-label="בחר הכל לשליחה מרוכזת">
               <Checkbox
                 disabled={eligibleBulkIdsOnScreen.length === 0 || bulkSending}
@@ -1750,8 +1757,14 @@ export default function AdminCompliancePage() {
     const base = activeDef.source === 'vehicle' ? filteredVehicleColumns : filteredDriverColumns;
     return [...base, COMPLIANCE_COLUMN_SEND_STATUS];
   }, [activeDef.source, filteredVehicleColumns, filteredDriverColumns]);
-  const currentSelectedForTab = visibleByTab[activeTab] ?? [];
-  const effectiveSelectedCount = currentSelectedForTab.length > 0 ? currentSelectedForTab.length : 1;
+  const columnPickerTriggerLabel = useMemo(() => {
+    const sel = visibleByTab[activeTab] ?? [];
+    const dataKeys = sel.filter((k) => k !== COMPLIANCE_COLUMN_SEND_STATUS).length;
+    const sendOn = sel.includes(COMPLIANCE_COLUMN_SEND_STATUS);
+    /** שדות מהבורר + תאריך יעד לטאב + ימים + סטטוס + [סטטוס שליחה] + פעולות + צ׳קבוקס */
+    const totalInTable = dataKeys + 5 + (sendOn ? 1 : 0);
+    return `עמודות — בטבלה ${totalInTable} (${dataKeys} שדות מהרשימה${sendOn ? ' · שליחה' : ''})`;
+  }, [visibleByTab, activeTab]);
 
   useEffect(() => {
     try {
@@ -2588,14 +2601,20 @@ export default function AdminCompliancePage() {
                 </div>
               </>
             )}
-            <SearchableColumnPicker
-              allKeys={currentAllColumns}
-              selected={visibleByTab[activeTab]}
-              onSaveSession={saveColumnsSessionOnly}
-              onSaveDefault={saveColumnsDefaults}
-              onRestoreDefault={restoreDefaultForActiveTab}
-              selectedCount={effectiveSelectedCount}
-            />
+            <div className="flex flex-col gap-1">
+              <SearchableColumnPicker
+                allKeys={currentAllColumns}
+                selected={visibleByTab[activeTab]}
+                onSaveSession={saveColumnsSessionOnly}
+                onSaveDefault={saveColumnsDefaults}
+                onRestoreDefault={restoreDefaultForActiveTab}
+                triggerLabel={columnPickerTriggerLabel}
+              />
+              <p className="max-w-xl text-xs text-muted-foreground leading-snug">
+                הרשימה מגדירה רק עמודות שדות נתונים. לכל טבלה נוספות תמיד: תאריך יעד לטאב, ימים נותרו, סטטוס, פעולות
+                וצ׳קבוקס; אם «סטטוס שליחה» מסומן — נוספת עמודה נפרדת לפני «פעולות».
+              </p>
+            </div>
           </CardContent>
         </Card>
 
