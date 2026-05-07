@@ -2157,6 +2157,11 @@ export default function AdminCompliancePage() {
       if (payload?.error) throw new Error(String(payload.error));
       if (payload?.success !== true) throw new Error('תשובת שרת לא תקינה');
 
+      const vid = typeof payload?.vehicle_id === 'string' ? payload.vehicle_id.trim() : '';
+      if (vid) {
+        await queryClient.invalidateQueries({ queryKey: ['vehicle', vid] });
+      }
+
       const de = payload?.driver_email as
         | {
             attempted?: boolean;

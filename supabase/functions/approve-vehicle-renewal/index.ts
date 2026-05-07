@@ -81,7 +81,7 @@ serve(async (req) => {
     const { data: reqRow, error: rErr } = await admin
       .from('compliance_requests')
       .select(
-        'id, org_id, entity_id, task_key, status, proposed_expiry_date, submitted_document_url',
+        'id, org_id, entity_id, task_key, status, proposed_expiry_date, submitted_document_url, driver_id',
       )
       .eq('id', requestId)
       .maybeSingle();
@@ -148,8 +148,12 @@ serve(async (req) => {
       .eq('id', requestId);
     if (closeErr) return json({ error: closeErr.message }, 500);
 
-    /** מייל נשלח לנהג רק עם מזהה — לא מספיק להסתמך על assigned_driver_id (לעיתים ריק אחרי מסירה). */
+    /** מייל לנהג: עמודת שיוך ברכב, ואז driver_id מהבקשה (נשמר בשליחה לליסינג גם כש-assign ריק). */
     let resolvedDriverId = clean(String((vehicle as { assigned_driver_id?: string | null }).assigned_driver_id ?? ''));
+    const driverIdFromRequest = clean(String((reqRow as { driver_id?: string | null }).driver_id ?? ''));
+    if (!resolvedDriverId && driverIdFromRequest) {
+      resolvedDriverId = driverIdFromRequest;
+    }
     if (!resolvedDriverId) {
       const { data: asgRow } = await admin
         .from('driver_vehicle_assignments')
@@ -187,15 +191,42 @@ serve(async (req) => {
 
     let driverEmail = '';
     let driverName = '';
+    let driverRow: {
+      email?: string | null;
+      full_name?: string | null;
+      org_id?: string | null;
+      user_id?: string | null;
+    } | null = null;
+
     if (resolvedDriverId) {
-      const { data: d } = await admin
+      const vOrg = String(vehicle.org_id ?? '');
+      const { data: dOrg } = await admin
         .from('drivers')
-        .select('email, full_name')
+        .select('email, full_name, org_id, user_id')
         .eq('id', resolvedDriverId)
         .eq('org_id', reqRow.org_id)
         .maybeSingle();
-      driverEmail = clean(String(d?.email ?? '')).toLowerCase();
-      driverName = clean(String(d?.full_name ?? ''));
+      driverRow = dOrg;
+      if (!driverRow && vOrg) {
+        const { data: dAny } = await admin
+          .from('drivers')
+          .select('email, full_name, org_id, user_id')
+          .eq('id', resolvedDriverId)
+          .maybeSingle();
+        if (dAny && String(dAny.org_id ?? '') === vOrg) driverRow = dAny;
+      }
+      if (driverRow) {
+        driverEmail = clean(String(driverRow.email ?? '')).toLowerCase();
+        driverName = clean(String(driverRow.full_name ?? ''));
+      }
+      if (!driverEmail.includes('@')) {
+        const uid = clean(String(driverRow?.user_id ?? ''));
+        if (uid) {
+          const { data: prof } = await admin.from('profiles').select('email').eq('id', uid).maybeSingle();
+          const pe = clean(String(prof?.email ?? '')).toLowerCase();
+          if (pe.includes('@')) driverEmail = pe;
+        }
+      }
     }
 
     type EmailResult =
@@ -278,6 +309,7 @@ serve(async (req) => {
     return json({
       success: true,
       message: 'הרכב עודכן והמסמך נרשם',
+      vehicle_id: vehicle.id,
       driver_email: {
         attempted: driverEmail.includes('@'),
         recipient: driverEmail.includes('@') ? driverEmail : null,

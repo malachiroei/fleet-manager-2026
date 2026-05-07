@@ -238,7 +238,8 @@ export function useVehicle(id: string) {
   return useQuery({
     queryKey: ['vehicle', id, effectiveOrgId ?? null, resolveSessionEmail(profile, user), user?.id],
     queryFn: async () => {
-      const query = supabase.from('vehicles').select('*').eq('id', id);
+      if (effectiveOrgId == null) return null;
+      const query = supabase.from('vehicles').select('*').eq('id', id).eq('org_id', effectiveOrgId);
       const { data, error } = await query.maybeSingle();
       if (error) throw error;
       return data ? vehicleWithNormalizedPlate(data as Vehicle) : null;
@@ -328,8 +329,6 @@ export function useUpdateVehicle() {
       return vehicleWithNormalizedPlate(row as Vehicle);
     },
     onSuccess: (data) => {
-      // עדכון מיידי של מסך הסקירה בלי להמתין ל-refetch
-      queryClient.setQueryData(['vehicle', data.id], vehicleWithNormalizedPlate(data as Vehicle));
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['vehicles-assigned-to-driver'] });
       queryClient.invalidateQueries({ queryKey: ['vehicle', data.id] });
