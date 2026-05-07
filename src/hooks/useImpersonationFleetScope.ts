@@ -34,15 +34,22 @@ export function useImpersonationFleetScope() {
    */
   const viewAsOrgTrim = ((viewAsProfile?.org_id ?? '').trim() || null) as string | null;
 
-  const effectiveOrgId =
-    platformSuperOwner
-      ? (((activeOrgId ?? '').trim() ||
-          viewAsOrgTrim ||
-          lockedFleetOrgIdForStaff ||
-          FALLBACK_MAIN_FLEET_ORG_ID) as string)
-      : (lockedFleetOrgIdForStaff ??
-          viewAsOrgTrim ??
-          ((activeOrgId ?? '').trim() || null));
+  /**
+   * בעל פלטפורמה עם *מספר* ארגונים: לא ליפול ל-FALLBACK לפני שמתג הארגון / activeOrgId נטענו —
+   * אחרת שאילתות כמו compliance_requests רצות על ארגון שגוי והסטטוס «נעלם» אחרי רענון.
+   */
+  const effectiveOrgId = platformSuperOwner
+    ? (() => {
+        const ao = (activeOrgId ?? '').trim();
+        if (ao) return ao;
+        if (viewAsOrgTrim) return viewAsOrgTrim;
+        if (lockedFleetOrgIdForStaff) return lockedFleetOrgIdForStaff;
+        const sole = memberOrganizations.length === 1 ? (memberOrganizations[0]?.id ?? '').trim() : '';
+        if (sole) return sole;
+        if (memberOrganizations.length > 1) return null as string | null;
+        return FALLBACK_MAIN_FLEET_ORG_ID;
+      })()
+    : (lockedFleetOrgIdForStaff ?? viewAsOrgTrim ?? ((activeOrgId ?? '').trim() || null));
 
   const effectiveUserId = (impersonatedUserId ?? user?.id ?? null) as string | null;
 

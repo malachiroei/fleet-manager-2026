@@ -1,4 +1,5 @@
 import React, { type ReactNode, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   useDriverIncidents,
@@ -13,6 +14,7 @@ import { useComplaints, useCreateComplaint, type Complaint } from '@/hooks/useCo
 import { useDriverHandoverHistory, handoverFormDocumentLinks, type HandoverHistoryItem } from '@/hooks/useHandovers';
 import { useDriverDocuments } from '@/hooks/useDriverDocuments';
 import { useDriverStorageFiles } from '@/hooks/useDriverStorageFiles';
+import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -876,6 +878,21 @@ function isPdfUrl(src: string): boolean {
 function DocumentsTab({ driver }: { driver: Driver }) {
   const { data: docs = [], isLoading, isError } = useDriverDocuments(driver.id);
   const { data: storageFiles = [], isLoading: storageLoading } = useDriverStorageFiles(driver.id);
+  const { data: reg585ComplianceDocs = [], isLoading: reg585ComplianceLoading } = useQuery({
+    queryKey: ['driver-regulation-585-compliance-docs', driver.id],
+    enabled: Boolean(String(driver.id ?? '').trim()),
+    staleTime: 30_000,
+    queryFn: async () => {
+      const { data, error } = await (supabase as { from: (name: string) => any }).from('compliance_docs')
+        .select('id, file_url, created_at')
+        .eq('driver_id', driver.id)
+        .eq('task_key', 'regulation_585')
+        .order('created_at', { ascending: false })
+        .limit(12);
+      if (error) throw error;
+      return (data ?? []) as { id: string; file_url: string; created_at: string }[];
+    },
+  });
   const [lightbox, setLightbox] = useState<{ src: string; title: string } | null>(null);
   const [docSearch, setDocSearch] = useState('');
 
@@ -893,7 +910,23 @@ function DocumentsTab({ driver }: { driver: Driver }) {
     legacyDocs.push({ id: 'leg-back', title: 'רישיון נהיגה (אחורי)', file_url: (driver as any).license_back_url });
   if ((driver as any).health_declaration_url && !dbUrls.has((driver as any).health_declaration_url))
     legacyDocs.push({ id: 'leg-health', title: 'הצהרת בריאות', file_url: (driver as any).health_declaration_url });
-  const allDocs = [...docs, ...legacyDocs];
+  for (const u of legacyDocs.map((x) => x.file_url)) dbUrls.add(u);
+
+  const reg585FromCompliance: DriverDocument[] = [];
+  for (const row of reg585ComplianceDocs) {
+    const u = String(row.file_url ?? '').trim();
+    if (!u || dbUrls.has(u)) continue;
+    dbUrls.add(u);
+    reg585FromCompliance.push({
+      id: `compliance-reg585-${row.id}`,
+      driver_id: driver.id,
+      title: 'תקנה 585 ב׳ — סריקת בדיקה',
+      file_url: u,
+      created_at: row.created_at,
+    });
+  }
+
+  const allDocs = [...docs, ...legacyDocs, ...reg585FromCompliance];
 
   const formatStorageDate = (iso: string | null) => {
     if (!iso) return '—';
@@ -905,7 +938,7 @@ function DocumentsTab({ driver }: { driver: Driver }) {
     return <FolderLoadErrorMessage />;
   }
 
-  if (isLoading || storageLoading) {
+  if (isLoading || storageLoading || reg585ComplianceLoading) {
     return <p className="text-muted-foreground text-sm p-4">טוען...</p>;
   }
 

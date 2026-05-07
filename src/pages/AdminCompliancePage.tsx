@@ -1167,8 +1167,14 @@ export default function AdminCompliancePage() {
   const { effectiveOrgId } = useImpersonationFleetScope();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  /** מקור אמת לסקופ צי (כולל נעילה לצוות + view-as). */
-  const orgId = effectiveOrgId ?? activeOrgId ?? profile?.org_id ?? null;
+  const sessionEmailCompliance = resolveSessionEmail(profile, user);
+  const platformOwnerCompliance = isPlatformSuperOwnerEmail(sessionEmailCompliance);
+  /** מקור אמת לסקופ צי; לבעל פלטפורמה — לא להסתמך על profile.org_id כשהמתג עדיין לא אתחל (ארגון שגוי). */
+  const orgId = (
+    platformOwnerCompliance
+      ? ((activeOrgId ?? '').trim() || effectiveOrgId)
+      : (effectiveOrgId ?? activeOrgId ?? profile?.org_id ?? null)
+  ) as string | null;
 
   const canAccessAdminComplianceCenter = Boolean(
     hasPermission('compliance') ||
