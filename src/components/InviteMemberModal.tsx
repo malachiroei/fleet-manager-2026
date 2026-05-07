@@ -104,6 +104,12 @@ export function InviteMemberModal({
           });
           return;
         }
+        /**
+         * הזמנת אדמין ע"י מנהל הפלטפורמה ⇒ ארגון חדש נוצר אוטומטית
+         * ב-`resolveOrgIdForTeamInvite`. דגל זה מאותת ל-`signUp` שזו
+         * רישום של דייר חדש (לא הצטרפות לארגון קיים).
+         */
+        const createsNewOrg = inviterIsPlatformOwner && inviteRole === 'admin';
         const { data, error } = await (supabase as any)
           .from('org_invitations')
           .insert({
@@ -112,6 +118,7 @@ export function InviteMemberModal({
             role: inviteRole,
             permissions: permsPayload,
             invited_by: invitedBy,
+            creates_new_org: createsNewOrg,
           })
           .select('org_id, email')
           .single();

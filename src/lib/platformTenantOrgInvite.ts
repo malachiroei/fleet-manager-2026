@@ -2,21 +2,26 @@ import { supabase } from '@/integrations/supabase/client';
 import { isLikelyUuid } from '@/lib/fleetUuid';
 
 /**
- * בעל פלטפורמה שמזמין אדמין: ארגון היעד הוא הארגון הפעיל במסך (`contextOrgId`), כדי שהמוזמן
- * יקבל הרשאות אדמין רק על אותו צי. אם אין הקשר ארגון — נוצר ארגון חדש להשכרה נפרדת.
+ * בעל פלטפורמה שמזמין אדמין חדש (לקוח חדש) — תמיד נוצר ארגון *חדש* באמצעות
+ * RPC `create_organization_for_platform_tenant`. ה-`contextOrgId` (הארגון
+ * שמוצג כעת בסוויצ'ר העליון) **לא** משמש כיעד, אחרת המוזמן היה יורש את הצי
+ * שעליו צופה מנהל הפלטפורמה — בדיוק התקלה שדווחה. עבור אדמין רגיל שמזמין
+ * חבר צוות — היעד תמיד `contextOrgId` (הארגון של המזמין).
  */
 export async function resolveOrgIdForTeamInvite(options: {
   inviterIsPlatformOwner: boolean;
   inviteRole: 'admin' | 'driver';
-  /** ארגון הקשר ב-UI (מנהל צוות / מתג ארגון) — משמש רק כשלא נוצר ארגון חדש */
+  /** ארגון הקשר ב-UI (מנהל צוות / מתג ארגון) — נדרש רק להזמנת חבר צוות רגיל */
   contextOrgId: string;
   inviteEmail: string;
 }): Promise<{ orgId: string | null; error: string | null }> {
   const ctx = String(options.contextOrgId ?? '').trim();
   if (options.inviterIsPlatformOwner && options.inviteRole === 'admin') {
-    if (ctx && isLikelyUuid(ctx)) {
-      return { orgId: ctx, error: null };
-    }
+    /**
+     * תמיד יוצרים ארגון חדש למוזמן — ללא קשר לארגון המוצג בסוויצ'ר.
+     * זה מבטיח בידוד מלא בין דיירים, ושמנהל הפלטפורמה לא חולק נתונים עם
+     * אדמינים שהוא הזמין.
+     */
     const local = options.inviteEmail.trim().toLowerCase().split('@')[0] || 'tenant';
     const pName = `צי ${local}`;
     const { data, error } = await (supabase as any).rpc('create_organization_for_platform_tenant', {
@@ -31,7 +36,7 @@ export async function resolveOrgIdForTeamInvite(options: {
       };
     }
     const id = typeof data === 'string' ? data : (data as string | null);
-    if (!id || String(id).trim() === '') {
+    if (!id || String(id).trim() === '' || !isLikelyUuid(String(id).trim())) {
       return { orgId: null, error: 'יצירת ארגון חדשה לא החזירה מזהה.' };
     }
     return { orgId: String(id).trim(), error: null };

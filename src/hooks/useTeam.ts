@@ -135,7 +135,7 @@ export function useTenantFleetAdminsForPlatformSwitcher() {
        *  ה-auth.uid() ישירות. כל בקשה שכוללת user_id חוזרת 400. */
       const { data: profs, error } = await supabase
         .from('profiles')
-        .select('id, full_name, email, org_id, status, permissions, is_system_admin');
+        .select('id, full_name, email, org_id, status, permissions, is_system_admin, is_approved');
       if (error) {
         console.warn('[useTenantFleetAdminsForPlatformSwitcher] profiles failed', error.message);
         return [];
@@ -149,6 +149,7 @@ export function useTenantFleetAdminsForPlatformSwitcher() {
         status?: string | null;
         permissions?: Record<string, unknown> | null;
         is_system_admin?: boolean | null;
+        is_approved?: boolean | null;
       };
 
       const candidatesByOrg = new Map<string, Row[]>();
@@ -157,6 +158,8 @@ export function useTenantFleetAdminsForPlatformSwitcher() {
         if (!oid) continue;
         if (isPlatformSuperOwnerEmail(p.email)) continue;
         if (String(p.status ?? '').trim().toLowerCase() === 'pending_approval') continue;
+        /** מנהל שלא אושר עדיין לא מופיע בסוויצ'ר — אין טעם לאפשר היכנסות לצי שלו. */
+        if (p.is_approved === false) continue;
 
         const perms = (p.permissions ?? {}) as Record<string, boolean>;
         const isAdminLike =
@@ -475,6 +478,7 @@ export function useDeleteTeamMemberPermanent() {
 
 export function useApproveMember() {
   const queryClient = useQueryClient();
+  const { refreshMemberOrganizations } = useAuth();
 
   return useMutation({
     mutationFn: async ({ profileId }: { profileId: string }) => {
@@ -509,6 +513,10 @@ export function useApproveMember() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: TEAM_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: ['organization', data.org_id] });
+      /** מנהל פלטפורמה אישר אדמין חדש בארגון נפרד — מרעננים את הסוויצ'ר
+       *  ואת רשימת אדמינים-לבחירת-צי, אחרת המשתמש החדש לא יופיע עד רענון. */
+      queryClient.invalidateQueries({ queryKey: ['tenant-fleet-admins-platform-switcher'] });
+      void refreshMemberOrganizations();
       toast({ title: 'המשתמש אושר בהצלחה' });
     },
     onError: (err: Error) => {

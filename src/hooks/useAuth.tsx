@@ -91,6 +91,8 @@ interface AuthContextType {
   setActiveOrgId: (orgId: string | null) => void;
   hasPermission: (permission: PermissionKey) => boolean;
   refreshProfile: () => Promise<void>;
+  /** רענון רשימת הארגונים בסוויצ'ר (משמש אחרי אישור/יצירה/הזמנת אדמין). */
+  refreshMemberOrganizations: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
@@ -450,6 +452,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await fetchMemberOrganizations(user.id);
   }, [user?.id, fetchProfile, fetchMemberOrganizations]);
 
+  /** רענון רשימת הארגונים בסוויצ'ר (אחרי אישור/יצירה/הזמנת אדמין). */
+  const refreshMemberOrganizations = useCallback(async () => {
+    if (!user?.id) return;
+    await fetchMemberOrganizations(user.id, profile?.org_id ?? null);
+  }, [user?.id, profile?.org_id, fetchMemberOrganizations]);
+
   useEffect(() => {
     if (!user?.email || inviteCheckDoneRef.current) return;
     inviteCheckDoneRef.current = true;
@@ -796,6 +804,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setActiveOrgId,
       hasPermission,
       refreshProfile,
+      refreshMemberOrganizations,
       signIn,
       signUp,
       signOut

@@ -38,7 +38,7 @@ export function SimpleInviteModal({
   invitedBy,
   onSuccess,
 }: SimpleInviteModalProps) {
-  const { profile } = useAuth();
+  const { profile, refreshMemberOrganizations } = useAuth();
   const inviterIsPlatformOwner = isSuperAdminPermissionBypass(profile);
   const [email, setEmail] = useState('');
   const [permissions, setPermissions] = useState<ProfilePermissions>(getDefaultPermissions());
@@ -119,6 +119,15 @@ export function SimpleInviteModal({
           title: 'ההזמנה נשמרה במערכת',
           description: 'אם המייל נכשל — פרטי השגיאה הוצגו בהודעה אדומה.',
         });
+      }
+      /** ארגון חדש נוצר עבור הדייר — מרעננים את הסוויצ'ר במנהל הפלטפורמה
+       *  כדי שהארגון החדש יופיע גם לפני שהמוזמן השלים רישום ואושר. */
+      if (createsNewOrg) {
+        try {
+          await refreshMemberOrganizations();
+        } catch {
+          // non-fatal — המסך יתעדכן בריענון הבא
+        }
       }
       onSuccess?.();
       onOpenChange(false);
