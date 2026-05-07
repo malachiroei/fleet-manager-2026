@@ -6,6 +6,7 @@ import {
   useOrgInvitations,
   useApproveMember,
   useRemoveTeamMemberFromOrg,
+  useDeleteTeamMemberPermanent,
   ORG_INVITATIONS_QUERY_KEY,
   isRoeySuperAdminProfile,
 } from '@/hooks/useTeam';
@@ -22,7 +23,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { getSupabaseAnonKey } from '@/integrations/supabase/publicEnv';
 import { FleetHudPageShell } from '@/components/FleetHudPageShell';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { SimpleInviteModal } from '@/components/SimpleInviteModal';
 import { UserFeatureFlagsOverridesDialog } from '@/components/UserFeatureFlagsOverridesDialog';
@@ -45,7 +47,17 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Flag, Loader2, Mail, UserMinus, UserPlus, Users } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronLeft,
+  Flag,
+  Loader2,
+  Lock,
+  Mail,
+  Trash2,
+  UserPlus,
+  Users,
+} from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import type { Profile } from '@/types/fleet';
@@ -80,12 +92,83 @@ export default function TeamManagementPage() {
     return m.is_system_admin === true || perms.manage_team === true || perms.admin_access === true;
   };
 
-  /** UI must not attempt to infer parent/managed hierarchy; trust RLS output. */
-  const visibleMemberRows = useMemo(() => {
-    return [...memberRows].sort((a, b) =>
+  /** קיבוץ היררכי — מי האדמינים שהורחבו לתצוגה מלאה של המשתמשים תחתיהם. */
+  const [expandedAdminIds, setExpandedAdminIds] = useState<string[]>([]);
+
+  /**
+   * קיבוץ היררכי לתצוגה: אדמינים בראש, ומשתמשים רגילים מתחת לאדמין שלהם
+   * (לפי parent_admin_id / managed_by_user_id). זהו קיבוץ ויזואלי בלבד —
+   * הסינון של מי בכלל מופיע נשען על RLS של Supabase.
+   */
+  const memberHierarchy = useMemo(() => {
+    const sorted = [...memberRows].sort((a, b) =>
       (a.full_name || a.email || '').localeCompare(b.full_name || b.email || ''),
     );
+    const admins: Profile[] = [];
+    const users: Profile[] = [];
+    for (const m of sorted) {
+      if (isMemberAdminLike(m)) admins.push(m);
+      else users.push(m);
+    }
+    const adminIds = new Set(
+      admins.flatMap((a) => [String(a.id ?? ''), String(a.user_id ?? '')].filter(Boolean)),
+    );
+    const usersByManager = new Map<string, Profile[]>();
+    const unassigned: Profile[] = [];
+    for (const u of users) {
+      const parentId = String(u.parent_admin_id ?? u.managed_by_user_id ?? '').trim();
+      if (parentId && adminIds.has(parentId)) {
+        const arr = usersByManager.get(parentId) ?? [];
+        arr.push(u);
+        usersByManager.set(parentId, arr);
+      } else {
+        unassigned.push(u);
+      }
+    }
+    return { admins, usersByManager, unassigned };
   }, [memberRows]);
+
+  /** רשימת השורות המוצגות בפועל — אדמינים, ותחת כל אחד שהורחב, המשתמשים שלו. */
+  const visibleMemberRows = useMemo(() => {
+    const out: Array<{ profile: Profile; depth: 0 | 1; managerId: string | null }> = [];
+    const expanded = new Set(expandedAdminIds);
+    for (const a of memberHierarchy.admins) {
+      const adminIdKeys = [String(a.id ?? ''), String(a.user_id ?? '')].filter(Boolean);
+      out.push({ profile: a, depth: 0, managerId: null });
+      const isOpen = adminIdKeys.some((k) => expanded.has(k));
+      if (!isOpen) continue;
+      for (const k of adminIdKeys) {
+        const kids = memberHierarchy.usersByManager.get(k);
+        if (!kids?.length) continue;
+        for (const kid of kids) {
+          out.push({ profile: kid, depth: 1, managerId: k });
+        }
+      }
+    }
+    for (const u of memberHierarchy.unassigned) {
+      out.push({ profile: u, depth: 0, managerId: null });
+    }
+    return out;
+  }, [memberHierarchy, expandedAdminIds]);
+
+  const childrenCountForAdmin = (admin: Profile): number => {
+    const keys = [String(admin.id ?? ''), String(admin.user_id ?? '')].filter(Boolean);
+    let n = 0;
+    for (const k of keys) n += memberHierarchy.usersByManager.get(k)?.length ?? 0;
+    return n;
+  };
+  const isAdminExpanded = (admin: Profile): boolean => {
+    const keys = [String(admin.id ?? ''), String(admin.user_id ?? '')].filter(Boolean);
+    const set = new Set(expandedAdminIds);
+    return keys.some((k) => set.has(k));
+  };
+  const toggleAdminExpanded = (admin: Profile) => {
+    const primary = String(admin.id ?? admin.user_id ?? '').trim();
+    if (!primary) return;
+    setExpandedAdminIds((prev) =>
+      prev.includes(primary) ? prev.filter((x) => x !== primary) : [...prev, primary],
+    );
+  };
 
   /** מיילים שכבר יש להם שורה ב-profiles — לא מציגים אותם כהזמנה פתוחה */
   const registeredEmails = useMemo(() => {
@@ -146,8 +229,12 @@ export default function TeamManagementPage() {
   const [featureOverridesMember, setFeatureOverridesMember] = useState<Profile | null>(null);
   const approveMember = useApproveMember();
   const removeTeamMember = useRemoveTeamMemberFromOrg();
-  const [memberToRemove, setMemberToRemove] = useState<Profile | null>(null);
-  const [suspendAccountOnRemove, setSuspendAccountOnRemove] = useState(false);
+  const deleteTeamMember = useDeleteTeamMemberPermanent();
+  /** חסימה — הסרה מהארגון + השעיית חשבון. */
+  const [memberToBlock, setMemberToBlock] = useState<Profile | null>(null);
+  /** הסרה — מחיקה מלאה ובלתי הפיכה (דורש אישור עם סיסמה). */
+  const [memberToDelete, setMemberToDelete] = useState<Profile | null>(null);
+  const [deletePassword, setDeletePassword] = useState('');
 
   /** עמודת מזהה ארגון ונתונים דומים — רק לרועי (סופר־אדמין). */
   const showSensitiveColumns = isSuperAdminTeamView;
@@ -252,7 +339,7 @@ export default function TeamManagementPage() {
                     <TableHead className="w-[260px] align-middle">פיצ׳רים</TableHead>
                     <TableHead className="w-[140px] text-center align-middle">סטטוס</TableHead>
                     {canRemoveTeamMemberRow ? (
-                      <TableHead className="w-[130px] text-center align-middle">פעולות</TableHead>
+                      <TableHead className="w-[170px] text-center align-middle">פעולות</TableHead>
                     ) : null}
                   </TableRow>
                 </TableHeader>
@@ -265,12 +352,14 @@ export default function TeamManagementPage() {
                     </TableRow>
                   ) : (
                     <>
-                      {visibleMemberRows.map((m, mi) => {
+                      {visibleMemberRows.map(({ profile: m, depth }, mi) => {
                         const memberEmail = (m.email ?? '').trim().toLowerCase();
                         const memberAuthId = String(m.user_id ?? m.id ?? '').trim();
                         const viewerAuthId = String(profile?.user_id ?? profile?.id ?? '').trim();
                         const isSelf = Boolean(memberAuthId) && memberAuthId === viewerAuthId;
                         const isAdminRow = isMemberAdminLike(m);
+                        const childCount = isAdminRow ? childrenCountForAdmin(m) : 0;
+                        const expanded = isAdminRow ? isAdminExpanded(m) : false;
                         const canOpenFeatureOverrides =
                           isRoeiAdmin ||
                           (memberEmail && memberEmail === viewerEmail) ||
@@ -281,17 +370,48 @@ export default function TeamManagementPage() {
                           m?.status !== 'pending_approval' &&
                           (Boolean(orgId) || Boolean(m.org_id));
                         return (
-                          <TableRow key={m.id ?? `m-${mi}`}>
+                          <TableRow
+                            key={m.id ?? `m-${mi}`}
+                            className={depth === 1 ? 'bg-muted/30' : undefined}
+                          >
                             {showSensitiveColumns ? (
                               <TableCell className="w-[150px] font-mono text-[10px] text-muted-foreground truncate align-middle">
                                 {m.org_id ?? '—'}
                               </TableCell>
                             ) : null}
                             <TableCell className="w-[190px] font-medium align-middle">
-                              <span className="truncate block">{m.full_name || '—'}</span>
-                              <span className="block text-[11px] text-muted-foreground">
-                                {isAdminRow ? 'אדמין' : 'משתמש'}
-                              </span>
+                              <div
+                                className="flex items-center gap-2"
+                                style={{ paddingInlineStart: depth === 1 ? 18 : 0 }}
+                              >
+                                {isAdminRow && childCount > 0 ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleAdminExpanded(m)}
+                                    className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted/60"
+                                    aria-label={expanded ? 'סגור' : `פתח (${childCount})`}
+                                    title={expanded ? 'סגור' : `${childCount} משתמשים תחת אדמין זה`}
+                                  >
+                                    {expanded ? (
+                                      <ChevronDown className="h-4 w-4" />
+                                    ) : (
+                                      <ChevronLeft className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                ) : (
+                                  <span className="inline-block h-5 w-5 shrink-0" />
+                                )}
+                                <div className="min-w-0">
+                                  <span className="truncate block">{m.full_name || '—'}</span>
+                                  <span className="block text-[11px] text-muted-foreground">
+                                    {isAdminRow
+                                      ? `אדמין${childCount ? ` · ${childCount} משתמשים` : ''}`
+                                      : depth === 1
+                                        ? 'משתמש תחת אדמין'
+                                        : 'משתמש'}
+                                  </span>
+                                </div>
+                              </div>
                             </TableCell>
                             <TableCell className="w-[240px] text-muted-foreground align-middle" dir="ltr">
                               <span className="truncate block">{m.email || '—'}</span>
@@ -350,19 +470,37 @@ export default function TeamManagementPage() {
                               )}
                             </TableCell>
                             {canRemoveTeamMemberRow ? (
-                              <TableCell className="w-[130px] text-center align-middle">
+                              <TableCell className="w-[170px] text-center align-middle">
                                 {showRemoveForRow ? (
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-8 gap-1 border-destructive/40 text-destructive hover:bg-destructive/10"
-                                    disabled={removeTeamMember.isPending}
-                                    onClick={() => setMemberToRemove(m)}
-                                  >
-                                    <UserMinus className="h-3.5 w-3.5" />
-                                    הסרה
-                                  </Button>
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-8 gap-1 border-amber-500/50 text-amber-700 hover:bg-amber-500/10 dark:text-amber-300"
+                                      disabled={removeTeamMember.isPending}
+                                      onClick={() => setMemberToBlock(m)}
+                                      title="חסימת המשתמש מכניסה לאפליקציה"
+                                    >
+                                      <Lock className="h-3.5 w-3.5" />
+                                      חסימה
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-8 gap-1 border-destructive/40 text-destructive hover:bg-destructive/10"
+                                      disabled={deleteTeamMember.isPending}
+                                      onClick={() => {
+                                        setDeletePassword('');
+                                        setMemberToDelete(m);
+                                      }}
+                                      title="מחיקה מלאה ובלתי הפיכה — דורש סיסמה"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                      הסרה
+                                    </Button>
+                                  </div>
                                 ) : (
                                   <span className="text-muted-foreground text-[11px]">—</span>
                                 )}
@@ -457,33 +595,23 @@ export default function TeamManagementPage() {
       />
 
       <AlertDialog
-        open={memberToRemove != null}
+        open={memberToBlock != null}
         onOpenChange={(open) => {
-          if (!open) {
-            setMemberToRemove(null);
-            setSuspendAccountOnRemove(false);
-          }
+          if (!open) setMemberToBlock(null);
         }}
       >
         <AlertDialogContent dir="rtl" className="max-w-md">
           <AlertDialogHeader>
-            <AlertDialogTitle>להסיר את חבר הצוות?</AlertDialogTitle>
+            <AlertDialogTitle>לחסום את חבר הצוות?</AlertDialogTitle>
             <AlertDialogDescription className="text-start space-y-3">
               <span className="block">
-                {memberToRemove?.full_name || memberToRemove?.email || 'משתמש'} יוסר מחברות בארגון הנוכחי. אפשר
-                להזמין מחדש אחר כך.
+                {memberToBlock?.full_name || memberToBlock?.email || 'משתמש'} יוסר מהארגון והחשבון יושעה — המשתמש
+                לא יוכל להתחבר לאפליקציה. לשחרור חוזר ניתן לשנות סטטוס דרך מנהל מערכת.
               </span>
-              <label className="flex cursor-pointer items-start gap-2 rounded-md border border-border/80 bg-muted/30 p-3 text-sm">
-                <Checkbox
-                  checked={suspendAccountOnRemove}
-                  onCheckedChange={(v) => setSuspendAccountOnRemove(v === true)}
-                  className="mt-0.5"
-                />
-                <span className="text-foreground leading-snug">
-                  <strong>השבתת חשבון:</strong> המשתמש לא יוכל להתחבר לאפליקציה (בנוסף להסרה מהארגון). לשחרור חשבון
-                  רק מנהל מערכת (SQL / Dashboard).
-                </span>
-              </label>
+              <span className="block rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
+                לחסימה זו <strong>אין מחיקה</strong> של המשתמש. למחיקה מלאה ובלתי הפיכה יש להשתמש בכפתור
+                "הסרה".
+              </span>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2 sm:gap-0 sm:justify-start">
@@ -493,37 +621,106 @@ export default function TeamManagementPage() {
               variant="destructive"
               disabled={
                 removeTeamMember.isPending ||
-                !memberToRemove ||
-                !String((isSuperAdminTeamView ? memberToRemove.org_id : orgId) ?? orgId ?? '').trim()
+                !memberToBlock ||
+                !String((isSuperAdminTeamView ? memberToBlock.org_id : orgId) ?? orgId ?? '').trim()
               }
               onClick={() => {
-                if (!memberToRemove) return;
-                const removeMutationOrgId = String(
-                  (isSuperAdminTeamView ? memberToRemove.org_id : orgId) ?? orgId ?? '',
+                if (!memberToBlock) return;
+                const blockOrgId = String(
+                  (isSuperAdminTeamView ? memberToBlock.org_id : orgId) ?? orgId ?? '',
                 ).trim();
-                if (!removeMutationOrgId) return;
-                const uid = String(memberToRemove.user_id ?? memberToRemove.id ?? '').trim();
+                if (!blockOrgId) return;
+                const uid = String(memberToBlock.user_id ?? memberToBlock.id ?? '').trim();
                 if (!uid) return;
                 removeTeamMember.mutate(
+                  { orgId: blockOrgId, memberUserId: uid, suspendAccount: true },
+                  { onSettled: () => setMemberToBlock(null) },
+                );
+              }}
+            >
+              {removeTeamMember.isPending ? 'חוסם…' : 'חסימה'}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog
+        open={memberToDelete != null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setMemberToDelete(null);
+            setDeletePassword('');
+          }
+        }}
+      >
+        <DialogContent dir="rtl" className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>הסרת משתמש לחלוטין מהמערכת</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-destructive">
+              <strong>פעולה בלתי הפיכה.</strong> המשתמש{' '}
+              {memberToDelete?.full_name || memberToDelete?.email || ''} יימחק לצמיתות מהאפליקציה ומאיתות
+              ה-Auth. כדי לחזור הוא יידרש לבצע <strong>הרשמה מחדש</strong>.
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="delete-team-password">לאישור — סיסמת המנהל המבצע</Label>
+              <Input
+                id="delete-team-password"
+                type="password"
+                autoComplete="current-password"
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+                placeholder="הסיסמה שלך לחשבון זה"
+                dir="ltr"
+              />
+            </div>
+          </div>
+          <AlertDialogFooter className="gap-2 sm:gap-0 sm:justify-start">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setMemberToDelete(null);
+                setDeletePassword('');
+              }}
+              disabled={deleteTeamMember.isPending}
+            >
+              ביטול
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={
+                deleteTeamMember.isPending ||
+                !memberToDelete ||
+                deletePassword.trim().length < 4 ||
+                !String((isSuperAdminTeamView ? memberToDelete.org_id : orgId) ?? orgId ?? '').trim()
+              }
+              onClick={() => {
+                if (!memberToDelete) return;
+                const deleteOrgId = String(
+                  (isSuperAdminTeamView ? memberToDelete.org_id : orgId) ?? orgId ?? '',
+                ).trim();
+                if (!deleteOrgId) return;
+                const uid = String(memberToDelete.user_id ?? memberToDelete.id ?? '').trim();
+                if (!uid) return;
+                deleteTeamMember.mutate(
+                  { orgId: deleteOrgId, memberUserId: uid, password: deletePassword },
                   {
-                    orgId: removeMutationOrgId,
-                    memberUserId: uid,
-                    suspendAccount: suspendAccountOnRemove,
-                  },
-                  {
-                    onSettled: () => {
-                      setMemberToRemove(null);
-                      setSuspendAccountOnRemove(false);
+                    onSuccess: () => {
+                      setMemberToDelete(null);
+                      setDeletePassword('');
                     },
                   },
                 );
               }}
             >
-              {removeTeamMember.isPending ? 'מסיר…' : 'הסרה'}
+              {deleteTeamMember.isPending ? 'מוחק…' : 'הסרה לחלוטין'}
             </Button>
           </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        </DialogContent>
+      </Dialog>
     </FleetHudPageShell>
   );
 }

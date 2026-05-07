@@ -79,6 +79,10 @@ export function SimpleInviteModal({
         return;
       }
       const permsPayload = effectivePermissions;
+      /** Platform super admin invitation ⇒ a brand-new org is created for the invitee
+       *  (already pre-allocated by `resolveOrgIdForTeamInvite`). The flag tells the
+       *  signup pipeline that the org is dedicated to the new admin, not a join. */
+      const createsNewOrg = inviterIsPlatformOwner && inviteRole === 'admin';
       const { data: inserted, error } = await (supabase as any)
         .from('org_invitations')
         .insert({
@@ -87,6 +91,7 @@ export function SimpleInviteModal({
           role: inviteRole,
           permissions: permsPayload,
           invited_by: invitedBy,
+          creates_new_org: createsNewOrg,
         })
         .select('org_id, email')
         .single();

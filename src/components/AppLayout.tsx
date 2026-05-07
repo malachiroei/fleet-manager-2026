@@ -15,6 +15,7 @@ import { useVehicleSpecDirty } from '@/contexts/VehicleSpecDirtyContext';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrganization } from '@/hooks/useOrganizations';
+import { useTenantFleetAdminsForPlatformSwitcher } from '@/hooks/useTeam';
 import { AIChatAssistant } from './AIChatAssistant';
 import { useTheme } from '@/hooks/useTheme';
 import { Sun, Moon, Building2, LogOut, Home, ArrowRight, ChevronDown, Settings, UserCog, Menu, Download, Smartphone, Eye } from 'lucide-react';
@@ -137,11 +138,69 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { data: organization } = useOrganization(activeOrgId ?? null);
   const orgName = organization?.name?.trim() ?? '';
 
-  /** בלי דליפת «צי ראשי» / ארגון מנהל-העל למשתמשים שאינם מנהל-העל */
+  /** רשימת אדמינים פר-ארגון — לתצוגת השמות במתג (רק למנהל הפלטפורמה). */
+  const { data: tenantFleetAdmins = [] } = useTenantFleetAdminsForPlatformSwitcher();
+
+  /** מפה org_id → שם האדמין הראשי של אותו ארגון (לפי הפרופיל). */
+  const orgAdminLabelMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const a of tenantFleetAdmins) {
+      const oid = String(a.org_id ?? '').trim();
+      if (!oid) continue;
+      const label =
+        (a.full_name ?? '').trim() ||
+        ((a.email ?? '').trim().split('@')[0] ?? '').trim() ||
+        '';
+      if (!label) continue;
+      if (!map.has(oid)) map.set(oid, label);
+    }
+    return map;
+  }, [tenantFleetAdmins]);
+
+  /** האם זהו ה"ארגון הראשי טסט" שהמנהל ביקש להסתיר במתג. */
+  const isHiddenTestOrg = useCallback((org: { id: string; name?: string | null }) => {
+    const n = (org.name ?? '').toLowerCase();
+    if (!n) return false;
+    if (n.includes('ראשי') && n.includes('טסט')) return true;
+    if (n.includes('main') && n.includes('test')) return true;
+    return false;
+  }, []);
+
+  /** תווית להצגה — שם האדמין של אותו ארגון אם קיים, אחרת שם הארגון. */
+  const labelForOrg = useCallback(
+    (org: { id: string; name?: string | null }): string => {
+      const fromAdmin = orgAdminLabelMap.get(String(org.id ?? ''));
+      if (fromAdmin) return fromAdmin;
+      return (org.name ?? '').trim() || 'ארגון';
+    },
+    [orgAdminLabelMap],
+  );
+
+  /**
+   * רשימת ארגונים בסוויצ'ר:
+   * 1. מסיר "ארגון ראשי טסט" (שורה ישנה לבדיקה).
+   * 2. עבור משתמש שאינו מנהל-העל — מסתיר גם את הצי הראשי הפנימי.
+   * 3. עבור מנהל הפלטפורמה — תמיד מציב את הארגון שלו ראשון, אחרים ממוינים
+   *    לפי שם האדמין שלהם (כפי שמופיע ב-profiles).
+   */
   const memberOrgsForSwitcher = useMemo(() => {
-    if (isSuperAdminPermissionBypass(profile)) return memberOrganizations;
-    return memberOrganizations.filter((o) => o.id !== FALLBACK_MAIN_FLEET_ORG_ID);
-  }, [memberOrganizations, profile]);
+    const isSuper = isSuperAdminPermissionBypass(profile);
+    const filtered = memberOrganizations.filter((o) => {
+      if (isHiddenTestOrg(o)) return false;
+      if (!isSuper && o.id === FALLBACK_MAIN_FLEET_ORG_ID) return false;
+      return true;
+    });
+
+    const ownOrgId = String(profile?.org_id ?? '').trim();
+
+    return [...filtered].sort((a, b) => {
+      if (isSuper && ownOrgId) {
+        if (a.id === ownOrgId && b.id !== ownOrgId) return -1;
+        if (b.id === ownOrgId && a.id !== ownOrgId) return 1;
+      }
+      return labelForOrg(a).localeCompare(labelForOrg(b), 'he');
+    });
+  }, [memberOrganizations, profile, isHiddenTestOrg, labelForOrg]);
 
   /** קיר קשיח ייצור: fleet-manager-pro.com + www (גרסה בכותרת וכו') */
   const isProduction = isFleetManagerProHostname();
@@ -378,8 +437,9 @@ export function AppLayout({ children }: AppLayoutProps) {
     if (!isPlatformSuperOwnerEmail(resolveSessionEmail(profile, user))) return '';
     if (!activeOrgId) return 'בחירת ארגון';
     const org = memberOrganizations.find((o) => o.id === activeOrgId);
-    return org?.name?.trim() || (organization?.name ?? orgName) || 'ארגון';
-  }, [profile, user, activeOrgId, memberOrganizations, organization?.name, orgName]);
+    if (org) return labelForOrg(org);
+    return (organization?.name ?? orgName) || 'ארגון';
+  }, [profile, user, activeOrgId, memberOrganizations, organization?.name, orgName, labelForOrg]);
 
   const OrgSwitcher = () => {
     /** מתג ארגון — רק למנהל הפלטפורמה. הרשאות נתונים מנוהלות ב-RLS. */
@@ -411,7 +471,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             {memberOrgsForSwitcher.map((org) => {
               return (
                 <DropdownMenuRadioItem key={org.id} value={org.id} className="text-xs">
-                  <span className="truncate font-medium">{org.name ?? 'ארגון'}</span>
+                  <span className="truncate font-medium">{labelForOrg(org)}</span>
                 </DropdownMenuRadioItem>
               );
             })}
@@ -817,7 +877,14 @@ export function AppLayout({ children }: AppLayoutProps) {
         ref={mainScrollRef}
         className="fleet-app-main-scene relative min-w-0 flex-1 overflow-y-auto overflow-x-clip overscroll-x-none bg-transparent px-4 py-4 sm:px-6 sm:py-5 [@media(max-height:820px)]:py-2"
       >
-        {profile?.status === 'pending_approval' ? (
+        {/* gate של pending approval — חריג למנהל-העל/סופר-אדמין/חשבונות bootstrap
+            (אחרת `is_approved=false` ברירת מחדל אחרי הוספת העמודה תחסום
+            את מנהל הפלטפורמה לדף שלו עצמו). */}
+        {!(
+          profile?.is_system_admin === true ||
+          isPlatformSuperOwnerEmail(resolveSessionEmail(profile, user)) ||
+          isFleetOrgAdminFallbackEmail(resolveSessionEmail(profile, user))
+        ) && (profile?.status === 'pending_approval' || profile?.is_approved === false) ? (
           <div className="flex min-h-[60vh] items-center justify-center">
             <div className="max-w-lg w-full rounded-2xl border border-yellow-400/40 bg-yellow-950/40 px-6 py-8 text-center shadow-lg">
               <h2 className="text-xl font-semibold text-yellow-100 mb-2">
@@ -828,6 +895,14 @@ export function AppLayout({ children }: AppLayoutProps) {
                 <br />
                 תקבל הודעת דוא״ל ברגע שהחשבון יאושר ותוכל להתחבר למערכת המלאה.
               </p>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void signOut()}
+                className="border border-yellow-400/40 bg-yellow-500/10 text-yellow-50 hover:bg-yellow-500/20"
+              >
+                התנתקות
+              </Button>
             </div>
           </div>
         ) : profile?.status === 'suspended' ? (

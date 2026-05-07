@@ -121,53 +121,67 @@ export function useTenantFleetAdminsForPlatformSwitcher() {
   const enabled = isPlatformSuperOwnerEmail(sessionEmail) && Boolean(user?.id);
 
   return useQuery({
-    queryKey: ['tenant-fleet-admins-platform-switcher', user?.id],
+    queryKey: ['tenant-fleet-admins-platform-switcher', user?.id, 'v3-from-profiles'],
     enabled,
     staleTime: 60_000,
     queryFn: async (): Promise<TenantFleetAdminOption[]> => {
-      const { data: roleRows, error: roleErr } = await supabase
-        .from('user_roles')
-        .select('user_id, role')
-        .in('role', ['admin', 'fleet_manager']);
-      if (roleErr) {
-        console.warn('[useTenantFleetAdminsForPlatformSwitcher] user_roles failed', roleErr.message);
+      /**
+       * שאיבת מקור-אמת ישירה מ-profiles: מנהלים מזוהים לפי is_system_admin
+       * או הרשאות (manage_team / admin_access). מסתמך על RLS שכבר מאפשרת
+       * למנהל הפלטפורמה לקרוא את כל ה-profiles. אם ל-org יש כמה אדמינים,
+       * אנחנו בוחרים את הראשון לפי סדר א״ב כברירת מחדל.
+       */
+      /** ב-DB של הלקוח אין עמודת `user_id` בטבלת profiles — `profiles.id` זה
+       *  ה-auth.uid() ישירות. כל בקשה שכוללת user_id חוזרת 400. */
+      const { data: profs, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, email, org_id, status, permissions, is_system_admin');
+      if (error) {
+        console.warn('[useTenantFleetAdminsForPlatformSwitcher] profiles failed', error.message);
         return [];
       }
-      const ids = [
-        ...new Set(
-          (roleRows ?? [])
-            .map((r: { user_id?: string }) => String(r.user_id ?? '').trim())
-            .filter((id) => id.length > 0),
-        ),
-      ];
-      if (ids.length === 0) return [];
 
-      const { data: profs, error: profErr } = await supabase
-        .from('profiles')
-        .select('id, full_name, email, org_id, status')
-        .in('id', ids);
-      if (profErr) {
-        console.warn('[useTenantFleetAdminsForPlatformSwitcher] profiles failed', profErr.message);
-        return [];
+      type Row = {
+        id: string;
+        full_name: string | null;
+        email: string | null;
+        org_id: string | null;
+        status?: string | null;
+        permissions?: Record<string, unknown> | null;
+        is_system_admin?: boolean | null;
+      };
+
+      const candidatesByOrg = new Map<string, Row[]>();
+      for (const p of (profs ?? []) as Row[]) {
+        const oid = String(p.org_id ?? '').trim();
+        if (!oid) continue;
+        if (isPlatformSuperOwnerEmail(p.email)) continue;
+        if (String(p.status ?? '').trim().toLowerCase() === 'pending_approval') continue;
+
+        const perms = (p.permissions ?? {}) as Record<string, boolean>;
+        const isAdminLike =
+          p.is_system_admin === true ||
+          perms.manage_team === true ||
+          perms.admin_access === true;
+        if (!isAdminLike) continue;
+
+        const list = candidatesByOrg.get(oid) ?? [];
+        list.push(p);
+        candidatesByOrg.set(oid, list);
       }
 
       const out: TenantFleetAdminOption[] = [];
-      for (const p of profs ?? []) {
-        const row = p as {
-          id: string;
-          full_name: string | null;
-          email: string | null;
-          org_id: string | null;
-          status?: string | null;
-        };
-        if (isPlatformSuperOwnerEmail(row.email)) continue;
-        if (String(row.status ?? '').trim().toLowerCase() === 'pending_approval') continue;
-        const oid = String(row.org_id ?? '').trim();
-        if (!oid) continue;
+      for (const [oid, list] of candidatesByOrg.entries()) {
+        list.sort((a, b) => {
+          const la = (a.full_name || a.email || a.id).toLowerCase();
+          const lb = (b.full_name || b.email || b.id).toLowerCase();
+          return la.localeCompare(lb, 'he');
+        });
+        const top = list[0];
         out.push({
-          id: row.id,
-          full_name: row.full_name ?? null,
-          email: row.email ?? null,
+          id: top.id,
+          full_name: top.full_name ?? null,
+          email: top.email ?? null,
           org_id: oid,
         });
       }
@@ -248,11 +262,14 @@ export function useCreateInvitation() {
       email,
       permissions,
       invitedBy,
+      createsNewOrg = false,
     }: {
       orgId: string;
       email: string;
       permissions: ProfilePermissions;
       invitedBy: string | null;
+      /** True when the platform super admin invites a new tenant admin (own org). */
+      createsNewOrg?: boolean;
     }): Promise<CreateInvitationResult> => {
       const { data, error } = await (supabase as any)
         .from('org_invitations')
@@ -261,6 +278,7 @@ export function useCreateInvitation() {
           email: email.trim().toLowerCase(),
           permissions: { ...permissions, report_mileage: true },
           invited_by: invitedBy,
+          creates_new_org: createsNewOrg,
         })
         .select('id, email, org_id')
         .single();
@@ -386,6 +404,75 @@ export function useRemoveTeamMemberFromOrg() {
   });
 }
 
+/**
+ * מחיקה קבועה ובלתי הפיכה של חבר צוות מכל המערכת — דורש סיסמת המנהל המבצע.
+ * Edge Function `delete-team-member-permanent` מבצע re-auth ומפעיל
+ * `auth.admin.deleteUser` יחד עם ניקוי profiles / org_members / user_roles.
+ * החזרה למערכת לאחר מחיקה — באמצעות הרשמה מחדש בלבד.
+ */
+export function useDeleteTeamMemberPermanent() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      orgId,
+      memberUserId,
+      password,
+    }: {
+      orgId: string;
+      memberUserId: string;
+      password: string;
+    }) => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error('נדרשת התחברות מחדש');
+
+      const { data, error } = await supabase.functions.invoke('delete-team-member-permanent', {
+        body: {
+          org_id: orgId,
+          member_user_id: memberUserId,
+          password,
+        },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      /** ב-supabase-js, גם 4xx וגם רגרסיות חוזרות כ-FunctionsHttpError עם
+       *  `context: Response`. הגוף שלנו מחזיק `{ error }` בעברית — נחלץ אותו
+       *  כדי שהטוסט יציג את הסיבה האמיתית במקום ההודעה הגנרית. */
+      if (error) {
+        const ctx = (error as unknown as { context?: Response }).context;
+        if (ctx && typeof (ctx as Response).json === 'function') {
+          try {
+            const body = (await (ctx as Response).json()) as { error?: string };
+            const m = String(body?.error ?? '').trim();
+            if (m) throw new Error(m);
+          } catch {
+            /* lint: parsing failure → ניפול ל-throw error */
+          }
+        }
+        throw error;
+      }
+      const errMsg = (data as { error?: string } | null)?.error;
+      if (errMsg && String(errMsg).trim()) {
+        throw new Error(String(errMsg));
+      }
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: TEAM_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ORG_INVITATIONS_QUERY_KEY });
+      if (variables.orgId) {
+        queryClient.invalidateQueries({ queryKey: ['organization', variables.orgId] });
+      }
+      toast({ title: 'המשתמש נמחק לחלוטין מהמערכת' });
+    },
+    onError: (err: Error) => {
+      toast({ title: 'מחיקה נכשלה', description: err.message, variant: 'destructive' });
+    },
+  });
+}
+
 export function useApproveMember() {
   const queryClient = useQueryClient();
 
@@ -408,6 +495,7 @@ export function useApproveMember() {
         .from('profiles')
         .update({
           status: 'active',
+          is_approved: true,
           permissions: nextPerms,
           updated_at: new Date().toISOString(),
         })

@@ -619,9 +619,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (userId) {
         const now = new Date().toISOString();
+        /**
+         * Unified invitation flow:
+         *   • Look up the most recent open invitation for this email.
+         *   • If found, link the new profile to the invitation's org_id + role
+         *     (pre-allocated by `resolveOrgIdForTeamInvite`, which already creates
+         *     a brand-new org for platform-admin invites).
+         *   • Whether invited or self-signup, the profile starts with
+         *     `is_approved = false` + `status = 'pending_approval'`. The responsible
+         *     admin (platform owner for new tenant admins, regular admin for team
+         *     members) approves later via `useApproveMember`.
+         */
         const { data: inviteRows } = await (supabase as any)
           .from('org_invitations')
-          .select('id, org_id, permissions, role')
+          .select('id, org_id, permissions, role, creates_new_org')
           .ilike('email', userEmail)
           .order('created_at', { ascending: false })
           .limit(1);
@@ -631,17 +642,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               org_id?: string | null;
               permissions?: unknown;
               role?: string | null;
+              creates_new_org?: boolean | null;
             }
           | null;
         const inviteOrgId = String(inv?.org_id ?? '').trim() || null;
         const inviteRole = String(inv?.role ?? '').trim().toLowerCase();
         const resolvedRole = inviteRole === 'admin' ? 'admin' : 'driver';
+        const createsNewOrg = inv?.creates_new_org === true;
 
         const profilePayload: Record<string, unknown> = {
           id: userId,
           full_name: fullName,
           email: userEmail,
-          status: inviteOrgId ? 'active' : 'pending_approval',
+          /** Approval gate — every new account waits for admin approval. */
+          status: 'pending_approval',
+          is_approved: false,
           created_at: now,
           updated_at: now,
           ...(inviteOrgId ? { org_id: inviteOrgId, role: resolvedRole } : {}),
@@ -677,6 +692,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
           await (supabase as any).from('user_roles').delete().eq('user_id', userId);
           await (supabase as any).from('user_roles').insert({ user_id: userId, role: resolvedRole });
+
+          if (createsNewOrg) {
+            console.info('[signUp] linked profile to freshly-allocated tenant org', {
+              org_id: inviteOrgId,
+              user_id: userId,
+            });
+          }
         }
       }
 

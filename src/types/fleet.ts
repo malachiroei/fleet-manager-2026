@@ -32,6 +32,8 @@ export interface Profile {
   status: string;
   /** Server-side system admin flag (from DB). */
   is_system_admin?: boolean | null;
+  /** Approval gate (from DB). Falsy ⇒ user is blocked from the dashboard until an admin approves. */
+  is_approved?: boolean | null;
   created_at: string;
   updated_at: string;
   /** דו״ח heartbeat מהלקוח (גרסת בנדל) */
