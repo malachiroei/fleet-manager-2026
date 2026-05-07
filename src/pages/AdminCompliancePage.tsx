@@ -26,6 +26,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useAuth } from '@/hooks/useAuth';
+import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
 import { useVehicles } from '@/hooks/useVehicles';
 import { supabase } from '@/integrations/supabase/client';
 import { invokeSupabaseEdgeFunction } from '@/lib/supabase/invokeEdgeFunction';
@@ -1072,9 +1073,11 @@ function ComplianceTable<T extends Record<string, unknown>>({
 
 export default function AdminCompliancePage() {
   const { isAdmin, activeOrgId, profile, user, hasPermission } = useAuth();
+  const { effectiveOrgId } = useImpersonationFleetScope();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const orgId = activeOrgId ?? profile?.org_id ?? null;
+  /** מקור אמת לסקופ צי (כולל נעילה לצוות + view-as). */
+  const orgId = effectiveOrgId ?? activeOrgId ?? profile?.org_id ?? null;
 
   const canAccessAdminComplianceCenter = Boolean(
     hasPermission('compliance') ||
