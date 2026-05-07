@@ -1188,6 +1188,10 @@ export default function AdminCompliancePage() {
     external_recipient_email: string | null;
     request_url: string | null;
   };
+  /** שורות מהשרת שגוף ה-404/409 מזהה במזהה — RPC מעקף RLS כשנדרש */
+  const [injectedVehiclePendingRenewals, setInjectedVehiclePendingRenewals] = useState<
+    PendingVehicleRenewalRow[]
+  >([]);
   const {
     data: pendingVehicleRenewalsRaw = [],
     refetch: refetchPendingVehicleRenewals,
@@ -1214,9 +1218,26 @@ export default function AdminCompliancePage() {
     refetchInterval: 5000,
   });
 
+  useEffect(() => {
+    const rawIds = new Set(pendingVehicleRenewalsRaw.map((r) => String(r.id)));
+    setInjectedVehiclePendingRenewals((prev) =>
+      prev.filter((r) => !rawIds.has(String(r.id))),
+    );
+  }, [pendingVehicleRenewalsRaw]);
+
+  const pendingVehicleRenewalsMerged = useMemo(() => {
+    const byId = new Map<string, PendingVehicleRenewalRow>();
+    for (const r of pendingVehicleRenewalsRaw) byId.set(String(r.id), r);
+    for (const r of injectedVehiclePendingRenewals) {
+      const id = String(r.id);
+      if (!byId.has(id)) byId.set(id, r);
+    }
+    return [...byId.values()];
+  }, [pendingVehicleRenewalsRaw, injectedVehiclePendingRenewals]);
+
   const pendingRenewalByVehicleTask = useMemo(() => {
     const m = new Map<string, { requestId: string; previewUrl: string; proposedExpiry: string }>();
-    for (const r of pendingVehicleRenewalsRaw) {
+    for (const r of pendingVehicleRenewalsMerged) {
       const vid = String(r.entity_id ?? '').trim();
       const tk = String(r.task_key ?? '').trim();
       if (!vid || !tk) continue;
@@ -1227,15 +1248,15 @@ export default function AdminCompliancePage() {
       });
     }
     return m;
-  }, [pendingVehicleRenewalsRaw]);
+  }, [pendingVehicleRenewalsMerged]);
 
   const pendingRenewalsDialogRows = useMemo(() => {
     const plateById = new Map(vehicles.map((v) => [String(v.id), String(v.plate_number ?? '')]));
-    return pendingVehicleRenewalsRaw.map((r) => ({
+    return pendingVehicleRenewalsMerged.map((r) => ({
       ...r,
       plate: plateById.get(String(r.entity_id ?? '').trim()) ?? '—',
     }));
-  }, [pendingVehicleRenewalsRaw, vehicles]);
+  }, [pendingVehicleRenewalsMerged, vehicles]);
 
   /** תואם תג «ממתין לאישור מנהל» בטבלאות נהגים — לא רק הגשות טסט/ביטוח מליסינג */
   const driversPendingManagerApproval = useMemo(
@@ -1244,7 +1265,7 @@ export default function AdminCompliancePage() {
   );
 
   const pendingManagerApprovalTotal =
-    pendingVehicleRenewalsRaw.length + driversPendingManagerApproval.length;
+    pendingVehicleRenewalsMerged.length + driversPendingManagerApproval.length;
 
   /** מוצג מיד אחרי «שלח בקשה» עד שהשרת מחזיר שורה ב־compliance_requests (מונע תחושה ש«כלום לא קרה») */
   const [optimisticCompliancePending, setOptimisticCompliancePending] = useState<
@@ -2061,12 +2082,52 @@ export default function AdminCompliancePage() {
           await queryClient.invalidateQueries({ queryKey: ['admin-pending-vehicle-renewals', orgId] });
           await queryClient.refetchQueries({ queryKey: ['admin-pending-vehicle-renewals', orgId] });
           void refetchPendingVehicleRenewals();
+
+          let loadedFromRpc = false;
+          try {
+            const { data: rpcRows, error: rpcErr } = await supabase.rpc(
+              'compliance_pending_vehicle_renewal_for_viewer',
+              { p_request_id: existing_request_id },
+            );
+            if (!rpcErr && rpcRows != null) {
+              const arr = Array.isArray(rpcRows) ? rpcRows : [rpcRows];
+              const raw = arr[0] as Record<string, unknown> | undefined;
+              if (raw && typeof raw.id === 'string' && raw.id.trim()) {
+                const loaded: PendingVehicleRenewalRow = {
+                  id: String(raw.id).trim(),
+                  entity_id: String(raw.entity_id ?? '').trim(),
+                  task_key: String(raw.task_key ?? '').trim(),
+                  task_label: raw.task_label != null ? String(raw.task_label) : null,
+                  proposed_expiry_date:
+                    raw.proposed_expiry_date != null
+                      ? String(raw.proposed_expiry_date).slice(0, 10)
+                      : null,
+                  submitted_document_url:
+                    raw.submitted_document_url != null ? String(raw.submitted_document_url) : null,
+                  external_recipient_email:
+                    raw.external_recipient_email != null ? String(raw.external_recipient_email) : null,
+                  request_url: raw.request_url != null ? String(raw.request_url) : null,
+                };
+                setInjectedVehiclePendingRenewals((prev) =>
+                  prev.some((p) => p.id === loaded.id) ? prev : [...prev, loaded],
+                );
+                loadedFromRpc = true;
+              }
+            } else if (rpcErr) {
+              console.warn('[AdminCompliance] RPC compliance_pending_vehicle_renewal_for_viewer', rpcErr);
+            }
+          } catch (e) {
+            console.warn('[AdminCompliance] RPC compliance_pending_vehicle_renewal_for_viewer failed', e);
+          }
+
           setLeasingOpen(false);
           setLeasingContext(null);
           setLeasingEmail('');
           setLeasingApprovalsOpen(true);
           toast.message(detailed, {
-            description: 'נפתח חלון «ממתין לאישור מנהל» עם ההגשה הקיימת.',
+            description: loadedFromRpc
+              ? 'ההגשה הוצגה ברשימת «ממתין לאישור מנהל».'
+              : 'נפתח החלון — אם הרשימה עדיין ריקה, הרץ מיגרציה (RPC) או בדוק ארגון והרשאות.',
           });
           return;
         }
