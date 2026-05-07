@@ -53,6 +53,10 @@ export function useTeamMembers(orgId: string | null | undefined, options?: UseTe
   return useQuery({
     queryKey: [...TEAM_QUERY_KEY, loadAllOrgs ? 'all-orgs' : 'org', orgId ?? 'none', 'scope-org'],
     enabled,
+    /** רענון אוטומטי כל 20 שניות — כדי שהמנהל יראה משתמשים שזה עתה
+     *  השלימו רישום בעקבות הזמנה, גם בלי ריענון ידני. */
+    refetchInterval: 20_000,
+    refetchOnWindowFocus: true,
     queryFn: async (): Promise<Profile[]> => {
       let q = supabase.from('profiles').select('*').order('full_name', { ascending: true });
 
@@ -95,6 +99,10 @@ export function useOrgInvitations(_orgId: string | null | undefined) {
   return useQuery({
     queryKey: [...ORG_INVITATIONS_QUERY_KEY, _orgId ?? 'none'],
     enabled: Boolean(profile) && Boolean(_orgId),
+    /** רענון תקופתי — שורת "הזמנות פתוחות" משקפת את המצב כשמוזמן השלים רישום
+     *  (אז ההזמנה נמחקת ב-signUp) בלי שצריך לרענן ידנית. */
+    refetchInterval: 20_000,
+    refetchOnWindowFocus: true,
     queryFn: async (): Promise<OrgInvitation[]> => {
       if (!_orgId) return [];
       const { data, error } = await (supabase as any).from('org_invitations').select('*').eq('org_id', _orgId);
@@ -530,6 +538,50 @@ export function useApproveMember() {
     },
     onError: (err: Error) => {
       toast({ title: 'שגיאה באישור משתמש', description: err.message, variant: 'destructive' });
+    },
+  });
+}
+
+/**
+ * עדכון הרשאות בסיס של חבר צוות (`profiles.permissions`). אדמין יכול לשנות אחרי
+ * שהמשתמש כבר רשום באפליקציה — כדי לפתוח/לסגור פיצ'רים שהוגדרו בהזמנה.
+ */
+export function useUpdateMemberPermissions() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      profileId,
+      permissions,
+    }: {
+      profileId: string;
+      permissions: Record<string, boolean>;
+    }) => {
+      const { data, error } = await (supabase as any)
+        .from('profiles')
+        .update({
+          permissions,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', profileId)
+        .select('id, permissions, org_id')
+        .maybeSingle();
+      if (error) throw error;
+      return data as { id: string; permissions: Record<string, boolean>; org_id: string | null };
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: TEAM_QUERY_KEY });
+      if (data?.org_id) {
+        queryClient.invalidateQueries({ queryKey: ['organization', data.org_id] });
+      }
+      toast({ title: 'ההרשאות עודכנו' });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: 'עדכון הרשאות נכשל',
+        description: err.message,
+        variant: 'destructive',
+      });
     },
   });
 }

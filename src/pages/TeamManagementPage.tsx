@@ -28,6 +28,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { SimpleInviteModal } from '@/components/SimpleInviteModal';
 import { UserFeatureFlagsOverridesDialog } from '@/components/UserFeatureFlagsOverridesDialog';
+import { EditMemberPermissionsDialog } from '@/components/EditMemberPermissionsDialog';
 import { GlobalFeatureFlagsAdminPanel } from '@/components/GlobalFeatureFlagsAdminPanel';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import {
@@ -51,6 +52,7 @@ import {
   ChevronDown,
   ChevronLeft,
   Flag,
+  KeyRound,
   Loader2,
   Lock,
   Mail,
@@ -234,6 +236,8 @@ export default function TeamManagementPage() {
   /** Explicit boolean — avoids undefined / HMR glitches on PRO. */
   const [featureOverridesDialogOpen, setFeatureOverridesDialogOpen] = useState(false);
   const [featureOverridesMember, setFeatureOverridesMember] = useState<Profile | null>(null);
+  /** עריכת הרשאות בסיס של חבר צוות (`profiles.permissions`). */
+  const [permissionsMember, setPermissionsMember] = useState<Profile | null>(null);
   const approveMember = useApproveMember();
   const removeTeamMember = useRemoveTeamMemberFromOrg();
   const deleteTeamMember = useDeleteTeamMemberPermanent();
@@ -437,22 +441,39 @@ export default function TeamManagementPage() {
                             </TableCell>
                             <TableCell className="w-[260px] text-xs align-middle">
                               <p className="text-muted-foreground leading-snug mb-2 max-w-[360px]">
-                                Overrides לפיצ׳רים גלובליים (למשתמש זה בלבד).
+                                הרשאות-בסיס + Overrides לפיצ׳רים גלובליים.
                               </p>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-8 text-[12px]"
-                                disabled={!canOpenFeatureOverrides}
-                                onClick={() => {
-                                  if (!canOpenFeatureOverrides) return;
-                                  setFeatureOverridesMember(m);
-                                  setFeatureOverridesDialogOpen(true);
-                                }}
-                              >
-                                ניהול פיצ'רים
-                              </Button>
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 gap-1 text-[12px]"
+                                  disabled={!canOpenFeatureOverrides}
+                                  onClick={() => {
+                                    if (!canOpenFeatureOverrides) return;
+                                    setPermissionsMember(m);
+                                  }}
+                                  title="עריכת הרשאות-בסיס למשתמש (פותח/סוגר פיצ'רים שלמים)"
+                                >
+                                  <KeyRound className="h-3.5 w-3.5" />
+                                  ערוך הרשאות
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 text-[12px]"
+                                  disabled={!canOpenFeatureOverrides}
+                                  onClick={() => {
+                                    if (!canOpenFeatureOverrides) return;
+                                    setFeatureOverridesMember(m);
+                                    setFeatureOverridesDialogOpen(true);
+                                  }}
+                                >
+                                  ניהול פיצ'רים
+                                </Button>
+                              </div>
                             </TableCell>
                             <TableCell className="w-[140px] text-center text-xs align-middle">
                               {m?.status === 'suspended' ? (
@@ -611,6 +632,14 @@ export default function TeamManagementPage() {
         fleetOrgScopeId={
           isSuperAdminTeamView ? (featureOverridesMember?.org_id ?? null) : orgId
         }
+      />
+
+      <EditMemberPermissionsDialog
+        open={permissionsMember != null}
+        onOpenChange={(o) => {
+          if (!o) setPermissionsMember(null);
+        }}
+        member={permissionsMember}
       />
 
       <AlertDialog
