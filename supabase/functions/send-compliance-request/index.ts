@@ -267,6 +267,16 @@ serve(async (req) => {
       return json({ error: 'Driver has no valid email' }, 400);
     }
 
+    const { count: priorRowsCount, error: seqCountErr } = await admin
+      .from('compliance_requests')
+      .select('id', { count: 'exact', head: true })
+      .eq('org_id', orgId)
+      .eq('entity_type', entityType)
+      .eq('entity_id', entityId)
+      .eq('task_key', taskKey);
+    if (seqCountErr) return json({ error: seqCountErr.message }, 500);
+    const notifySequence = (priorRowsCount ?? 0) + 1;
+
     /** מונע מצב שבו נשארות שתי בקשות sent/opened לאותו נהג+משימה — חתימה סוגרת רק אחת והמגדל נשאר «ממתין» */
     await admin
       .from('compliance_requests')
@@ -303,6 +313,7 @@ serve(async (req) => {
         metadata: {
           tab_label: tabLabel,
           cta_text: ctaText,
+          notify_sequence: notifySequence,
           ...(adminNote ? { admin_note: adminNote } : {}),
         },
       })
@@ -382,6 +393,7 @@ serve(async (req) => {
       email_id: emailId || null,
       sent_to: driverEmail,
       persisted_token: persistedToken,
+      ...(insertedId ? { notify_sequence: notifySequence } : {}),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

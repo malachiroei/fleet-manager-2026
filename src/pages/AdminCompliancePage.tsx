@@ -121,6 +121,20 @@ const REQUEST_CTA_BY_TAB: Record<ComplianceTabKey, string> = {
   regulation_585: 'Regulation 585 documentation is due. Please click and upload the required update.',
 };
 
+/** טאבי מייל/מערכת עם תצוגת מטא מלאה (תאריך, מונה); הצהרת בריאות — מסלול חתימה נפרד */
+const COMPLIANCE_RICH_SENT_TAB_KEYS = new Set<ComplianceTabKey>([
+  'annual_licensing',
+  'insurance',
+  'driver_license',
+  'periodic_inspection',
+  'maintenance',
+  'regulation_585',
+]);
+
+function isComplianceRichSentTab(tabKey: ComplianceTabKey): boolean {
+  return COMPLIANCE_RICH_SENT_TAB_KEYS.has(tabKey);
+}
+
 function availableKeysFromRows(rows: Array<Record<string, unknown>>): Set<string> {
   const out = new Set<string>();
   for (const r of rows) {
@@ -908,19 +922,21 @@ function ComplianceTable<T extends Record<string, unknown>>({
                       const showSentBadge =
                         Boolean(sentMeta?.sentAt) && !(tabKey === 'health_declaration' && awaitingEmp);
                       if (showSentBadge) {
-                        const isLeasingVehicleTab =
-                          tabKey === 'annual_licensing' || tabKey === 'insurance';
                         const st = String(sentMeta?.status ?? 'sent');
                         const sa = String(sentMeta?.sentAt ?? '').trim();
                         const seq = sentMeta?.notifySequence;
-                        if (isLeasingVehicleTab && sa) {
+                        const isLeaseTab = tabKey === 'annual_licensing' || tabKey === 'insurance';
+                        if (isComplianceRichSentTab(tabKey) && sa) {
                           const isPendingReview = st === 'pending_admin_review';
-                          const title =
-                            isPendingReview
-                              ? 'הוגש מסמך — ממתין לאישור מנהל'
-                              : st === 'opened'
+                          const title = isPendingReview
+                            ? 'הוגש מסמך — ממתין לאישור מנהל'
+                            : st === 'opened'
+                              ? isLeaseTab
                                 ? 'הקישור לנציג נפתח'
-                                : 'ממתין לתגובת נציג';
+                                : 'הקישור לנהג נפתח'
+                              : isLeaseTab
+                                ? 'ממתין לתגובת נציג'
+                                : 'ממתין לתגובת הנהג';
                           const badgeClass = isPendingReview
                             ? 'inline-flex items-center rounded-full border border-amber-300/40 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200'
                             : 'inline-flex items-center rounded-full border border-sky-400/40 bg-sky-500/15 px-2 py-0.5 text-xs font-semibold text-sky-200';
@@ -934,7 +950,7 @@ function ComplianceTable<T extends Record<string, unknown>>({
                               ) : null}
                               <span className="text-[10px] leading-snug text-muted-foreground tabular-nums">
                                 {isPendingReview
-                                  ? `נשלח לנציג: ${formatComplianceSentAt(sa)}`
+                                  ? `${isLeaseTab ? 'נשלח לנציג' : 'נשלח לנהג'}: ${formatComplianceSentAt(sa)}`
                                   : `נשלח: ${formatComplianceSentAt(sa)}`}
                               </span>
                             </div>
@@ -1343,7 +1359,7 @@ export default function AdminCompliancePage() {
 
   /** מוצג מיד אחרי «שלח בקשה» עד שהשרת מחזיר שורה ב־compliance_requests (מונע תחושה ש«כלום לא קרה») */
   const [optimisticCompliancePending, setOptimisticCompliancePending] = useState<
-    Record<string, { sentAt: string }>
+    Record<string, { sentAt: string; notifySequence?: number }>
   >({});
   const [optimisticVehicleCompliancePending, setOptimisticVehicleCompliancePending] = useState<
     Record<string, { sentAt: string; notifySequence?: number }>
@@ -1464,12 +1480,19 @@ export default function AdminCompliancePage() {
         push(`${eid}::${t}`, r);
         continue;
       }
+      /** רישיון נהיגה וכו' — השורה בטבלה היא לפי entity_id (נהג); לא הסתמכות בלבד על driver_id שניתן שיימש עם null במסד ישן */
+      if (et === 'driver' && eid) {
+        push(`${eid}::${t}`, r);
+        continue;
+      }
       const d = String(r.driver_id ?? '').trim();
       if (d) push(`${d}::${t}`, r);
     }
     for (const [k, v] of Object.entries(optimisticCompliancePending)) {
       if (!m.has(k) && v?.sentAt) {
-        m.set(k, { sentAt: v.sentAt, status: 'sent' });
+        const entry: SentMeta = { sentAt: v.sentAt, status: 'sent' };
+        if (v.notifySequence != null) entry.notifySequence = v.notifySequence;
+        m.set(k, entry);
       }
     }
     for (const [k, v] of Object.entries(optimisticVehicleCompliancePending)) {
@@ -1942,10 +1965,20 @@ export default function AdminCompliancePage() {
       /** רק אם השרת מחזיר במפורש false — אין שמירת בקשה במסד */
       const persistedExplicitFalse = payload?.persisted_token === false;
       const pendingKey = `${driverId}::${tab.key}`;
+      const rawSeq = payload?.notify_sequence;
+      const notifySeq =
+        typeof rawSeq === 'number'
+          ? rawSeq
+          : typeof rawSeq === 'string' && rawSeq.trim()
+            ? Number(rawSeq)
+            : NaN;
       if (!persistedExplicitFalse) {
         setOptimisticCompliancePending((prev) => ({
           ...prev,
-          [pendingKey]: { sentAt: new Date().toISOString() },
+          [pendingKey]: {
+            sentAt: new Date().toISOString(),
+            ...(Number.isFinite(notifySeq) && notifySeq > 0 ? { notifySequence: notifySeq } : {}),
+          },
         }));
       }
       if (persistedExplicitFalse) {
