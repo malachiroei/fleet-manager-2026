@@ -126,7 +126,15 @@ function AuthRoute({ children }: { children: ReactNode }) {
     );
   }
 
-  if (user) {
+  /**
+   * נחיתה מהזמנה: ?org_id=... — אסור לקפוץ ל-`/`, אחרת המוזמן רואה את האפליקציה
+   * עם סשן ישן/של מזמין באותו דפדפן. AuthPage עצמו מוודא Sign-out לכל סשן קיים.
+   */
+  const search =
+    typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const isInviteLanding = Boolean((search?.get('org_id') ?? '').trim());
+
+  if (user && !isInviteLanding) {
     return <Navigate to="/" replace />;
   }
 

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -20,8 +20,31 @@ export default function AuthPage() {
   const [forgotPassword, setForgotPassword] = useState(false);
   const [forgotPasswordSent, setForgotPasswordSent] = useState(false);
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  /** נחיתה מהזמנה: ?org_id=... + email + signup=1 — מאלץ לשונית הרשמה ומסיר סשן קודם. */
+  const inviteOrgId = useMemo(
+    () => (searchParams.get('org_id') ?? '').trim(),
+    [searchParams],
+  );
+  const inviteEmail = useMemo(
+    () => (searchParams.get('email') ?? '').trim().toLowerCase(),
+    [searchParams],
+  );
+  const isInviteLanding = Boolean(inviteOrgId);
+  const defaultTab = isInviteLanding || searchParams.get('signup') === '1' ? 'signup' : 'login';
+
+  /**
+   * אם נחיתה מהזמנה ויש סשן ישן (שוב, מסיבה כלשהי) — מתנתקים מיידית כדי שהמוזמן
+   * יראה את טופס ההרשמה ולא יזרוק אותו ל-`/` עם פרופיל זר/חסר.
+   */
+  useEffect(() => {
+    if (!isInviteLanding) return;
+    if (!user) return;
+    void supabase.auth.signOut();
+  }, [isInviteLanding, user]);
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -91,6 +114,13 @@ export default function AuthPage() {
           variant: 'destructive'
         });
       }
+    } else if (isInviteLanding) {
+      /** הרשמה מהזמנה: מצפים לאישור מנהל לפני גישה ל-app — `AppLayout` יציג מסך מתאים. */
+      toast({
+        title: 'ההרשמה הצליחה',
+        description: 'החשבון ממתין לאישור מנהל. תקבל גישה למערכת מיד עם האישור.',
+      });
+      navigate('/', { replace: true });
     } else {
       toast({
         title: 'ההרשמה הצליחה!',
@@ -149,7 +179,13 @@ export default function AuthPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="text-white">
-          <Tabs defaultValue="login" className="w-full">
+          {isInviteLanding ? (
+            <div className="mb-4 rounded-lg border border-cyan-400/30 bg-cyan-500/10 px-3 py-2 text-center text-[13px] leading-snug text-cyan-100">
+              קיבלת הזמנה להצטרף ל-Fleet Manager Pro. בצע הרשמה עם הסיסמה שתבחר —
+              לאחר אישור המנהל תקבל גישה למערכת.
+            </div>
+          ) : null}
+          <Tabs defaultValue={defaultTab} className="w-full">
             <TabsList className="grid w-full grid-cols-2 bg-white/10 p-1 text-white/70">
               <TabsTrigger
                 value="login"
@@ -276,12 +312,15 @@ export default function AuthPage() {
                   </Label>
                   <Input
                     id="signup-email"
-                    className="border-white/15 bg-white/5 text-white placeholder:text-white/40" 
-                    name="email" 
-                    type="email" 
+                    className="border-white/15 bg-white/5 text-white placeholder:text-white/40"
+                    name="email"
+                    type="email"
                     placeholder="your@email.com"
                     required
                     dir="ltr"
+                    /** הזמנה ⇒ מילוי-מראש של המייל (קריאה בלבד; מונע טעות בכתובת). */
+                    defaultValue={inviteEmail || undefined}
+                    readOnly={Boolean(inviteEmail)}
                   />
                 </div>
                 <div className="space-y-2">

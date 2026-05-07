@@ -150,7 +150,16 @@ serve(async (req) => {
     const appUrl = APP_URL_DEFAULT.replace(/\/$/, '');
     const forceProductionInvite = shouldForceProductionInvite(appOrigin);
     const inviteBaseUrl = forceProductionInvite ? APP_URL_DEFAULT : appUrl;
-    const inviteUrl = `${inviteBaseUrl}/auth?org_id=${encodeURIComponent(orgId)}`;
+    /**
+     * נחיתה ייעודית להזמנה: org_id מציין שמדובר בנחיתה מהזמנה (חוסם כניסה
+     * אוטומטית עם סשן ישן), email מאפשר מילוי-מראש בטופס ההרשמה, ו-signup=1
+     * פותח את לשונית ההרשמה כברירת מחדל.
+     */
+    const inviteUrl =
+      `${inviteBaseUrl}/auth` +
+      `?org_id=${encodeURIComponent(orgId)}` +
+      `&email=${encodeURIComponent(email)}` +
+      `&signup=1`;
 
     let organizationName = 'הארגון';
     const { data: orgRow } = await admin
