@@ -18,7 +18,7 @@ import { useOrganization } from '@/hooks/useOrganizations';
 import { useTenantFleetAdminsForPlatformSwitcher } from '@/hooks/useTeam';
 import { AIChatAssistant } from './AIChatAssistant';
 import { useTheme } from '@/hooks/useTheme';
-import { Sun, Moon, Building2, LogOut, Home, ArrowRight, ChevronDown, Settings, UserCog, Menu, Download, Smartphone, Eye } from 'lucide-react';
+import { Sun, Moon, Building2, LogOut, Home, ArrowRight, ChevronDown, Settings, UserCog, Menu, Download, Smartphone, Eye, ClipboardList } from 'lucide-react';
 import { setLanguageDirection } from '@/i18n/config';
 import { usePwaInstall } from '@/hooks/usePwaInstall';
 import { toast } from '@/hooks/use-toast';
@@ -267,6 +267,13 @@ export function AppLayout({ children }: AppLayoutProps) {
   /** Gold header buttons (Roei Admin + Ravid Manager). */
   const canAccessGoldenManagementLinks = !isDriverOnlyHeader && (canManageOrgUi || canManageTeamUi);
 
+  const canAccessAdminComplianceCenter = Boolean(
+    isAdmin ||
+      profile?.is_system_admin === true ||
+      isPlatformSuperOwnerEmail(resolveSessionEmail(profile, user)) ||
+      isFleetOrgAdminFallbackEmail(resolveSessionEmail(profile, user)),
+  );
+
   const mainFleetOrgId = useMemo(() => {
     const explicitMainFleet = memberOrganizations.find((o) => o.id === FALLBACK_MAIN_FLEET_ORG_ID);
     if (explicitMainFleet) return explicitMainFleet.id;
@@ -401,7 +408,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       </DropdownMenuTrigger>
       <DropdownMenuContent align={isRtl ? 'start' : 'end'} className="min-w-[220px] z-[10001]">
         <DropdownMenuLabel className="text-xs font-semibold">הגדרות</DropdownMenuLabel>
-        {isAdmin ? (
+        {canAccessAdminComplianceCenter ? (
           <>
             <DropdownMenuItem asChild className="cursor-pointer">
               <Link
