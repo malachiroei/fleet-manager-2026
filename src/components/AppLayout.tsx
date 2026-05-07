@@ -166,32 +166,58 @@ export function AppLayout({ children }: AppLayoutProps) {
     return false;
   }, []);
 
-  /** תווית להצגה — שם האדמין של אותו ארגון אם קיים, אחרת שם הארגון. */
+  /**
+   * תווית להצגה — שם האדמין של אותו ארגון אם קיים. עבור הארגון של המנהל
+   * המחובר — שם המנהל עצמו (full_name) במקום שם הארגון, כי `useTenantFleetAdminsForPlatformSwitcher`
+   * משמיט את המנהל המחובר מהמפה כדי לא להראות "מלכי" כאדמין על עצמו.
+   */
   const labelForOrg = useCallback(
     (org: { id: string; name?: string | null }): string => {
-      const fromAdmin = orgAdminLabelMap.get(String(org.id ?? ''));
+      const oid = String(org.id ?? '').trim();
+      const ownOrgId = String(profile?.org_id ?? '').trim();
+      if (oid && oid === ownOrgId) {
+        return (
+          (profile?.full_name ?? '').trim() ||
+          (org.name ?? '').trim() ||
+          'הצי שלי'
+        );
+      }
+      const fromAdmin = orgAdminLabelMap.get(oid);
       if (fromAdmin) return fromAdmin;
       return (org.name ?? '').trim() || 'ארגון';
     },
-    [orgAdminLabelMap],
+    [orgAdminLabelMap, profile?.full_name, profile?.org_id],
   );
 
   /**
    * רשימת ארגונים בסוויצ'ר:
-   * 1. מסיר "ארגון ראשי טסט" (שורה ישנה לבדיקה).
+   * 1. מסיר "ארגון ראשי טסט" — אבל לעולם לא מסיר את הארגון של המשתמש המחובר.
    * 2. עבור משתמש שאינו מנהל-העל — מסתיר גם את הצי הראשי הפנימי.
-   * 3. עבור מנהל הפלטפורמה — תמיד מציב את הארגון שלו ראשון, אחרים ממוינים
-   *    לפי שם האדמין שלהם (כפי שמופיע ב-profiles).
+   * 3. עבור מנהל הפלטפורמה — מציג רק ארגונים שיש להם אדמין מזוהה (או הארגון
+   *    שלו עצמו), כדי לא להציף שורות "צי X" יתומות שנוצרו אוטומטית בהזמנה.
+   * 4. הארגון של מנהל הפלטפורמה תמיד ראשון; אם אינו ב-memberOrganizations
+   *    (אין שורת org_members), נצרף אותו סינתטית.
    */
   const memberOrgsForSwitcher = useMemo(() => {
     const isSuper = isSuperAdminPermissionBypass(profile);
-    const filtered = memberOrganizations.filter((o) => {
-      if (isHiddenTestOrg(o)) return false;
+    const ownOrgId = String(profile?.org_id ?? '').trim();
+    const ownOrgName = (profile?.full_name ?? '').trim() || 'הצי שלי';
+
+    let filtered = memberOrganizations.filter((o) => {
+      const isOwn = ownOrgId && o.id === ownOrgId;
+      if (isHiddenTestOrg(o) && !isOwn) return false;
       if (!isSuper && o.id === FALLBACK_MAIN_FLEET_ORG_ID) return false;
+      if (isSuper) {
+        const hasAdmin = orgAdminLabelMap.has(String(o.id ?? ''));
+        if (!hasAdmin && !isOwn) return false;
+      }
       return true;
     });
 
-    const ownOrgId = String(profile?.org_id ?? '').trim();
+    if (isSuper && ownOrgId && !filtered.some((o) => o.id === ownOrgId)) {
+      const fromMember = memberOrganizations.find((o) => o.id === ownOrgId);
+      filtered = [fromMember ?? { id: ownOrgId, name: ownOrgName }, ...filtered];
+    }
 
     return [...filtered].sort((a, b) => {
       if (isSuper && ownOrgId) {
@@ -200,7 +226,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       }
       return labelForOrg(a).localeCompare(labelForOrg(b), 'he');
     });
-  }, [memberOrganizations, profile, isHiddenTestOrg, labelForOrg]);
+  }, [memberOrganizations, profile, isHiddenTestOrg, labelForOrg, orgAdminLabelMap]);
 
   /** קיר קשיח ייצור: fleet-manager-pro.com + www (גרסה בכותרת וכו') */
   const isProduction = isFleetManagerProHostname();
@@ -438,7 +464,9 @@ export function AppLayout({ children }: AppLayoutProps) {
     if (!activeOrgId) return 'בחירת ארגון';
     const org = memberOrganizations.find((o) => o.id === activeOrgId);
     if (org) return labelForOrg(org);
-    return (organization?.name ?? orgName) || 'ארגון';
+    /** הארגון של המנהל המחובר אינו תמיד ב-memberOrganizations; משתמשים ב-labelForOrg
+     *  עם רשומה סינתטית כדי לקבל את full_name של המנהל. */
+    return labelForOrg({ id: activeOrgId, name: organization?.name ?? orgName });
   }, [profile, user, activeOrgId, memberOrganizations, organization?.name, orgName, labelForOrg]);
 
   const OrgSwitcher = () => {

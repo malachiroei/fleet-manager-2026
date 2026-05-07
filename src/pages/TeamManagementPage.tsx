@@ -128,6 +128,13 @@ export default function TeamManagementPage() {
     return { admins, usersByManager, unassigned };
   }, [memberRows]);
 
+  /** מספר חברי צוות שממתינים לאישור (סטטוס pending_approval או is_approved=false). */
+  const pendingApprovalCount = useMemo(() => {
+    return memberRows.filter(
+      (m) => m?.status === 'pending_approval' || m?.is_approved === false,
+    ).length;
+  }, [memberRows]);
+
   /** רשימת השורות המוצגות בפועל — אדמינים, ותחת כל אחד שהורחב, המשתמשים שלו. */
   const visibleMemberRows = useMemo(() => {
     const out: Array<{ profile: Profile; depth: 0 | 1; managerId: string | null }> = [];
@@ -302,6 +309,15 @@ export default function TeamManagementPage() {
               <CardTitle className="flex items-center gap-2">
                 <Users className="h-5 w-5" />
                 חברי צוות
+                {pendingApprovalCount > 0 ? (
+                  <span
+                    className="ms-1 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900 ring-1 ring-amber-500/40"
+                    title="משתמשים שממתינים לאישור שלך"
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                    {pendingApprovalCount} ממתינים לאישור
+                  </span>
+                ) : null}
               </CardTitle>
               <CardDescription>
                 {listLoading
@@ -364,10 +380,13 @@ export default function TeamManagementPage() {
                           isRoeiAdmin ||
                           (memberEmail && memberEmail === viewerEmail) ||
                           (canManageTeam && !isSelf);
+                        /** ממתין-לאישור הוא גם פרופיל עם is_approved=false וגם הסטטוס המסורתי */
+                        const isAwaitingApproval =
+                          m?.status === 'pending_approval' || m?.is_approved === false;
                         const showRemoveForRow =
                           canRemoveTeamMemberRow &&
                           !isSelf &&
-                          m?.status !== 'pending_approval' &&
+                          !isAwaitingApproval &&
                           (Boolean(orgId) || Boolean(m.org_id));
                         return (
                           <TableRow
@@ -440,7 +459,7 @@ export default function TeamManagementPage() {
                                 <span className="inline-flex items-center justify-center rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-900">
                                   מושעה
                                 </span>
-                              ) : m?.status === 'pending_approval' ? (
+                              ) : isAwaitingApproval ? (
                                 <div className="flex flex-col items-center justify-center gap-2">
                                   <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
                                     ממתין לאישור
@@ -449,7 +468,7 @@ export default function TeamManagementPage() {
                                     <Button
                                       size="sm"
                                       variant="outline"
-                                      className="h-7 px-2 text-[11px]"
+                                      className="h-7 px-2 text-[11px] border-emerald-500/40 text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-300"
                                       disabled={approveMember.isPending}
                                       onClick={() =>
                                         approveMember.mutate({
