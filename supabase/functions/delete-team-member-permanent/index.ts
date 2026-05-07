@@ -1,11 +1,17 @@
 /**
- * מחיקה מלאה של משתמש מהמערכת — דורש את סיסמת המנהל המבצע (re-auth).
- * נכלל מחיקה מ-auth.users וגם ניקוי אקטיבי של profiles / org_members / user_roles
- * (גם אם FK המוגדר אינו cascade ב-DB של הלקוח). הפעולה בלתי הפיכה: כדי לחזור,
- * המשתמש יידרש לבצע הרשמה מחדש.
+ * מחיקה מלאה ובלתי הפיכה של חבר צוות (אופציונלית עם cascade על משתמשים שתחתיו).
+ *
+ * דרישות:
+ *   • re-auth של המנהל המבצע (סיסמה).
+ *   • אם המוחק הוא אדמין שיש תחתיו משתמשים (parent_admin_id / managed_by_user_id) —
+ *     המשתמשים האלה נמחקים אוטומטית כקסקייד, וקישורי FK ב-vehicles / drivers /
+ *     org_invitations / compliance_alerts מנוקים כדי ש-`auth.admin.deleteUser` לא
+ *     ייכשל בגלל constraint.
+ *   • שגיאות לקוח (סיסמה, הרשאה, פרמטרים) חוזרות 200 + `{error}` כדי שה-SDK לא
+ *     יעטוף אותן ב-FunctionsHttpError גנרי.
  */
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { callerMayManageOrgForTeamActions } from '../_shared/teamAdminActionPermission.ts';
 
 const corsHeaders = {
@@ -22,12 +28,145 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 /**
- * שגיאות ולידציה (סיסמה לא נכונה, חוסר הרשאה, פרמטרים חסרים) חוזרות ב-200
- * עם גוף `{ error }` כדי ש-supabase-js לא יעטוף אותן ב-FunctionsHttpError
- * גנרי (שלא נושא את ההודעה האמיתית). שגיאות שרת אמיתיות נשארות 5xx.
+ * שגיאות לקוח חוזרות ב-200 עם גוף `{ error }` — ה-SDK של Supabase
+ * עוטף 4xx ב-FunctionsHttpError גנרי שמסתיר את ההודעה האמיתית.
  */
 function clientErrorResponse(message: string): Response {
   return jsonResponse(200, { error: message });
+}
+
+/**
+ * הרצת DELETE מסונן בעמודה כלשהי. שגיאות "טבלה/עמודה לא קיימת" מתעלמים מהן בשקט,
+ * כי הסכמה משתנה בין סביבות לקוח.
+ */
+async function safeDelete(
+  admin: SupabaseClient,
+  table: string,
+  column: string,
+  values: string[],
+): Promise<void> {
+  if (values.length === 0) return;
+  try {
+    const { error } = await admin.from(table).delete().in(column, values);
+    if (error && !/does not exist|column .* does not exist/i.test(error.message)) {
+      console.warn(`[delete-team-member-permanent] safeDelete ${table}.${column}`, error.message);
+    }
+  } catch (e) {
+    console.warn(`[delete-team-member-permanent] safeDelete ${table}.${column} threw`, e);
+  }
+}
+
+/**
+ * עדכון עמודה ל-NULL כדי לשבור FK לפני מחיקת המשתמש. נופל בשקט אם
+ * עמודה/טבלה לא קיימים בסביבה הזו.
+ */
+async function safeNullify(
+  admin: SupabaseClient,
+  table: string,
+  column: string,
+  values: string[],
+): Promise<void> {
+  if (values.length === 0) return;
+  try {
+    const { error } = await admin
+      .from(table)
+      .update({ [column]: null })
+      .in(column, values);
+    if (error && !/does not exist|column .* does not exist/i.test(error.message)) {
+      console.warn(`[delete-team-member-permanent] safeNullify ${table}.${column}`, error.message);
+    }
+  } catch (e) {
+    console.warn(`[delete-team-member-permanent] safeNullify ${table}.${column} threw`, e);
+  }
+}
+
+/**
+ * אוסף את כל ה-user_ids שצריך למחוק עם המנהל: פרופילים שיש בהם
+ * `parent_admin_id` או `managed_by_user_id` שמצביעים אליו.
+ */
+async function collectSubordinateUserIds(
+  admin: SupabaseClient,
+  adminUserId: string,
+): Promise<string[]> {
+  const ids = new Set<string>();
+  /** parent_admin_id */
+  try {
+    const { data, error } = await admin
+      .from('profiles')
+      .select('id')
+      .eq('parent_admin_id', adminUserId);
+    if (!error && Array.isArray(data)) {
+      for (const r of data as Array<{ id?: string }>) {
+        if (r?.id && r.id !== adminUserId) ids.add(String(r.id));
+      }
+    }
+  } catch {
+    /* column may not exist */
+  }
+  /** managed_by_user_id */
+  try {
+    const { data, error } = await admin
+      .from('profiles')
+      .select('id')
+      .eq('managed_by_user_id', adminUserId);
+    if (!error && Array.isArray(data)) {
+      for (const r of data as Array<{ id?: string }>) {
+        if (r?.id && r.id !== adminUserId) ids.add(String(r.id));
+      }
+    }
+  } catch {
+    /* column may not exist */
+  }
+  return Array.from(ids);
+}
+
+/**
+ * מנקה את כל ה-FK הידועים שמצביעים על משתמשים שיוסרו, כדי שמחיקת
+ * `auth.users` לא תיכשל בגלל constraint.
+ */
+async function nullifyKnownReferences(
+  admin: SupabaseClient,
+  userIds: string[],
+): Promise<void> {
+  /** vehicles / drivers — עמודות שעשויות להצביע על המנהל המוחק */
+  for (const table of ['vehicles', 'drivers']) {
+    await safeNullify(admin, table, 'managed_by_user_id', userIds);
+    await safeNullify(admin, table, 'parent_admin_id', userIds);
+    await safeNullify(admin, table, 'created_by', userIds);
+    await safeNullify(admin, table, 'assigned_to', userIds);
+    await safeNullify(admin, table, 'driver_user_id', userIds);
+  }
+  /** profiles עצמם (שלא יוסרו במחזור הזה) — מנתקים את הקישור להורה. */
+  await safeNullify(admin, 'profiles', 'parent_admin_id', userIds);
+  await safeNullify(admin, 'profiles', 'managed_by_user_id', userIds);
+  /** הזמנות / התראות ציות / לוגים — ניתוק קישורים. */
+  await safeNullify(admin, 'org_invitations', 'invited_by', userIds);
+  await safeNullify(admin, 'compliance_alerts', 'assigned_to', userIds);
+  await safeNullify(admin, 'compliance_alerts', 'created_by', userIds);
+  await safeNullify(admin, 'audit_logs', 'user_id', userIds);
+}
+
+/**
+ * מוחק את כל הרישומים של המשתמשים האלה ב-org_members / user_roles / memberships.
+ * אחרי הפעולה הזו אפשר למחוק profiles ואחר כך auth.users.
+ */
+async function deleteMembershipRows(
+  admin: SupabaseClient,
+  userIds: string[],
+): Promise<void> {
+  await safeDelete(admin, 'org_members', 'user_id', userIds);
+  await safeDelete(admin, 'user_roles', 'user_id', userIds);
+  await safeDelete(admin, 'memberships', 'user_id', userIds);
+}
+
+async function deleteProfilesByAnyKey(
+  admin: SupabaseClient,
+  userIds: string[],
+): Promise<void> {
+  if (userIds.length === 0) return;
+  /** profiles.id == auth.uid ברוב הסביבות. ננסה גם user_id אם קיים. */
+  await safeDelete(admin, 'profiles', 'id', userIds);
+  await safeDelete(admin, 'profiles', 'user_id', userIds);
 }
 
 serve(async (req) => {
@@ -102,39 +241,55 @@ serve(async (req) => {
       return clientErrorResponse('אין לך הרשאה למחוק חברים מארגון זה');
     }
 
-    /** ננקה גם רשומות שאינן בהכרח cascade — בסדר עם FK ב-DB של הלקוח. */
-    const cleanupTables: { table: string; column: string }[] = [
-      { table: 'org_members', column: 'user_id' },
-      { table: 'user_roles', column: 'user_id' },
-      { table: 'memberships', column: 'user_id' },
-    ];
-    for (const t of cleanupTables) {
-      const { error } = await admin.from(t.table).delete().eq(t.column, memberUserId);
-      if (error && !/does not exist/i.test(error.message)) {
-        console.warn(`[delete-team-member-permanent] cleanup ${t.table} failed`, error.message);
+    /** אוספים את כל ה-user_ids שיוסרו: המנהל-היעד + כל מי שתחתיו (parent_admin_id / managed_by_user_id). */
+    const subUsers = await collectSubordinateUserIds(admin, memberUserId);
+    const allTargets = Array.from(new Set([memberUserId, ...subUsers]));
+    /** הגנה: אסור למחוק את המבצע גם בקסקייד. */
+    const targets = allTargets.filter((id) => id !== callerUid);
+    if (targets.length === 0) {
+      return clientErrorResponse('לא נמצאו משתמשים למחיקה');
+    }
+
+    console.log('[delete-team-member-permanent] cascade plan', {
+      caller: callerUid,
+      target: memberUserId,
+      subordinates: subUsers,
+      total: targets.length,
+    });
+
+    /** 1) נינטרל את כל ה-FK שמצביע על המשתמשים האלה (כך שלא ייכשל ה-DELETE). */
+    await nullifyKnownReferences(admin, targets);
+
+    /** 2) ננקה רישומי membership/role בכל הטבלאות הרלוונטיות. */
+    await deleteMembershipRows(admin, targets);
+
+    /** 3) ננקה profiles לפי id ולפי user_id (תאימות סכמות). */
+    await deleteProfilesByAnyKey(admin, targets);
+
+    /** 4) auth.users — אחד-אחד; שגיאה באחד לא עוצרת את האחרים. */
+    const authErrors: Array<{ user_id: string; message: string }> = [];
+    for (const uid of targets) {
+      const { error } = await admin.auth.admin.deleteUser(uid);
+      if (error) {
+        authErrors.push({ user_id: uid, message: error.message });
+        console.error('[delete-team-member-permanent] auth.admin.deleteUser', uid, error.message);
       }
     }
 
-    /** profiles.id == auth.uid; אבל יש פרויקטים עם user_id במקום — ננסה את שתיהן. */
-    const profilesById = await admin.from('profiles').delete().eq('id', memberUserId);
-    if (profilesById.error) {
-      console.warn('[delete-team-member-permanent] profiles delete by id failed', profilesById.error.message);
-    }
-    const profilesByUserId = await admin.from('profiles').delete().eq('user_id', memberUserId);
-    if (profilesByUserId.error && !/does not exist/i.test(profilesByUserId.error.message)) {
-      console.warn(
-        '[delete-team-member-permanent] profiles delete by user_id failed',
-        profilesByUserId.error.message,
-      );
+    if (authErrors.length > 0 && authErrors.length === targets.length) {
+      /** כל המחיקות נכשלו — נחזיר את הראשונה כשגיאה אמיתית. */
+      return jsonResponse(500, {
+        error: authErrors[0].message,
+        failures: authErrors,
+      });
     }
 
-    const { error: authDeleteErr } = await admin.auth.admin.deleteUser(memberUserId);
-    if (authDeleteErr) {
-      console.error('[delete-team-member-permanent] auth admin deleteUser', authDeleteErr.message);
-      return jsonResponse(500, { error: authDeleteErr.message });
-    }
-
-    return jsonResponse(200, { success: true });
+    return jsonResponse(200, {
+      success: true,
+      deleted: targets.length,
+      subordinates_deleted: subUsers.length,
+      partial_failures: authErrors,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[delete-team-member-permanent]', message);

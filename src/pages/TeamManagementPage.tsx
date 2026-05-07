@@ -682,6 +682,14 @@ export default function TeamManagementPage() {
               {memberToDelete?.full_name || memberToDelete?.email || ''} יימחק לצמיתות מהאפליקציה ומאיתות
               ה-Auth. כדי לחזור הוא יידרש לבצע <strong>הרשמה מחדש</strong>.
             </div>
+            {memberToDelete && isMemberAdminLike(memberToDelete) &&
+            childrenCountForAdmin(memberToDelete) > 0 ? (
+              <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-amber-900 dark:text-amber-200">
+                <strong>שים לב:</strong> תחת מנהל זה יש{' '}
+                <strong>{childrenCountForAdmin(memberToDelete)}</strong> משתמשים — הם יימחקו
+                לצמיתות יחד איתו ולא יוכלו להתחבר עוד.
+              </div>
+            ) : null}
             <div className="space-y-1.5">
               <Label htmlFor="delete-team-password">לאישור — סיסמת המנהל המבצע</Label>
               <Input

@@ -457,18 +457,27 @@ export function useDeleteTeamMemberPermanent() {
         }
         throw error;
       }
-      const errMsg = (data as { error?: string } | null)?.error;
+      const respData = data as
+        | { error?: string; deleted?: number; subordinates_deleted?: number }
+        | null;
+      const errMsg = respData?.error;
       if (errMsg && String(errMsg).trim()) {
         throw new Error(String(errMsg));
       }
+      return respData ?? null;
     },
-    onSuccess: (_data, variables) => {
+    onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: TEAM_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: ORG_INVITATIONS_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ['tenant-fleet-admins-platform-switcher'] });
       if (variables.orgId) {
         queryClient.invalidateQueries({ queryKey: ['organization', variables.orgId] });
       }
-      toast({ title: 'המשתמש נמחק לחלוטין מהמערכת' });
+      const subs = data?.subordinates_deleted ?? 0;
+      toast({
+        title: 'המשתמש נמחק לחלוטין מהמערכת',
+        description: subs > 0 ? `נמחקו גם ${subs} משתמשים שהיו תחת המנהל` : undefined,
+      });
     },
     onError: (err: Error) => {
       toast({ title: 'מחיקה נכשלה', description: err.message, variant: 'destructive' });
