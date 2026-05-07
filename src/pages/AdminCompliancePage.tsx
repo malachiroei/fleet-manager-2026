@@ -1213,8 +1213,21 @@ export default function AdminCompliancePage() {
     enabled: Boolean(canAccessAdminComplianceCenter && orgId),
     staleTime: 0,
     retry: 2,
+    placeholderData: (prev) => prev,
     queryFn: async (): Promise<OpenComplianceRow[]> => {
       if (!orgId) return [];
+      /** RPC מעקף RLS שמסנן SELECT ריק למרות שורות קיימות — מיגרציה 20260514100000 */
+      const rpc = await supabase.rpc('compliance_open_requests_for_org', { p_org_id: orgId });
+      if (!rpc.error && rpc.data != null) {
+        return (rpc.data ?? []) as OpenComplianceRow[];
+      }
+      const rpcMsg = String(rpc.error?.message ?? '');
+      if (
+        rpc.error &&
+        !/does not exist|could not find|schema cache|42883|PGRST202/i.test(rpcMsg)
+      ) {
+        throw rpc.error;
+      }
       const { data, error } = await supabase
         .from('compliance_requests')
         .select('driver_id, entity_type, entity_id, task_key, status, sent_at, metadata, updated_at, created_at')
