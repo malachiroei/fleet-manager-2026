@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { callerMayManageOrgForTeamActions } from '../_shared/teamAdminActionPermission.ts';
+import { callerMayManageOrgForComplianceActions } from '../_shared/complianceActionPermission.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -221,7 +221,7 @@ serve(async (req) => {
     if (authErr || !viewerId) return json({ error: 'Invalid or expired session' }, 401);
 
     const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
-    const mayManage = await callerMayManageOrgForTeamActions(admin, viewerId, orgId, authData?.user?.email ?? '');
+    const mayManage = await callerMayManageOrgForComplianceActions(admin, viewerId, orgId, authData?.user?.email ?? '');
     if (!mayManage) return json({ error: 'Forbidden' }, 403);
 
     let driverId = clean(body.driver_id);

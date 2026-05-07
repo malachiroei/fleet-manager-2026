@@ -30,9 +30,11 @@ function complianceAlertAdminHref(alert: ComplianceItem, canAccessAdminCenter: b
 
 /** מנהל: לחיצה → מרכז ציות + הדגשת שורה. שאר המשתמשים: אותו מראה ללא ניווט. */
 function ExpiredAlertRow({ alert, children }: { alert: ComplianceItem; children: ReactNode }) {
-  const { isAdmin, profile, user } = useAuth();
+  const { isAdmin, profile, user, hasPermission } = useAuth();
   const canAccessAdminCenter = Boolean(
-    isAdmin ||
+    hasPermission('compliance') ||
+      hasPermission('admin_access') ||
+      isAdmin ||
       profile?.is_system_admin === true ||
       isPlatformSuperOwnerEmail(resolveSessionEmail(profile, user)) ||
       isFleetOrgAdminFallbackEmail(resolveSessionEmail(profile, user)),

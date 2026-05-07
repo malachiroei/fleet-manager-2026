@@ -1071,13 +1071,15 @@ function ComplianceTable<T extends Record<string, unknown>>({
 }
 
 export default function AdminCompliancePage() {
-  const { isAdmin, activeOrgId, profile, user } = useAuth();
+  const { isAdmin, activeOrgId, profile, user, hasPermission } = useAuth();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const orgId = activeOrgId ?? profile?.org_id ?? null;
 
   const canAccessAdminComplianceCenter = Boolean(
-    isAdmin ||
+    hasPermission('compliance') ||
+      hasPermission('admin_access') ||
+      isAdmin ||
       profile?.is_system_admin === true ||
       isPlatformSuperOwnerEmail(resolveSessionEmail(profile, user)) ||
       isFleetOrgAdminFallbackEmail(resolveSessionEmail(profile, user)),

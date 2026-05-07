@@ -640,6 +640,7 @@ export default function TeamManagementPage() {
           if (!o) setPermissionsMember(null);
         }}
         member={permissionsMember}
+        canGrantManageTeam={isSuperAdminTeamView || isRoeiAdmin || profile?.is_system_admin === true}
       />
 
       <AlertDialog

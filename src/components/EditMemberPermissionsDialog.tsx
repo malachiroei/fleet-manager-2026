@@ -22,13 +22,15 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   member: Profile | null;
+  /** מי יכול להעניק הרשאת ניהול צוות (רק מנהל-על/מערכת). */
+  canGrantManageTeam?: boolean;
 };
 
 /**
  * דיאלוג עריכת הרשאות-בסיס של חבר צוות (`profiles.permissions`). מאפשר לאדמין
  * לשנות אחרי שהמשתמש כבר רשום, כך שגם פיצ'רים שכבויים בהזמנה אפשר לפתוח חזרה.
  */
-export function EditMemberPermissionsDialog({ open, onOpenChange, member }: Props) {
+export function EditMemberPermissionsDialog({ open, onOpenChange, member, canGrantManageTeam }: Props) {
   const updatePermissions = useUpdateMemberPermissions();
 
   /**
@@ -68,13 +70,19 @@ export function EditMemberPermissionsDialog({ open, onOpenChange, member }: Prop
   }, [draft, initial]);
 
   const handleToggle = (key: PermissionKey, value: boolean) => {
+    if (key === 'manage_team' && canGrantManageTeam !== true) return;
     setDraft((prev) => ({ ...prev, [key]: value }));
   };
 
   const handleSave = () => {
     if (!member?.id) return;
+    const payload: ProfilePermissions = { ...draft };
+    if (canGrantManageTeam !== true) {
+      // Never allow granting manage_team unless explicitly allowed.
+      payload.manage_team = Boolean(initial.manage_team);
+    }
     updatePermissions.mutate(
-      { profileId: member.id, permissions: { ...draft } },
+      { profileId: member.id, permissions: payload },
       { onSuccess: () => onOpenChange(false) },
     );
   };
@@ -82,7 +90,11 @@ export function EditMemberPermissionsDialog({ open, onOpenChange, member }: Prop
   const setAll = (value: boolean) => {
     setDraft(
       PERMISSION_KEYS.reduce<ProfilePermissions>((acc, key) => {
-        acc[key] = value;
+        if (key === 'manage_team' && canGrantManageTeam !== true) {
+          acc[key] = Boolean(draft.manage_team);
+        } else {
+          acc[key] = value;
+        }
         return acc;
       }, {}),
     );
@@ -134,9 +146,12 @@ export function EditMemberPermissionsDialog({ open, onOpenChange, member }: Prop
                 checked={draft[key] === true}
                 onChange={(e) => handleToggle(key, e.target.checked)}
                 className="h-4 w-4 rounded border-input"
-                disabled={updatePermissions.isPending}
+                disabled={updatePermissions.isPending || (key === 'manage_team' && canGrantManageTeam !== true)}
               />
               {PERMISSION_LABELS[key]}
+              {key === 'manage_team' && canGrantManageTeam !== true ? (
+                <span className="text-[10px] text-muted-foreground">(חסום)</span>
+              ) : null}
             </label>
           ))}
         </div>

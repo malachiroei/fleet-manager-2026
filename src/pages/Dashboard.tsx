@@ -413,8 +413,13 @@ export default function Dashboard() {
 
   const canReportMileage = forceMileageForMalachiroei || canReportMileageFromPermissions;
 
+  /**
+   * "מרכז ציות" צריך להיות זמין גם לצוות שאינו אדמין, כל עוד הרשאת `compliance` פתוחה עבורו.
+   * מסך עצמו עדיין מוגן בנתיבים/הרשאות.
+   */
   const canAccessAdminComplianceCenter = Boolean(
-    isAdmin ||
+    hasPermission('compliance') ||
+      isAdmin ||
       profile?.is_system_admin === true ||
       isPlatformSuperOwnerEmail(resolveSessionEmail(profile, user)) ||
       isFleetOrgAdminFallbackEmail(resolveSessionEmail(profile, user)),
