@@ -312,6 +312,10 @@ export function AppLayout({ children }: AppLayoutProps) {
       void import('../pages/TeamManagementPage');
       return;
     }
+    if (path === '/admin/compliance' || path.startsWith('/admin/compliance/')) {
+      void import('../pages/AdminCompliancePage');
+      return;
+    }
     if (path === '/admin/org-settings' || path.startsWith('/admin/org-settings/')) {
       void import('../pages/OrgSettingsPage');
       return;
@@ -397,6 +401,21 @@ export function AppLayout({ children }: AppLayoutProps) {
       </DropdownMenuTrigger>
       <DropdownMenuContent align={isRtl ? 'start' : 'end'} className="min-w-[220px] z-[10001]">
         <DropdownMenuLabel className="text-xs font-semibold">הגדרות</DropdownMenuLabel>
+        {isAdmin ? (
+          <>
+            <DropdownMenuItem asChild className="cursor-pointer">
+              <Link
+                to="/admin/compliance"
+                className="w-full flex items-center justify-between text-xs"
+                {...linkPrefetchProps('/admin/compliance')}
+              >
+                <span className="font-medium">מרכז ציות</span>
+                <ClipboardList className="h-4 w-4 shrink-0" />
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
         {/* מסך נמוך: העברת "ניהול/ניהול צוות" לכאן כדי לפנות מקום בכותרת */}
         {isShortHeightDesktop ? (
           <>
