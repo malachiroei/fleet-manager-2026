@@ -2479,6 +2479,12 @@ export default function VehicleHandoverWizard() {
 
     setSubmitting(false);
     setDirty(DIRTY_SOURCE_HANDOVER_WIZARD, false);
+    queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+    queryClient.invalidateQueries({ queryKey: ['active-driver-vehicle-assignments'] });
+    queryClient.invalidateQueries({ queryKey: ['drivers'] });
+    if (driverId) {
+      queryClient.invalidateQueries({ queryKey: ['driver', driverId] });
+    }
     navigate(vehicleId ? `/vehicles/${vehicleId}` : '/vehicles');
   };
 
