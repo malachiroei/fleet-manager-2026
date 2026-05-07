@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useVehicle, useUpdateVehicle, useActiveDriverVehicleAssignments } from '@/hooks/useVehicles';
@@ -467,6 +467,66 @@ export default function VehicleDetailPage() {
       }>;
     },
   });
+
+  /** נרמול URL להשוואה — רישיון/ביטוח שמורים ב־vehicles.license_image_url וכו' גם בלי שורה ב־vehicle_documents */
+  const docUrlDedupeKey = (raw: string) => {
+    try {
+      const u = new URL(raw);
+      return `${u.origin}${u.pathname}`.toLowerCase().replace(/\/+$/, '');
+    } catch {
+      return raw.trim().toLowerCase();
+    }
+  };
+
+  const vehicleDocumentsDisplay = useMemo(() => {
+    type DocRow = {
+      id: string;
+      title: string;
+      file_url: string;
+      created_at: string;
+      document_type?: string | null;
+    };
+    const fromDb = (vehicleDocuments ?? []) as DocRow[];
+    const seen = new Set(fromDb.map((d) => docUrlDedupeKey(String(d.file_url ?? '').trim())).filter(Boolean));
+    const out: DocRow[] = [...fromDb];
+    if (!vehicle) return out;
+    const lic = String(vehicle.license_image_url ?? '').trim();
+    if (lic) {
+      const k = docUrlDedupeKey(lic);
+      if (k && !seen.has(k)) {
+        seen.add(k);
+        out.push({
+          id: '__vehicle_card_license_image__',
+          title: 'רישיון רכב (טסט) — תמונה בכרטיס',
+          file_url: lic,
+          created_at: String(vehicle.updated_at ?? vehicle.created_at ?? ''),
+          document_type: 'legacy_license',
+        });
+      }
+    }
+    const ins = String(vehicle.insurance_pdf_url ?? '').trim();
+    if (ins) {
+      const k = docUrlDedupeKey(ins);
+      if (k && !seen.has(k)) {
+        out.push({
+          id: '__vehicle_card_insurance_pdf__',
+          title: 'פוליסת ביטוח — קובץ בכרטיס',
+          file_url: ins,
+          created_at: String(vehicle.updated_at ?? vehicle.created_at ?? ''),
+          document_type: 'insurance_policy',
+        });
+      }
+    }
+    return out.sort((a, b) => {
+      const ta = new Date(a.created_at).getTime();
+      const tb = new Date(b.created_at).getTime();
+      if (Number.isNaN(ta) && Number.isNaN(tb)) return 0;
+      if (Number.isNaN(ta)) return 1;
+      if (Number.isNaN(tb)) return -1;
+      return tb - ta;
+    });
+  }, [vehicleDocuments, vehicle]);
+
   const { data: pricingLookup } = usePricingLookup(
     vehicle?.manufacturer_code || null,
     vehicle?.model_code || null,
@@ -485,7 +545,7 @@ export default function VehicleDetailPage() {
       docScrollDoneKeyRef.current = null;
       return;
     }
-    const scrollKey = `${vehicle.id}|${docFocusParam ?? ''}|${vehicleDocuments.length}`;
+    const scrollKey = `${vehicle.id}|${docFocusParam ?? ''}|${vehicleDocumentsDisplay.length}`;
     if (docScrollDoneKeyRef.current === scrollKey) return;
     const t = window.setTimeout(() => {
       try {
@@ -510,7 +570,7 @@ export default function VehicleDetailPage() {
       }
     }, 400);
     return () => window.clearTimeout(t);
-  }, [isDocumentsSection, docFocusParam, vehicle?.id, vehicleDocuments.length]);
+  }, [isDocumentsSection, docFocusParam, vehicle?.id, vehicleDocumentsDisplay.length]);
 
   if (isLoading) {
     return (
@@ -1697,11 +1757,11 @@ export default function VehicleDetailPage() {
                 />
                 {isUploadingDocument && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
               </div>
-              {vehicleDocuments.length === 0 ? (
+              {vehicleDocumentsDisplay.length === 0 ? (
                 <p className="text-sm text-muted-foreground">אין מסמכים לרכב זה</p>
               ) : (
                 <div className="space-y-2">
-                  {vehicleDocuments.map((doc) => {
+                  {vehicleDocumentsDisplay.map((doc) => {
                     const titleStr = String(doc?.title ?? 'מסמך');
                     const fileUrl = typeof doc?.file_url === 'string' ? doc.file_url.trim() : '';
                     const dt = String(doc?.document_type ?? '').trim();
