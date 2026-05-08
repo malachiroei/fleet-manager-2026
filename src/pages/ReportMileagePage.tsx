@@ -181,10 +181,6 @@ export default function ReportMileagePage() {
     if (!qid || vehicles.length === 0) return;
     if (!vehicles.some((v) => v.id === qid)) return;
     setSelectedVehicleId(qid);
-    const v = vehicles.find((x) => x.id === qid);
-    if (v) {
-      setVehicleSearch(`${v.plate_number} ${v.manufacturer} ${v.model}`.trim());
-    }
   }, [vehicleIdFromQuery, vehicles]);
 
   /** Persist vehicle + mileage as the user types (before camera / reload). */
@@ -534,11 +530,34 @@ export default function ReportMileagePage() {
                         dir="ltr"
                         autoComplete="off"
                       />
+                      <p className="text-xs text-muted-foreground">
+                        מציג {filteredVehicles.length.toLocaleString('he-IL')} מתוך {vehicles.length.toLocaleString('he-IL')} רכבים
+                        {vehicleSearch.trim() ? (
+                          <>
+                            {' '}
+                            ·{' '}
+                            <button
+                              type="button"
+                              className="underline underline-offset-2 hover:text-foreground"
+                              onClick={() => setVehicleSearch('')}
+                            >
+                              נקה חיפוש
+                            </button>
+                          </>
+                        ) : null}
+                      </p>
                     </div>
 
                     <div className="space-y-2">
                       <Label>בחר רכב</Label>
-                      <Select value={selectedVehicleId} onValueChange={setSelectedVehicleId}>
+                      <Select
+                        value={selectedVehicleId}
+                        onValueChange={(next) => {
+                          setSelectedVehicleId(next);
+                          // ברירת מחדל: לא לנעול את הרשימה לפריט אחד אחרי בחירה
+                          setVehicleSearch('');
+                        }}
+                      >
                         <SelectTrigger className="h-12">
                           <SelectValue placeholder="בחר מספר רכב" />
                         </SelectTrigger>
