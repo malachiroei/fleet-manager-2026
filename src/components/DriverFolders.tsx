@@ -947,15 +947,11 @@ function DocumentsTab({ driver }: { driver: Driver }) {
 
   const allDocs = [...docs, ...legacyDocs, ...reg585FromCompliance];
 
-  const fallbackDocIso =
-    String((driver as unknown as { updated_at?: string | null }).updated_at ?? '').trim() ||
-    String((driver as unknown as { created_at?: string | null }).created_at ?? '').trim() ||
-    new Date().toISOString();
-
   const formatStorageDate = (iso: string | null) => {
-    const effective = iso && String(iso).trim() ? String(iso).trim() : fallbackDocIso;
+    const effective = iso && String(iso).trim() ? String(iso).trim() : '';
+    if (!effective) return 'לא ידוע';
     const d = new Date(effective);
-    return Number.isNaN(d.getTime()) ? new Date().toLocaleString('he-IL') : d.toLocaleString('he-IL');
+    return Number.isNaN(d.getTime()) ? 'לא ידוע' : d.toLocaleString('he-IL');
   };
 
   if (isError) {
@@ -1010,14 +1006,17 @@ function DocumentsTab({ driver }: { driver: Driver }) {
     const isPdf = isPdfUrl(src);
     const createdAt = 'created_at' in doc ? (doc as { created_at?: string }).created_at : undefined;
     const updatedAt = 'updated_at' in doc ? (doc as { updated_at?: string }).updated_at : undefined;
-    const effectiveIso = String(createdAt ?? updatedAt ?? fallbackDocIso).trim() || new Date().toISOString();
-    const effectiveDate = new Date(effectiveIso);
+    const effectiveIso = String(createdAt ?? updatedAt ?? '').trim();
+    const effectiveDate = effectiveIso ? new Date(effectiveIso) : null;
     registeredRows.push({
       key: `d-${doc.id}`,
-      sortTime: parseDocSortTime(effectiveIso),
+      sortTime: parseDocSortTime(effectiveIso || null),
       kind: 'registered',
       title: doc.title,
-      dateLabel: Number.isNaN(effectiveDate.getTime()) ? new Date().toLocaleString('he-IL') : effectiveDate.toLocaleString('he-IL'),
+      dateLabel:
+        effectiveDate && !Number.isNaN(effectiveDate.getTime())
+          ? effectiveDate.toLocaleString('he-IL')
+          : 'לא ידוע',
       src,
       isPdf,
     });
