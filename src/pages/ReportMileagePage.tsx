@@ -306,6 +306,7 @@ export default function ReportMileagePage() {
       });
 
       let persistedViaDirectInsert = false;
+      let persistedViaEdge = false;
 
       if (rpcTransportError) {
         if (isSubmitMileageReportRpcMissing(rpcTransportError)) {
@@ -326,14 +327,33 @@ export default function ReportMileagePage() {
               details: (directInsertError as { details?: string }).details,
               hint: (directInsertError as { hint?: string }).hint,
             });
-            toast({
-              title: 'שגיאה בשמירת הדיווח (מסד נתונים)',
-              description: `${describeMileageRpcMissingOnProject()} גם INSERT ל-mileage_logs נכשל: ${directInsertError.message}`,
-              variant: 'destructive',
+            console.warn('[ReportMileagePage] mileage_logs INSERT failed; attempting Edge submit-mileage-report');
+            const edge = await invokeSupabaseEdgeFunction('submit-mileage-report', {
+              vehicle_id: selectedVehicle.id,
+              odometer_value: odometerValue,
+              photo_url: photoUrl,
             });
-            return;
+            if (edge.error) {
+              toast({
+                title: 'שגיאה בשמירת הדיווח (מסד נתונים)',
+                description: `${describeMileageRpcMissingOnProject()} גם INSERT ל-mileage_logs נכשל: ${directInsertError.message}. Edge נכשל: ${edge.error.message}`,
+                variant: 'destructive',
+              });
+              return;
+            }
+            const edgePayload = edge.data as { ok?: boolean; error?: string } | null;
+            if (edgePayload?.error || edgePayload?.ok !== true) {
+              toast({
+                title: 'שגיאה בשמירת הדיווח (מסד נתונים)',
+                description: edgePayload?.error || 'השרת לא אישר שמירה (Edge).',
+                variant: 'destructive',
+              });
+              return;
+            }
+            persistedViaEdge = true;
+          } else {
+            persistedViaDirectInsert = true;
           }
-          persistedViaDirectInsert = true;
         } else {
           logMileageLogsInsertError({
             message: rpcTransportError.message,
@@ -361,6 +381,8 @@ export default function ReportMileagePage() {
 
       const rpcResult = persistedViaDirectInsert
         ? ({ ok: true } as const)
+        : persistedViaEdge
+          ? ({ ok: true } as const)
         : (rpcRaw as { ok?: boolean; error?: string; detail?: string; log_id?: string } | null);
       if (!rpcResult?.ok) {
         const errKey = rpcResult?.error ?? 'unknown';
@@ -436,6 +458,8 @@ export default function ReportMileagePage() {
 
       const savedNote = persistedViaDirectInsert
         ? ' (נשמר ישירות — מומלץ להריץ מיגרציית submit_mileage_report ב-Supabase כדי לאחד לוגיקה.)'
+        : persistedViaEdge
+          ? ' (נשמר דרך שרת — מומלץ להריץ מיגרציות mileage/submit_mileage_report בפרויקט Supabase.)'
         : '';
 
       toast({
