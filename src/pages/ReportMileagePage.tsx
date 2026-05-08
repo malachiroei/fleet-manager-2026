@@ -405,7 +405,16 @@ export default function ReportMileagePage() {
             });
             if (edge.error) {
               const msg = await friendlyEdgeInvokeError(edge.error);
-              if (/invalid jwt/i.test(msg) || /jwt/i.test(msg)) {
+              // Only force a relogin for explicit invalid-JWT signals.
+              // Many 401/403 messages mention "JWT" or "Bearer token" even when the session is simply missing,
+              // and forcing signOut in those cases can create a login loop.
+              const isExplicitInvalidJwt =
+                /invalid\s+jwt/i.test(msg) ||
+                /jwt\s+expired/i.test(msg) ||
+                /invalid\s+token/i.test(msg) ||
+                /invalid\s+signature/i.test(msg);
+
+              if (isExplicitInvalidJwt) {
                 try {
                   await supabase.auth.signOut();
                 } catch {
@@ -413,7 +422,7 @@ export default function ReportMileagePage() {
                 }
                 toast({
                   title: 'פג תוקף ההתחברות',
-                  description: 'המערכת זיהתה טוקן לא תקין. התחברו מחדש ואז נסו שוב לשלוח את הדיווח.',
+                  description: 'המערכת זיהתה התחברות לא תקינה. התחברו מחדש ואז נסו שוב לשלוח את הדיווח.',
                   variant: 'destructive',
                 });
                 navigate('/auth', { replace: true });
