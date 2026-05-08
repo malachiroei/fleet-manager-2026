@@ -18,6 +18,7 @@ import { FleetDatePicker } from '@/components/ui/FleetDatePicker';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { invokeSupabaseEdgeFunction } from '@/lib/supabase/invokeEdgeFunction';
 import { 
   Car,
   Calendar,
@@ -31,6 +32,7 @@ import {
   Fuel,
   RefreshCw,
   Loader2,
+  Send,
   Zap,
   ChevronDown,
   ChevronUp,
@@ -344,6 +346,7 @@ export default function VehicleDetailPage() {
   const syncFromPricing = useSyncVehicleFromPricing();
   const [isSyncing, setIsSyncing] = useState(false);
   const [isUploadingDocument, setIsUploadingDocument] = useState(false);
+  const [sendingDocUrl, setSendingDocUrl] = useState<string | null>(null);
   const docScrollDoneKeyRef = useRef<string | null>(null);
   const section = location.hash.replace('#', '');
   const isOverviewSection = section === 'overview';
@@ -526,6 +529,34 @@ export default function VehicleDetailPage() {
       return tb - ta;
     });
   }, [vehicleDocuments, vehicle]);
+
+  const sendDocLinkEmail = useCallback(
+    async (toEmail: string, docUrl: string, docTitle: string) => {
+      const to = String(toEmail ?? '').trim();
+      const url = String(docUrl ?? '').trim();
+      if (!to || !to.includes('@') || !url) return;
+      setSendingDocUrl(url);
+      try {
+        const { data, error } = await invokeSupabaseEdgeFunction('send-document-link-email', {
+          to_email: to,
+          doc_url: url,
+          doc_title: docTitle,
+          driver_name: assignedDriver?.full_name ?? '',
+          vehicle_label: String(vehicle?.plate_number ?? '').trim(),
+        });
+        if (error) throw error;
+        const payload = data as { success?: boolean; error?: string } | null;
+        if (payload?.error) throw new Error(String(payload.error));
+        toast.success(`נשלח למייל: ${to}`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        toast.error(`שליחה נכשלה: ${msg}`);
+      } finally {
+        setSendingDocUrl(null);
+      }
+    },
+    [assignedDriver?.full_name, vehicle?.plate_number],
+  );
 
   const { data: pricingLookup } = usePricingLookup(
     vehicle?.manufacturer_code || null,
@@ -1152,6 +1183,33 @@ export default function VehicleDetailPage() {
                     >
                       טסט
                     </Link>
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center rounded border border-white/10 bg-slate-950/40 p-1 text-muted-foreground hover:text-cyan-300"
+                      disabled={
+                        !String((vehicle as any).license_image_url ?? '').trim() ||
+                        !String(assignedDriver?.email ?? '').trim() ||
+                        sendingDocUrl === String((vehicle as any).license_image_url ?? '').trim()
+                      }
+                      title={
+                        !String(assignedDriver?.email ?? '').trim()
+                          ? 'לנהג המשויך אין אימייל בכרטיס'
+                          : 'שלח צילום טסט לנהג המשויך'
+                      }
+                      onClick={() =>
+                        void sendDocLinkEmail(
+                          String(assignedDriver?.email ?? '').trim(),
+                          String((vehicle as any).license_image_url ?? '').trim(),
+                          'רישיון רכב (טסט)',
+                        )
+                      }
+                    >
+                      {sendingDocUrl === String((vehicle as any).license_image_url ?? '').trim() ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Send className="h-3.5 w-3.5" />
+                      )}
+                    </button>
                     <span className="font-mono tabular-nums" dir="ltr">
                       {testExempt ? 'פטור בשנה ראשונה' : fmtDriverDate(vehicle.test_expiry)}
                     </span>
@@ -1177,6 +1235,33 @@ export default function VehicleDetailPage() {
                     >
                       ביטוח
                     </Link>
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center rounded border border-white/10 bg-slate-950/40 p-1 text-muted-foreground hover:text-cyan-300"
+                      disabled={
+                        !String((vehicle as any).insurance_pdf_url ?? '').trim() ||
+                        !String(assignedDriver?.email ?? '').trim() ||
+                        sendingDocUrl === String((vehicle as any).insurance_pdf_url ?? '').trim()
+                      }
+                      title={
+                        !String(assignedDriver?.email ?? '').trim()
+                          ? 'לנהג המשויך אין אימייל בכרטיס'
+                          : 'שלח צילום ביטוח לנהג המשויך'
+                      }
+                      onClick={() =>
+                        void sendDocLinkEmail(
+                          String(assignedDriver?.email ?? '').trim(),
+                          String((vehicle as any).insurance_pdf_url ?? '').trim(),
+                          'ביטוח',
+                        )
+                      }
+                    >
+                      {sendingDocUrl === String((vehicle as any).insurance_pdf_url ?? '').trim() ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Send className="h-3.5 w-3.5" />
+                      )}
+                    </button>
                     <span className="font-mono tabular-nums" dir="ltr">{fmtDriverDate(vehicle.insurance_expiry)}</span>
                     {insurance ? <StatusBadge status={insurance.status} daysLeft={insurance.daysLeft} compact /> : <Badge variant="outline" className="text-[10px]">{MISSING_DATA}</Badge>}
                   </div>
@@ -1811,19 +1896,72 @@ export default function VehicleDetailPage() {
                       }
                     })();
                     return (
-                      <button
+                      <div
                         key={doc.id}
-                        type="button"
                         data-doc-focus={dataFocus ?? undefined}
-                        disabled={!fileUrl}
-                        onClick={() => {
-                          if (fileUrl) window.open(fileUrl, '_blank', 'noopener,noreferrer');
-                        }}
-                        className="flex w-full items-center justify-between rounded-md border border-border p-2 text-right text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                        className="flex w-full flex-wrap items-center justify-between gap-2 rounded-md border border-border p-2 text-right text-foreground hover:bg-muted"
                       >
-                        <span className="min-w-0 flex-1 truncate ps-2 text-start font-medium">{titleStr}</span>
-                        <span className="shrink-0 text-xs text-muted-foreground">{createdLabel}</span>
-                      </button>
+                        <button
+                          type="button"
+                          disabled={!fileUrl}
+                          onClick={() => {
+                            if (fileUrl) window.open(fileUrl, '_blank', 'noopener,noreferrer');
+                          }}
+                          className="min-w-0 flex-1 truncate text-start font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                          title={titleStr}
+                        >
+                          {titleStr}
+                        </button>
+                        <div className="flex items-center gap-2">
+                          <span className="shrink-0 text-xs text-muted-foreground">{createdLabel}</span>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 px-2"
+                            disabled={
+                              !fileUrl ||
+                              !String(assignedDriver?.email ?? '').trim() ||
+                              sendingDocUrl === fileUrl
+                            }
+                            title={!String(assignedDriver?.email ?? '').trim() ? 'לנהג המשויך אין אימייל בכרטיס' : 'שלח לנהג המשויך'}
+                            onClick={() =>
+                              void sendDocLinkEmail(
+                                String(assignedDriver?.email ?? '').trim(),
+                                fileUrl,
+                                titleStr,
+                              )
+                            }
+                          >
+                            {sendingDocUrl === fileUrl ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Send className="h-4 w-4" />
+                            )}
+                            <span className="ms-1">לנהג</span>
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 px-2"
+                            disabled={!fileUrl || sendingDocUrl === fileUrl}
+                            onClick={() => {
+                              const input = window.prompt('לאיזה מייל לשלוח?');
+                              const to = String(input ?? '').trim();
+                              if (!to) return;
+                              void sendDocLinkEmail(to, fileUrl, titleStr);
+                            }}
+                          >
+                            {sendingDocUrl === fileUrl ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Send className="h-4 w-4" />
+                            )}
+                            <span className="ms-1">למייל</span>
+                          </Button>
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
