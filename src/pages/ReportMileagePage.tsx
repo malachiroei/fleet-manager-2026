@@ -70,6 +70,33 @@ function logMileageLogsInsertError(insertError: {
   });
 }
 
+async function friendlyEdgeInvokeError(err: unknown): Promise<string> {
+  const base = err instanceof Error ? err.message : String(err);
+  const ctx = (err as { context?: Response } | undefined)?.context;
+  if (ctx) {
+    try {
+      const j = (await ctx.clone().json()) as { error?: string; message?: string };
+      const msg = String(j?.error ?? j?.message ?? '').trim();
+      if (msg) return msg;
+    } catch {
+      try {
+        const t = (await ctx.clone().text()).trim();
+        if (t) return t.slice(0, 500);
+      } catch {
+        // ignore
+      }
+    }
+  }
+  const low = base.toLowerCase();
+  if (low.includes('404')) {
+    return 'פונקציית השרת submit-mileage-report לא פרוסה בפרויקט Supabase (Edge Functions). יש לפרוס אותה ואז לרענן.';
+  }
+  if (low.includes('401') || low.includes('jwt') || low.includes('unauthorized')) {
+    return 'השרת דחה את הבקשה (401). נסו להתנתק ולהתחבר מחדש; אם ממשיך — בדקו שה־Edge Functions מקבל Authorization תקין.';
+  }
+  return base;
+}
+
 /** Prod drift: old RPC/trigger used column `odometer`; table column is `odometer_value`. */
 function describeMileageSchemaMismatch(raw: string | undefined): string | null {
   const t = (raw ?? '').toLowerCase();
@@ -336,7 +363,7 @@ export default function ReportMileagePage() {
             if (edge.error) {
               toast({
                 title: 'שגיאה בשמירת הדיווח (מסד נתונים)',
-                description: `${describeMileageRpcMissingOnProject()} גם INSERT ל-mileage_logs נכשל: ${directInsertError.message}. Edge נכשל: ${edge.error.message}`,
+                description: `${describeMileageRpcMissingOnProject()} גם INSERT ל-mileage_logs נכשל: ${directInsertError.message}. Edge נכשל: ${await friendlyEdgeInvokeError(edge.error)}`,
                 variant: 'destructive',
               });
               return;
