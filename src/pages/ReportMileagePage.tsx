@@ -404,9 +404,24 @@ export default function ReportMileagePage() {
               photo_url: photoUrl,
             });
             if (edge.error) {
+              const msg = await friendlyEdgeInvokeError(edge.error);
+              if (/invalid jwt/i.test(msg) || /jwt/i.test(msg)) {
+                try {
+                  await supabase.auth.signOut();
+                } catch {
+                  // ignore
+                }
+                toast({
+                  title: 'פג תוקף ההתחברות',
+                  description: 'המערכת זיהתה טוקן לא תקין. התחברו מחדש ואז נסו שוב לשלוח את הדיווח.',
+                  variant: 'destructive',
+                });
+                navigate('/auth', { replace: true });
+                return;
+              }
               toast({
                 title: 'שגיאה בשמירת הדיווח (מסד נתונים)',
-                description: `${describeMileageRpcMissingOnProject()} גם INSERT ל-mileage_logs נכשל: ${directInsertError.message}. Edge נכשל: ${await friendlyEdgeInvokeError(edge.error)}`,
+                description: `${describeMileageRpcMissingOnProject()} גם INSERT ל-mileage_logs נכשל: ${directInsertError.message}. Edge נכשל: ${msg}`,
                 variant: 'destructive',
               });
               return;
