@@ -75,6 +75,7 @@ import { photoPickerActionButtonClassName } from '@/lib/photoPickerUi';
 import { TireWheelDiagramSelector, TIRE_WHEEL_VALUES } from '@/components/vehicles/TireWheelDiagramSelector';
 import SignaturePad, { type SignaturePadRef } from '@/components/SignaturePad';
 import { HudPhotoSlot } from '@/components/HudPhotoSlot';
+import { MileageUpdateDialog } from '@/components/mileage/MileageUpdateDialog';
 
 const DOCS_BUCKET = 'vehicle-documents';
 
@@ -310,7 +311,7 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
   const { user, profile } = useAuth();
   const updateVehicle = useUpdateVehicle();
   const queryClient = useQueryClient();
-  const [dialog, setDialog] = useState<'license' | 'insurance' | 'tire' | 'periodic' | 'car_wash' | null>(null);
+  const [dialog, setDialog] = useState<'license' | 'insurance' | 'tire' | 'periodic' | 'car_wash' | 'mileage' | null>(null);
   const [saving, setSaving] = useState(false);
 
   const [licenseDate, setLicenseDate] = useState('');
@@ -1013,28 +1014,25 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
             <span>טיפול</span>
           </div>
         )}
-        {showReportMileage ? (
-          <Link
-            to={`/report-mileage?vehicle=${encodeURIComponent(vehicle.id)}`}
-            className={tileClass}
-          >
-            <Gauge className="h-5 w-5 text-sky-400" />
-            <span>קילומטראז׳</span>
-            <span className="text-[10px] font-normal text-slate-400">דיווח כמו בראשי</span>
-          </Link>
-        ) : (
-          <Link to={`/vehicles/odometer`} className={tileClass}>
-            <Gauge className="h-5 w-5 text-sky-400" />
-            <span>קילומטראז׳</span>
-            <span className="text-[10px] font-normal text-slate-400">עדכון מד</span>
-          </Link>
-        )}
+        <button type="button" className={tileClass} onClick={() => setDialog('mileage')}>
+          <Gauge className="h-5 w-5 text-sky-400" />
+          <span>עדכון ק״מ</span>
+          <span className="text-[10px] font-normal text-slate-400">
+            {showReportMileage ? 'דיווח חדש (יציב)' : 'עדכון מד'}
+          </span>
+        </button>
         <button type="button" className={tileClass} onClick={openCarWash}>
           <Droplets className="h-5 w-5 text-sky-300" />
           <span>עדכון שטיפה</span>
           <span className="text-[10px] font-normal text-slate-400">מצלמה / גלריה</span>
         </button>
       </div>
+
+      <MileageUpdateDialog
+        open={dialog === 'mileage'}
+        onOpenChange={(open) => setDialog(open ? 'mileage' : null)}
+        lockedVehicleId={vehicle.id}
+      />
 
       <Dialog
         open={dialog === 'periodic'}
