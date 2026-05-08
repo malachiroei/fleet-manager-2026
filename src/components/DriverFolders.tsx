@@ -928,10 +928,15 @@ function DocumentsTab({ driver }: { driver: Driver }) {
 
   const allDocs = [...docs, ...legacyDocs, ...reg585FromCompliance];
 
+  const fallbackDocIso =
+    String((driver as unknown as { updated_at?: string | null }).updated_at ?? '').trim() ||
+    String((driver as unknown as { created_at?: string | null }).created_at ?? '').trim() ||
+    new Date().toISOString();
+
   const formatStorageDate = (iso: string | null) => {
-    if (!iso) return '—';
-    const d = new Date(iso);
-    return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString('he-IL');
+    const effective = iso && String(iso).trim() ? String(iso).trim() : fallbackDocIso;
+    const d = new Date(effective);
+    return Number.isNaN(d.getTime()) ? new Date().toLocaleString('he-IL') : d.toLocaleString('he-IL');
   };
 
   if (isError) {
@@ -985,14 +990,15 @@ function DocumentsTab({ driver }: { driver: Driver }) {
     if (!src) continue;
     const isPdf = isPdfUrl(src);
     const createdAt = 'created_at' in doc ? (doc as { created_at?: string }).created_at : undefined;
+    const updatedAt = 'updated_at' in doc ? (doc as { updated_at?: string }).updated_at : undefined;
+    const effectiveIso = String(createdAt ?? updatedAt ?? fallbackDocIso).trim() || new Date().toISOString();
+    const effectiveDate = new Date(effectiveIso);
     registeredRows.push({
       key: `d-${doc.id}`,
-      sortTime: parseDocSortTime(createdAt ?? null),
+      sortTime: parseDocSortTime(effectiveIso),
       kind: 'registered',
       title: doc.title,
-      dateLabel: createdAt
-        ? new Date(createdAt).toLocaleString('he-IL')
-        : '—',
+      dateLabel: Number.isNaN(effectiveDate.getTime()) ? new Date().toLocaleString('he-IL') : effectiveDate.toLocaleString('he-IL'),
       src,
       isPdf,
     });
@@ -1054,7 +1060,7 @@ function DocumentsTab({ driver }: { driver: Driver }) {
                   <th className="px-3 py-2 font-medium">שם</th>
                   <th className="px-3 py-2 font-medium whitespace-nowrap">מקור</th>
                   <th className="px-3 py-2 font-medium whitespace-nowrap">סוג</th>
-                  <th className="px-3 py-2 font-medium whitespace-nowrap">תאריך</th>
+                  <th className="px-3 py-2 font-medium whitespace-nowrap">תאריך סריקה</th>
                   <th className="px-3 py-2 font-medium w-[1%]">פעולות</th>
                 </tr>
               </thead>
