@@ -72,69 +72,45 @@ function towerHintStorageKey(orgId: string, entityId: string, taskKey: string): 
   return `${orgId}|${entityId}|${taskKey}`;
 }
 
-type TowerHintsByUser = Record<string, Record<string, TowerSentHint>>;
-
-function readTowerSentHints(userId: string): Record<string, TowerSentHint> {
+function readTowerSentHints(): Record<string, TowerSentHint> {
   try {
     const raw = localStorage.getItem(TOWER_SENT_HINTS_LS_KEY);
     if (!raw) return {};
-    const p = JSON.parse(raw) as TowerHintsByUser;
-    const byUser = p && typeof p === 'object' ? p : {};
-    const u = byUser?.[userId];
-    return u && typeof u === 'object' ? u : {};
+    const p = JSON.parse(raw) as Record<string, TowerSentHint>;
+    return p && typeof p === 'object' ? p : {};
   } catch {
     return {};
   }
 }
 
-function writeTowerSentHints(userId: string, all: Record<string, TowerSentHint>) {
+function writeTowerSentHints(all: Record<string, TowerSentHint>) {
   try {
-    const raw = localStorage.getItem(TOWER_SENT_HINTS_LS_KEY);
-    const parsed = raw ? (JSON.parse(raw) as TowerHintsByUser) : {};
-    const next: TowerHintsByUser = parsed && typeof parsed === 'object' ? { ...parsed } : {};
-    next[userId] = all;
-    localStorage.setItem(TOWER_SENT_HINTS_LS_KEY, JSON.stringify(next));
+    localStorage.setItem(TOWER_SENT_HINTS_LS_KEY, JSON.stringify(all));
   } catch {
     /* quota / private mode */
   }
 }
 
-function setTowerSentHint(userId: string, orgId: string, entityId: string, taskKey: string, hint: TowerSentHint) {
+function setTowerSentHint(orgId: string, entityId: string, taskKey: string, hint: TowerSentHint) {
   const k = towerHintStorageKey(orgId, entityId, taskKey);
-  const all = readTowerSentHints(userId);
+  const all = readTowerSentHints();
   all[k] = hint;
-  writeTowerSentHints(userId, all);
+  writeTowerSentHints(all);
 }
 
 function removeTowerSentHintByStorageKey(storageKey: string) {
-  try {
-    const raw = localStorage.getItem(TOWER_SENT_HINTS_LS_KEY);
-    if (!raw) return;
-    const parsed = JSON.parse(raw) as TowerHintsByUser;
-    if (!parsed || typeof parsed !== 'object') return;
-    let changed = false;
-    const next: TowerHintsByUser = { ...parsed };
-    for (const [uid, hints] of Object.entries(parsed)) {
-      if (!hints || typeof hints !== 'object') continue;
-      if (hints[storageKey]) {
-        const copy = { ...hints };
-        delete copy[storageKey];
-        next[uid] = copy;
-        changed = true;
-      }
-    }
-    if (changed) localStorage.setItem(TOWER_SENT_HINTS_LS_KEY, JSON.stringify(next));
-  } catch {
-    // ignore
-  }
+  const all = readTowerSentHints();
+  if (!all[storageKey]) return;
+  delete all[storageKey];
+  writeTowerSentHints(all);
 }
 
-function removeTowerSentHint(userId: string, orgId: string, entityId: string, taskKey: string) {
+function removeTowerSentHint(orgId: string, entityId: string, taskKey: string) {
   const k = towerHintStorageKey(orgId, entityId, taskKey);
-  const all = readTowerSentHints(userId);
+  const all = readTowerSentHints();
   if (!all[k]) return;
   delete all[k];
-  writeTowerSentHints(userId, all);
+  writeTowerSentHints(all);
 }
 
 function parseTowerHintStorageKey(key: string): { orgId: string; entityId: string; taskKey: string } | null {
@@ -151,9 +127,9 @@ function mapKeyFromEntityTask(entityId: string, taskKey: string): string {
   return `${entityId}::${taskKey}`;
 }
 
-function pruneExpiredTowerHintsPersisted(userId: string) {
+function pruneExpiredTowerHintsPersisted() {
   const now = Date.now();
-  const all = readTowerSentHints(userId);
+  const all = readTowerSentHints();
   let changed = false;
   const next = { ...all };
   for (const [k, v] of Object.entries(all)) {
@@ -163,7 +139,7 @@ function pruneExpiredTowerHintsPersisted(userId: string) {
       changed = true;
     }
   }
-  if (changed) writeTowerSentHints(userId, next);
+  if (changed) writeTowerSentHints(next);
 }
 
 /** יישור מפתח רמז עם entity_id או driver_id בשורת compliance_requests */
@@ -183,7 +159,6 @@ const FIXED_PICKER_KEYS = {
   days: '__fixed_days',
   status: '__fixed_status',
   actions: '__fixed_actions',
-  bulk: '__fixed_bulk',
 } as const;
 
 /** שליחת בקשה זמינה רק עם עד N ימים לפני פקיעה (וכשפג) — למעלה מזה לא לוחצים. */
@@ -911,6 +886,16 @@ function ComplianceTable<T extends Record<string, unknown>>({
       <Table dir="rtl">
         <TableHeader>
           <TableRow>
+            <TableHead className="w-10 px-2 text-center" aria-label="בחר הכל לשליחה מרוכזת">
+              <Checkbox
+                disabled={eligibleBulkIdsOnScreen.length === 0 || bulkSending}
+                checked={bulkHeaderFullyChecked ? true : bulkHeaderIndeterminate ? 'indeterminate' : false}
+                onCheckedChange={(v) => {
+                  const on = v === true;
+                  onBulkHeaderToggle(eligibleBulkIdsOnScreen, on);
+                }}
+              />
+            </TableHead>
             {safeColumns.map((col) => (
               <TableHead key={col} className="text-right">{prettifyKey(col)}</TableHead>
             ))}
@@ -923,16 +908,6 @@ function ComplianceTable<T extends Record<string, unknown>>({
               </TableHead>
             ) : null}
             <TableHead className="text-right whitespace-nowrap">פעולות</TableHead>
-            <TableHead className="w-10 px-2 text-center" aria-label="בחר הכל לשליחה מרוכזת">
-              <Checkbox
-                disabled={eligibleBulkIdsOnScreen.length === 0 || bulkSending}
-                checked={bulkHeaderFullyChecked ? true : bulkHeaderIndeterminate ? 'indeterminate' : false}
-                onCheckedChange={(v) => {
-                  const on = v === true;
-                  onBulkHeaderToggle(eligibleBulkIdsOnScreen, on);
-                }}
-              />
-            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -973,6 +948,19 @@ function ComplianceTable<T extends Record<string, unknown>>({
                     focusHighlightId && rowEntityId === focusHighlightId && 'ring-2 ring-inset ring-primary/60',
                   )}
                 >
+                  <TableCell className="px-2 align-middle text-center">
+                    <div className="flex justify-center">
+                      <Checkbox
+                        checked={Boolean(rowEntityId && bulkSendSelectionIds.has(rowEntityId))}
+                        disabled={!gate.canSelectBulk || bulkSending || sendingRowKey === rowEntityId}
+                        onCheckedChange={(v) => {
+                          if (!rowEntityId) return;
+                          onBulkToggleRow(rowEntityId, v === true);
+                        }}
+                        aria-label="בחר שורה לשליחה מרוכזת"
+                      />
+                    </div>
+                  </TableCell>
                   {safeColumns.map((col) => (
                     <TableCell key={`${String(row.id ?? idx)}-${col}`} className="text-right">
                       {rowSource === 'vehicle' && col === 'plate_number' && rowEntityId ? (
@@ -1291,19 +1279,6 @@ function ComplianceTable<T extends Record<string, unknown>>({
                       ) : null}
                     </div>
                   </TableCell>
-                  <TableCell className="px-2 align-middle text-center">
-                    <div className="flex justify-center">
-                      <Checkbox
-                        checked={Boolean(rowEntityId && bulkSendSelectionIds.has(rowEntityId))}
-                        disabled={!gate.canSelectBulk || bulkSending || sendingRowKey === rowEntityId}
-                        onCheckedChange={(v) => {
-                          if (!rowEntityId) return;
-                          onBulkToggleRow(rowEntityId, v === true);
-                        }}
-                        aria-label="בחר שורה לשליחה מרוכזת"
-                      />
-                    </div>
-                  </TableCell>
                 </TableRow>
               );
             })
@@ -1370,11 +1345,10 @@ export default function AdminCompliancePage() {
     refetchInterval: 3000,
   });
 
-  const authUserId = String(user?.id ?? '').trim() || 'anon';
   useEffect(() => {
-    // ניקוי מיידי של רמזים עתיקים (לפי משתמש) גם אם לא נפתחו טבלאות עדיין
-    pruneExpiredTowerHintsPersisted(authUserId);
-  }, [authUserId]);
+    // ניקוי מיידי של רמזים עתיקים
+    pruneExpiredTowerHintsPersisted();
+  }, []);
 
   type OpenComplianceRow = {
     driver_id: string | null;
@@ -1566,7 +1540,7 @@ export default function AdminCompliancePage() {
   useEffect(() => {
     const oid = String(orgId ?? '').trim();
     if (!oid) return;
-    const all = readTowerSentHints(authUserId);
+    const all = readTowerSentHints();
     let changed = false;
     const next = { ...all };
     for (const r of openComplianceRequests) {
@@ -1585,8 +1559,8 @@ export default function AdminCompliancePage() {
         }
       }
     }
-    if (changed) writeTowerSentHints(authUserId, next);
-  }, [openComplianceRequests, orgId, authUserId]);
+    if (changed) writeTowerSentHints(next);
+  }, [openComplianceRequests, orgId]);
 
   useEffect(() => {
     setOptimisticCompliancePending((prev) => {
@@ -1660,8 +1634,8 @@ export default function AdminCompliancePage() {
             if (!tk) return;
             const eid = String(oldRow.entity_id ?? '').trim();
             const did = String(oldRow.driver_id ?? '').trim();
-            if (eid) removeTowerSentHint(authUserId, oid, eid, tk);
-            if (did && did !== eid) removeTowerSentHint(authUserId, oid, did, tk);
+            if (eid) removeTowerSentHint(oid, eid, tk);
+            if (did && did !== eid) removeTowerSentHint(oid, did, tk);
             return;
           }
           const row = payload.new as Rowish | null;
@@ -1672,8 +1646,8 @@ export default function AdminCompliancePage() {
             if (!tk) return;
             const eid = String(row.entity_id ?? '').trim();
             const did = String(row.driver_id ?? '').trim();
-            if (eid) removeTowerSentHint(authUserId, oid, eid, tk);
-            if (did && did !== eid) removeTowerSentHint(authUserId, oid, did, tk);
+            if (eid) removeTowerSentHint(oid, eid, tk);
+            if (did && did !== eid) removeTowerSentHint(oid, did, tk);
           }
         },
       )
@@ -1682,7 +1656,7 @@ export default function AdminCompliancePage() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [canAccessAdminComplianceCenter, orgId, queryClient, authUserId]);
+  }, [canAccessAdminComplianceCenter, orgId, queryClient]);
 
   /** בקשות שלא נסגרו (כולל ממתין לאישור מנהל אחרי הגשת נציג) — כדי שהסטטוס לא ייעלם ברענון */
   const openComplianceByEntityTask = useMemo(() => {
@@ -1752,7 +1726,7 @@ export default function AdminCompliancePage() {
     const oid = String(orgId ?? '').trim();
     if (oid) {
       const now = Date.now();
-      const hints = readTowerSentHints(authUserId);
+      const hints = readTowerSentHints();
       for (const [storageKey, hint] of Object.entries(hints)) {
         const parsed = parseTowerHintStorageKey(storageKey);
         if (!parsed || parsed.orgId !== oid) continue;
@@ -1767,7 +1741,7 @@ export default function AdminCompliancePage() {
       }
     }
     return m;
-  }, [openComplianceRequests, optimisticCompliancePending, optimisticVehicleCompliancePending, orgId, authUserId]);
+  }, [openComplianceRequests, optimisticCompliancePending, optimisticVehicleCompliancePending, orgId]);
 
   const [viewFilter, setViewFilter] = useState<TowerViewFilter>('urgent');
   const [customRangeFromDays, setCustomRangeFromDays] = useState(-30);
@@ -2006,14 +1980,14 @@ export default function AdminCompliancePage() {
     const sel = visibleByTab[activeTab] ?? [];
     const dataKeys = sel.filter((k) => k !== COMPLIANCE_COLUMN_SEND_STATUS).length;
     const sendOn = sel.includes(COMPLIANCE_COLUMN_SEND_STATUS);
-    /** שדות מהבורר + תאריך יעד לטאב + ימים + סטטוס + [סטטוס שליחה] + פעולות + צ׳קבוקס */
-    const totalInTable = dataKeys + 5 + (sendOn ? 1 : 0);
+    /** שדות מהבורר + תאריך יעד לטאב + ימים + סטטוס + [סטטוס שליחה] + פעולות (צ׳קבוקס לא נספר כעמודה) */
+    const totalInTable = dataKeys + 4 + (sendOn ? 1 : 0);
     const parts: string[] = [];
     if (dataKeys > 0) parts.push(`${dataKeys} שדות מהרשימה`);
     if (sendOn) parts.push('סטטוס שליחה');
     const selText =
       parts.length > 0 ? parts.join(' · ') : 'ללא שדות נתונים נוספים מהרשימה';
-    return `בחירת עמודות · בטבלה ${totalInTable} (${selText})`;
+    return 'בחירת עמודות';
   }, [visibleByTab, activeTab]);
 
   useEffect(() => {
@@ -2299,7 +2273,7 @@ export default function AdminCompliancePage() {
           sentAt: new Date().toISOString(),
           ...(Number.isFinite(notifySeq) && notifySeq > 0 ? { notifySequence: notifySeq } : {}),
         };
-        setTowerSentHint(authUserId, orgIdRequired, rowKey, tab.key, optimisticPayload);
+        setTowerSentHint(orgIdRequired, rowKey, tab.key, optimisticPayload);
         if (entityType === 'vehicle') {
           setOptimisticVehicleCompliancePending((prev) => ({
             ...prev,
@@ -2644,7 +2618,7 @@ export default function AdminCompliancePage() {
         sentAt: new Date().toISOString(),
         ...(Number.isFinite(notifySeq) && notifySeq > 0 ? { notifySequence: notifySeq } : {}),
       };
-      setTowerSentHint(authUserId, orgId, vid, leasingContext.tab.key, leasingOptimistic);
+      setTowerSentHint(orgId, vid, leasingContext.tab.key, leasingOptimistic);
       setOptimisticVehicleCompliancePending((prev) => ({
         ...prev,
         [`${vid}::${leasingContext.tab.key}`]: leasingOptimistic,
@@ -2852,7 +2826,6 @@ export default function AdminCompliancePage() {
                   { key: FIXED_PICKER_KEYS.days, label: 'ימים נותרו' },
                   { key: FIXED_PICKER_KEYS.status, label: 'סטטוס' },
                   { key: FIXED_PICKER_KEYS.actions, label: 'פעולות' },
-                  { key: FIXED_PICKER_KEYS.bulk, label: 'בחירה (צ׳קבוקס)' },
                 ]}
                 selected={visibleByTab[activeTab]}
                 onSaveSession={saveColumnsSessionOnly}
