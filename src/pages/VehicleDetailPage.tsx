@@ -545,9 +545,11 @@ export default function VehicleDetailPage() {
           vehicle_label: String(vehicle?.plate_number ?? '').trim(),
         });
         if (error) throw error;
-        const payload = data as { success?: boolean; error?: string } | null;
+        const payload = data as { success?: boolean; sent_to?: string; error?: string } | null;
         if (payload?.error) throw new Error(String(payload.error));
-        toast.success(`נשלח למייל: ${to}`);
+        if (payload?.success !== true) throw new Error('השרת לא אישר שהמייל נשלח.');
+        const sentTo = String(payload.sent_to ?? to).trim();
+        toast.success(`המייל נשלח בהצלחה ל־${sentTo}`);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         toast.error(`שליחה נכשלה: ${msg}`);

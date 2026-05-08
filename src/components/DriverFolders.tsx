@@ -928,9 +928,11 @@ function DocumentsTab({ driver }: { driver: Driver }) {
         driver_name: driver.full_name,
       });
       if (error) throw error;
-      const payload = data as { success?: boolean; error?: string };
+      const payload = data as { success?: boolean; sent_to?: string; error?: string } | null;
       if (payload?.error) throw new Error(String(payload.error));
-      toast.success('נשלח בהצלחה');
+      if (payload?.success !== true) throw new Error('השרת לא אישר שהמייל נשלח.');
+      const to = String(payload.sent_to ?? toEmail).trim();
+      toast.success(`המייל נשלח בהצלחה ל־${to}`);
     } catch (e) {
       const msg = await friendlyEdgeError(e);
       toast.error(`שליחה נכשלה: ${msg}`);
