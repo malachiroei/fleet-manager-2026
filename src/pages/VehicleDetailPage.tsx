@@ -346,6 +346,9 @@ export default function VehicleDetailPage() {
   const syncFromPricing = useSyncVehicleFromPricing();
   const [isSyncing, setIsSyncing] = useState(false);
   const [isUploadingDocument, setIsUploadingDocument] = useState(false);
+  /** קובץ שנבחר במסך מסמכים — נשמר רק בלחיצה על «שמור במסמכים» */
+  const [pendingVehicleDocument, setPendingVehicleDocument] = useState<File | null>(null);
+  const vehicleDocFileInputRef = useRef<HTMLInputElement>(null);
   const [sendingDocUrl, setSendingDocUrl] = useState<string | null>(null);
   const docScrollDoneKeyRef = useRef<string | null>(null);
   const section = location.hash.replace('#', '');
@@ -847,10 +850,9 @@ export default function VehicleDetailPage() {
   const handleDocumentUpload = async (file: File | null) => {
     if (!file || !vehicle) return;
 
-    setDirty(DIRTY_SOURCE_SPEC, true);
     setIsUploadingDocument(true);
     try {
-      const fileName = `vehicle-files/${vehicle.id}/${Date.now()}_${file.name}`;
+      const fileName = `vehicle-files/${vehicle.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
       const { error: uploadError } = await supabase.storage
         .from('vehicle-documents')
         .upload(fileName, file, { upsert: true });
@@ -873,9 +875,12 @@ export default function VehicleDetailPage() {
       if (insertError) throw insertError;
 
       await refetchVehicleDocuments();
-      setDirty(DIRTY_SOURCE_SPEC, false);
-    } catch {
-      setDirty(DIRTY_SOURCE_SPEC, false);
+      toast.success('המסמך נשמר במסמכי הרכב');
+      setPendingVehicleDocument(null);
+      if (vehicleDocFileInputRef.current) vehicleDocFileInputRef.current.value = '';
+    } catch (e) {
+      const msg = e && typeof e === 'object' && 'message' in e ? String((e as { message: string }).message) : String(e);
+      toast.error(`שמירת המסמך נכשלה: ${msg}`);
     } finally {
       setIsUploadingDocument(false);
     }
@@ -1849,13 +1854,48 @@ export default function VehicleDetailPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center gap-3">
+              <p className="text-sm text-muted-foreground">
+                בחרו קובץ ואז לחצו «שמור במסמכים». אם השמירה נכשלת תופיע הודעת שגיאה (למשל חסרות הרשאות).
+              </p>
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                 <Input
+                  ref={vehicleDocFileInputRef}
                   type="file"
-                  onChange={(event) => handleDocumentUpload(event.target.files?.[0] ?? null)}
+                  accept="image/*,application/pdf,.pdf"
+                  onChange={(event) => {
+                    const f = event.target.files?.[0] ?? null;
+                    setPendingVehicleDocument(f);
+                  }}
                   disabled={isUploadingDocument}
+                  className="max-w-full"
                 />
-                {isUploadingDocument && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                <Button
+                  type="button"
+                  disabled={!pendingVehicleDocument || isUploadingDocument}
+                  onClick={() => void handleDocumentUpload(pendingVehicleDocument)}
+                >
+                  {isUploadingDocument ? (
+                    <>
+                      <Loader2 className="ms-2 h-4 w-4 animate-spin" />
+                      שומר…
+                    </>
+                  ) : (
+                    'שמור במסמכים'
+                  )}
+                </Button>
+                {pendingVehicleDocument && !isUploadingDocument ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setPendingVehicleDocument(null);
+                      if (vehicleDocFileInputRef.current) vehicleDocFileInputRef.current.value = '';
+                    }}
+                  >
+                    ביטול בחירה
+                  </Button>
+                ) : null}
               </div>
               {vehicleDocumentsDisplay.length === 0 ? (
                 <p className="text-sm text-muted-foreground">אין מסמכים לרכב זה</p>
@@ -1870,7 +1910,8 @@ export default function VehicleDetailPage() {
                       dt === 'insurance_policy' ||
                       dt === 'tire_change' ||
                       dt === 'periodic_inspection' ||
-                      dt === 'car_wash'
+                      dt === 'car_wash' ||
+                      dt === 'mileage_update'
                         ? dt
                         : /רישיון רכב \(טסט\)|טסט/i.test(titleStr)
                           ? 'annual_license'
@@ -1882,7 +1923,9 @@ export default function VehicleDetailPage() {
                                 ? 'periodic_inspection'
                                 : /שטיפת רכב|שטיפה/i.test(titleStr)
                                   ? 'car_wash'
-                                  : null;
+                                  : /עדכון ק[״"]?מ|קילומטראז/i.test(titleStr)
+                                    ? 'mileage_update'
+                                    : null;
                     const dataFocus =
                       inferredFocus === 'annual_license'
                         ? dt === 'annual_license'
