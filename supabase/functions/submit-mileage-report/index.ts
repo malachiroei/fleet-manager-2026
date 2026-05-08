@@ -62,7 +62,15 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
     const { data: u, error: userErr } = await authed.auth.getUser();
-    if (userErr) return json({ error: userErr.message }, 401);
+    if (userErr) {
+      return json(
+        {
+          error: `Invalid JWT: ${userErr.message}`,
+          hint: 'נסו להתנתק ולהתחבר מחדש (Access Token לא תקין).',
+        },
+        401,
+      );
+    }
     const uid = String(u?.user?.id ?? '').trim();
     if (!uid || !isUuid(uid)) return json({ error: 'Not authenticated' }, 401);
 

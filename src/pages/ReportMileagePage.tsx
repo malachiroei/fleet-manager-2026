@@ -99,12 +99,18 @@ async function friendlyEdgeInvokeError(err: unknown): Promise<string> {
 }
 
 async function invokeEdgeAuthOnly(functionName: string, body: Record<string, unknown>) {
+  // נסיון ריענון סשן לפני invoke (בפרו יש מקרים של טוקן ישן בדפדפן)
+  try {
+    await supabase.auth.refreshSession();
+  } catch {
+    // ignore
+  }
   const { data } = await supabase.auth.getSession();
   const accessToken = data?.session?.access_token ?? '';
   if (!accessToken) {
     return { data: null as unknown, error: new Error('החיבור פג תוקף — נא להתנתק ולהתחבר מחדש ואז לנסות שוב.') };
   }
-  return supabase.functions.invoke(functionName, {
+  const res = await supabase.functions.invoke(functionName, {
     body,
     headers: {
       // apikey נדרש בחלק מהפרויקטים גם עם JWT
@@ -112,6 +118,26 @@ async function invokeEdgeAuthOnly(functionName: string, body: Record<string, unk
       Authorization: `Bearer ${accessToken}`,
     },
   });
+  // אם קיבלנו 401, ננסה ריענון נוסף פעם אחת (טוקן שהתיישן בין getSession ל-invoke)
+  const ctx = (res.error as unknown as { context?: Response } | undefined)?.context;
+  if (res.error && ctx && ctx.status === 401) {
+    try {
+      await supabase.auth.refreshSession();
+      const { data: data2 } = await supabase.auth.getSession();
+      const token2 = data2?.session?.access_token ?? '';
+      if (!token2) return res;
+      return await supabase.functions.invoke(functionName, {
+        body,
+        headers: {
+          ...(getSupabaseAnonKey() ? { apikey: getSupabaseAnonKey() } : {}),
+          Authorization: `Bearer ${token2}`,
+        },
+      });
+    } catch {
+      return res;
+    }
+  }
+  return res;
 }
 
 /** Prod drift: old RPC/trigger used column `odometer`; table column is `odometer_value`. */
