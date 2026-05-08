@@ -1568,28 +1568,41 @@ export default function VehicleDetailPage() {
                 </div>
                 <CardTitle>נתוני מס</CardTitle>
               </div>
-              {vehicle.manufacturer_code && vehicle.model_code ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleSyncFromPricing}
-                  disabled={isSyncing}
-                >
-                  {isSyncing ? (
-                    <Loader2 className="h-4 w-4 animate-spin ml-1" />
-                  ) : (
-                    <RefreshCw className="h-4 w-4 ml-1" />
-                  )}
-                  סנכרון נתונים
-                </Button>
-              ) : (
-                <Link to={`/vehicles/${vehicle.id}/edit`}>
-                  <Button variant="outline" size="sm" className="border-amber-500/50 text-amber-400 hover:bg-amber-500/10">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {vehicle.manufacturer_code && vehicle.model_code ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSyncFromPricing}
+                    disabled={isSyncing}
+                  >
+                    {isSyncing ? (
+                      <Loader2 className="h-4 w-4 animate-spin ml-1" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4 ml-1" />
+                    )}
+                    סנכרון נתונים
+                  </Button>
+                ) : null}
+                <Link to={`/vehicles/${vehicle.id}/edit#tax_value_price`}>
+                  <Button variant="outline" size="sm">
                     <Edit className="h-4 w-4 ml-1" />
-                    הגדר קוד תוצר/דגם
+                    עריכה
                   </Button>
                 </Link>
-              )}
+                {!vehicle.manufacturer_code || !vehicle.model_code ? (
+                  <Link to={`/vehicles/${vehicle.id}/edit`}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-amber-500/50 text-amber-400 hover:bg-amber-500/10"
+                    >
+                      <Edit className="h-4 w-4 ml-1" />
+                      הגדר קוד תוצר/דגם
+                    </Button>
+                  </Link>
+                ) : null}
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
