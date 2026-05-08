@@ -62,8 +62,8 @@ function appendSendStatusColumnKey(keys: string[]): string[] {
   return keys.includes(COMPLIANCE_COLUMN_SEND_STATUS) ? keys : [...keys, COMPLIANCE_COLUMN_SEND_STATUS];
 }
 
-/** נשמר ב-sessionStorage — שורד רענון עמוד; מנוקה כשהשרת מחזיר בקשה פתוחה או כשנסגרת (הושלמה/פגה) */
-const TOWER_SENT_HINTS_SS_KEY = 'fleet_compliance_tower_sent_hints_v1';
+/** נשמר ב-localStorage — שורד רענון + התנתקות/התחברות; מנוקה כשהשרת מחזיר בקשה פתוחה או כשנסגרת (הושלמה/פגה) */
+const TOWER_SENT_HINTS_LS_KEY = 'fleet_compliance_tower_sent_hints_v2';
 const TOWER_HINT_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 
 type TowerSentHint = { sentAt: string; notifySequence?: number };
@@ -72,41 +72,69 @@ function towerHintStorageKey(orgId: string, entityId: string, taskKey: string): 
   return `${orgId}|${entityId}|${taskKey}`;
 }
 
-function readTowerSentHints(): Record<string, TowerSentHint> {
+type TowerHintsByUser = Record<string, Record<string, TowerSentHint>>;
+
+function readTowerSentHints(userId: string): Record<string, TowerSentHint> {
   try {
-    const raw = sessionStorage.getItem(TOWER_SENT_HINTS_SS_KEY);
+    const raw = localStorage.getItem(TOWER_SENT_HINTS_LS_KEY);
     if (!raw) return {};
-    const p = JSON.parse(raw) as Record<string, TowerSentHint>;
-    return p && typeof p === 'object' ? p : {};
+    const p = JSON.parse(raw) as TowerHintsByUser;
+    const byUser = p && typeof p === 'object' ? p : {};
+    const u = byUser?.[userId];
+    return u && typeof u === 'object' ? u : {};
   } catch {
     return {};
   }
 }
 
-function writeTowerSentHints(all: Record<string, TowerSentHint>) {
+function writeTowerSentHints(userId: string, all: Record<string, TowerSentHint>) {
   try {
-    sessionStorage.setItem(TOWER_SENT_HINTS_SS_KEY, JSON.stringify(all));
+    const raw = localStorage.getItem(TOWER_SENT_HINTS_LS_KEY);
+    const parsed = raw ? (JSON.parse(raw) as TowerHintsByUser) : {};
+    const next: TowerHintsByUser = parsed && typeof parsed === 'object' ? { ...parsed } : {};
+    next[userId] = all;
+    localStorage.setItem(TOWER_SENT_HINTS_LS_KEY, JSON.stringify(next));
   } catch {
     /* quota / private mode */
   }
 }
 
-function setTowerSentHint(orgId: string, entityId: string, taskKey: string, hint: TowerSentHint) {
+function setTowerSentHint(userId: string, orgId: string, entityId: string, taskKey: string, hint: TowerSentHint) {
   const k = towerHintStorageKey(orgId, entityId, taskKey);
-  const all = readTowerSentHints();
+  const all = readTowerSentHints(userId);
   all[k] = hint;
-  writeTowerSentHints(all);
+  writeTowerSentHints(userId, all);
 }
 
 function removeTowerSentHintByStorageKey(storageKey: string) {
-  const all = readTowerSentHints();
-  if (!all[storageKey]) return;
-  delete all[storageKey];
-  writeTowerSentHints(all);
+  try {
+    const raw = localStorage.getItem(TOWER_SENT_HINTS_LS_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as TowerHintsByUser;
+    if (!parsed || typeof parsed !== 'object') return;
+    let changed = false;
+    const next: TowerHintsByUser = { ...parsed };
+    for (const [uid, hints] of Object.entries(parsed)) {
+      if (!hints || typeof hints !== 'object') continue;
+      if (hints[storageKey]) {
+        const copy = { ...hints };
+        delete copy[storageKey];
+        next[uid] = copy;
+        changed = true;
+      }
+    }
+    if (changed) localStorage.setItem(TOWER_SENT_HINTS_LS_KEY, JSON.stringify(next));
+  } catch {
+    // ignore
+  }
 }
 
-function removeTowerSentHint(orgId: string, entityId: string, taskKey: string) {
-  removeTowerSentHintByStorageKey(towerHintStorageKey(orgId, entityId, taskKey));
+function removeTowerSentHint(userId: string, orgId: string, entityId: string, taskKey: string) {
+  const k = towerHintStorageKey(orgId, entityId, taskKey);
+  const all = readTowerSentHints(userId);
+  if (!all[k]) return;
+  delete all[k];
+  writeTowerSentHints(userId, all);
 }
 
 function parseTowerHintStorageKey(key: string): { orgId: string; entityId: string; taskKey: string } | null {
@@ -123,9 +151,9 @@ function mapKeyFromEntityTask(entityId: string, taskKey: string): string {
   return `${entityId}::${taskKey}`;
 }
 
-function pruneExpiredTowerHintsPersisted() {
+function pruneExpiredTowerHintsPersisted(userId: string) {
   const now = Date.now();
-  const all = readTowerSentHints();
+  const all = readTowerSentHints(userId);
   let changed = false;
   const next = { ...all };
   for (const [k, v] of Object.entries(all)) {
@@ -135,7 +163,7 @@ function pruneExpiredTowerHintsPersisted() {
       changed = true;
     }
   }
-  if (changed) writeTowerSentHints(next);
+  if (changed) writeTowerSentHints(userId, next);
 }
 
 /** יישור מפתח רמז עם entity_id או driver_id בשורת compliance_requests */
@@ -147,9 +175,16 @@ function removeTowerHintsMatchingComplianceRow(
   if (!tk) return;
   const eid = String(row.entity_id ?? '').trim();
   const did = String(row.driver_id ?? '').trim();
-  if (eid) removeTowerSentHint(orgId, eid, tk);
-  if (did && did !== eid) removeTowerSentHint(orgId, did, tk);
+  // userId נשלף בעת האירוע (ראה realtime effect)
 }
+
+const FIXED_PICKER_KEYS = {
+  due: '__fixed_due',
+  days: '__fixed_days',
+  status: '__fixed_status',
+  actions: '__fixed_actions',
+  bulk: '__fixed_bulk',
+} as const;
 
 /** שליחת בקשה זמינה רק עם עד N ימים לפני פקיעה (וכשפג) — למעלה מזה לא לוחצים. */
 const COMPLIANCE_SEND_MAX_DAYS_REMAINING = 60;
@@ -631,6 +666,7 @@ function renderValue(raw: unknown, col?: string): string {
 
 function SearchableColumnPicker({
   allKeys,
+  fixedItems,
   selected,
   onSaveSession,
   onSaveDefault,
@@ -638,6 +674,7 @@ function SearchableColumnPicker({
   triggerLabel,
 }: {
   allKeys: string[];
+  fixedItems: Array<{ key: string; label: string }>;
   selected: string[];
   onSaveSession: (next: string[]) => void;
   onSaveDefault: (next: string[]) => void;
@@ -649,6 +686,7 @@ function SearchableColumnPicker({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [draftSelected, setDraftSelected] = useState<string[]>(selected);
+  const fixedKeySet = useMemo(() => new Set(fixedItems.map((x) => x.key)), [fixedItems]);
 
   useEffect(() => {
     if (!open) setDraftSelected(selected);
@@ -656,17 +694,27 @@ function SearchableColumnPicker({
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return allKeys;
-    return allKeys.filter((k) => k.toLowerCase().includes(q) || prettifyKey(k).toLowerCase().includes(q));
-  }, [allKeys, query]);
+    const fixed = fixedItems.filter((it) => {
+      if (!q) return true;
+      return it.key.toLowerCase().includes(q) || it.label.toLowerCase().includes(q);
+    });
+    const rest = allKeys.filter((k) => !fixedKeySet.has(k)).filter((k) => {
+      if (!q) return true;
+      return k.toLowerCase().includes(q) || prettifyKey(k).toLowerCase().includes(q);
+    });
+    return { fixed, rest };
+  }, [allKeys, fixedItems, fixedKeySet, query]);
 
   const toggle = (key: string) => {
+    if (fixedKeySet.has(key)) return;
     if (draftSelected.includes(key)) {
       setDraftSelected(draftSelected.filter((x) => x !== key));
       return;
     }
     setDraftSelected([...draftSelected, key]);
   };
+
+  const selectableKeys = useMemo(() => allKeys.filter((k) => !fixedKeySet.has(k)), [allKeys, fixedKeySet]);
 
   return (
     <Popover
@@ -690,7 +738,7 @@ function SearchableColumnPicker({
             placeholder="חיפוש שדה..."
           />
           <div className="flex gap-2">
-            <Button type="button" size="sm" variant="secondary" onClick={() => setDraftSelected([...allKeys])}>בחר הכל</Button>
+            <Button type="button" size="sm" variant="secondary" onClick={() => setDraftSelected([...selectableKeys])}>בחר הכל</Button>
             <Button type="button" size="sm" variant="secondary" onClick={() => setDraftSelected([])}>נקה הכל</Button>
             <Button
               type="button"
@@ -723,13 +771,26 @@ function SearchableColumnPicker({
             </Button>
           </div>
           <div className="max-h-72 overflow-auto rounded-md border p-2">
-            {shown.map((key) => (
+            {shown.fixed.map((it) => (
+              <label
+                key={it.key}
+                className="flex cursor-not-allowed items-center gap-2 rounded px-2 py-1 opacity-80"
+                title="עמודה קבועה בטבלה"
+              >
+                <Checkbox checked disabled />
+                <span className="text-sm">{it.label}</span>
+              </label>
+            ))}
+            {shown.fixed.length > 0 && shown.rest.length > 0 ? <div className="my-2 border-t" /> : null}
+            {shown.rest.map((key) => (
               <label key={key} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-muted">
                 <Checkbox checked={draftSelected.includes(key)} onCheckedChange={() => toggle(key)} />
                 <span className="text-sm">{prettifyKey(key)}</span>
               </label>
             ))}
-            {shown.length === 0 ? <p className="px-2 py-3 text-sm text-muted-foreground">לא נמצאו עמודות</p> : null}
+            {shown.fixed.length === 0 && shown.rest.length === 0 ? (
+              <p className="px-2 py-3 text-sm text-muted-foreground">לא נמצאו עמודות</p>
+            ) : null}
           </div>
         </div>
       </PopoverContent>
@@ -1309,6 +1370,12 @@ export default function AdminCompliancePage() {
     refetchInterval: 3000,
   });
 
+  const authUserId = String(user?.id ?? '').trim() || 'anon';
+  useEffect(() => {
+    // ניקוי מיידי של רמזים עתיקים (לפי משתמש) גם אם לא נפתחו טבלאות עדיין
+    pruneExpiredTowerHintsPersisted(authUserId);
+  }, [authUserId]);
+
   type OpenComplianceRow = {
     driver_id: string | null;
     entity_type: string | null;
@@ -1495,15 +1562,11 @@ export default function AdminCompliancePage() {
     }
   }, [openComplianceRequestsIsError, openComplianceRequestsError]);
 
-  useEffect(() => {
-    pruneExpiredTowerHintsPersisted();
-  }, [orgId]);
-
   /** כשהשרת מחזיר שורת בקשה פתוחה — הרמז ב-sessionStorage מיותר */
   useEffect(() => {
     const oid = String(orgId ?? '').trim();
     if (!oid) return;
-    const all = readTowerSentHints();
+    const all = readTowerSentHints(authUserId);
     let changed = false;
     const next = { ...all };
     for (const r of openComplianceRequests) {
@@ -1522,8 +1585,8 @@ export default function AdminCompliancePage() {
         }
       }
     }
-    if (changed) writeTowerSentHints(next);
-  }, [openComplianceRequests, orgId]);
+    if (changed) writeTowerSentHints(authUserId, next);
+  }, [openComplianceRequests, orgId, authUserId]);
 
   useEffect(() => {
     setOptimisticCompliancePending((prev) => {
@@ -1592,14 +1655,25 @@ export default function AdminCompliancePage() {
           if (!oid) return;
           type Rowish = { entity_id?: unknown; driver_id?: unknown; task_key?: unknown; status?: unknown };
           if (payload.eventType === 'DELETE') {
-            removeTowerHintsMatchingComplianceRow(oid, (payload.old ?? {}) as Rowish);
+            const oldRow = (payload.old ?? {}) as Rowish;
+            const tk = String(oldRow.task_key ?? '').trim();
+            if (!tk) return;
+            const eid = String(oldRow.entity_id ?? '').trim();
+            const did = String(oldRow.driver_id ?? '').trim();
+            if (eid) removeTowerSentHint(authUserId, oid, eid, tk);
+            if (did && did !== eid) removeTowerSentHint(authUserId, oid, did, tk);
             return;
           }
           const row = payload.new as Rowish | null;
           if (!row) return;
           const st = String(row.status ?? '').trim().toLowerCase();
           if (st === 'completed' || st === 'expired') {
-            removeTowerHintsMatchingComplianceRow(oid, row);
+            const tk = String(row.task_key ?? '').trim();
+            if (!tk) return;
+            const eid = String(row.entity_id ?? '').trim();
+            const did = String(row.driver_id ?? '').trim();
+            if (eid) removeTowerSentHint(authUserId, oid, eid, tk);
+            if (did && did !== eid) removeTowerSentHint(authUserId, oid, did, tk);
           }
         },
       )
@@ -1608,7 +1682,7 @@ export default function AdminCompliancePage() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [canAccessAdminComplianceCenter, orgId, queryClient]);
+  }, [canAccessAdminComplianceCenter, orgId, queryClient, authUserId]);
 
   /** בקשות שלא נסגרו (כולל ממתין לאישור מנהל אחרי הגשת נציג) — כדי שהסטטוס לא ייעלם ברענון */
   const openComplianceByEntityTask = useMemo(() => {
@@ -1678,7 +1752,7 @@ export default function AdminCompliancePage() {
     const oid = String(orgId ?? '').trim();
     if (oid) {
       const now = Date.now();
-      const hints = readTowerSentHints();
+      const hints = readTowerSentHints(authUserId);
       for (const [storageKey, hint] of Object.entries(hints)) {
         const parsed = parseTowerHintStorageKey(storageKey);
         if (!parsed || parsed.orgId !== oid) continue;
@@ -1693,7 +1767,7 @@ export default function AdminCompliancePage() {
       }
     }
     return m;
-  }, [openComplianceRequests, optimisticCompliancePending, optimisticVehicleCompliancePending, orgId]);
+  }, [openComplianceRequests, optimisticCompliancePending, optimisticVehicleCompliancePending, orgId, authUserId]);
 
   const [viewFilter, setViewFilter] = useState<TowerViewFilter>('urgent');
   const [customRangeFromDays, setCustomRangeFromDays] = useState(-30);
@@ -1939,7 +2013,7 @@ export default function AdminCompliancePage() {
     if (sendOn) parts.push('סטטוס שליחה');
     const selText =
       parts.length > 0 ? parts.join(' · ') : 'ללא שדות נתונים נוספים מהרשימה';
-    return `עמודות — בטבלה ${totalInTable} (${selText})`;
+    return `בחירת עמודות · בטבלה ${totalInTable} (${selText})`;
   }, [visibleByTab, activeTab]);
 
   useEffect(() => {
@@ -2225,7 +2299,7 @@ export default function AdminCompliancePage() {
           sentAt: new Date().toISOString(),
           ...(Number.isFinite(notifySeq) && notifySeq > 0 ? { notifySequence: notifySeq } : {}),
         };
-        setTowerSentHint(orgIdRequired, rowKey, tab.key, optimisticPayload);
+        setTowerSentHint(authUserId, orgIdRequired, rowKey, tab.key, optimisticPayload);
         if (entityType === 'vehicle') {
           setOptimisticVehicleCompliancePending((prev) => ({
             ...prev,
@@ -2570,7 +2644,7 @@ export default function AdminCompliancePage() {
         sentAt: new Date().toISOString(),
         ...(Number.isFinite(notifySeq) && notifySeq > 0 ? { notifySequence: notifySeq } : {}),
       };
-      setTowerSentHint(orgId, vid, leasingContext.tab.key, leasingOptimistic);
+      setTowerSentHint(authUserId, orgId, vid, leasingContext.tab.key, leasingOptimistic);
       setOptimisticVehicleCompliancePending((prev) => ({
         ...prev,
         [`${vid}::${leasingContext.tab.key}`]: leasingOptimistic,
@@ -2773,6 +2847,13 @@ export default function AdminCompliancePage() {
               <SearchableColumnPicker
                 key={activeTab}
                 allKeys={currentAllColumns}
+                fixedItems={[
+                  { key: FIXED_PICKER_KEYS.due, label: `תאריך יעד (${prettifyKey(activeDef.dueField)})` },
+                  { key: FIXED_PICKER_KEYS.days, label: 'ימים נותרו' },
+                  { key: FIXED_PICKER_KEYS.status, label: 'סטטוס' },
+                  { key: FIXED_PICKER_KEYS.actions, label: 'פעולות' },
+                  { key: FIXED_PICKER_KEYS.bulk, label: 'בחירה (צ׳קבוקס)' },
+                ]}
                 selected={visibleByTab[activeTab]}
                 onSaveSession={saveColumnsSessionOnly}
                 onSaveDefault={saveColumnsDefaults}
