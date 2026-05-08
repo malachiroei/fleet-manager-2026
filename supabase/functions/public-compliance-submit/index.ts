@@ -176,6 +176,13 @@ serve(async (req) => {
       if (declaredLicYmd) {
         driverPatch.pending_license_expiry = declaredLicYmd;
       }
+      if (declaredLicNo) {
+        driverPatch.license_number = declaredLicNo;
+      }
+      /** במערכות קיימות אין UI שמציג pending — לכן לעדכן גם את התוקף עצמו כשנמסר במפורש */
+      if (declaredLicYmd) {
+        driverPatch.license_expiry = declaredLicYmd;
+      }
 
       let updErr = (await admin.from('drivers').update(driverPatch).eq('id', requestRow.driver_id).eq('org_id', requestRow.org_id))
         .error;

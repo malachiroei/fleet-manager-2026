@@ -14,6 +14,7 @@ import { useComplaints, useCreateComplaint, type Complaint } from '@/hooks/useCo
 import { useDriverHandoverHistory, handoverFormDocumentLinks, type HandoverHistoryItem } from '@/hooks/useHandovers';
 import { useDriverDocuments } from '@/hooks/useDriverDocuments';
 import { useDriverStorageFiles } from '@/hooks/useDriverStorageFiles';
+import { invokeSupabaseEdgeFunction } from '@/lib/supabase/invokeEdgeFunction';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -895,6 +896,24 @@ function DocumentsTab({ driver }: { driver: Driver }) {
   });
   const [lightbox, setLightbox] = useState<{ src: string; title: string } | null>(null);
   const [docSearch, setDocSearch] = useState('');
+  const [sendingDocKey, setSendingDocKey] = useState<string | null>(null);
+
+  const sendDocLinkEmail = async (toEmail: string, docUrl: string, docTitle: string) => {
+    setSendingDocKey(docUrl);
+    try {
+      const { data, error } = await invokeSupabaseEdgeFunction('send-document-link-email', {
+        to_email: toEmail,
+        doc_url: docUrl,
+        doc_title: docTitle,
+        driver_name: driver.full_name,
+      });
+      if (error) throw error;
+      const payload = data as { success?: boolean; error?: string };
+      if (payload?.error) throw new Error(String(payload.error));
+    } finally {
+      setSendingDocKey(null);
+    }
+  };
 
   const getUrl = (path: string | null): string | undefined => {
     if (!path) return undefined;
@@ -1116,6 +1135,31 @@ function DocumentsTab({ driver }: { driver: Driver }) {
                               <Download className="h-3.5 w-3.5" />
                               הורדה
                             </a>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs font-medium hover:bg-muted"
+                              disabled={sendingDocKey === row.publicUrl || !String(driver.email ?? '').trim()}
+                              onClick={() => void sendDocLinkEmail(String(driver.email ?? '').trim(), row.publicUrl, row.displayTitle)}
+                              title={!String(driver.email ?? '').trim() ? 'לנהג אין מייל בכרטיס' : 'שלח קישור לעובד'}
+                            >
+                              {sendingDocKey === row.publicUrl ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                              שלח לעובד
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs font-medium hover:bg-muted"
+                              disabled={sendingDocKey === row.publicUrl}
+                              onClick={() => {
+                                const input = window.prompt('לאיזה מייל לשלוח?');
+                                const to = String(input ?? '').trim();
+                                if (!to) return;
+                                void sendDocLinkEmail(to, row.publicUrl, row.displayTitle);
+                              }}
+                              title="שליחה למייל ידני"
+                            >
+                              {sendingDocKey === row.publicUrl ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                              שלח למייל
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -1171,6 +1215,31 @@ function DocumentsTab({ driver }: { driver: Driver }) {
                               צפייה
                             </button>
                           )}
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs font-medium hover:bg-muted"
+                            disabled={sendingDocKey === row.src || !String(driver.email ?? '').trim()}
+                            onClick={() => void sendDocLinkEmail(String(driver.email ?? '').trim(), row.src, row.title)}
+                            title={!String(driver.email ?? '').trim() ? 'לנהג אין מייל בכרטיס' : 'שלח קישור לעובד'}
+                          >
+                            {sendingDocKey === row.src ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                            שלח לעובד
+                          </button>
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs font-medium hover:bg-muted"
+                            disabled={sendingDocKey === row.src}
+                            onClick={() => {
+                              const input = window.prompt('לאיזה מייל לשלוח?');
+                              const to = String(input ?? '').trim();
+                              if (!to) return;
+                              void sendDocLinkEmail(to, row.src, row.title);
+                            }}
+                            title="שליחה למייל ידני"
+                          >
+                            {sendingDocKey === row.src ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                            שלח למייל
+                          </button>
                         </div>
                       </td>
                     </tr>
