@@ -7,7 +7,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const FROM_EMAIL = 'Fleet Manager Pro <no-reply@fleet-manager.pro>';
+// חייב להיות דומיין מאומת ב-Resend (כמו send-invite)
+const FROM_EMAIL = 'Fleet Manager Pro <invites@fleet-manager-pro.com>';
 
 type Body = {
   to_email?: string;
@@ -57,10 +58,9 @@ serve(async (req) => {
     if (!docUrl || !isValidHttpUrl(docUrl)) return json({ error: 'Missing or invalid doc_url' }, 400);
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-    const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     const resendApiKey = Deno.env.get('RESEND_API_KEY') ?? '';
-    if (!supabaseUrl || !anonKey || !serviceRoleKey || !resendApiKey) {
+    if (!supabaseUrl || !serviceRoleKey || !resendApiKey) {
       return json({ error: 'Missing server secrets' }, 500);
     }
 
@@ -68,29 +68,8 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    // best-effort org name from JWT user (optional)
-    let orgName = '';
-    try {
-      const jwt = req.headers.get('Authorization')?.replace(/^Bearer\s+/i, '')?.trim() ?? '';
-      if (jwt) {
-        const authed = createClient(supabaseUrl, anonKey, {
-          global: { headers: { Authorization: `Bearer ${jwt}`, apikey: anonKey } },
-          auth: { autoRefreshToken: false, persistSession: false },
-        });
-        const { data: u } = await authed.auth.getUser();
-        const uid = u?.user?.id ?? '';
-        if (uid) {
-          const { data: p } = await authed.from('profiles').select('org_id').eq('id', uid).maybeSingle();
-          const oid = (p as { org_id?: string } | null)?.org_id ?? '';
-          if (oid) {
-            const { data: o } = await admin.from('organizations').select('name').eq('id', oid).maybeSingle();
-            orgName = (o as { name?: string } | null)?.name?.trim() ?? '';
-          }
-        }
-      }
-    } catch {
-      // ignore
-    }
+    // השם הארגוני אופציונלי; לא חוסם שליחה (מונע תלות בטבלאות/RLS)
+    const orgName = '';
 
     const subjectParts = [docTitle];
     if (driverName) subjectParts.push(`— ${driverName}`);

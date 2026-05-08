@@ -16,6 +16,7 @@ import { useDriverDocuments } from '@/hooks/useDriverDocuments';
 import { useDriverStorageFiles } from '@/hooks/useDriverStorageFiles';
 import { invokeSupabaseEdgeFunction } from '@/lib/supabase/invokeEdgeFunction';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -899,6 +900,24 @@ function DocumentsTab({ driver }: { driver: Driver }) {
   const [docSearch, setDocSearch] = useState('');
   const [sendingDocKey, setSendingDocKey] = useState<string | null>(null);
 
+  const friendlyEdgeError = async (err: unknown): Promise<string> => {
+    const base = err instanceof Error ? err.message : String(err);
+    const ctx = (err as { context?: Response } | undefined)?.context;
+    if (!ctx) return base;
+    try {
+      const j = (await ctx.clone().json()) as { error?: string; message?: string };
+      const msg = (j?.error || j?.message || '').trim();
+      return msg || base;
+    } catch {
+      try {
+        const t = (await ctx.clone().text()).trim();
+        return t || base;
+      } catch {
+        return base;
+      }
+    }
+  };
+
   const sendDocLinkEmail = async (toEmail: string, docUrl: string, docTitle: string) => {
     setSendingDocKey(docUrl);
     try {
@@ -911,6 +930,10 @@ function DocumentsTab({ driver }: { driver: Driver }) {
       if (error) throw error;
       const payload = data as { success?: boolean; error?: string };
       if (payload?.error) throw new Error(String(payload.error));
+      toast.success('נשלח בהצלחה');
+    } catch (e) {
+      const msg = await friendlyEdgeError(e);
+      toast.error(`שליחה נכשלה: ${msg}`);
     } finally {
       setSendingDocKey(null);
     }
