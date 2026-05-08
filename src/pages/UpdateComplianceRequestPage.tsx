@@ -149,6 +149,12 @@ function formatDueUi(ymd: string | null): string {
   }
 }
 
+function formatUiSlashFromYmd(ymd: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd.trim());
+  if (!m) return ymd;
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
 export default function UpdateComplianceRequestPage() {
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
@@ -166,6 +172,8 @@ export default function UpdateComplianceRequestPage() {
   const [declaredLicenseNumber, setDeclaredLicenseNumber] = useState('');
   const [declaredLicenseExpiry, setDeclaredLicenseExpiry] = useState('');
   const [declaredHealthExpiry, setDeclaredHealthExpiry] = useState('');
+  /** תאריך שמופיע על מסמך ההצהרה עצמו (שעת פתיחת הטופס) */
+  const [healthSignedAtYmd] = useState(() => todayLocalIsoYmd());
   const sigRef = useRef<SignatureCanvas | null>(null);
   const healthDocPrintRef = useRef<HTMLDivElement | null>(null);
   const healthExpiryPresetApplied = useRef(false);
@@ -430,6 +438,24 @@ export default function UpdateComplianceRequestPage() {
                     fontFamily: "'Segoe UI','Noto Sans Hebrew','Arial Hebrew',Tahoma,Arial,sans-serif",
                   }}
                 >
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      marginBottom: 14,
+                      gap: 12,
+                      color: '#000000',
+                      backgroundColor: '#ffffff',
+                    }}
+                  >
+                    <p style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>
+                      הצהרת בריאות
+                    </p>
+                    <p style={{ margin: 0, fontSize: 13 }}>
+                      תאריך: {formatUiSlashFromYmd(healthSignedAtYmd)}
+                    </p>
+                  </div>
                   <HealthDeclarationLegalPlain driverName={item?.driver_name ?? ''} />
                   <p
                     style={{
