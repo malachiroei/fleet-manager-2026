@@ -4,6 +4,7 @@ import { Gauge, Loader2, Wrench } from 'lucide-react';
 
 import { supabase } from '@/integrations/supabase/client';
 import { invokeSupabaseEdgeFunction } from '@/lib/supabase/invokeEdgeFunction';
+import { getSupabaseAnonKey } from '@/lib/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useVehicles } from '@/hooks/useVehicles';
@@ -95,6 +96,22 @@ async function friendlyEdgeInvokeError(err: unknown): Promise<string> {
     return 'השרת דחה את הבקשה (401). נסו להתנתק ולהתחבר מחדש; אם ממשיך — בדקו שה־Edge Functions מקבל Authorization תקין.';
   }
   return base;
+}
+
+async function invokeEdgeAuthOnly(functionName: string, body: Record<string, unknown>) {
+  const { data } = await supabase.auth.getSession();
+  const accessToken = data?.session?.access_token ?? '';
+  if (!accessToken) {
+    return { data: null as unknown, error: new Error('החיבור פג תוקף — נא להתנתק ולהתחבר מחדש ואז לנסות שוב.') };
+  }
+  return supabase.functions.invoke(functionName, {
+    body,
+    headers: {
+      // apikey נדרש בחלק מהפרויקטים גם עם JWT
+      ...(getSupabaseAnonKey() ? { apikey: getSupabaseAnonKey() } : {}),
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
 }
 
 /** Prod drift: old RPC/trigger used column `odometer`; table column is `odometer_value`. */
@@ -355,7 +372,7 @@ export default function ReportMileagePage() {
               hint: (directInsertError as { hint?: string }).hint,
             });
             console.warn('[ReportMileagePage] mileage_logs INSERT failed; attempting Edge submit-mileage-report');
-            const edge = await invokeSupabaseEdgeFunction('submit-mileage-report', {
+            const edge = await invokeEdgeAuthOnly('submit-mileage-report', {
               vehicle_id: selectedVehicle.id,
               odometer_value: odometerValue,
               photo_url: photoUrl,
