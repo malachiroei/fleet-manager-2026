@@ -77,22 +77,6 @@ export function AppLayout({ children }: AppLayoutProps) {
   const location = useLocation();
   const mainScrollRef = useRef<HTMLElement>(null);
   const prefetchedRouteChunksRef = useRef<Set<string>>(new Set());
-  const [isShortHeightDesktop, setIsShortHeightDesktop] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const mq = window.matchMedia('(min-width: 768px) and (max-height: 820px)');
-    const onChange = () => setIsShortHeightDesktop(Boolean(mq.matches));
-    onChange();
-    try {
-      mq.addEventListener('change', onChange);
-      return () => mq.removeEventListener('change', onChange);
-    } catch {
-      // Safari/old
-      mq.addListener(onChange);
-      return () => mq.removeListener(onChange);
-    }
-  }, []);
 
   /** גלילה לראש בעת ניווט — בלי key על main (שגרם ל-unmount מלא והאטה חזקה). */
   useLayoutEffect(() => {
@@ -650,53 +634,13 @@ export function AppLayout({ children }: AppLayoutProps) {
     tryNavigate('/');
   };
 
-  /** מובייל: שורה ייעודית — בית + חזרה צמודים, ניהול בזהב */
-  const MobilePrimaryNav = () => (
-    <div className="md:hidden">
-      <nav
-        className="flex w-full min-w-0 flex-wrap items-stretch justify-around gap-2 rounded-lg border border-white/10 bg-black/30 px-0.5 py-1"
-        aria-label="ניווט ראשי"
-      >
-        <div className="flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1.5">
-          <Link
-            to="/"
-            onClick={handleGoHomeNav}
-            className={cn(
-              'flex min-h-[48px] min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-2 text-base font-medium transition-colors active:opacity-90',
-              isHomeActive
-                ? 'bg-white/10 text-cyan-100 ring-1 ring-cyan-400/35'
-                : 'bg-white/[0.05] text-white/75 hover:bg-white/10'
-            )}
-          >
-            <Home className="h-5 w-5 shrink-0 opacity-90" />
-            <span className="truncate">בית</span>
-          </Link>
-          {location.pathname !== '/' ? (
-            <div className="flex shrink-0 items-center pr-0.5">
-              <BackButton />
-            </div>
-          ) : null}
-        </div>
-      </nav>
-
-      {/* דף הבית במובייל/מסכים קטנים: בלי "מלבן לוח בקרה" — רק שורת כותרת קצרה */}
-      {isHomeActive ? (
-        <div className="pt-2 pb-0.5">
-          <div className="flex items-center justify-between gap-2 px-1">
-            <span className="text-sm font-bold text-white">לוח בקרה</span>
-            <span className="text-[11px] font-medium text-white/55">תצוגה מהירה</span>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-
-  const HomeNavLinkDesktop = () => (
+  /** כפתור בית — שורת כותרת אחת (דסקטופ + מובייל) */
+  const HomeNavLink = () => (
     <Link
       to="/"
       onClick={handleGoHomeNav}
       className={cn(
-        'hidden md:inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border px-5 text-sm font-medium transition-colors',
+        'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors md:h-10 md:gap-2 md:px-5',
         isHomeActive
           ? 'border-cyan-400/35 bg-cyan-500/15 text-cyan-100'
           : 'border-white/10 bg-white/[0.06] text-white/70 hover:bg-white/10 hover:text-white/90'
@@ -707,29 +651,21 @@ export function AppLayout({ children }: AppLayoutProps) {
     </Link>
   );
 
-  /** דסקטופ-נמוך: בית כפתור קטן בשורה העליונה (מפנה את השורה השנייה לגובה תוכן). */
-  const HomeNavIconTopRight = () => (
-    <Link
-      to="/"
-      onClick={handleGoHomeNav}
-      title={t('navigation.home')}
-      aria-label={t('navigation.home')}
-      className={cn(
-        'hidden md:inline-flex h-9 w-12 shrink-0 items-center justify-center rounded-lg border transition-colors',
-        isHomeActive
-          ? 'border-cyan-400/35 bg-cyan-500/15 text-cyan-100'
-          : 'border-white/10 bg-white/[0.06] text-white/70 hover:bg-white/10 hover:text-white/90'
-      )}
-    >
-      <Home className="h-4.5 w-4.5 shrink-0 opacity-90" />
-    </Link>
-  );
+  /** מובייל: כותרת משנה לדף הבית בלבד (בלי שורת ניווט נפרדת) */
+  const MobileDashboardHeading = () =>
+    isHomeActive ? (
+      <div className="md:hidden pt-1 pb-0.5">
+        <div className="flex items-center justify-between gap-2 px-1">
+          <span className="text-sm font-bold text-white">לוח בקרה</span>
+          <span className="text-[11px] font-medium text-white/55">תצוגה מהירה</span>
+        </div>
+      </div>
+    ) : null;
 
-  const BrandMarkBlock = ({ centerOnShortHeight }: { centerOnShortHeight?: boolean } = {}) => (
+  const BrandMarkBlock = () => (
     <div
       className={cn(
         'flex shrink-0 items-center min-w-0 lg:min-w-[150px]',
-        centerOnShortHeight && isShortHeightDesktop ? 'flex-1 justify-center' : '',
         isRtl && 'flex-row-reverse'
       )}
     >
@@ -794,7 +730,8 @@ export function AppLayout({ children }: AppLayoutProps) {
       </div>
     ) : null;
 
-  const BackButton = () => {
+  const HeaderBackButton = () => {
+    if (location.pathname === '/') return null;
     const handleBack = () => {
       const target = resolveLogicalBackTarget(location.pathname);
       tryNavigate(target);
@@ -804,11 +741,13 @@ export function AppLayout({ children }: AppLayoutProps) {
       <button
         type="button"
         onClick={handleBack}
-        className="relative z-20 inline-flex cursor-pointer items-center gap-1 rounded-full bg-black/40 px-3 py-1 text-xs text-white/80 hover:bg-black/60 hover:text-white transition-colors touch-manipulation"
+        className={cn(
+          'inline-flex h-9 shrink-0 cursor-pointer items-center gap-1 rounded-lg border px-3 text-sm font-medium transition-colors touch-manipulation md:h-10 md:gap-1.5 md:px-4',
+          'border-white/10 bg-white/[0.06] text-white/70 hover:bg-white/10 hover:text-white/90'
+        )}
         style={{ touchAction: 'manipulation' }}
       >
-        {/* ב־RTL חץ לימין הוא חזור אחורה */}
-        <ArrowRight className="h-3.5 w-3.5" />
+        <ArrowRight className="h-4 w-4 shrink-0" />
         <span>חזרה</span>
       </button>
     );
@@ -837,30 +776,44 @@ export function AppLayout({ children }: AppLayoutProps) {
               <UserInline />
             </div>
             <div className={cn('flex min-w-0 items-center gap-2', isRtl ? 'order-1' : 'order-2')}>
-              {isShortHeightDesktop && isRtl ? <HomeNavIconTopRight /> : null}
-              <BrandMarkBlock centerOnShortHeight />
-              {isShortHeightDesktop && !isRtl ? <HomeNavIconTopRight /> : null}
-            </div>
-          </div>
-
-          <div className="flex w-full min-w-0 flex-nowrap items-center justify-start gap-x-2 border-t border-white/10 py-2 md:pb-3 lg:gap-x-4">
-            <div
-              className={cn(
-                'flex shrink-0 flex-nowrap items-center gap-2',
-                isRtl ? 'order-1' : 'order-2',
+              {isRtl ? (
+                <>
+                  <HomeNavLink />
+                  <HeaderBackButton />
+                  <BrandMarkBlock />
+                </>
+              ) : (
+                <>
+                  <BrandMarkBlock />
+                  <HeaderBackButton />
+                  <HomeNavLink />
+                </>
               )}
-            >
-              {!isShortHeightDesktop ? <HomeNavLinkDesktop /> : null}
-              {!isShortHeightDesktop && location.pathname !== '/' ? <BackButton /> : null}
             </div>
           </div>
         </div>
 
-        {/* מובייל (מתחת ל־768px): עמודה — שורת לוגו+משתמש, אחריה פס ניווט מלא רוחב */}
+        {/* מובייל (מתחת ל־768px): בית + חזרה בשורה העליונה ליד המותג — בלי שורת ניווט נפרדת */}
         <div className="mx-auto flex w-full max-w-[1920px] flex-col gap-2 px-4 py-2 md:hidden">
           <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-2">
-            <div className="min-w-0 flex-1 basis-[55%]">
-              <BrandMarkBlock />
+            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+              {isRtl ? (
+                <>
+                  <HomeNavLink />
+                  <HeaderBackButton />
+                  <div className="min-w-0 flex-1">
+                    <BrandMarkBlock />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="min-w-0 flex-1">
+                    <BrandMarkBlock />
+                  </div>
+                  <HeaderBackButton />
+                  <HomeNavLink />
+                </>
+              )}
             </div>
             <div className="relative z-[10001] flex shrink-0 items-center gap-2">
               <MobileNavDrawer />
@@ -868,7 +821,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               <MobileUserBadge />
             </div>
           </div>
-          <MobilePrimaryNav />
+          <MobileDashboardHeading />
         </div>
       </header>
 
