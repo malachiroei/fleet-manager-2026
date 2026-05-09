@@ -874,8 +874,20 @@ export default function VehicleDetailPage() {
 
       if (insertError) throw insertError;
 
-      await refetchVehicleDocuments();
-      toast.success('המסמך נשמר במסמכי הרכב');
+      const insertedKey = docUrlDedupeKey(String(data.publicUrl ?? ''));
+      const res = await refetchVehicleDocuments();
+      const list = (res.data ?? []) as Array<{ file_url?: string }>;
+      const found =
+        insertedKey &&
+        list.some((d) => docUrlDedupeKey(String(d.file_url ?? '')) === insertedKey);
+
+      if (!found) {
+        toast.warning(
+          'המסמך נשמר בשרת אך לא מוצג ברשימה — כנראה חסימת הרשאות לצפייה (RLS). הריצו את המיגרציה 20260515180000 ב-Supabase או פנו למנהל.',
+        );
+      } else {
+        toast.success('המסמך נשמר במסמכי הרכב');
+      }
       setPendingVehicleDocument(null);
       if (vehicleDocFileInputRef.current) vehicleDocFileInputRef.current.value = '';
     } catch (e) {

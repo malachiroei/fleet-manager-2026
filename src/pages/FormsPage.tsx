@@ -5,8 +5,6 @@ import { ArchiveRestore, Download, FileText, FolderCog, GripVertical, Loader2, M
 import { jsPDF } from 'jspdf';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
-import { useFeatureFlags } from '@/hooks/useFeatureFlags';
-import { usePermissions } from '@/hooks/usePermissions';
 import { OrgDocument, useOrgDocuments, useOrgDocumentsAdmin, useCreateOrgDocument, useUpdateOrgDocument } from '@/hooks/useOrgDocuments';
 import { useOrgSettings } from '@/hooks/useOrgSettings';
 import { useDrivers } from '@/hooks/useDrivers';
@@ -105,9 +103,6 @@ function arrayBufferToBase64(buffer: ArrayBuffer) {
 export default function FormsPage() {
   const queryClient = useQueryClient();
   const { user, isManager } = useAuth();
-  const { data: featureFlags, isPending: featureFlagsPending, isError: featureFlagsError } =
-    useFeatureFlags();
-  const { canAccessFeature } = usePermissions();
   const { data: orgSettings } = useOrgSettings();
   const [searchParams] = useSearchParams();
   const { data: drivers } = useDrivers();
@@ -760,20 +755,10 @@ ${STANDARD_INPUT_FOOTER_TEXT}
         DEFAULT_FORM_FOLDERS[0],
     }));
 
-    // Strict gating: if feature flags are not yet resolved, hide gated forms
-    // to avoid showing disabled UI in view-as mode.
-    if (!featureFlags || featureFlagsPending || featureFlagsError) {
-      return [];
-    }
-
-    if (!canAccessFeature('qa_forms')) {
-      return [];
-    }
-
     // מרכז הטפסים = ספרייה מלאה (כל השורות הפעילות ב-org_documents). סינון לפי form_delivery/form_return
     // הסתיר טפסים למשתמשים גם כשהטפסים לא קשורים רק לאשף — אשף המסירה מסנן לבד ב-VehicleHandoverWizard.
     return mapped;
-  }, [forms, featureFlags, featureFlagsError, featureFlagsPending, canAccessFeature]);
+  }, [forms]);
 
   const folderOptions = useMemo(() => {
     const fromForms = formsWithCategory

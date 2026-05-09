@@ -2755,14 +2755,16 @@ export default function AdminCompliancePage() {
       title="מרכז ציות"
       subtitle="מרכז בקרה לתאריכי תוקף: רישוי רכב, ביטוח, טיפולים, ביקורות ותוקפי נהגים"
     >
-      <div className="mx-auto max-w-[1400px] space-y-4 pb-8" dir="rtl">
+      <div className="mx-auto max-w-[1400px] space-y-3 pb-4" dir="rtl">
         <Card>
-          <CardHeader className="pb-3">
-            <CardTitle>הגדרות תצוגה</CardTitle>
-            <CardDescription>הנתונים בטבלאות מתעדכנים לפי סינון התצוגה והטאב הנבחר</CardDescription>
+          <CardHeader className="pb-2 pt-4">
+            <CardTitle className="text-base">הגדרות תצוגה</CardTitle>
+            <CardDescription className="text-xs leading-snug">
+              הנתונים בטבלאות מתעדכנים לפי הסינון והטאב
+            </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-wrap items-end gap-3">
-            <div className="w-full space-y-2">
+          <CardContent className="flex flex-wrap items-end gap-2 pb-4 pt-0">
+            <div className="w-full space-y-1.5">
               <Label>סינון תצוגה</Label>
               <div className="flex flex-wrap gap-2">
                 <Button type="button" variant={viewFilter === 'all' ? 'default' : 'outline'} onClick={() => setViewFilter('all')}>
@@ -2817,7 +2819,7 @@ export default function AdminCompliancePage() {
                 </div>
               </>
             )}
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-0.5 min-w-0">
               <SearchableColumnPicker
                 key={activeTab}
                 allKeys={currentAllColumns}
@@ -2833,27 +2835,23 @@ export default function AdminCompliancePage() {
                 onRestoreDefault={restoreDefaultForActiveTab}
                 triggerLabel={columnPickerTriggerLabel}
               />
-              <p className="max-w-xl text-xs text-muted-foreground leading-snug">
-                הרשימה מגדירה רק עמודות שדות נתונים. לכל טבלה נוספות תמיד: תאריך יעד לטאב, ימים נותרו, סטטוס, פעולות
-                וצ׳קבוקס; אם «סטטוס שליחה» מסומן — נוספת עמודה נפרדת לפני «פעולות».
-              </p>
             </div>
           </CardContent>
         </Card>
 
         <Tabs value={activeTab} onValueChange={handleComplianceTabChange}>
-          <TabsList className="flex h-auto flex-wrap justify-start gap-2 bg-transparent p-0">
+          <TabsList className="flex h-auto flex-wrap justify-start gap-1.5 bg-transparent p-0">
             {TAB_DEFS.map((tab) => (
               <TabsTrigger
                 key={tab.key}
                 value={tab.key}
-                className="rounded-lg border border-border/70 bg-muted/40 px-3 py-2 text-sm shadow-sm transition-all data-[state=active]:border-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md data-[state=inactive]:opacity-75 hover:data-[state=inactive]:opacity-100"
+                className="rounded-lg border border-border/70 bg-muted/40 px-2.5 py-1.5 text-xs sm:text-sm shadow-sm transition-all data-[state=active]:border-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md data-[state=inactive]:opacity-75 hover:data-[state=inactive]:opacity-100"
               >
                 {tab.label}
               </TabsTrigger>
             ))}
           </TabsList>
-          <div className="mt-3 w-full rounded-lg border border-primary/35 bg-primary/10 px-3 py-2.5 text-right text-sm">
+          <div className="mt-2 w-full rounded-lg border border-primary/35 bg-primary/10 px-2.5 py-1.5 text-right text-xs sm:text-sm">
             <span className="text-muted-foreground">מציג כעת: </span>
             <span className="font-semibold text-foreground">{activeDef.label}</span>
             <span className="mx-1.5 text-muted-foreground">·</span>

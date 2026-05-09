@@ -18,7 +18,7 @@ import { useOrganization } from '@/hooks/useOrganizations';
 import { useTenantFleetAdminsForPlatformSwitcher } from '@/hooks/useTeam';
 import { AIChatAssistant } from './AIChatAssistant';
 import { useTheme } from '@/hooks/useTheme';
-import { Sun, Moon, Building2, LogOut, Home, ArrowRight, ChevronDown, Settings, UserCog, Menu, Download, Smartphone, Eye, ClipboardList } from 'lucide-react';
+import { Sun, Moon, Building2, LogOut, Home, ArrowRight, ChevronDown, Settings, UserCog, Menu, Download, Smartphone, Eye } from 'lucide-react';
 import { setLanguageDirection } from '@/i18n/config';
 import { usePwaInstall } from '@/hooks/usePwaInstall';
 import { toast } from '@/hooks/use-toast';
@@ -125,11 +125,8 @@ export function AppLayout({ children }: AppLayoutProps) {
     profile?.is_system_admin === true ||
     isPlatformSuperOwnerEmail(resolveSessionEmail(profile, user)) ||
     isFleetOrgAdminFallbackEmail(resolveSessionEmail(profile, user));
-  /** מנהל ארגון / מנהל צי — כפתורי ניהול בכותרת (ארגון, צוות) */
+  /** מנהל ארגון / מנהל צי — גישה לדפי ניהול (דרך תפריט «הגדרות» בכותרת) */
   const isOrgAdminOrManager = isElevatedHeader && !isDriverOnlyHeader;
-  /** בולטים בזהב/ענבר כדי שלא יפספסו */
-  const managementNavClass =
-    'relative z-[9999] !flex items-center justify-center border-2 !border-solid !border-[gold] bg-amber-500/25 text-amber-50 shadow-[0_0_18px_rgba(251,191,36,0.45)] hover:bg-amber-500/40 hover:text-white hover:!border-[#ffd700]';
   const email = (user?.email ?? '').toLowerCase();
   const name = (profile?.full_name?.trim()) || user?.user_metadata?.full_name || email.split('@')[0] || '';
   const initials = (name || email || '?').slice(0, 2).toUpperCase();
@@ -263,16 +260,6 @@ export function AppLayout({ children }: AppLayoutProps) {
   const isMainAdmin = email === MAIN_ADMIN_SWITCHER_EMAIL;
   const canManageTeamUi = isMainAdmin || hasPermission('manage_team') || isOrgAdminOrManager;
   const canManageOrgUi = isMainAdmin || hasPermission('admin_access') || isOrgAdminOrManager;
-
-  /** Gold header buttons (Roei Admin + Ravid Manager). */
-  const canAccessGoldenManagementLinks = !isDriverOnlyHeader && (canManageOrgUi || canManageTeamUi);
-
-  const canAccessAdminComplianceCenter = Boolean(
-    isAdmin ||
-      profile?.is_system_admin === true ||
-      isPlatformSuperOwnerEmail(resolveSessionEmail(profile, user)) ||
-      isFleetOrgAdminFallbackEmail(resolveSessionEmail(profile, user)),
-  );
 
   const mainFleetOrgId = useMemo(() => {
     const explicitMainFleet = memberOrganizations.find((o) => o.id === FALLBACK_MAIN_FLEET_ORG_ID);
@@ -408,23 +395,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       </DropdownMenuTrigger>
       <DropdownMenuContent align={isRtl ? 'start' : 'end'} className="min-w-[220px] z-[10001]">
         <DropdownMenuLabel className="text-xs font-semibold">הגדרות</DropdownMenuLabel>
-        {canAccessAdminComplianceCenter ? (
-          <>
-            <DropdownMenuItem asChild className="cursor-pointer">
-              <Link
-                to="/admin/compliance"
-                className="w-full flex items-center justify-between text-xs"
-                {...linkPrefetchProps('/admin/compliance')}
-              >
-                <span className="font-medium">מרכז ציות</span>
-                <ClipboardList className="h-4 w-4 shrink-0" />
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-          </>
-        ) : null}
-        {/* מסך נמוך: העברת "ניהול/ניהול צוות" לכאן כדי לפנות מקום בכותרת */}
-        {isShortHeightDesktop ? (
+        {(canManageOrgUi || canManageTeamUi) ? (
           <>
             {availableActions
               .filter((a) => a.key === 'manage_org' || a.key === 'manage_team')
@@ -432,7 +403,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                 const Icon = a.icon;
                 if (!('to' in a)) return null;
                 return (
-                  <DropdownMenuItem key={`short-${a.key}`} asChild className="cursor-pointer">
+                  <DropdownMenuItem key={`mgmt-${a.key}`} asChild className="cursor-pointer">
                     <Link to={a.to} className="w-full flex items-center justify-between text-xs" {...linkPrefetchProps(a.to)}>
                       <span className="font-medium">{a.label}</span>
                       <Icon className="h-4 w-4 shrink-0" />
@@ -665,37 +636,6 @@ export function AppLayout({ children }: AppLayoutProps) {
     </>
   );
 
-  /** כפתורי ניהול זהב — שורת ניווט דסקטופ: תווית מלאה ורוחב אחיד */
-  const GoldManagementNavLinks = () => (
-    <div className="relative z-[9998] flex flex-nowrap items-center gap-2">
-      {availableActions
-        .filter((a) => a.showOn === 'both' || a.showOn === 'desktop')
-        .filter((a) => a.key !== 'logout')
-        .map((a) => {
-          const Icon = a.icon;
-          if (!('to' in a)) return null;
-          const isMgmt = a.key === 'manage_org' || a.key === 'manage_team';
-          if (!isMgmt) return null;
-          return (
-            <Link
-              key={a.key}
-              to={a.to}
-              title={a.label}
-              aria-label={a.label}
-              {...linkPrefetchProps(a.to)}
-              className={cn(
-                'relative z-[9999] flex h-10 min-h-10 min-w-[9rem] items-center justify-center gap-2 rounded-lg border-2 px-6 text-sm font-medium transition-colors',
-                managementNavClass
-              )}
-            >
-              <Icon className="h-4 w-4 shrink-0 text-amber-200" />
-              <span className="whitespace-nowrap">{a.label}</span>
-            </Link>
-          );
-        })}
-    </div>
-  );
-
   const handleGoHomeNav = (e: MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
     try {
@@ -737,32 +677,6 @@ export function AppLayout({ children }: AppLayoutProps) {
             </div>
           ) : null}
         </div>
-        {canManageOrgUi ? (
-          <Link
-            to="/admin/org-settings"
-            {...linkPrefetchProps('/admin/org-settings')}
-            className={cn(
-              'flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1 rounded-md border-2 px-2 text-sm font-medium transition-colors active:opacity-90',
-              managementNavClass
-            )}
-          >
-            <Building2 className="h-4 w-4 shrink-0 text-amber-200" />
-            <span className="truncate">ניהול</span>
-          </Link>
-        ) : null}
-        {canManageTeamUi ? (
-          <Link
-            to="/team"
-            {...linkPrefetchProps('/team')}
-            className={cn(
-              'flex min-h-[48px] min-w-0 flex-1 touch-manipulation basis-0 items-center justify-center gap-1 rounded-md border-2 px-2 text-sm font-medium transition-colors active:opacity-90',
-              managementNavClass
-            )}
-          >
-            <UserCog className="h-4 w-4 shrink-0 text-amber-200" />
-            <span className="truncate">ניהול צוות</span>
-          </Link>
-        ) : null}
       </nav>
 
       {/* דף הבית במובייל/מסכים קטנים: בלי "מלבן לוח בקרה" — רק שורת כותרת קצרה */}
@@ -929,7 +843,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             </div>
           </div>
 
-          <div className="flex w-full min-w-0 flex-nowrap items-center justify-between gap-x-2 border-t border-white/10 py-2 md:pb-3 lg:gap-x-4">
+          <div className="flex w-full min-w-0 flex-nowrap items-center justify-start gap-x-2 border-t border-white/10 py-2 md:pb-3 lg:gap-x-4">
             <div
               className={cn(
                 'flex shrink-0 flex-nowrap items-center gap-2',
@@ -939,11 +853,6 @@ export function AppLayout({ children }: AppLayoutProps) {
               {!isShortHeightDesktop ? <HomeNavLinkDesktop /> : null}
               {!isShortHeightDesktop && location.pathname !== '/' ? <BackButton /> : null}
             </div>
-            {canAccessGoldenManagementLinks && !isShortHeightDesktop ? (
-              <div className={cn('flex min-w-0 shrink-0 items-center', isRtl ? 'order-2' : 'order-1')}>
-                <GoldManagementNavLinks />
-              </div>
-            ) : null}
           </div>
         </div>
 

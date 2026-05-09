@@ -29,8 +29,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { SimpleInviteModal } from '@/components/SimpleInviteModal';
 import { UserFeatureFlagsOverridesDialog } from '@/components/UserFeatureFlagsOverridesDialog';
 import { EditMemberPermissionsDialog } from '@/components/EditMemberPermissionsDialog';
-import { GlobalFeatureFlagsAdminPanel } from '@/components/GlobalFeatureFlagsAdminPanel';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -51,7 +50,6 @@ import {
 import {
   ChevronDown,
   ChevronLeft,
-  Flag,
   KeyRound,
   Loader2,
   Lock,
@@ -73,7 +71,6 @@ export default function TeamManagementPage() {
   const queryClient = useQueryClient();
   const orgId = effectiveOrgId ?? activeOrgId ?? null;
   const isSuperAdminTeamView = isRoeySuperAdminProfile(profile);
-  const [globalFeaturesOpen, setGlobalFeaturesOpen] = useState(false);
   const { data: members, isLoading, isFetching: membersFetching } = useTeamMembers(orgId, {
     loadAllOrgs: isSuperAdminTeamView,
   });
@@ -255,8 +252,6 @@ export default function TeamManagementPage() {
   /** הסרה: מנהל ארגון; בתצוגת סופר־אדמין — רק מלכי (לפי שורה org_id). */
   const canRemoveTeamMemberRow = canManageTeam && (isSuperAdminTeamView ? isRoeiAdmin : Boolean(orgId));
   const tableColCount = (showSensitiveColumns ? 5 : 4) + (canRemoveTeamMemberRow ? 1 : 0);
-  /** פאנל פיצ'רים גלובליים — רק מנהל-העל (לא כל אדמין ארגון) */
-  const canManageGlobalFeatures = isRoeiAdmin || isSuperAdminPermissionBypass(profile);
 
   if (!canManageTeam) {
     return <Navigate to="/" replace />;
@@ -281,29 +276,6 @@ export default function TeamManagementPage() {
       title="ניהול צוות"
       subtitle={
         isSuperAdminTeamView ? 'כל הארגונים — תצוגת סופר־אדמין' : 'חברי הארגון ופיצ׳רים אישיים'
-      }
-      headerAside={
-        canManageGlobalFeatures ? (
-          <Dialog open={globalFeaturesOpen} onOpenChange={setGlobalFeaturesOpen}>
-            <DialogTrigger asChild>
-              <Button
-                type="button"
-                className="h-9 gap-2 border-2 border-[gold] bg-amber-500/25 px-4 text-amber-50 shadow-[0_0_18px_rgba(251,191,36,0.45)] hover:bg-amber-500/40 hover:text-white hover:border-[#ffd700]"
-              >
-                <Flag className="h-4 w-4" />
-                ניהול פיצ'רים גלובליים
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="w-[min(100vw-1rem,56rem)] max-h-[min(100dvh-1rem,90vh)] overflow-y-auto" dir="rtl">
-              <DialogHeader>
-                <DialogTitle>ניהול פיצ'רים גלובליים</DialogTitle>
-              </DialogHeader>
-              <div className="max-h-[75vh] overflow-auto pr-1">
-                <GlobalFeatureFlagsAdminPanel />
-              </div>
-            </DialogContent>
-          </Dialog>
-        ) : null
       }
     >
       <section className="dashboard-status-stage dashboard-cyber-stage mx-auto w-full max-w-[1920px] space-y-4 rounded-3xl border border-cyan-400/25 p-3 sm:space-y-6 sm:p-6" dir="rtl">

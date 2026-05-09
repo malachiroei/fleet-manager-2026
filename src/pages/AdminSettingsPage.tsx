@@ -13,24 +13,17 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
-import { FunctionsHttpError } from '@supabase/supabase-js';
 import PricingDataUploader from '@/components/PricingDataUploader';
 import FleetDataImporter from '@/components/FleetDataImporter';
 import {
-  Download,
   Loader2,
   Mail,
   Monitor,
-  Plus,
   Moon,
-  RefreshCw,
-  RotateCcw,
-  Send,
   Settings,
   Shield,
   Sun,
   Trash2,
-  Upload,
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { useAuth } from '@/hooks/useAuth';
@@ -60,13 +53,8 @@ import {
 } from '@/lib/pwaUpdateModalBridge';
 import { parseManifestChanges } from '@/lib/pwaManifest';
 import {
-  pickLatestVersionManifest,
-  getTestStaticManifestUrl,
   normalizeVersion,
   compareSemver,
-  parseSemverSegments,
-  toCanonicalThreePartVersion,
-  versionNotOlderThanBundle,
 } from '@/lib/versionManifest';
 import { isFleetProductionHost } from '@/lib/pwaPromptRegister';
 import { FLEET_KV_TABLE } from '@/lib/fleetKvTable';
@@ -188,17 +176,7 @@ export default function AdminSettingsPage() {
       localStorage.getItem('handover_notification_email') || 'malachiroei@gmail.com'
     );
     const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
-    const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
-    const [isBackingUpSettings, setIsBackingUpSettings] = useState(false);
-    const [isRestoringSettings, setIsRestoringSettings] = useState(false);
     const DEFAULT_APP_VERSION = codeVersion;
-    const [appVersion, setAppVersion] = useState<string>(() => {
-      try {
-        return versionNotOlderThanBundle(localStorage.getItem('fleet-manager-app_version'), codeVersion);
-      } catch {
-        return codeVersion;
-      }
-    });
     // Default visible timestamp for the last update (updated by the "עדכן" flow)
     const [lastUpdateDate, setLastUpdateDate] = useState<string>(() => {
       try {
@@ -213,23 +191,12 @@ export default function AdminSettingsPage() {
       return formatDateTimeForUi(new Date(2026, 2, 18, 13, 0, 0));
     });
 
-    const [latestManifestVersion, setLatestManifestVersion] = useState<string>(codeVersion);
     /** GitHub: version_snapshot.json (best-effort) — להשוואה מול ה-Timestamp המקומי */
     const [githubSnapshotVersion, setGithubSnapshotVersion] = useState<string>('');
     const [githubSnapshotReleaseDate, setGithubSnapshotReleaseDate] = useState<string>('');
     const [isGithubSnapshotLoading, setIsGithubSnapshotLoading] = useState(false);
 
-    const restoreInputRef = useRef<HTMLInputElement | null>(null);
-    const reviewUploadInputRef = useRef<HTMLInputElement | null>(null);
-
     const updateOrgSettingsMutation = useUpdateOrgSettings();
-
-    const [reviewModalOpen, setReviewModalOpen] = useState(false);
-    const [reviewRows, setReviewRows] = useState<SyncDiffRow[]>([]);
-    const [reviewUpload, setReviewUpload] = useState<Partial<ReleaseSnapshotFile> | null>(null);
-    const [reviewSelected, setReviewSelected] = useState<Set<string>>(() => new Set());
-    const [isReviewFileBusy, setIsReviewFileBusy] = useState(false);
-    const [isApplyingReview, setIsApplyingReview] = useState(false);
 
     const formatDate = (iso: string | null) => {
       if (!iso) return 'לא בוצעה';
@@ -243,44 +210,10 @@ export default function AdminSettingsPage() {
     useEffect(() => {
       (async () => {
         try {
-          // Prefer local persistence (prevents resetting to older versions after simplified update).
-          try {
-            const localVersion = localStorage.getItem('fleet-manager-app_version');
-            const localLastIso = localStorage.getItem('fleet-manager-last_update_date_iso');
-            if (localVersion && localLastIso) {
-              const v = versionNotOlderThanBundle(localVersion, codeVersion);
-              setAppVersion(v);
-              if (v !== localVersion) {
-                try {
-                  localStorage.setItem('fleet-manager-app_version', v);
-                } catch {
-                  // ignore
-                }
-              }
-              const ms = Date.parse(localLastIso);
-              if (!Number.isNaN(ms)) {
-                setLastUpdateDate(formatDateTimeForUi(new Date(ms)));
-              } else {
-                setLastUpdateDate(localLastIso);
-              }
-              return;
-            }
-          } catch {
-            // ignore localStorage issues
-          }
-
           const [versionRes, lastUpdateRes] = await Promise.all([
             (supabase as any).from(FLEET_KV_TABLE).select('value').eq('key', 'app_version').maybeSingle(),
             (supabase as any).from(FLEET_KV_TABLE).select('value').eq('key', 'last_update_date').maybeSingle(),
           ]);
-
-          if (!versionRes?.error) {
-            const versionValue = versionRes?.data?.value;
-            if (typeof versionValue === 'string' && versionValue.trim()) {
-              const v = versionNotOlderThanBundle(versionValue, codeVersion);
-              setAppVersion(v);
-            }
-          }
 
           if (!lastUpdateRes?.error) {
             const lastUpdateValue = lastUpdateRes?.data?.value;
@@ -295,19 +228,6 @@ export default function AdminSettingsPage() {
           }
         } catch {
           // ignore (RLS/migration not ready yet)
-        }
-      })();
-    }, []);
-
-    // Load latest version manifest for "latest version" coloring (DB או v-dev-only.json בטסט)
-    useEffect(() => {
-      (async () => {
-        try {
-          const picked = await pickLatestVersionManifest(supabase as any, getTestStaticManifestUrl());
-          const v = picked?.manifest?.version;
-          if (typeof v === 'string' && v.trim()) setLatestManifestVersion(v.trim());
-        } catch {
-          // best-effort only
         }
       })();
     }, []);
@@ -381,460 +301,14 @@ export default function AdminSettingsPage() {
           },
         });
 
-        if (error) {
-          throw error;
-        }
+        if (error) throw error;
 
         toast.success('מייל בדיקה נשלח בהצלחה');
       } catch (error) {
-        let message = 'שגיאה לא ידועה';
-
-        if (error instanceof FunctionsHttpError) {
-          try {
-            const response = error.context;
-            const data = await response.json() as { error?: string; message?: string; details?: string };
-            message = data?.error || data?.message || data?.details || `HTTP ${response.status}`;
-          } catch {
-            message = error.message;
-          }
-        } else if (error instanceof Error) {
-          message = error.message;
-        }
-
-        if (message.includes('Missing RESEND_API_KEY')) {
-          message = 'חסר RESEND_API_KEY בפרויקט Supabase של הטסט';
-        }
-
+        const message = error instanceof Error ? error.message : 'שגיאה לא ידועה';
         toast.error(`שליחת מייל בדיקה נכשלה: ${message}`);
       } finally {
         setIsSendingTestEmail(false);
-      }
-    };
-
-    const fetchBackupPayload = async () => {
-      const appIdentifier = 'fleet-manager-pro';
-      const version = '2.0';
-
-      const backupPayload: any = {
-        metadata: { appIdentifier, version },
-        exportedAt: new Date().toISOString(),
-        lastUpdateDate,
-        theme,
-      };
-
-      const includedParts: string[] = [];
-      const skippedParts: string[] = [];
-      const failures: Record<string, string> = {};
-
-      // Tables that we KNOW exist and are used in this app:
-      // - vehicles, drivers (core entities)
-      // - maintenance_logs (contains odometer_reading; treated as "odometer_logs" in backup)
-      // - organizations (fleet/org name used in AppLayout)
-      const tableStrategies: Array<{
-        tableName: string;
-        jsonKey: string;
-        selectVariants: string[];
-        // Conflict target suggestion for restore (not used during backup)
-        conflictTarget?: string;
-      }> = [
-        {
-          tableName: 'vehicles',
-          jsonKey: 'vehicles',
-          selectVariants: ['*'],
-        },
-        {
-          tableName: 'drivers',
-          jsonKey: 'drivers',
-          selectVariants: ['*'],
-        },
-        {
-          tableName: 'maintenance_logs',
-          // Backup key name requested by the user
-          jsonKey: 'odometer_logs',
-          selectVariants: ['*', 'id,vehicle_id,service_date,service_type,odometer_reading,garage_name,cost,notes,invoice_url,created_by,created_at'],
-        },
-        {
-          tableName: 'organizations',
-          jsonKey: 'organizations',
-          selectVariants: ['id,name,updated_at', 'id,name'],
-        },
-      ];
-
-      const fetchTable = async (tableName: string, jsonKey: string, selectVariants: string[]) => {
-        console.log(`[Backup] Start table '${tableName}' (jsonKey='${jsonKey}')`);
-        let lastErrorMessage = '';
-
-        for (const select of selectVariants) {
-          console.log(`[Backup] Attempt fetch '${tableName}' with select(${select})`);
-          try {
-            const { data, error } = await (supabase as any).from(tableName).select(select);
-            if (error) {
-              lastErrorMessage = typeof error?.message === 'string' ? error.message : JSON.stringify(error);
-              console.log(`[Backup] Failed '${tableName}' select(${select})`, error);
-              continue;
-            }
-
-            const rows = Array.isArray(data) ? data : data ? [data] : [];
-            backupPayload[jsonKey] = rows;
-            includedParts.push(jsonKey);
-            console.log(`[Backup] Success '${tableName}' rows=${rows.length}`);
-            return;
-          } catch (e) {
-            lastErrorMessage = e instanceof Error ? e.message : String(e);
-            console.log(`[Backup] Exception '${tableName}' select(${select})`, e);
-            continue;
-          }
-        }
-
-        const reason = lastErrorMessage
-          ? `All select variants failed. Last error: ${lastErrorMessage}`
-          : `All select variants failed: ${selectVariants.join(' | ')}`;
-
-        failures[tableName] = reason;
-        skippedParts.push(jsonKey);
-        console.log(`[Backup] Giving up '${tableName}' (jsonKey='${jsonKey}'):`, reason);
-      };
-
-      for (const s of tableStrategies) {
-        await fetchTable(s.tableName, s.jsonKey, s.selectVariants);
-      }
-
-      return { backupPayload, includedParts, skippedParts, failures };
-    };
-
-    const backupSettings = async () => {
-      setIsBackingUpSettings(true);
-      try {
-        const dateStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-
-        const { backupPayload, includedParts, skippedParts, failures } = await fetchBackupPayload();
-        const blob = new Blob([JSON.stringify(backupPayload, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `fleet_manager_backup_${dateStr}.json`;
-        a.click();
-
-        URL.revokeObjectURL(url);
-
-        if (includedParts.length === 0) {
-          const failedList = Object.entries(failures)
-            .map(([tableName, reason]) => `${tableName}: ${reason}`)
-            .join(' | ');
-          toast.error(`Error: גיבוי נכשל (לא ניתן לקרוא אף טבלה). ${failedList}`);
-        } else if (skippedParts.length > 0) {
-          toast.success(`Success: גיבוי ירד למחשב. הושמטו: ${skippedParts.join(', ')}`);
-          const failedList = Object.entries(failures)
-            .map(([tableName, reason]) => `${tableName}: ${reason}`)
-            .join(' | ');
-          if (failedList) toast.error(`Failures: ${failedList}`);
-        } else {
-          toast.success('Success: גיבוי ירד למחשב');
-        }
-      } catch (err) {
-        console.error(err);
-        toast.error('Error: גיבוי ההגדרות נכשל');
-      } finally {
-        setIsBackingUpSettings(false);
-      }
-    };
-
-    const checkForUpdates = async () => {
-      setIsCheckingUpdates(true);
-      try {
-        type VersionManifest = { version: string; releaseDate?: string; changes?: unknown };
-
-        // חייב להתאים לגרסה שבאמת רצה בדפדפן (מהבילד), לא ל-appVersion מ-localStorage —
-        // אחרת מופיע מודאל עדכון למרות שהמסך כבר מציג את codeVersion מהבילד.
-        const picked = await pickLatestVersionManifest(supabase as any, getTestStaticManifestUrl());
-        if (!picked) throw new Error('לא ניתן לטעון מניפסט גרסה (ענן או v-dev-only.json)');
-
-        const latestManifest = picked.manifest as Partial<VersionManifest>;
-        const manifestChanges = parseManifestChanges(latestManifest);
-
-        const latestVersion = latestManifest?.version ? String(latestManifest.version) : '';
-        if (!latestVersion) throw new Error('Latest manifest missing "version"');
-
-        const latestNormalized = normalizeVersion(latestVersion);
-        const currentNormalized = normalizeVersion(codeVersion);
-
-        // אם הגרסה מהשרת זהה לגרסה הנוכחית בבילד — לסגור את מודאל ה-PWA.
-        if (latestNormalized === currentNormalized) {
-          hidePwaUpdateModal();
-          toast.success("אין עדכונים זמינים כרגע");
-        } else {
-          const cmp = compareSemver(latestNormalized, currentNormalized);
-          if (cmp > 0) {
-            try {
-              showPwaUpdateModal({
-                targetVersion: latestNormalized,
-                changes: manifestChanges,
-              });
-            } catch (e) {
-              console.warn("showPwaUpdateModal failed", e);
-            }
-            toast.success(`זמינה גרסה ${latestNormalized}. אשר עדכון בחלון שמופיע`);
-          } else {
-            hidePwaUpdateModal();
-            toast.success("אין עדכונים זמינים כרגע");
-          }
-        }
-      } catch (err) {
-        console.error(err);
-        const message = err instanceof Error ? err.message : 'שגיאה לא ידועה';
-        toast.error(`בדיקת עדכונים נכשלה: ${message}`);
-      } finally {
-        // במקור (ייצור): רק מודאל + אישור "עדכן עכשיו" — לא מושכים עדכון SW ברקע מכפתור זה
-        if (!isFleetProductionHost()) {
-          try {
-            await triggerServiceWorkerUpdateCheck();
-          } catch (swErr) {
-            console.warn('triggerServiceWorkerUpdateCheck:', swErr);
-          }
-        }
-        setIsCheckingUpdates(false);
-      }
-    };
-
-    const isValidFleetManagerBackup = (value: unknown): value is { metadata: { appIdentifier: string } } => {
-      if (!value || typeof value !== 'object') return false;
-      const obj = value as any;
-      return obj?.metadata?.appIdentifier === 'fleet-manager-pro';
-    };
-
-    const inferOnConflict = (rows: any[] | null | undefined): string | undefined => {
-      if (!rows || rows.length === 0) return undefined;
-      const first = rows[0];
-      if (!first || typeof first !== 'object') return undefined;
-      const keys = Object.keys(first);
-      if (keys.includes('id')) return 'id';
-      if (keys.includes('key')) return 'key';
-      return undefined;
-    };
-
-    const restoreSettingsFromFile = async (file: File) => {
-      setIsRestoringSettings(true);
-      try {
-        const raw = await file.text();
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(raw);
-        } catch {
-          toast.error('Error: קובץ ה-JSON אינו תקין');
-          return;
-        }
-
-        if (!isValidFleetManagerBackup(parsed)) {
-          toast.error('Error: קובץ הגיבוי אינו תקין (metadata.appIdentifier לא תקין). בצע גיבוי חדש מהמערכת.');
-          return;
-        }
-
-        const backup = parsed as any;
-
-        const restoredParts: string[] = [];
-        const failedParts: string[] = [];
-
-        const tryUpsertTable = async (tableName: string, rows: unknown) => {
-          if (!Array.isArray(rows) || rows.length === 0) return;
-          try {
-            const rowsArr = rows as any[];
-            let conflictTarget: string | undefined;
-            if (tableName === 'maintenance_logs') conflictTarget = 'id';
-            if (tableName === 'organizations') conflictTarget = 'id';
-            if (tableName === 'vehicles') conflictTarget = 'id';
-            if (tableName === 'drivers') conflictTarget = 'id';
-            if (!conflictTarget) conflictTarget = inferOnConflict(rowsArr) ?? undefined;
-
-            const upsertResult = conflictTarget
-              ? await (supabase as any).from(tableName).upsert(rowsArr, { onConflict: conflictTarget })
-              : await (supabase as any).from(tableName).upsert(rowsArr);
-
-            if ((upsertResult as any)?.error) throw (upsertResult as any).error;
-            restoredParts.push(tableName);
-          } catch (e) {
-            console.error(`restoreSettingsFromFile: failed ${tableName}`, e);
-            failedParts.push(tableName);
-          }
-        };
-
-        // Restore only the tables that Backup exports.
-        await tryUpsertTable('vehicles', backup.vehicles);
-        await tryUpsertTable('drivers', backup.drivers);
-        await tryUpsertTable('maintenance_logs', backup.odometer_logs);
-        await tryUpsertTable('organizations', backup.organizations);
-
-        if (restoredParts.length > 0) {
-          toast.success('ההגדרות שוחזרו בהצלחה! מרענן את העמוד...');
-          toast.success(`שוחזרו בהצלחה: ${restoredParts.join(', ')}`);
-          setTimeout(() => window.location.reload(), 700);
-        } else {
-          toast.error('Error: לא שוחזרו נתונים');
-        }
-
-        if (failedParts.length > 0) {
-          toast.error(`שגיאה בשחזור עבור: ${failedParts.join(', ')}`);
-        }
-      } catch (err) {
-        console.error(err);
-        toast.error('Error: שחזור ההגדרות נכשל');
-      } finally {
-        setIsRestoringSettings(false);
-      }
-    };
-
-    const handleRestoreButtonClick = () => {
-      restoreInputRef.current?.click();
-    };
-
-    const handleRestoreFilePicked = async (e: ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      // Clear value so picking the same file again triggers change event.
-      e.target.value = '';
-      await restoreSettingsFromFile(file);
-    };
-
-    const openReviewFromFile = async (file: File) => {
-      setIsReviewFileBusy(true);
-      try {
-        const raw = await file.text();
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(raw);
-        } catch {
-          toast.error('קובץ JSON לא תקין');
-          return;
-        }
-        const { snapshot, error } = parseSystemSettingsUpload(parsed);
-        if (error) {
-          toast.error(error);
-          return;
-        }
-        if (!settingsOrgIdForSnapshot) {
-          toast.error('בחר ארגון פעיל (מתפריט הארגון) לפני יישום הגדרות');
-          return;
-        }
-        const baseline = await fetchSyncBaselines(supabase);
-        const built = buildReleaseSnapshotPayload({
-          orgId: settingsOrgIdForSnapshot,
-          orgSettings: orgSettingsRow ?? null,
-          manifestUi: manifestUiGates,
-          defaultPermissions: getDefaultPermissions(),
-          previousBundledVersion: getBundledReleaseSnapshot().version,
-        });
-        const current: ReleaseSnapshotFile = {
-          ...built,
-          defaultPermissions: baseline.permissions,
-          uiFeatures: { ...built.uiFeatures, ...baseline.uiFeatures },
-        };
-        const rows = computeSyncDiffRows(current, snapshot);
-        if (rows.length === 0) {
-          toast.info('אין הבדלים בין הקובץ להגדרות הנוכחיות במערכת');
-          return;
-        }
-        setReviewUpload(snapshot);
-        setReviewRows(rows);
-        setReviewSelected(new Set(rows.filter((r) => r.defaultSelected).map((r) => r.id)));
-        setReviewModalOpen(true);
-      } catch (e) {
-        console.error(e);
-        toast.error('טעינת הקובץ נכשלה');
-      } finally {
-        setIsReviewFileBusy(false);
-      }
-    };
-
-    const handleReviewFilePicked = (e: ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      e.target.value = '';
-      if (file) void openReviewFromFile(file);
-    };
-
-    const toggleReviewRow = (id: string, checked: boolean) => {
-      setReviewSelected((prev) => {
-        const next = new Set(prev);
-        if (checked) next.add(id);
-        else next.delete(id);
-        return next;
-      });
-    };
-
-    const toggleReviewCategory = (category: SyncDiffRow['category'], checked: boolean) => {
-      const ids = reviewRows.filter((r) => r.category === category).map((r) => r.id);
-      setReviewSelected((prev) => {
-        const next = new Set(prev);
-        for (const id of ids) {
-          if (checked) next.add(id);
-          else next.delete(id);
-        }
-        return next;
-      });
-    };
-
-    const categoryAllSelected = (category: SyncDiffRow['category']) => {
-      const ids = reviewRows.filter((r) => r.category === category).map((r) => r.id);
-      return ids.length > 0 && ids.every((id) => reviewSelected.has(id));
-    };
-
-    const removeReviewRow = (id: string) => {
-      setReviewSelected((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-      setReviewRows((prev) => {
-        const filtered = prev.filter((r) => r.id !== id);
-        if (filtered.length === 0) {
-          queueMicrotask(() => {
-            setReviewModalOpen(false);
-            setReviewUpload(null);
-            setReviewSelected(new Set());
-          });
-        }
-        return filtered;
-      });
-    };
-
-    const applyReviewSelection = async () => {
-      if (!reviewUpload || !settingsOrgIdForSnapshot) return;
-      if (reviewSelected.size === 0) {
-        toast.error('סמן לפחות פריט אחד ליישום');
-        return;
-      }
-      setIsApplyingReview(true);
-      try {
-        const hasForm = [...reviewSelected].some((id) => id.startsWith('form:'));
-        if (hasForm) {
-          const patch = mergeOrgSettingsFromUpload(
-            orgSettingsRow ?? null,
-            settingsOrgIdForSnapshot,
-            reviewUpload,
-            reviewSelected,
-          );
-          await updateOrgSettingsMutation.mutateAsync(patch);
-        }
-        const baseline = await fetchSyncBaselines(supabase);
-        const sysRows = buildApplySystemSettingRows(
-          reviewUpload,
-          reviewSelected,
-          baseline.permissions,
-          baseline.uiFeatures,
-        );
-        if (sysRows.length > 0) {
-          await upsertSystemSettingsRows(supabase, sysRows);
-        }
-        toast.success('הפריטים הנבחרים יושמו בהצלחה');
-        setReviewModalOpen(false);
-        setReviewRows([]);
-        setReviewUpload(null);
-        setReviewSelected(new Set());
-        await queryClient.invalidateQueries({ queryKey: ['org-settings'] });
-      } catch (e) {
-        console.error(e);
-        toast.error(e instanceof Error ? e.message : 'יישום נכשל');
-      } finally {
-        setIsApplyingReview(false);
       }
     };
 
@@ -968,9 +442,6 @@ export default function AdminSettingsPage() {
                   <CardDescription>
                     גרסת האפליקציה (מ־<code className="text-[10px]">package.json</code>, כמו בכותרת):{' '}
                     <span className="font-mono text-foreground">{codeVersion}</span>
-                    <span className="text-muted-foreground text-xs block mt-1">
-                      מניפסט עדכונים (ענן / dev): {latestManifestVersion}
-                    </span>
                   </CardDescription>
                 </div>
               </div>
@@ -1010,7 +481,7 @@ export default function AdminSettingsPage() {
                     variant="destructive"
                     size="sm"
                     onClick={() => void forceManualVersionUpdate()}
-                    disabled={isCheckingUpdates || isBackingUpSettings || isRestoringSettings}
+                    disabled={false}
                   >
                     ניקוי זיכרון ורענון אפליקציה
                   </Button>
@@ -1018,162 +489,9 @@ export default function AdminSettingsPage() {
                     (מנקה מטמון דפדפן במקרה של תקלה)
                   </span>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" size="sm" onClick={backupSettings} disabled={isBackingUpSettings}>
-                    {isBackingUpSettings ? (
-                      <Loader2 className="h-4 w-4 animate-spin ml-2" />
-                    ) : (
-                      <Download className="h-4 w-4 ml-2" />
-                    )}
-                    גיבוי הגדרות
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    type="button"
-                    onClick={() => reviewUploadInputRef.current?.click()}
-                    disabled={
-                      isReviewFileBusy ||
-                      isApplyingReview ||
-                      isRestoringSettings ||
-                      isBackingUpSettings
-                    }
-                  >
-                    {isReviewFileBusy ? (
-                      <Loader2 className="h-4 w-4 animate-spin ml-2" />
-                    ) : (
-                      <Upload className="h-4 w-4 ml-2" />
-                    )}
-                    העלאה ויישום הגדרות
-                    <span className="sr-only">Upload &amp; Apply Settings</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleRestoreButtonClick}
-                    disabled={isRestoringSettings || isBackingUpSettings}
-                  >
-                    {isRestoringSettings ? (
-                      <Loader2 className="h-4 w-4 animate-spin ml-2" />
-                    ) : (
-                      <RotateCcw className="h-4 w-4 ml-2" />
-                    )}
-                    שחזור הגדרות
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={checkForUpdates} disabled={isCheckingUpdates}>
-                    {isCheckingUpdates ? (
-                      <Loader2 className="h-4 w-4 animate-spin ml-2" />
-                    ) : (
-                      <RefreshCw className="h-4 w-4 ml-2" />
-                    )}
-                    בדוק עדכונים
-                  </Button>
-                </div>
-
-                <input
-                  ref={restoreInputRef}
-                  type="file"
-                  accept="application/json,.json"
-                  className="hidden"
-                  onChange={handleRestoreFilePicked}
-                />
-                <input
-                  ref={reviewUploadInputRef}
-                  type="file"
-                  accept="application/json,.json"
-                  className="hidden"
-                  onChange={handleReviewFilePicked}
-                />
               </div>
             </CardContent>
           </Card>
-
-          <Dialog open={reviewModalOpen} onOpenChange={setReviewModalOpen}>
-            <DialogContent className="max-w-lg max-h-[90vh] flex flex-col gap-0 sm:max-w-2xl" dir="rtl">
-              <DialogHeader>
-                <DialogTitle>יישום הגדרות — סקירה לפני אישור</DialogTitle>
-                <DialogDescription asChild>
-                  <p className="text-sm text-muted-foreground">
-                    ייושמו רק הפריטים המסומנים. סימון <strong className="text-foreground">חדש</strong> או{' '}
-                    <strong className="text-foreground">שונה</strong> מציין את ההבדל ביחס למצב הנוכחי.
-                  </p>
-                </DialogDescription>
-              </DialogHeader>
-              <ScrollArea className="max-h-[50vh] pr-3 -mr-1">
-                <div className="space-y-4 py-2">
-                  {(['forms', 'permissions', 'ui'] as const).map((cat) => {
-                    const rows = reviewRows.filter((r) => r.category === cat);
-                    if (rows.length === 0) return null;
-                    const title =
-                      cat === 'forms'
-                        ? 'טפסים ומסמכים'
-                        : cat === 'permissions'
-                          ? 'הרשאות משתמשים (ברירת מחדל)'
-                          : 'הגדרות ממשק (דגלי תצוגה)';
-                    return (
-                      <div key={cat} className="space-y-2 border-b border-border pb-3 last:border-b-0">
-                        <div className="flex items-center gap-2">
-                          <Checkbox
-                            id={`cat-${cat}`}
-                            checked={categoryAllSelected(cat)}
-                            onCheckedChange={(v) => toggleReviewCategory(cat, v === true)}
-                          />
-                          <Label htmlFor={`cat-${cat}`} className="cursor-pointer text-sm font-semibold">
-                            {title}
-                          </Label>
-                        </div>
-                        <ul className="space-y-2 pr-6 list-none">
-                          {rows.map((row) => (
-                            <li key={row.id} className="flex items-start gap-2">
-                              <Checkbox
-                                id={row.id}
-                                checked={reviewSelected.has(row.id)}
-                                onCheckedChange={(v) => toggleReviewRow(row.id, v === true)}
-                              />
-                              <Label htmlFor={row.id} className="cursor-pointer flex-1 min-w-0 leading-snug">
-                                <span className="flex flex-wrap items-center gap-2">
-                                  <span>{row.label || row.id}</span>
-                                  <Badge variant={row.status === 'new' ? 'default' : 'secondary'}>
-                                    {row.status === 'new' ? 'חדש' : 'שונה'}
-                                  </Badge>
-                                </span>
-                              </Label>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
-                                title="הסר מהרשימה (לא ייושם)"
-                                aria-label="הסר שורה מסקירת הסנכרון"
-                                onClick={() => removeReviewRow(row.id)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    );
-                  })}
-                </div>
-              </ScrollArea>
-              <DialogFooter className="gap-2 sm:gap-0 flex-col sm:flex-row sm:justify-between">
-                <Button type="button" variant="outline" onClick={() => setReviewModalOpen(false)}>
-                  ביטול
-                </Button>
-                <Button type="button" onClick={() => void applyReviewSelection()} disabled={isApplyingReview}>
-                  {isApplyingReview ? (
-                    <>
-                      <Loader2 className="h-4 w-4 ml-2 animate-spin" />
-                      מיישם…
-                    </>
-                  ) : (
-                    'יישום הפריטים המסומנים'
-                  )}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
 
        </main>
      </div>

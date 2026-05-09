@@ -53,10 +53,12 @@ export function useTeamMembers(orgId: string | null | undefined, options?: UseTe
   return useQuery({
     queryKey: [...TEAM_QUERY_KEY, loadAllOrgs ? 'all-orgs' : 'org', orgId ?? 'none', 'scope-org'],
     enabled,
-    /** רענון אוטומטי כל 20 שניות — כדי שהמנהל יראה משתמשים שזה עתה
-     *  השלימו רישום בעקבות הזמנה, גם בלי ריענון ידני. */
-    refetchInterval: 20_000,
-    refetchOnWindowFocus: true,
+    /**
+     * ביטול polling: במסך "ניהול צוות" זה נראה כמו רענון עמוד מחזורי.
+     * ריענון ידני/ניווט מספיקים, ו-mutations כבר מבצעות invalidate.
+     */
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
     queryFn: async (): Promise<Profile[]> => {
       let q = supabase.from('profiles').select('*').order('full_name', { ascending: true });
 
@@ -99,10 +101,12 @@ export function useOrgInvitations(_orgId: string | null | undefined) {
   return useQuery({
     queryKey: [...ORG_INVITATIONS_QUERY_KEY, _orgId ?? 'none'],
     enabled: Boolean(profile) && Boolean(_orgId),
-    /** רענון תקופתי — שורת "הזמנות פתוחות" משקפת את המצב כשמוזמן השלים רישום
-     *  (אז ההזמנה נמחקת ב-signUp) בלי שצריך לרענן ידנית. */
-    refetchInterval: 20_000,
-    refetchOnWindowFocus: true,
+    /**
+     * ביטול polling: במסך "ניהול צוות" זה נראה כמו רענון מחזורי.
+     * invalidation קיים על פעולות (invite/remove), וניווט/ריענון ידני מספיקים.
+     */
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
     queryFn: async (): Promise<OrgInvitation[]> => {
       if (!_orgId) return [];
       const { data, error } = await (supabase as any).from('org_invitations').select('*').eq('org_id', _orgId);
