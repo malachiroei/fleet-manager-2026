@@ -1,6 +1,5 @@
 import {
   type ElementType,
-  type MouseEvent,
   ReactNode,
   Suspense,
   useCallback,
@@ -620,8 +619,8 @@ export function AppLayout({ children }: AppLayoutProps) {
     </>
   );
 
-  const handleGoHomeNav = (e: MouseEvent<HTMLAnchorElement>) => {
-    e.preventDefault();
+  /** ללא `<Link>` — מונע התנגשות עם React Router ומקל על לחיצה אמינה (במיוחד עם dirty / מגע). */
+  const handleGoHomeNav = () => {
     try {
       window.dispatchEvent(new CustomEvent('app:go-home'));
     } catch {
@@ -636,19 +635,20 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   /** כפתור בית — שורת כותרת אחת (דסקטופ + מובייל) */
   const HomeNavLink = () => (
-    <Link
-      to="/"
+    <button
+      type="button"
       onClick={handleGoHomeNav}
       className={cn(
-        'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors md:h-10 md:gap-2 md:px-5',
+        'relative z-[110] inline-flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors touch-manipulation md:h-10 md:gap-2 md:px-5',
         isHomeActive
           ? 'border-cyan-400/35 bg-cyan-500/15 text-cyan-100'
           : 'border-white/10 bg-white/[0.06] text-white/70 hover:bg-white/10 hover:text-white/90'
       )}
+      style={{ touchAction: 'manipulation' }}
     >
       <Home className="h-4 w-4 shrink-0 opacity-90" />
       <span>{t('navigation.home')}</span>
-    </Link>
+    </button>
   );
 
   /** מובייל: כותרת משנה לדף הבית בלבד (בלי שורת ניווט נפרדת) */
@@ -742,7 +742,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         type="button"
         onClick={handleBack}
         className={cn(
-          'inline-flex h-9 shrink-0 cursor-pointer items-center gap-1 rounded-lg border px-3 text-sm font-medium transition-colors touch-manipulation md:h-10 md:gap-1.5 md:px-4',
+          'relative z-[110] inline-flex h-9 shrink-0 cursor-pointer items-center gap-1 rounded-lg border px-3 text-sm font-medium transition-colors touch-manipulation md:h-10 md:gap-1.5 md:px-4',
           'border-white/10 bg-white/[0.06] text-white/70 hover:bg-white/10 hover:text-white/90'
         )}
         style={{ touchAction: 'manipulation' }}
@@ -760,7 +760,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     >
       <header
         className={cn(
-          'sticky top-0 z-40 border-b border-white/10 bg-[#0d1b2e] min-h-0 md:h-auto md:border-gray-800'
+          'sticky top-0 z-[100] border-b border-white/10 bg-[#0d1b2e] min-h-0 md:h-auto md:border-gray-800'
         )}
       >
         {/* דסקטופ (md+): שתי שורות — (כלים+משתמש / מותג) ואז ניווט מרכזי */}

@@ -557,6 +557,8 @@ function Step1({
   sigRef,
   onSign,
   vehicleLabel,
+  vehicleModelSummary,
+  vehiclePlate,
   driverName,
   date,
   deliveryDateTime,
@@ -566,12 +568,15 @@ function Step1({
   onManualFieldChange,
   canSign,
   containerRef,
+  receptionInlineNav,
 }: {
   accessories: AccessoryItem[];
   setAccessories: (a: AccessoryItem[]) => void;
   sigRef: RefObject<SignaturePadRef>;
   onSign: (has: boolean) => void;
   vehicleLabel: string;
+  vehicleModelSummary: string;
+  vehiclePlate: string;
   driverName: string;
   date: string;
   deliveryDateTime: string;
@@ -581,6 +586,13 @@ function Step1({
   onManualFieldChange: (field: keyof ReceptionManualFields, value: string) => void;
   canSign: boolean;
   containerRef?: RefObject<HTMLDivElement>;
+  receptionInlineNav: {
+    validationHint: string | null;
+    advanceLabel: string;
+    canAdvance: boolean;
+    submitting: boolean;
+    onAdvance: () => void | Promise<void>;
+  } | null;
 }) {
   const toggle = (id: string) =>
     setAccessories(accessories.map(a => a.id === id ? { ...a, checked: !a.checked } : a));
@@ -592,8 +604,6 @@ function Step1({
     setAccessories(accessories.map(item => item.id === id ? { ...item, missing: !item.missing, checked: item.missing ? false : item.checked } : item));
   };
 
-  const showAccessoriesWarning = accessories.some(item => !item.checked && !item.missing);
-
   // נחשב תקין אם האביזר מסומן ב-✓ או ✗
   const allChecked = accessories.every(a => a.checked || a.missing);
   const toggleAll  = () =>
@@ -602,13 +612,14 @@ function Step1({
   const requiredAsterisk = <span className="text-red-600">*</span>;
 
   return (
-    <div ref={containerRef} className="bg-white text-slate-900 rounded-2xl p-4 pb-32 sm:p-6 shadow-xl">
+    <div ref={containerRef} className="bg-white text-slate-900 rounded-2xl p-4 pb-8 sm:p-6 shadow-xl">
       <OfficialDocHeader
         title="טופס קבלת רכב"
         subtitle="יש לסמן ✓ על כל פריט המצוי ברכב ולחתום בתחתית הטופס"
         date={date}
         vehicleLabel={vehicleLabel}
         driverName={driverName}
+        hideMeta
       />
 
       <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -669,17 +680,8 @@ function Step1({
           </tbody>
         </table>
       </div>
-      {/* כפתור הוספת טפסים הוסר כאן - נשאר רק הכפתור הראשי הדרגביל */}
-      {/* פס צהוב אחרי הטבלה בלבד */}
-      {showAccessoriesWarning && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 text-xs text-yellow-800 text-center mt-2">
-          יש לסמן את כל האביזרים בטבלה (✓ או ✗) לפני המשך
-        </div>
-      )}
-
-      {/* Quick-select button */}
-      {/* Quick-select button and yellow row after table */}
-      <div className="flex justify-end mt-2">
+      {/* סמן הכל — justify-start ב־RTL כדי שהכפתור יישב בצד ימין (תחילת השורה בעברית) */}
+      <div className="flex justify-start mt-2">
         <button
           type="button"
           onClick={toggleAll}
@@ -693,12 +695,7 @@ function Step1({
         </button>
       </div>
 
-      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 mb-4">
-        <AlertTriangle className="inline h-3.5 w-3.5 ml-1" />
-        פריטים שסומנו כנמסרו — אחריות החזרתם בשלמות חלה על הנהג. אובדן או נזק יחויב לפי מחיר התקרה.
-      </div>
-
-      <div className="mb-2 rounded-lg border border-slate-200 bg-slate-50 p-4 pb-24 space-y-3">
+      <div className="mb-2 rounded-lg border border-slate-200 bg-slate-50 p-4 space-y-3">
         <h3 className="text-sm font-bold text-slate-800">3. שדות מילוי נדרשים</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-1">
@@ -757,6 +754,28 @@ function Step1({
           </div>
 
           <div className="space-y-1">
+            <Label htmlFor="receipt-vehicle-model">דגם רכב</Label>
+            <Input
+              id="receipt-vehicle-model"
+              value={(vehicleModelSummary.trim() || vehicleLabel.trim()) || '—'}
+              readOnly
+              className="bg-slate-100"
+              tabIndex={-1}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="receipt-vehicle-plate">מספר רכב (לוחית)</Label>
+            <Input
+              id="receipt-vehicle-plate"
+              value={vehiclePlate.trim() || '—'}
+              readOnly
+              className="bg-slate-100 tabular-nums"
+              tabIndex={-1}
+            />
+          </div>
+
+          <div className="space-y-1">
             <Label htmlFor="receipt-ignition-code">קוד קודנית {requiredAsterisk}</Label>
             <Input
               id="receipt-ignition-code"
@@ -783,6 +802,28 @@ function Step1({
           onSign={onSign}
           signatureKey="reception-signature"
         />
+      )}
+
+      {receptionInlineNav && (
+        <div className="mt-5 space-y-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/80 p-4">
+          {!receptionInlineNav.canAdvance && receptionInlineNav.validationHint && (
+            <p className="text-center text-xs text-amber-700 leading-snug px-1">
+              {receptionInlineNav.validationHint}
+            </p>
+          )}
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              onClick={() => void receptionInlineNav.onAdvance()}
+              disabled={receptionInlineNav.submitting || !receptionInlineNav.canAdvance}
+              className="gap-2 bg-cyan-500 hover:bg-cyan-400 text-[#020617] font-bold px-5 sm:px-6 max-w-[min(100vw-8rem,20rem)] truncate touch-manipulation"
+              style={{ touchAction: 'manipulation' }}
+            >
+              {receptionInlineNav.advanceLabel}
+              <ArrowLeft className="h-4 w-4 shrink-0" />
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1276,6 +1317,15 @@ type RenderStepContentProps = {
   >;
   genericSigMetaByDocId: Record<string, GenericHandoverSigMeta>;
   setGenericSigMetaByDocId: React.Dispatch<React.SetStateAction<Record<string, GenericHandoverSigMeta>>>;
+  vehicleModelSummary: string;
+  vehiclePlate: string;
+  receptionInlineNav: {
+    validationHint: string | null;
+    advanceLabel: string;
+    canAdvance: boolean;
+    submitting: boolean;
+    onAdvance: () => void | Promise<void>;
+  } | null;
 };
 
 function renderStepContent({
@@ -1344,6 +1394,9 @@ function renderStepContent({
   setGenericChecklistByDocId,
   genericSigMetaByDocId,
   setGenericSigMetaByDocId,
+  vehicleModelSummary,
+  vehiclePlate,
+  receptionInlineNav,
 }: RenderStepContentProps) {
   const currentStep = wizardSteps[stepIdx];
   if (!currentStep) return null;
@@ -1356,6 +1409,8 @@ function renderStepContent({
         sigRef={sig1Ref}
         onSign={setSig1OK}
         vehicleLabel={vehicleLabel}
+        vehicleModelSummary={vehicleModelSummary}
+        vehiclePlate={vehiclePlate}
         driverName={driverName}
         date={today}
         deliveryDateTime={deliveryDateTime}
@@ -1364,6 +1419,7 @@ function renderStepContent({
         fieldErrors={step1FieldErrors}
         onManualFieldChange={onManualFieldChange}
         canSign={canSignReception}
+        receptionInlineNav={receptionInlineNav}
       />
     );
   }
@@ -2103,6 +2159,8 @@ export default function VehicleHandoverWizard() {
   const vehicleLabel = vehicle
     ? `${vehicle.manufacturer} ${vehicle.model} (${vehicle.plate_number})`
     : vehicleId;
+  const vehicleModelSummary = vehicle ? `${vehicle.manufacturer} ${vehicle.model}`.trim() : '';
+  const vehiclePlate = (vehicle?.plate_number ?? '').trim();
   const autoFillContext = buildFormsAutoFillContext({ user, driver, vehicle });
   const driverName = autoFillContext.employee_name || driverId;
   const today = new Date().toLocaleDateString('he-IL');
@@ -2513,6 +2571,67 @@ export default function VehicleHandoverWizard() {
     sig1OK,
     sig2OK,
     sig3OK,
+  ]);
+
+  const advanceWizardStep = useCallback(async () => {
+    if (step === 0) {
+      if (requiredStep1FieldsMissing.length > 0) {
+        const labels = requiredStep1FieldsMissing.map((item) => item.label);
+        toast.error(`נא למלא ${joinHebrewList(labels)}`);
+        return;
+      }
+      if (!allAccessoriesChecked) {
+        toast.error('יש לסמן את כל האביזרים בטבלת הקבלה לפני המשך');
+        return;
+      }
+      if (requiredStep1FieldsInvalid.length > 0) {
+        toast.error(`נא להזין ${joinHebrewList(requiredStep1FieldsInvalid)}`);
+        return;
+      }
+      if (!manualFieldsValid) {
+        toast.error('יש להשלים מספר תעודת זהות, מספר עובד, כתובת, טלפון תקין וקוד קודנית תקין לפני המשך');
+        return;
+      }
+    }
+    if (currentStepDef?.kind === 'procedure' && !procedureRead) {
+      toast.error('יש לאשר את קריאת הסעיפים בטרם המעבר');
+      return;
+    }
+    if (currentStepDef?.kind === 'procedure' && !sig2OK) {
+      toast.error('נדרשת חתימה בטופס זה לפני המשך');
+      return;
+    }
+    if (currentStepDef?.kind === 'health' && !healthItems.every((h) => h.checked)) {
+      toast.error('עליך לאשר את כל סעיפי הבריאות כדי להמשיך');
+      return;
+    }
+    if (currentStepDef?.kind === 'generic' && currentStepDef.docId && !genericSigOkByDocId[currentStepDef.docId]) {
+      toast.error('נדרשת חתימה בטופס זה לפני המשך');
+      return;
+    }
+    if (!canAdvance) return;
+    if (currentStepDef?.kind === 'reception') setSig1DataUrl(sig1Ref.current?.getDataUrl() ?? null);
+    if (currentStepDef?.kind === 'procedure') setSig2DataUrl(sig2Ref.current?.getDataUrl() ?? null);
+    if (currentStepDef?.kind === 'health') setSig3DataUrl(sig3Ref.current?.getDataUrl() ?? null);
+    if (currentStepDef?.kind === 'generic' && currentStepDef.docId) {
+      const genericSig = genericSigRef.current?.getDataUrl() ?? null;
+      if (genericSig) {
+        setGenericSigDataUrlByDocId((prev) => ({ ...prev, [currentStepDef.docId as string]: genericSig }));
+      }
+    }
+    setStep((s) => s + 1);
+  }, [
+    allAccessoriesChecked,
+    canAdvance,
+    currentStepDef,
+    genericSigOkByDocId,
+    healthItems,
+    manualFieldsValid,
+    procedureRead,
+    requiredStep1FieldsInvalid,
+    requiredStep1FieldsMissing,
+    sig2OK,
+    step,
   ]);
 
   const hasLicenseStep = useMemo(() => wizardSteps.some((wizardStep) => wizardStep.kind === 'license'), [wizardSteps]);
@@ -2941,20 +3060,30 @@ export default function VehicleHandoverWizard() {
     <div className="fleet-screen-page text-white">
       {/* Top bar */}
       <header className="sticky top-0 z-20 bg-[#0d1b2e]/95 backdrop-blur-sm border-b border-white/10">
-        <div className="container py-3 flex items-center gap-3">
-          <div>
+        <div className="container max-w-3xl mx-auto py-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0 flex-1">
             <h1 className="font-bold text-lg leading-tight">{handoverType === 'return' ? 'אשף החזרת רכב' : 'אשף מסירת רכב'}</h1>
-            <p className="text-xs text-cyan-400/70">{vehicleLabel}</p>
+            <p className="text-xs text-cyan-400/70 truncate">{vehicleLabel}</p>
           </div>
-          <div className="mr-auto">
-            <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold bg-cyan-500/20 text-cyan-300 border-cyan-400/30">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setFormsPickerOpen((prev) => !prev)}
+              className="border-cyan-400/35 bg-[#061325]/70 text-cyan-50 hover:bg-[#061325] hover:text-white"
+            >
+              <Plus className="h-4 w-4 ml-1 shrink-0" />
+              הוספת טפסים
+            </Button>
+            <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold bg-cyan-500/20 text-cyan-300 border-cyan-400/30 whitespace-nowrap">
               שלב {step + 1} מתוך {wizardSteps.length}
             </span>
           </div>
         </div>
       </header>
 
-      <main className="container py-6 pb-32 max-w-3xl mx-auto">
+      <main className="container py-6 pb-40 max-w-3xl mx-auto">
         <ProgressBar current={step} steps={wizardSteps} />
 
         {showOrgSettingsEmptyTextsWarning && (
@@ -2970,35 +3099,8 @@ export default function VehicleHandoverWizard() {
           </div>
         )}
 
-        {/* כפתור הוספת טפסים כ-FAB draggable */}
-        <div
-          style={{ position: 'fixed', bottom: 100, left: 40, zIndex: 1000, cursor: 'grab' }}
-          draggable
-          onDragStart={e => {
-            e.dataTransfer.setData('text/plain', '');
-            e.currentTarget.style.opacity = '0.5';
-          }}
-          onDragEnd={e => {
-            const x = e.clientX;
-            const y = e.clientY;
-            e.currentTarget.style.left = x + 'px';
-            e.currentTarget.style.top = y + 'px';
-            e.currentTarget.style.opacity = '1';
-          }}
-        >
-          <Button
-            type="button"
-            onClick={() => setFormsPickerOpen((prev) => !prev)}
-            variant="outline"
-            size="sm"
-            className="bg-white text-slate-800 border-slate-300 hover:bg-slate-100"
-          >
-            <Plus className="w-4 h-4 mr-1" /> הוספת טפסים
-          </Button>
-        </div>
-
         {formsPickerOpen && (
-          <div className="fixed inset-x-4 bottom-24 z-40 max-h-[58vh] overflow-y-auto rounded-2xl border border-cyan-300/30 bg-[#08182d]/95 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.45)] sm:left-auto sm:right-6 sm:w-[520px]" dir="rtl">
+          <div className="fixed inset-x-4 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-40 max-h-[min(58vh,520px)] overflow-y-auto rounded-2xl border border-cyan-300/30 bg-[#08182d]/95 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.45)] sm:left-auto sm:right-6 sm:w-[520px]" dir="rtl">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-cyan-100">טפסים למסירה זו</h3>
               <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => setFormsPickerOpen(false)}>
@@ -3135,28 +3237,43 @@ export default function VehicleHandoverWizard() {
           setGenericChecklistByDocId,
           genericSigMetaByDocId,
           setGenericSigMetaByDocId,
+          vehicleModelSummary,
+          vehiclePlate,
+          receptionInlineNav:
+            step === 0 && currentStepDef?.kind === 'reception'
+              ? {
+                  validationHint: !canAdvance
+                    ? firstStep1ProblemLabel
+                      ? `שדה בעייתי: ${firstStep1ProblemLabel}`
+                      : 'נדרשת חתימה להמשך'
+                    : null,
+                  advanceLabel:
+                    step1MissingRequiredCount > 0
+                      ? `חסרים ${step1MissingRequiredCount} שדות למילוי`
+                      : 'הבא',
+                  canAdvance,
+                  submitting,
+                  onAdvance: advanceWizardStep,
+                }
+              : null,
         })}
       </main>
 
-      {/* Floating navigation controls (outside form card) */}
-      <div className="fixed bottom-6 left-0 right-0 z-30 pointer-events-none">
-        <div className="container max-w-5xl mx-auto relative min-h-[64px]">
-          {step > 0 && (
-            <div className="absolute right-4 bottom-0 pointer-events-auto">
-              <Button
-                variant="ghost"
-                className="gap-2 text-white/70 hover:text-white"
-                onClick={() => setStep(s => s - 1)}
-                disabled={submitting}
-              >
-                <ArrowRight className="h-4 w-4" />
-                הקודם
-              </Button>
-            </div>
-          )}
-
-          {!canAdvance && (
-            <p className="pointer-events-none absolute left-1/2 -translate-x-1/2 -top-6 whitespace-nowrap text-xs text-amber-400/90">
+      {/* שורת ניווט תחתונה אחת — כפתורי טפסים בכותרת למעלה */}
+      <div
+        className={`fixed bottom-0 inset-x-0 z-30 pb-[max(0.75rem,env(safe-area-inset-bottom))] ${
+          step === 0 && currentStepDef?.kind === 'reception'
+            ? 'border-t border-white/5 bg-[#0d1b2e]/80 backdrop-blur-sm'
+            : 'border-t border-white/10 bg-[#0d1b2e]/97 backdrop-blur-md shadow-[0_-12px_32px_rgba(0,0,0,0.35)]'
+        }`}
+      >
+        <div
+          className={`container max-w-3xl mx-auto px-3 ${
+            step === 0 && currentStepDef?.kind === 'reception' ? 'py-1' : 'pt-2.5 pb-3'
+          }`}
+        >
+          {!canAdvance && !(step === 0 && currentStepDef?.kind === 'reception') && (
+            <p className="mb-2 text-center text-xs text-amber-400/95 leading-snug px-1">
               {currentStepDef?.kind === 'reception' && (firstStep1ProblemLabel
                 ? `שדה בעייתי: ${firstStep1ProblemLabel}`
                 : 'נדרשת חתימה להמשך')}
@@ -3173,101 +3290,81 @@ export default function VehicleHandoverWizard() {
             </p>
           )}
 
-          {step < wizardSteps.length - 1 ? (
-            <div className="absolute left-4 bottom-0 pointer-events-auto">
-              <Button
-                onClick={async () => {
-                  // Step-specific validation toasts before advancing
-                  if (step === 0) {
-                    if (requiredStep1FieldsMissing.length > 0) {
-                      const labels = requiredStep1FieldsMissing.map((item) => item.label);
-                      toast.error(`נא למלא ${joinHebrewList(labels)}`);
-                      return;
-                    }
-                    if (!allAccessoriesChecked) {
-                      toast.error('יש לסמן את כל האביזרים בטבלת הקבלה לפני המשך');
-                      return;
-                    }
-                    if (requiredStep1FieldsInvalid.length > 0) {
-                      toast.error(`נא להזין ${joinHebrewList(requiredStep1FieldsInvalid)}`);
-                      return;
-                    }
-                    if (!manualFieldsValid) {
-                      toast.error('יש להשלים מספר תעודת זהות, מספר עובד, כתובת, טלפון תקין וקוד קודנית תקין לפני המשך');
-                      return;
-                    }
-                  }
-                  if (currentStepDef?.kind === 'procedure' && !procedureRead) {
-                    toast.error('יש לאשר את קריאת הסעיפים בטרם המעבר');
-                    return;
-                  }
-                  if (currentStepDef?.kind === 'procedure' && !sig2OK) {
-                    toast.error('נדרשת חתימה בטופס זה לפני המשך');
-                    return;
-                  }
-                  if (currentStepDef?.kind === 'health' && !healthItems.every((h) => h.checked)) {
-                    toast.error('עליך לאשר את כל סעיפי הבריאות כדי להמשיך');
-                    return;
-                  }
-                  if (currentStepDef?.kind === 'generic' && currentStepDef.docId && !genericSigOkByDocId[currentStepDef.docId]) {
-                    toast.error('נדרשת חתימה בטופס זה לפני המשך');
-                    return;
-                  }
-                  if (!canAdvance) return;
-                  // Capture raw signature dataUrl from ref before the step unmounts
-                  if (currentStepDef?.kind === 'reception') setSig1DataUrl(sig1Ref.current?.getDataUrl() ?? null);
-                  if (currentStepDef?.kind === 'procedure') setSig2DataUrl(sig2Ref.current?.getDataUrl() ?? null);
-                  if (currentStepDef?.kind === 'health') setSig3DataUrl(sig3Ref.current?.getDataUrl() ?? null);
-                  if (currentStepDef?.kind === 'generic' && currentStepDef.docId) {
-                    const genericSig = genericSigRef.current?.getDataUrl() ?? null;
-                    if (genericSig) {
-                      setGenericSigDataUrlByDocId((prev) => ({ ...prev, [currentStepDef.docId as string]: genericSig }));
-                    }
-                  }
-                  setStep(s => s + 1);
-                }}
-                disabled={submitting || !canAdvance}
-                className="gap-2 bg-cyan-500 hover:bg-cyan-400 text-[#020617] font-bold px-6"
-              >
-                {step === 0 && step1MissingRequiredCount > 0
-                  ? `חסרים ${step1MissingRequiredCount} שדות למילוי`
-                  : 'הבא'}
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-            </div>
-          ) : (
-            <div className="absolute left-1/2 -translate-x-1/2 bottom-0 pointer-events-auto flex items-center justify-center gap-3">
-              {currentStepDef?.kind === 'license' && (
+          <div
+            className={`flex items-center justify-between gap-3 ${
+              step === 0 && currentStepDef?.kind === 'reception' ? 'min-h-0' : 'min-h-[48px]'
+            }`}
+          >
+            <div className="flex min-w-0 flex-1 justify-start">
+              {step > 0 && (
                 <Button
-                  variant="outline"
+                  variant="ghost"
+                  className="gap-2 text-white/80 hover:text-white touch-manipulation"
+                  style={{ touchAction: 'manipulation' }}
+                  onClick={() => setStep((s) => s - 1)}
                   disabled={submitting}
-                  onClick={() => {
-                    setSkipLicenseStep(true);
-                    toast.info('שלב צילום הרישיון סומן כדילוג. ניתן לסיים ללא העלאת תמונות.');
-                  }}
-                  className="gap-2 border-amber-300 text-amber-200 hover:text-amber-100"
                 >
-                  דלג על שלב זה
+                  <ArrowRight className="h-4 w-4 shrink-0" />
+                  הקודם
                 </Button>
               )}
-              <Button
-                disabled={submitting || !canAdvance}
-                onClick={() => {
-                  if (!canAdvance) {
-                    toast.error('יש להשלים אישור וחתימה בטופס לפני סיום');
-                    return;
-                  }
-                  handleFinish();
-                }}
-                className="gap-2 bg-emerald-500 hover:bg-emerald-400 text-white font-bold px-8"
-              >
-                {submitting
-                  ? <><Loader2 className="h-4 w-4 animate-spin" /> שומר...</>
-                  : <><CheckCircle2 className="h-4 w-4" /> סיים וחתום</>
-                }
-              </Button>
             </div>
-          )}
+            <div className="flex min-w-0 flex-1 justify-end">
+              {step < wizardSteps.length - 1 ? (
+                !(step === 0 && currentStepDef?.kind === 'reception') ? (
+                  <Button
+                    onClick={() => void advanceWizardStep()}
+                    disabled={submitting || !canAdvance}
+                    className="gap-2 bg-cyan-500 hover:bg-cyan-400 text-[#020617] font-bold px-5 sm:px-6 max-w-[min(100vw-8rem,20rem)] truncate touch-manipulation"
+                    style={{ touchAction: 'manipulation' }}
+                  >
+                    {step === 0 && step1MissingRequiredCount > 0
+                      ? `חסרים ${step1MissingRequiredCount} שדות למילוי`
+                      : 'הבא'}
+                    <ArrowLeft className="h-4 w-4 shrink-0" />
+                  </Button>
+                ) : null
+              ) : (
+                <div className="flex flex-wrap items-center justify-start gap-2">
+                  {currentStepDef?.kind === 'license' && (
+                    <Button
+                      variant="outline"
+                      disabled={submitting}
+                      onClick={() => {
+                        setSkipLicenseStep(true);
+                        toast.info('שלב צילום הרישיון סומן כדילוג. ניתן לסיים ללא העלאת תמונות.');
+                      }}
+                      className="gap-2 border-amber-300/60 text-amber-100 hover:text-white hover:bg-amber-950/40"
+                    >
+                      דלג על שלב זה
+                    </Button>
+                  )}
+                  <Button
+                    disabled={submitting || !canAdvance}
+                    onClick={() => {
+                      if (!canAdvance) {
+                        toast.error('יש להשלים אישור וחתימה בטופס לפני סיום');
+                        return;
+                      }
+                      handleFinish();
+                    }}
+                    className="gap-2 bg-emerald-500 hover:bg-emerald-400 text-white font-bold px-6 sm:px-8 touch-manipulation"
+                    style={{ touchAction: 'manipulation' }}
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin shrink-0" /> שומר...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="h-4 w-4 shrink-0" /> סיים וחתום
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>

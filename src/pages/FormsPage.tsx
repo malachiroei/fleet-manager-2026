@@ -7,11 +7,8 @@ import {
   Download,
   FileText,
   FolderCog,
-  GripVertical,
-  Info,
   Loader2,
   LogOut,
-  MoreHorizontal,
   Pencil,
   Plus,
   Settings,
@@ -42,7 +39,6 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { HANDOVER_ACCESSORY_CEILINGS, formatCeilingPrice } from '@/lib/accessoryCeilings';
 import { buildFormsAutoFillContext, FormsCategory, resolveSchemaAutoFill } from '@/lib/formsAutofill';
 import {
@@ -181,17 +177,7 @@ export default function FormsPage() {
   const canShowManagementControls = canManageForms && formsManagementUnlocked;
   const canDeleteForms = canShowManagementControls;
 
-  /** טפסי מסירה מובנים (קבלה, חלופי וכו') מופיעים רק אחרי «סנכרון מסמכי מערכת». */
-  const suggestSyncBuiltinForms = useMemo(() => {
-    if (!forms || !canShowManagementControls) return false;
-    return !forms.some((f) => {
-      const key = String((f.json_schema as Record<string, unknown> | null)?.builtin_template_key ?? '').trim();
-      return key === 'system-reception-form';
-    });
-  }, [forms, canShowManagementControls]);
-
   const [open, setOpen] = useState(false);
-  const [quickUploadOpen, setQuickUploadOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<FormsCategory>('תפעול');
@@ -371,6 +357,13 @@ export default function FormsPage() {
 
   const openCreateDialog = () => {
     resetForm();
+    setOpen(true);
+  };
+
+  /** טופס שנוצר במצב «נוצר במערכת» — אותה מסגרת בנייה כמו בעריכת תוכן (טקסט, שדות, טבלאות). */
+  const openCreateGeneratedDialog = () => {
+    resetForm();
+    setTemplateMode('generated');
     setOpen(true);
   };
 
@@ -1564,6 +1557,30 @@ ${STANDARD_INPUT_FOOTER_TEXT}
       subtitle="מרכז הטפסים הארגוני לצפייה והורדה."
       headerAside={
         <div className="flex flex-wrap items-center justify-end gap-2">
+          {canManageForms ? (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 border-cyan-500/30 bg-white/5"
+                onClick={() => openCreateDialog()}
+                title="הוספת טופס מקובץ PDF"
+              >
+                <Upload className="h-4 w-4" />
+                הוספת טופס (PDF)
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 border-emerald-500/35 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/20"
+                onClick={() => openCreateGeneratedDialog()}
+                title="יצירת טופס חדש במערכת — טקסט, שדות וטבלאות כמו בעריכת תוכן"
+              >
+                <Table2 className="h-4 w-4" />
+                בניית טופס חדש
+              </Button>
+            </>
+          ) : null}
           <Button
             variant="outline"
             size="sm"
@@ -1635,17 +1652,6 @@ ${STANDARD_INPUT_FOOTER_TEXT}
           })()
         ))}
       </div>
-
-      {suggestSyncBuiltinForms ? (
-        <Alert className="border-cyan-400/35 bg-cyan-950/45 text-cyan-50 [&>svg]:text-cyan-300">
-          <Info className="h-4 w-4" />
-          <AlertTitle className="text-cyan-100">טפסי מערכת לעריכה</AlertTitle>
-          <AlertDescription className="text-sm text-cyan-100/90">
-            טפסים כמו «טופס קבלת רכב» או «שימוש ברכב חלופי» נוצרים ממסמכי מערכת ומופיעים ברשימה רק לאחר סנכרון. פתחו את{' '}
-            <span className="font-semibold">הגדרות ניהול</span> (⚙) ובחרו «סנכרון מסמכי מערכת».
-          </AlertDescription>
-        </Alert>
-      ) : null}
 
       {canShowManagementControls && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-cyan-400/35 bg-cyan-950/50 px-3 py-2.5">
@@ -1759,51 +1765,9 @@ ${STANDARD_INPUT_FOOTER_TEXT}
                       }}
                     >
                       <CardHeader>
-                        <CardTitle className="text-lg flex items-center gap-2">
-                          <FileText className="h-4 w-4" />
-                          <span className="truncate forms-file-name">{orgDocumentHandoverLabel(form)}</span>
-                          {canShowManagementControls && (
-                            <button
-                              type="button"
-                              draggable
-                              onDragStart={(event) => handleDragStartForm(event, form as OrgDocument & { category: FormsCategory })}
-                              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                              aria-label="גרירת טופס לתיקייה"
-                              title="גרירה לתיקייה"
-                            >
-                              <GripVertical className="h-4 w-4" />
-                            </button>
-                          )}
-                          {canShowManagementControls && (
-                            <button
-                              type="button"
-                              className="mr-auto inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                              aria-label="עריכת כותרת ותיאור"
-                              onClick={() => openContentEditor(form as OrgDocument & { category: FormsCategory })}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                            aria-label="העברה בין תיקיות"
-                            title="העברה בין תיקיות"
-                            onClick={() => openMoveDialog(form as OrgDocument & { category: FormsCategory })}
-                          >
-                            <MoreHorizontal className="h-4 w-4" />
-                          </button>
-                          {canShowManagementControls && (
-                            <button
-                              type="button"
-                              className="absolute right-3 top-3 z-10 inline-flex h-7 w-7 items-center justify-center rounded-full bg-cyan-600 text-white shadow-sm transition-colors hover:bg-cyan-700"
-                              aria-label="הוספה"
-                              title="הוספה"
-                              onClick={() => setQuickUploadOpen(true)}
-                            >
-                              <Plus className="h-4 w-4" />
-                            </button>
-                          )}
+                        <CardTitle className="text-lg flex items-center gap-2 pr-1">
+                          <FileText className="h-4 w-4 shrink-0" />
+                          <span className="truncate forms-file-name min-w-0">{orgDocumentHandoverLabel(form)}</span>
                         </CardTitle>
                         <CardDescription className="line-clamp-2 min-h-[2.5rem]">
                           {form.description || 'ללא תיאור'}
@@ -1895,33 +1859,6 @@ ${STANDARD_INPUT_FOOTER_TEXT}
           )}
         </div>
       )}
-
-      <Dialog
-        open={quickUploadOpen}
-        onOpenChange={setQuickUploadOpen}
-      >
-        <DialogContent className="sm:max-w-sm" dir="rtl">
-          <DialogHeader>
-            <DialogTitle>העלאת טופס</DialogTitle>
-            <DialogDescription>
-              העלאה מהירה של קובץ טופס חדש למרכז הטפסים.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="pt-2">
-            <Button
-              type="button"
-              className="w-full gap-2"
-              onClick={() => {
-                setQuickUploadOpen(false);
-                openCreateDialog();
-              }}
-            >
-              <Upload className="h-4 w-4" />
-              העלאת קובץ
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       <Dialog
         open={open}
