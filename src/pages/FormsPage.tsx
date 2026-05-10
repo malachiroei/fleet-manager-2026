@@ -1,7 +1,7 @@
 import { type DragEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { ArchiveRestore, Download, FileText, FolderCog, GripVertical, Loader2, MoreHorizontal, Pencil, Plus, Settings, Trash2, Upload } from 'lucide-react';
+import { AlertTriangle, ArchiveRestore, Download, FileText, FolderCog, GripVertical, Loader2, MoreHorizontal, Pencil, Plus, Settings, Trash2, Upload } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
@@ -227,6 +227,8 @@ export default function FormsPage() {
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveSearch, setArchiveSearch] = useState('');
   const [restoringFormId, setRestoringFormId] = useState<string | null>(null);
+  const [brokenFormIds, setBrokenFormIds] = useState<Set<string>>(() => new Set());
+  const [bulkDeletingBroken, setBulkDeletingBroken] = useState(false);
   const [draggedForm, setDraggedForm] = useState<{
     id: string;
     title: string;
@@ -245,6 +247,75 @@ export default function FormsPage() {
     if (typeof window === 'undefined') return;
     window.localStorage.setItem(FORMS_REVIEW_MARKS_STORAGE_KEY, JSON.stringify(formReviewMarks));
   }, [formReviewMarks]);
+
+  /**
+   * זיהוי "טפסים שבורים" — שורות שב-DB יש להן `file_url` אבל הקובץ עצמו
+   * אינו קיים יותר (404). אנחנו מבצעים `HEAD` לכל URL ייחודי. עבור URLs
+   * חוצי-מקור (Supabase Storage / CDN) לא תמיד נקבל תשובה תקפה בגלל CORS,
+   * לכן מסמנים כשבורים *רק* כש-`response.ok === false` בפירוש (כלומר
+   * תגובה הגיעה ועדכנה אותנו שהקובץ אינו זמין).
+   */
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!Array.isArray(forms) || forms.length === 0) {
+      setBrokenFormIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+
+    (async () => {
+      const next = new Set<string>();
+      const limit = 6;
+      const queue = forms.slice();
+      const workers = Array.from({ length: Math.min(limit, queue.length) }, async () => {
+        while (!cancelled && queue.length > 0) {
+          const form = queue.shift();
+          if (!form) break;
+          const url = form.file_url;
+          if (!url || typeof url !== 'string' || url.trim().length === 0) {
+            next.add(form.id);
+            continue;
+          }
+          try {
+            const parsed = new URL(url, window.location.origin);
+            const isSameOrigin = parsed.origin === window.location.origin;
+            if (isSameOrigin) {
+              const res = await fetch(parsed.toString(), {
+                method: 'HEAD',
+                cache: 'no-store',
+                signal: controller.signal,
+              });
+              if (!res.ok) next.add(form.id);
+            } else {
+              /** Cross-origin (e.g. Supabase Storage): נסיון `HEAD`. אם CORS חוסם,
+                * נפסיק בלי לסמן כשבור. רק 4xx/5xx ידועים יסומנו. */
+              try {
+                const res = await fetch(parsed.toString(), {
+                  method: 'HEAD',
+                  cache: 'no-store',
+                  signal: controller.signal,
+                  mode: 'cors',
+                });
+                if (res.status >= 400) next.add(form.id);
+              } catch {
+                /** TypeError CORS — לא מסמנים. */
+              }
+            }
+          } catch {
+            next.add(form.id);
+          }
+        }
+      });
+      await Promise.all(workers);
+      if (!cancelled) setBrokenFormIds(next);
+    })();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [forms]);
 
   const resetForm = () => {
     setTitle('');
@@ -1322,6 +1393,74 @@ ${STANDARD_INPUT_FOOTER_TEXT}
     }
   };
 
+  const handleBulkDeleteBroken = async () => {
+    if (!canDeleteForms) {
+      toast.error('יש להפעיל ניהול טפסים תחילה');
+      return;
+    }
+    const ids = Array.from(brokenFormIds);
+    if (ids.length === 0) {
+      toast.info('לא זוהו טפסים שבורים למחיקה');
+      return;
+    }
+    /** אישור מנהל אחד עבור כל המחיקות. משתמשים באותה סיסמה (`2101`). */
+    const pwd = window.prompt(
+      `יימחקו לצמיתות ${ids.length} טפסים שבורים מ-DB ומ-Storage. הזן/י סיסמת מנהל (2101) לאישור:`,
+      '',
+    );
+    if (pwd === null) return;
+    if (pwd !== DELETE_FORMS_PASSWORD) {
+      toast.error('סיסמת מנהל שגויה');
+      return;
+    }
+
+    setBulkDeletingBroken(true);
+    let okCount = 0;
+    const failures: { id: string; message: string }[] = [];
+    for (const id of ids) {
+      try {
+        await hardDeleteForm.mutateAsync(id);
+        okCount += 1;
+      } catch (err: any) {
+        failures.push({ id, message: err?.message ?? 'שגיאה לא צפויה' });
+      }
+    }
+
+    /** ניקוי localStorage: מסמני סקירה של מסמכים שנמחקו. */
+    setFormReviewMarks((prev) => {
+      let mutated = false;
+      const next = { ...prev };
+      for (const id of ids) {
+        if (id in next) {
+          delete next[id];
+          mutated = true;
+        }
+      }
+      return mutated ? next : prev;
+    });
+
+    await queryClient.invalidateQueries({ queryKey: ['org-documents'] });
+    await queryClient.invalidateQueries({ queryKey: ['org-documents', 'admin'] });
+    await queryClient.invalidateQueries({ queryKey: ['org-documents', 'permission-registry'] });
+
+    setBrokenFormIds((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (!failures.some((f) => f.id === id)) next.delete(id);
+      }
+      return next;
+    });
+
+    if (failures.length === 0) {
+      toast.success(`נמחקו ${okCount} טפסים שבורים`);
+    } else {
+      toast.error(
+        `נמחקו ${okCount}/${ids.length} טפסים. ${failures.length} נכשלו — ${failures[0]?.message ?? ''}`,
+      );
+    }
+    setBulkDeletingBroken(false);
+  };
+
   const handleRestoreArchivedForm = async (formId: string) => {
     setRestoringFormId(formId);
     try {
@@ -1433,6 +1572,26 @@ ${STANDARD_INPUT_FOOTER_TEXT}
         <p className="text-xs text-muted-foreground">טיפ: ניתן לגרור כרטיס טופס ולשחרר על תיקייה למעלה כדי להעביר אותו.</p>
       )}
 
+      {canDeleteForms && brokenFormIds.size > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-sm">
+          <AlertTriangle className="h-4 w-4 text-red-300" />
+          <span className="text-red-100">
+            זוהו <strong>{brokenFormIds.size}</strong> טפסים שבורים (קובץ חסר/לא נטען). ניתן למחוק אותם בלחיצה אחת.
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="destructive"
+            className="gap-2"
+            onClick={() => void handleBulkDeleteBroken()}
+            disabled={bulkDeletingBroken}
+          >
+            {bulkDeletingBroken ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            מחק {brokenFormIds.size} טפסים שבורים
+          </Button>
+        </div>
+      )}
+
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {Array.from({ length: 6 }).map((_, idx) => (
@@ -1474,11 +1633,17 @@ ${STANDARD_INPUT_FOOTER_TEXT}
                   const autoFill = resolveSchemaAutoFill(form.json_schema, autoFillContext);
                   const autoFillKeys = Object.keys(autoFill);
                   const hasPdf = Boolean(form.file_url);
+                  const isBroken = brokenFormIds.has(form.id);
 
                   return (
                     <Card
                       key={form.id}
-                      className={cn('relative h-full', canShowManagementControls && 'cursor-grab active:cursor-grabbing', draggedForm?.id === form.id && 'opacity-70')}
+                      className={cn(
+                        'relative h-full',
+                        canShowManagementControls && 'cursor-grab active:cursor-grabbing',
+                        draggedForm?.id === form.id && 'opacity-70',
+                        isBroken && 'border-red-400/60',
+                      )}
                       draggable={canShowManagementControls}
                       onDragStart={(event) => {
                         if (!canShowManagementControls) return;
@@ -1541,6 +1706,12 @@ ${STANDARD_INPUT_FOOTER_TEXT}
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-2">
+                        {isBroken && (
+                          <div className="flex items-center gap-1 text-xs font-medium text-red-300">
+                            <AlertTriangle className="h-3.5 w-3.5" />
+                            קובץ חסר/לא נטען — מומלץ למחוק
+                          </div>
+                        )}
                         <p className="text-xs text-muted-foreground">
                           עודכן: {new Date(form.updated_at).toLocaleDateString('he-IL')}
                         </p>
