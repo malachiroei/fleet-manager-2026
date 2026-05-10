@@ -8,7 +8,14 @@ import {
 import { useVehicles } from '@/hooks/useVehicles';
 import { useDrivers } from '@/hooks/useDrivers';
 import type { Driver } from '@/types/fleet';
-import { useCreateHandover, sendHandoverNotificationEmail, generateReceptionPDF, generateProcedurePDF, generateHealthDeclarationPDF, generateGenericFormPDF } from '@/hooks/useHandovers';
+import {
+  useCreateHandover,
+  sendHandoverNotificationEmail,
+  generateReceptionPDF,
+  generateProcedurePDF,
+  generateHealthDeclarationPDF,
+  generateGenericFormPDF,
+} from '@/hooks/useHandovers';
 import { parsePolicyClauses, parseHealthItems, useOrgSettings } from '@/hooks/useOrgSettings';
 import { useOrgDocuments } from '@/hooks/useOrgDocuments';
 import { useAuth } from '@/hooks/useAuth';
@@ -1801,6 +1808,15 @@ function renderStepContent({
           checklistByDocId={genericChecklistByDocId}
           setChecklistByDocId={setGenericChecklistByDocId}
         />
+        {parseTemplateExtensions(doc.json_schema as Record<string, unknown>).include_damage_diagram ? (
+          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50/90 p-4 space-y-2">
+            <Label className="text-slate-800 text-sm font-semibold">סימון נזקים לפי צד ברכב</Label>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              הסימון משותף לשלב מסירת הרכב ויופיע ב-PDF של טופס זה כשסומנים נזקים.
+            </p>
+            <VehicleDamage3DSelector value={damageReport} onChange={setDamageReport} />
+          </div>
+        ) : null}
       </div>
       <div className="mt-4">
         <Label className="text-slate-700 text-sm font-semibold block mb-1">הערות לטופס</Label>
@@ -1935,13 +1951,14 @@ export default function VehicleHandoverWizard() {
   const queryClient = useQueryClient();
   const { setDirty } = useVehicleSpecDirty();
   const location = useLocation();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data: vehicles } = useVehicles();
   const { data: drivers  } = useDrivers();
   const { user, activeOrgId, profile } = useAuth();
   const handoverSettingsOrgId = activeOrgId ?? profile?.org_id ?? null;
   const { data: orgUiSettings } = useOrgSettings(handoverSettingsOrgId);
   const { data: orgDocuments } = useOrgDocuments();
+  const createHandoverMutation = useCreateHandover();
 
   const routerState = useMemo((): VehicleHandoverWizardLocationState => {
     const s = location.state;
@@ -1967,6 +1984,71 @@ export default function VehicleHandoverWizard() {
   const odometerFromQuery = searchParams.get('odometer')?.trim() ?? '';
   const fuelLevelFromQuery = searchParams.get('fuelLevel')?.trim() ?? '';
   const damageNotesFromQuery = searchParams.get('damageNotes')?.trim() ?? '';
+
+  /** בלי מזהה העברה תקין, INSERT ל-vehicle_documents עלול להיחסם ב-RLS — יוצרים רשומת העברה ומעדכנים את כתובת האשף */
+  const handoverIdIsUuid = useMemo(
+    () =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(handoverId).trim()),
+    [handoverId],
+  );
+  const ensuredHandoverForDocsRef = useRef(false);
+
+  useEffect(() => {
+    if (handoverIdIsUuid || !vehicleId || !driverId) return;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vehicleId)) return;
+    if (ensuredHandoverForDocsRef.current) return;
+
+    const vehicle = vehicles?.find((v) => v.id === vehicleId);
+    const orgId = vehicle?.org_id ?? activeOrgId ?? profile?.org_id ?? null;
+    if (!orgId || !user?.id) return;
+
+    ensuredHandoverForDocsRef.current = true;
+    const fuelNum = Number.parseFloat(String(fuelLevelFromQuery).replace(',', '.')) || 0;
+
+    createHandoverMutation
+      .mutateAsync({
+        org_id: orgId,
+        vehicle_id: vehicleId,
+        driver_id: driverId,
+        handover_type: handoverType,
+        assignment_mode: 'permanent',
+        handover_date: new Date().toISOString(),
+        odometer_reading: Number.parseInt(odometerFromQuery, 10) || 0,
+        fuel_level: fuelNum,
+        photo_front_url: null,
+        photo_back_url: null,
+        photo_right_url: null,
+        photo_left_url: null,
+        signature_url: null,
+        notes: null,
+        created_by: user.id,
+      } as never)
+      .then((row: { id?: string }) => {
+        if (!row?.id) return;
+        setSearchParams((prev) => {
+          const next = new URLSearchParams(prev);
+          next.set('handoverId', row.id as string);
+          return next;
+        }, { replace: true });
+      })
+      .catch((err: unknown) => {
+        ensuredHandoverForDocsRef.current = false;
+        console.warn('[Wizard] יצירת רשומת העברה לצורך קישור מסמכים:', err);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mutateAsync יציב; ריצה מחודשת כשמזהים רכב/נהג/ארגון התעדכנו
+  }, [
+    handoverIdIsUuid,
+    vehicleId,
+    driverId,
+    vehicles,
+    activeOrgId,
+    profile?.org_id,
+    user?.id,
+    handoverType,
+    odometerFromQuery,
+    fuelLevelFromQuery,
+    setSearchParams,
+  ]);
 
   useEffect(() => {
     const hasLegacyQueryValues = Boolean(queryVehicleId || queryDriverId || queryReportUrl);
@@ -2573,6 +2655,7 @@ export default function VehicleHandoverWizard() {
             templateText,
             notes: genericFormNotes[doc.id] ?? '',
             signatureDataUrl: effectiveGenericSigDataUrlByDocId[doc.id] ?? null,
+            templateExtensions: parseTemplateExtensions(doc.json_schema as Record<string, unknown>),
             returnDateTime: deliveryDateTime,
             fuelLevel: parseFuelLevel(fuelLevel),
             damageReport,
@@ -2803,6 +2886,7 @@ export default function VehicleHandoverWizard() {
           const { error: vdocErr } = await supabase.from('vehicle_documents').insert(vehicleDocRows as never);
           if (vdocErr) {
             console.error('[Wizard] vehicle_documents insert error:', vdocErr.message);
+            toast.error(`שמירת מסמכים לכרטיס הרכב נכשלה: ${vdocErr.message}`);
           } else {
             queryClient.invalidateQueries({ queryKey: ['vehicle-documents', vehicleId] });
             queryClient.invalidateQueries({ queryKey: ['handovers'] });

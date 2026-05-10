@@ -7,11 +7,10 @@ import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import hebrewFontUrl from '@/assets/fonts/NotoSansHebrew.ttf?url';
-import { fleetPublicStorageObjectUrl } from '@/lib/supabase/fleetPublicStorageUrl';
+import { drawVehicleDamageDiagramInPdf } from '@/lib/pdfVehicleDamageDiagram';
 import {
   DAMAGE_SIDES,
   DAMAGE_SIDE_LABELS,
-  DAMAGE_TYPE_LABELS,
   hasAnyDamage,
   summarizeDamageReport,
   type VehicleDamageReport,
@@ -125,59 +124,6 @@ function arrayBufferToBase64(buffer: ArrayBuffer) {
 }
 
 let cachedHebrewFontBase64: string | null = null;
-let cachedPdfCarImage: { dataUrl: string; format: 'PNG' | 'JPEG' } | null = null;
-function getFuturisticCarPublicUrl(): string {
-  return fleetPublicStorageObjectUrl('logos/car.jpg');
-}
-
-async function getPdfCarImage() {
-  if (cachedPdfCarImage) {
-    return cachedPdfCarImage;
-  }
-
-  const candidates = [
-    getFuturisticCarPublicUrl(),
-    typeof window !== 'undefined' ? `${window.location.origin}/car.png` : null,
-  ].filter(Boolean) as string[];
-
-  for (const source of candidates) {
-    const loaded = await imageUrlToDataUrl(source);
-    if (loaded) {
-      cachedPdfCarImage = loaded;
-      return loaded;
-    }
-  }
-
-  return null;
-}
-
-async function rotateCarImagePortrait(image: { dataUrl: string; format: 'PNG' | 'JPEG' }) {
-  try {
-    const rotatedDataUrl = await new Promise<string>((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.height;
-        canvas.height = img.width;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          reject(new Error('Could not create canvas context for rotation'));
-          return;
-        }
-        ctx.translate(canvas.width / 2, canvas.height / 2);
-        ctx.rotate(Math.PI / 2);
-        ctx.drawImage(img, -img.width / 2, -img.height / 2);
-        resolve(canvas.toDataURL('image/png'));
-      };
-      img.onerror = () => reject(new Error('Could not load car image for rotation'));
-      img.src = image.dataUrl;
-    });
-
-    return { dataUrl: rotatedDataUrl, format: 'PNG' as const };
-  } catch {
-    return image;
-  }
-}
 
 function drawFuelGaugeInPdf(doc: any, rightX: number, startY: number, fuelLevel: number) {
   const panelW = 168;
@@ -228,83 +174,6 @@ function drawFuelGaugeInPdf(doc: any, rightX: number, startY: number, fuelLevel:
   doc.setFontSize(10);
   doc.text(`${clampedFuel}/8`, panelX + panelW - 16, panelY + panelH - 12, { align: 'right' });
   return panelY + panelH + 8;
-}
-
-async function drawDamageDiagramInPdf(
-  doc: any,
-  pageWidth: number,
-  rightX: number,
-  startY: number,
-  damageReport: VehicleDamageReport,
-) {
-  const hasDamage = DAMAGE_SIDES.some((side) => damageReport[side]?.length > 0);
-  if (!hasDamage) {
-    return startY;
-  }
-
-  const panelX = 40;
-  const panelY = startY + 8;
-  const panelW = pageWidth - 80;
-  const panelH = 312;
-
-  doc.setDrawColor(40, 80, 120);
-  doc.setFillColor(245, 250, 255);
-  doc.roundedRect(panelX, panelY, panelW, panelH, 10, 10, 'FD');
-
-  doc.setFontSize(12);
-  doc.text('סימון נזקים לפי צד ברכב', rightX - 12, panelY + 18, { align: 'right' });
-
-  const cx = panelX + panelW / 2;
-  const carY = panelY + 48;
-  const carW = 124;
-  const carH = 220;
-
-  const markSide = (x: number, y: number, w: number, h: number, side: keyof VehicleDamageReport, label: string) => {
-    const marked = (damageReport[side] ?? []).length > 0;
-    doc.setDrawColor(marked ? 220 : 120, marked ? 38 : 120, marked ? 38 : 160);
-    if (marked) {
-      doc.setFillColor(255, 232, 232);
-      doc.roundedRect(x, y, w, h, 6, 6, 'FD');
-    } else {
-      doc.roundedRect(x, y, w, h, 6, 6, 'S');
-    }
-    doc.setFontSize(9);
-    doc.text(label, x + w / 2, y + h / 2 + 3, { align: 'center' });
-  };
-
-  const sourceCarImage = await getPdfCarImage();
-  const carImage = sourceCarImage ? await rotateCarImagePortrait(sourceCarImage) : null;
-  if (carImage) {
-    doc.addImage(carImage.dataUrl, carImage.format, cx - carW / 2, carY, carW, carH, undefined, 'MEDIUM');
-  } else {
-    // Fallback: keep a basic shape if image loading fails.
-    doc.setDrawColor(90, 110, 140);
-    doc.setFillColor(214, 224, 238);
-    doc.roundedRect(cx - 40, carY + 8, 80, 108, 20, 20, 'FD');
-    doc.setFillColor(120, 140, 166);
-    doc.roundedRect(cx - 26, carY + 22, 52, 22, 6, 6, 'F');
-    doc.roundedRect(cx - 26, carY + 82, 52, 22, 6, 6, 'F');
-  }
-
-  // Keep the same orientation as the app selector:
-  // front=top, back=bottom, right=right side, left=left side.
-  markSide(cx - 32, carY - 22, 64, 18, 'front', 'קדימה');
-  markSide(cx - 32, carY + carH + 6, 64, 18, 'back', 'אחורה');
-  markSide(cx + carW / 2 + 8, carY + 88, 44, 42, 'right', 'צד ימין');
-  markSide(cx - carW / 2 - 52, carY + 88, 44, 42, 'left', 'צד שמאל');
-
-  // Damage legend text
-  let textY = panelY + panelH - 18;
-  doc.setFontSize(9);
-  for (const side of DAMAGE_SIDES) {
-    const types = damageReport[side] ?? [];
-    if (!types.length) continue;
-    const line = `${DAMAGE_SIDE_LABELS[side]}: ${types.map((type) => DAMAGE_TYPE_LABELS[type]).join(', ')}`;
-    doc.text(line, rightX - 12, textY, { align: 'right' });
-    textY -= 12;
-  }
-
-  return panelY + panelH + 10;
 }
 
 async function createPdfBlob(
@@ -367,7 +236,7 @@ async function createPdfBlob(
 
   if (damageReport && hasAnyDamage(damageReport)) {
     currentY = ensurePageSpace(currentY, 340);
-    currentY = await drawDamageDiagramInPdf(doc, pageWidth, rightX, currentY, damageReport);
+    currentY = await drawVehicleDamageDiagramInPdf(doc, pageWidth, rightX, currentY, damageReport, 'onlyIfDamage');
   }
 
   const photoLabels: Record<string, string> = {
@@ -1010,7 +879,7 @@ export async function generateGenericFormPDF({
     }
     if (damageReport && hasAnyDamage(damageReport)) {
       ensureSpace(340);
-      y = await drawDamageDiagramInPdf(doc, pageWidth, rightX, y, damageReport);
+      y = await drawVehicleDamageDiagramInPdf(doc, pageWidth, rightX, y, damageReport, 'onlyIfDamage');
     }
   }
 
@@ -1106,6 +975,17 @@ export async function generateGenericFormPDF({
       doc.text(line, rightX, y, { align: 'right' });
       y += 14;
     });
+  }
+
+  const includeGenericDamageDiagram =
+    !isReturnForm && templateExtensions?.include_damage_diagram === true;
+  if (
+    includeGenericDamageDiagram &&
+    damageReport &&
+    hasAnyDamage(damageReport)
+  ) {
+    ensureSpace(340);
+    y = await drawVehicleDamageDiagramInPdf(doc, pageWidth, rightX, y, damageReport, 'onlyIfDamage');
   }
 
   if (notes?.trim()) {

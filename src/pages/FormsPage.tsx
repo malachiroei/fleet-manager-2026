@@ -8,6 +8,7 @@ import {
   FileText,
   FolderCog,
   GripVertical,
+  Info,
   Loader2,
   LogOut,
   MoreHorizontal,
@@ -41,6 +42,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { HANDOVER_ACCESSORY_CEILINGS, formatCeilingPrice } from '@/lib/accessoryCeilings';
 import { buildFormsAutoFillContext, FormsCategory, resolveSchemaAutoFill } from '@/lib/formsAutofill';
 import {
@@ -179,6 +181,15 @@ export default function FormsPage() {
   const canShowManagementControls = canManageForms && formsManagementUnlocked;
   const canDeleteForms = canShowManagementControls;
 
+  /** טפסי מסירה מובנים (קבלה, חלופי וכו') מופיעים רק אחרי «סנכרון מסמכי מערכת». */
+  const suggestSyncBuiltinForms = useMemo(() => {
+    if (!forms || !canShowManagementControls) return false;
+    return !forms.some((f) => {
+      const key = String((f.json_schema as Record<string, unknown> | null)?.builtin_template_key ?? '').trim();
+      return key === 'system-reception-form';
+    });
+  }, [forms, canShowManagementControls]);
+
   const [open, setOpen] = useState(false);
   const [quickUploadOpen, setQuickUploadOpen] = useState(false);
   const [title, setTitle] = useState('');
@@ -201,6 +212,7 @@ export default function FormsPage() {
   const [contentEditorConverting, setContentEditorConverting] = useState(false);
   const [contentEditorCustomFields, setContentEditorCustomFields] = useState<FormsCustomFieldDef[]>([]);
   const [contentEditorChecklistTables, setContentEditorChecklistTables] = useState<FormsChecklistTableDef[]>([]);
+  const [contentEditorIncludeDamageDiagram, setContentEditorIncludeDamageDiagram] = useState(false);
   const [pdfDisplayFlags, setPdfDisplayFlags] = useState<FormsPdfDisplayFlags>(DEFAULT_FORMS_PDF_DISPLAY_FLAGS);
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -391,6 +403,7 @@ export default function FormsPage() {
     setContentEditorValue(isGenerated ? String(schema?.template_content ?? '') : templateBody || fallbackDesc);
     setContentEditorCustomFields(parsed.custom_fields ?? []);
     setContentEditorChecklistTables(parsed.checklist_tables ?? []);
+    setContentEditorIncludeDamageDiagram(Boolean(parsed.include_damage_diagram));
     setPdfDisplayFlags(normalizePdfDisplayFlags(form));
     setContentEditorConverting(!isGenerated);
     setContentEditorOpen(true);
@@ -442,7 +455,8 @@ export default function FormsPage() {
   }) => {
     const extPayload: FormsTemplateExtensions | undefined =
       (args.templateExtensions?.custom_fields?.length ?? 0) > 0 ||
-      (args.templateExtensions?.checklist_tables?.length ?? 0) > 0
+      (args.templateExtensions?.checklist_tables?.length ?? 0) > 0 ||
+      args.templateExtensions?.include_damage_diagram === true
         ? args.templateExtensions ?? undefined
         : undefined;
 
@@ -1075,6 +1089,7 @@ ${STANDARD_INPUT_FOOTER_TEXT}
         templateExtensions: {
           custom_fields: contentEditorCustomFields.filter((f) => String(f.label).trim().length > 0),
           checklist_tables: contentEditorChecklistTables.map((t) => normalizeChecklistTable(t)),
+          include_damage_diagram: contentEditorIncludeDamageDiagram,
         },
       });
 
@@ -1621,6 +1636,17 @@ ${STANDARD_INPUT_FOOTER_TEXT}
         ))}
       </div>
 
+      {suggestSyncBuiltinForms ? (
+        <Alert className="border-cyan-400/35 bg-cyan-950/45 text-cyan-50 [&>svg]:text-cyan-300">
+          <Info className="h-4 w-4" />
+          <AlertTitle className="text-cyan-100">טפסי מערכת לעריכה</AlertTitle>
+          <AlertDescription className="text-sm text-cyan-100/90">
+            טפסים כמו «טופס קבלת רכב» או «שימוש ברכב חלופי» נוצרים ממסמכי מערכת ומופיעים ברשימה רק לאחר סנכרון. פתחו את{' '}
+            <span className="font-semibold">הגדרות ניהול</span> (⚙) ובחרו «סנכרון מסמכי מערכת».
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       {canShowManagementControls && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-cyan-400/35 bg-cyan-950/50 px-3 py-2.5">
           <span className="text-sm font-medium text-cyan-100">
@@ -2057,6 +2083,7 @@ ${STANDARD_INPUT_FOOTER_TEXT}
             setContentEditorConverting(false);
             setContentEditorCustomFields([]);
             setContentEditorChecklistTables([]);
+            setContentEditorIncludeDamageDiagram(false);
             setPdfDisplayFlags({ ...DEFAULT_FORMS_PDF_DISPLAY_FLAGS });
           }
         }}
@@ -2195,6 +2222,20 @@ ${STANDARD_INPUT_FOOTER_TEXT}
                     ))}
                   </div>
                 )}
+              </div>
+
+              <div className="space-y-2 rounded-lg border border-border bg-muted/15 p-3">
+                <Label className="text-base font-semibold">סימון נזקים על גבי הרכב</Label>
+                <p className="text-xs text-muted-foreground">
+                  מוסיף ל-PDF בלוק למילוי ידני לפי צדי הרכב (מכה / סריטה / שפשוף / שבר), כמו באשף מסירה.
+                </p>
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={contentEditorIncludeDamageDiagram}
+                    onCheckedChange={(v) => setContentEditorIncludeDamageDiagram(Boolean(v))}
+                  />
+                  כלול בלוק &quot;סימון נזקים לפי צד ברכב&quot; בקובץ המודפס
+                </label>
               </div>
 
               <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">

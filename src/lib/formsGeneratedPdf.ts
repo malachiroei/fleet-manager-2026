@@ -1,5 +1,7 @@
 import { jsPDF } from 'jspdf';
 import hebrewFontUrl from '@/assets/fonts/NotoSansHebrew.ttf?url';
+import { drawVehicleDamageDiagramInPdf } from '@/lib/pdfVehicleDamageDiagram';
+import { EMPTY_DAMAGE_REPORT } from '@/lib/vehicleDamage';
 
 export interface FormsCustomFieldDef {
   id: string;
@@ -28,6 +30,8 @@ export interface FormsChecklistTableDef {
 export interface FormsTemplateExtensions {
   custom_fields?: FormsCustomFieldDef[];
   checklist_tables?: FormsChecklistTableDef[];
+  /** בלוק סימון נזקים לפי צד (כמו באשף מסירה) ב-PDF המודפס */
+  include_damage_diagram?: boolean;
 }
 
 let cachedHebrewFontBase64: string | null = null;
@@ -82,6 +86,7 @@ export function parseTemplateExtensions(schema: Record<string, unknown> | null |
         f && typeof f === 'object' && typeof (f as FormsCustomFieldDef).id === 'string',
     ),
     checklist_tables: tables,
+    include_damage_diagram: ext.include_damage_diagram === true,
   };
 }
 
@@ -90,13 +95,17 @@ export function mergeExtensionsIntoSchema(
   extensions: FormsTemplateExtensions | null | undefined,
 ): Record<string, unknown> {
   const next = { ...base };
+  const hasDamageDiagram = extensions?.include_damage_diagram === true;
   if (
     extensions &&
-    ((extensions.custom_fields?.length ?? 0) > 0 || (extensions.checklist_tables?.length ?? 0) > 0)
+    ((extensions.custom_fields?.length ?? 0) > 0 ||
+      (extensions.checklist_tables?.length ?? 0) > 0 ||
+      hasDamageDiagram)
   ) {
     next.template_extensions = {
       custom_fields: extensions.custom_fields ?? [],
       checklist_tables: (extensions.checklist_tables ?? []).map(normalizeChecklistTable),
+      ...(hasDamageDiagram ? { include_damage_diagram: true } : {}),
     };
   } else {
     delete (next as { template_extensions?: unknown }).template_extensions;
@@ -358,6 +367,11 @@ export async function generateFormsPdfBlob(params: {
       }
     }
     y += 12;
+  }
+
+  if (ext.include_damage_diagram) {
+    ensureSpace(360);
+    y = await drawVehicleDamageDiagramInPdf(doc, pageW, rightX, y, EMPTY_DAMAGE_REPORT, 'always');
   }
 
   if (flags.show_signature_block) {
