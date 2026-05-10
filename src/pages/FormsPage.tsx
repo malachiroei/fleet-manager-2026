@@ -1,8 +1,23 @@
 import { type DragEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { AlertTriangle, ArchiveRestore, Download, FileText, FolderCog, GripVertical, Loader2, MoreHorizontal, Pencil, Plus, Settings, Trash2, Upload } from 'lucide-react';
-import { jsPDF } from 'jspdf';
+import {
+  AlertTriangle,
+  ArchiveRestore,
+  Download,
+  FileText,
+  FolderCog,
+  GripVertical,
+  Loader2,
+  LogOut,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Settings,
+  Table2,
+  Trash2,
+  Upload,
+} from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -28,7 +43,16 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
 import { HANDOVER_ACCESSORY_CEILINGS, formatCeilingPrice } from '@/lib/accessoryCeilings';
 import { buildFormsAutoFillContext, FormsCategory, resolveSchemaAutoFill } from '@/lib/formsAutofill';
-import hebrewFontUrl from '@/assets/fonts/NotoSansHebrew.ttf?url';
+import {
+  type FormsChecklistTableDef,
+  type FormsCustomFieldDef,
+  type FormsTemplateExtensions,
+  DEFAULT_FORMS_CHECKLIST_COLUMNS,
+  generateFormsPdfBlob,
+  mergeExtensionsIntoSchema,
+  normalizeChecklistTable,
+  parseTemplateExtensions,
+} from '@/lib/formsGeneratedPdf';
 import {
   Dialog,
   DialogContent,
@@ -95,16 +119,8 @@ const STANDARD_INPUT_VALIDATION_SCHEMA = {
   ],
 };
 
-let cachedHebrewFontBase64: string | null = null;
-
-function arrayBufferToBase64(buffer: ArrayBuffer) {
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return btoa(binary);
+function newFormPartId() {
+  return globalThis.crypto?.randomUUID?.() ?? `f_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
 export default function FormsPage() {
@@ -177,6 +193,8 @@ export default function FormsPage() {
   const [contentEditorDescription, setContentEditorDescription] = useState('');
   const [contentEditorValue, setContentEditorValue] = useState('');
   const [contentEditorConverting, setContentEditorConverting] = useState(false);
+  const [contentEditorCustomFields, setContentEditorCustomFields] = useState<FormsCustomFieldDef[]>([]);
+  const [contentEditorChecklistTables, setContentEditorChecklistTables] = useState<FormsChecklistTableDef[]>([]);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [formToDelete, setFormToDelete] = useState<(OrgDocument & { category: FormsCategory }) | null>(null);
   const [deletePassword, setDeletePassword] = useState('');
@@ -356,67 +374,30 @@ export default function FormsPage() {
   const openContentEditor = (form: OrgDocument & { category: FormsCategory }) => {
     const schema = (form.json_schema as any) ?? {};
     const isGenerated = schema?.template_mode === 'generated';
+    const parsed = parseTemplateExtensions(schema);
     setContentEditingForm(form);
     setContentEditorTitle(form.title ?? '');
     setContentEditorDescription(form.description ?? '');
     setContentEditorValue(isGenerated ? String(schema?.template_content ?? '') : '');
+    setContentEditorCustomFields(parsed.custom_fields ?? []);
+    setContentEditorChecklistTables(parsed.checklist_tables ?? []);
     setContentEditorConverting(!isGenerated);
     setContentEditorOpen(true);
   };
 
-  const generateStyledPdfBlob = async (
+  const uploadGeneratedDocumentPdf = async (
     formTitle: string,
     content: string,
-    headerContext?: { employeeName?: string; vehicleNumber?: string },
+    templateExtensions?: FormsTemplateExtensions | null,
   ) => {
-    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-    const rightX = doc.internal.pageSize.getWidth() - 40;
-
-    if (!cachedHebrewFontBase64) {
-      const fontResponse = await fetch(hebrewFontUrl);
-      if (!fontResponse.ok) {
-        throw new Error(`טעינת פונט עברי נכשלה (${fontResponse.status})`);
-      }
-      cachedHebrewFontBase64 = arrayBufferToBase64(await fontResponse.arrayBuffer());
-    }
-
-    doc.addFileToVFS('NotoSansHebrew.ttf', cachedHebrewFontBase64);
-    doc.addFont('NotoSansHebrew.ttf', 'NotoSansHebrew', 'normal');
-    doc.setFont('NotoSansHebrew', 'normal');
-    doc.setR2L(true);
-
-    doc.setFontSize(22);
-    doc.text(formTitle, rightX, 68, { align: 'right' });
-    doc.setFontSize(12);
-    doc.text(`תאריך נוכחי: ${new Date().toLocaleDateString('he-IL')}`, rightX, 92, { align: 'right' });
-    doc.text(`שם הנהג: ${headerContext?.employeeName || 'לא זמין'}`, rightX, 112, { align: 'right' });
-    doc.text(`מספר רישוי: ${headerContext?.vehicleNumber || 'לא זמין'}`, rightX, 132, { align: 'right' });
-    doc.setDrawColor(180, 190, 205);
-    doc.line(40, 142, 555, 142);
-
-    const sections = (content || '-').split('\n').map((line) => line.trim());
-    doc.setFontSize(13);
-    let y = 168;
-    for (const section of sections) {
-      const wrapped = doc.splitTextToSize(section || ' ', 515);
-      for (const row of wrapped) {
-        doc.text(row, rightX, y, { align: 'right' });
-        y += 20;
-      }
-      y += 4;
-      if (y > 780) {
-        doc.addPage();
-        y = 60;
-      }
-    }
-
-    return doc.output('blob');
-  };
-
-  const uploadGeneratedDocumentPdf = async (formTitle: string, content: string) => {
-    const blob = await generateStyledPdfBlob(formTitle, content, {
-      employeeName: autoFillContext.employee_name,
-      vehicleNumber: autoFillContext.vehicle_number,
+    const blob = await generateFormsPdfBlob({
+      formTitle,
+      mainContent: content,
+      extensions: templateExtensions ?? undefined,
+      headerContext: {
+        employeeName: autoFillContext.employee_name,
+        vehicleNumber: autoFillContext.vehicle_number,
+      },
     });
     const safeTitle = formTitle.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80) || 'generated_form';
     const path = `templates/generated_${safeTitle}_${Date.now()}.pdf`;
@@ -439,21 +420,37 @@ export default function FormsPage() {
     includeDelivery?: boolean;
     includeReturn?: boolean;
     includeHandover?: boolean;
+    templateExtensions?: FormsTemplateExtensions | null;
   }) => {
-    const fileUrl = await uploadGeneratedDocumentPdf(args.formTitle, args.content);
+    const extPayload: FormsTemplateExtensions | undefined =
+      (args.templateExtensions?.custom_fields?.length ?? 0) > 0 ||
+      (args.templateExtensions?.checklist_tables?.length ?? 0) > 0
+        ? args.templateExtensions ?? undefined
+        : undefined;
+
+    const fileUrl = await uploadGeneratedDocumentPdf(args.formTitle, args.content, extPayload);
+
+    const existingSchema =
+      args.existing?.json_schema && typeof args.existing.json_schema === 'object'
+        ? ({ ...(args.existing.json_schema as Record<string, unknown>) } as Record<string, unknown>)
+        : {};
+
     const baseJsonSchema = {
+      ...existingSchema,
       template_mode: 'generated',
-      builtin_template_key: args.builtinTemplateKey ?? null,
+      builtin_template_key:
+        args.builtinTemplateKey ?? (existingSchema.builtin_template_key as string | null | undefined) ?? null,
       template_content: args.content,
       template_header: {
-        labels: ['תאריך נוכחי', 'שם הנהג', 'מספר רישוי'],
-        sources: ['date', 'employee_name', 'vehicle_number'],
+        labels: ['תאריך', 'שעה', 'שם עובד', 'מספר רישוי'],
+        sources: ['date', 'time', 'employee_name', 'vehicle_number'],
       },
       input_footer: STANDARD_INPUT_FOOTER_TEXT,
       validation: STANDARD_INPUT_VALIDATION_SCHEMA,
     };
     const persistedCategory = getPersistedCategory(args.formCategory);
-    const jsonSchema = withCustomFolderInSchema(baseJsonSchema, args.formCategory);
+    const mergedSchema = mergeExtensionsIntoSchema(baseJsonSchema, extPayload ?? null);
+    const jsonSchema = withCustomFolderInSchema(mergedSchema, args.formCategory);
 
     const delivery = args.includeDelivery ?? includeInDelivery;
     const ret = args.includeReturn ?? includeInReturn;
@@ -485,7 +482,7 @@ export default function FormsPage() {
       include_in_delivery: delivery,
       include_in_return: ret,
       is_standalone: true,
-      requires_signature: false,
+      requires_signature: true,
       sort_order: 0,
       is_active: true,
     } as any);
@@ -1025,15 +1022,23 @@ ${STANDARD_INPUT_FOOTER_TEXT}
         includeDelivery: Boolean(contentEditingForm.include_in_delivery),
         includeReturn: Boolean(contentEditingForm.include_in_return),
         includeHandover: Boolean(contentEditingForm.include_in_handover),
+        templateExtensions: {
+          custom_fields: contentEditorCustomFields.filter((f) => String(f.label).trim().length > 0),
+          checklist_tables: contentEditorChecklistTables.map((t) => normalizeChecklistTable(t)),
+        },
       });
 
       toast.success(contentEditorConverting ? 'המסמך הומר למסמך עריך ונשמר' : 'תוכן המסמך עודכן בהצלחה');
-      setContentEditorOpen(false);
-      setContentEditingForm(null);
-      setContentEditorTitle('');
-      setContentEditorDescription('');
-      setContentEditorValue('');
       setContentEditorConverting(false);
+
+      await queryClient.invalidateQueries({ queryKey: ['org-documents'] });
+      await queryClient.refetchQueries({ queryKey: ['org-documents'] });
+      const list = queryClient.getQueryData<OrgDocument[]>(['org-documents']);
+      const fresh = list?.find((d) => d.id === contentEditingForm.id);
+      if (fresh) {
+        const prevCat = contentEditingForm.category;
+        setContentEditingForm({ ...fresh, category: prevCat });
+      }
     } catch (error: any) {
       toast.error(`שמירת תוכן נכשלה: ${error?.message ?? 'שגיאה לא צפויה'}`);
     }
@@ -1567,6 +1572,31 @@ ${STANDARD_INPUT_FOOTER_TEXT}
       </div>
 
       {canShowManagementControls && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-cyan-400/35 bg-cyan-950/50 px-3 py-2.5">
+          <span className="text-sm font-medium text-cyan-100">
+            מצב ניהול פעיל — עריכת טפסים, גרירה בין תיקיות ומחיקה זמינים עד שתסגור/י.
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="gap-2 border-cyan-400/40"
+            onClick={() => {
+              setFormsManagementUnlocked(false);
+              setSettingsOpen(false);
+              setFolderManagerOpen(false);
+              setArchiveOpen(false);
+              setContentEditorOpen(false);
+              toast.success('מצב ניהול הושבת');
+            }}
+          >
+            <LogOut className="h-4 w-4" />
+            סגירת מצב ניהול
+          </Button>
+        </div>
+      )}
+
+      {canShowManagementControls && (
         <p className="text-xs text-muted-foreground">טיפ: ניתן לגרור כרטיס טופס ולשחרר על תיקייה למעלה כדי להעביר אותו.</p>
       )}
 
@@ -1975,55 +2005,252 @@ ${STANDARD_INPUT_FOOTER_TEXT}
             setContentEditorDescription('');
             setContentEditorValue('');
             setContentEditorConverting(false);
+            setContentEditorCustomFields([]);
+            setContentEditorChecklistTables([]);
           }
         }}
       >
-        <DialogContent className="sm:max-w-2xl" dir="rtl">
-          <DialogHeader>
-            <DialogTitle>עריכת תוכן מסמך</DialogTitle>
-            <DialogDescription>
-              {contentEditorConverting
-                ? 'המסמך הנוכחי אינו מסמך מובנה. בשמירה, יווצר PDF חדש לפי התוכן שתזין/י כאן.'
-                : 'עריכת תוכן הטופס ושמירת גרסה מעודכנת.'}
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="flex max-h-[90vh] max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl" dir="rtl">
+          <div className="max-h-[90vh] overflow-y-auto p-6">
+            <DialogHeader>
+              <DialogTitle>עריכת תוכן מסמך</DialogTitle>
+              <DialogDescription>
+                {contentEditorConverting
+                  ? 'המסמך הנוכחי אינו מסמך מובנה. בשמירה, יווצר PDF חדש לפי התוכן שתזין/י כאן.'
+                  : 'עריכת תוכן הטופס. כל טופס כולל בכותרת ובסוף תאריך, שעה וחתימת עובד (ב-PDF). שמירה אינה סוגרת את החלון — סגרו בסיום העריכה.'}
+              </DialogDescription>
+            </DialogHeader>
 
-          <div className="space-y-2">
-            <Label htmlFor="content-editor-title">שם הטופס</Label>
-            <Input
-              id="content-editor-title"
-              value={contentEditorTitle}
-              onChange={(e) => setContentEditorTitle(e.target.value)}
-              placeholder="הזן/י שם טופס"
-            />
+            <div className="mt-4 space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="content-editor-title">שם הטופס</Label>
+                <Input
+                  id="content-editor-title"
+                  value={contentEditorTitle}
+                  onChange={(e) => setContentEditorTitle(e.target.value)}
+                  placeholder="הזן/י שם טופס"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="content-editor-description">תיאור קצר</Label>
+                <Textarea
+                  id="content-editor-description"
+                  rows={3}
+                  value={contentEditorDescription}
+                  onChange={(e) => setContentEditorDescription(e.target.value)}
+                  placeholder="הזן/י תיאור טופס"
+                  className="resize-none"
+                />
+              </div>
+
+              <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Label className="text-base">שדות נוספים (למילוי בטופס המודפס)</Label>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="gap-1"
+                    onClick={() =>
+                      setContentEditorCustomFields((prev) => [
+                        ...prev,
+                        { id: newFormPartId(), label: '', multiline: false },
+                      ])
+                    }
+                  >
+                    <Plus className="h-4 w-4" />
+                    הוסף שדה
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  כל שדה יוצג ב-PDF עם שורות למילוי ידני. סמנו &quot;מרובה שורות&quot; לשדות ארוכים.
+                </p>
+                {contentEditorCustomFields.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">אין שדות נוספים — לחצו &quot;הוסף שדה&quot;.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {contentEditorCustomFields.map((field, idx) => (
+                      <div
+                        key={field.id}
+                        className="flex flex-col gap-2 rounded-md border border-border/60 bg-background/50 p-2 sm:flex-row sm:items-center"
+                      >
+                        <Input
+                          value={field.label}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setContentEditorCustomFields((prev) =>
+                              prev.map((f) => (f.id === field.id ? { ...f, label: v } : f)),
+                            );
+                          }}
+                          placeholder={`כותרת שדה ${idx + 1}`}
+                          className="flex-1"
+                        />
+                        <label className="flex shrink-0 items-center gap-2 text-sm">
+                          <Checkbox
+                            checked={Boolean(field.multiline)}
+                            onCheckedChange={(v) =>
+                              setContentEditorCustomFields((prev) =>
+                                prev.map((f) => (f.id === field.id ? { ...f, multiline: Boolean(v) } : f)),
+                              )
+                            }
+                          />
+                          מרובה שורות
+                        </label>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="shrink-0 text-muted-foreground"
+                          onClick={() =>
+                            setContentEditorCustomFields((prev) => prev.filter((f) => f.id !== field.id))
+                          }
+                          aria-label="הסר שדה"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Label className="text-base">טבלאות סימון (תקין / לא תקין / טופל)</Label>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="gap-1"
+                    onClick={() =>
+                      setContentEditorChecklistTables((prev) => [
+                        ...prev,
+                        normalizeChecklistTable({
+                          id: newFormPartId(),
+                          title: 'טבלת ביקורת',
+                          rows: ['פריט 1', 'פריט 2'],
+                          columns: DEFAULT_FORMS_CHECKLIST_COLUMNS,
+                        }),
+                      ])
+                    }
+                  >
+                    <Table2 className="h-4 w-4" />
+                    הוסף טבלה
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  ב-PDF יוצגו עמודות: {DEFAULT_FORMS_CHECKLIST_COLUMNS.map((c) => c.label).join(' · ')} — סימון ידני (☐) ליד כל פריט.
+                </p>
+                {contentEditorChecklistTables.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">אין טבלאות — לחצו &quot;הוסף טבלה&quot;.</p>
+                ) : (
+                  <div className="space-y-4">
+                    {contentEditorChecklistTables.map((table) => (
+                      <div key={table.id} className="space-y-2 rounded-md border border-cyan-500/20 bg-background/40 p-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Input
+                            value={table.title ?? ''}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setContentEditorChecklistTables((prev) =>
+                                prev.map((t) => (t.id === table.id ? { ...t, title: v } : t)),
+                              );
+                            }}
+                            placeholder="כותרת הטבלה"
+                            className="max-w-md flex-1"
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="text-red-400"
+                            onClick={() =>
+                              setContentEditorChecklistTables((prev) => prev.filter((t) => t.id !== table.id))
+                            }
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            הסר טבלה
+                          </Button>
+                        </div>
+                        <div className="space-y-2">
+                          <span className="text-xs text-muted-foreground">שורות הפריטים (כל שורה = פריט לבדיקה):</span>
+                          {table.rows.map((row, rowIdx) => (
+                            <div key={`${table.id}-row-${rowIdx}`} className="flex gap-2">
+                              <Input
+                                value={row}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setContentEditorChecklistTables((prev) =>
+                                    prev.map((t) => {
+                                      if (t.id !== table.id) return t;
+                                      const nextRows = [...t.rows];
+                                      nextRows[rowIdx] = v;
+                                      return { ...t, rows: nextRows };
+                                    }),
+                                  );
+                                }}
+                                placeholder={`פריט ${rowIdx + 1}`}
+                              />
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="outline"
+                                onClick={() =>
+                                  setContentEditorChecklistTables((prev) =>
+                                    prev.map((t) => {
+                                      if (t.id !== table.id) return t;
+                                      return {
+                                        ...t,
+                                        rows: t.rows.filter((_, i) => i !== rowIdx),
+                                      };
+                                    }),
+                                  )
+                                }
+                                disabled={table.rows.length <= 1}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ))}
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              setContentEditorChecklistTables((prev) =>
+                                prev.map((t) =>
+                                  t.id === table.id ? { ...t, rows: [...t.rows, `פריט ${t.rows.length + 1}`] } : t,
+                                ),
+                              )
+                            }
+                          >
+                            <Plus className="h-4 w-4" />
+                            הוסף שורה
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="content-editor">תוכן גוף המסמך</Label>
+                <Textarea
+                  id="content-editor"
+                  rows={12}
+                  value={contentEditorValue}
+                  onChange={(e) => setContentEditorValue(e.target.value)}
+                  placeholder="הקלד/י או הדבק/י כאן את התוכן המעודכן של המסמך"
+                />
+              </div>
+            </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="content-editor-description">תיאור קצר</Label>
-            <Textarea
-              id="content-editor-description"
-              rows={3}
-              value={contentEditorDescription}
-              onChange={(e) => setContentEditorDescription(e.target.value)}
-              placeholder="הזן/י תיאור טופס"
-              className="resize-none"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="content-editor">תוכן המסמך</Label>
-            <Textarea
-              id="content-editor"
-              rows={14}
-              value={contentEditorValue}
-              onChange={(e) => setContentEditorValue(e.target.value)}
-              placeholder="הקלד/י או הדבק/י כאן את התוכן המעודכן של המסמך"
-            />
-          </div>
-
-          <DialogFooter className="gap-2">
+          <DialogFooter className="flex-shrink-0 border-t border-border bg-background p-4">
             <Button type="button" variant="ghost" onClick={() => setContentEditorOpen(false)}>
-              ביטול
+              סגירה
             </Button>
             <Button
               type="button"
@@ -2032,7 +2259,7 @@ ${STANDARD_INPUT_FOOTER_TEXT}
               className="gap-2"
             >
               {(createForm.isPending || updateForm.isPending) ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              שמור תוכן
+              שמור תוכן (החלון נשאר פתוח)
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2394,7 +2621,6 @@ ${STANDARD_INPUT_FOOTER_TEXT}
               variant="outline"
               className="w-full justify-start gap-2"
               onClick={() => {
-                setSettingsOpen(false);
                 setArchiveOpen(true);
               }}
             >
@@ -2407,7 +2633,6 @@ ${STANDARD_INPUT_FOOTER_TEXT}
               variant="outline"
               className="w-full justify-start gap-2"
               onClick={() => {
-                setSettingsOpen(false);
                 const firstFolder = folderOptions[0] ?? DEFAULT_FORM_FOLDERS[0];
                 setFolderToRename(firstFolder);
                 setRenamedFolderValue(firstFolder);
