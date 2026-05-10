@@ -5,7 +5,14 @@ import { ArchiveRestore, Download, FileText, FolderCog, GripVertical, Loader2, M
 import { jsPDF } from 'jspdf';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
-import { OrgDocument, useOrgDocuments, useOrgDocumentsAdmin, useCreateOrgDocument, useUpdateOrgDocument } from '@/hooks/useOrgDocuments';
+import {
+  OrgDocument,
+  useOrgDocuments,
+  useOrgDocumentsAdmin,
+  useCreateOrgDocument,
+  useUpdateOrgDocument,
+  useHardDeleteOrgDocument,
+} from '@/hooks/useOrgDocuments';
 import { useOrgSettings } from '@/hooks/useOrgSettings';
 import { useDrivers } from '@/hooks/useDrivers';
 import { useVehicles } from '@/hooks/useVehicles';
@@ -111,6 +118,7 @@ export default function FormsPage() {
   const { data: allForms } = useOrgDocumentsAdmin();
   const createForm = useCreateOrgDocument({ storageFolder: 'templates' });
   const updateForm = useUpdateOrgDocument({ storageFolder: 'templates' });
+  const hardDeleteForm = useHardDeleteOrgDocument();
 
   const contextDriver = useMemo(() => {
     const driverId = searchParams.get('driverId');
@@ -172,6 +180,7 @@ export default function FormsPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [formToDelete, setFormToDelete] = useState<(OrgDocument & { category: FormsCategory }) | null>(null);
   const [deletePassword, setDeletePassword] = useState('');
+  const [deleteMode, setDeleteMode] = useState<'archive' | 'hard'>('hard');
   const [isDeleting, setIsDeleting] = useState(false);
   const [folderManagerOpen, setFolderManagerOpen] = useState(false);
   const [folderToRename, setFolderToRename] = useState<FormsCategory>('תפעול');
@@ -962,6 +971,7 @@ ${STANDARD_INPUT_FOOTER_TEXT}
   const openDeleteDialog = (form: OrgDocument & { category: FormsCategory }) => {
     setFormToDelete(form);
     setDeletePassword('');
+    setDeleteMode('hard');
     setDeleteDialogOpen(true);
   };
 
@@ -1271,20 +1281,40 @@ ${STANDARD_INPUT_FOOTER_TEXT}
 
     setIsDeleting(true);
     try {
-      const { error: deleteError } = await (supabase as any)
-        .from('org_documents')
-        .update({ is_active: false, updated_at: new Date().toISOString() })
-        .eq('id', formToDelete.id);
+      if (deleteMode === 'hard') {
+        await hardDeleteForm.mutateAsync(formToDelete.id);
+        /** מנקים גם את סימוני הסקירה ב-localStorage כדי שלא יישארו "רוחות" של מסמך שנמחק. */
+        setFormReviewMarks((prev) => {
+          if (!prev || !(formToDelete.id in prev)) return prev;
+          const { [formToDelete.id]: _omit, ...rest } = prev;
+          return rest;
+        });
+        await queryClient.invalidateQueries({ queryKey: ['org-documents'] });
+        await queryClient.invalidateQueries({ queryKey: ['org-documents', 'admin'] });
+        await queryClient.invalidateQueries({ queryKey: ['org-documents', 'permission-registry'] });
+        toast.success('הטופס נמחק לצמיתות מהמערכת ומה-Storage');
+      } else {
+        /** ארכיון רך — סומן `is_active=false` עם בדיקת שורות שעודכנו. */
+        const { data, error: deleteError } = await (supabase as any)
+          .from('org_documents')
+          .update({ is_active: false, updated_at: new Date().toISOString() })
+          .eq('id', formToDelete.id)
+          .select('id');
 
-      if (deleteError) {
-        throw deleteError;
+        if (deleteError) throw deleteError;
+        if (!data || (Array.isArray(data) && data.length === 0)) {
+          throw new Error('פעולת ההעברה לארכיון לא בוצעה (RLS) — נסי "מחיקה לצמיתות".');
+        }
+
+        await queryClient.invalidateQueries({ queryKey: ['org-documents'] });
+        await queryClient.invalidateQueries({ queryKey: ['org-documents', 'admin'] });
+        toast.success('הטופס הועבר לארכיון (ניתן לשחזור)');
       }
 
-      await queryClient.invalidateQueries({ queryKey: ['org-documents'] });
-      toast.success('הטופס הוסר מהתצוגה (נשמר בארכיון)');
       setDeleteDialogOpen(false);
       setFormToDelete(null);
       setDeletePassword('');
+      setDeleteMode('hard');
     } catch (error: any) {
       toast.error(`מחיקת טופס נכשלה: ${error?.message ?? 'שגיאה לא צפויה'}`);
     } finally {
@@ -2014,6 +2044,7 @@ ${STANDARD_INPUT_FOOTER_TEXT}
           if (!next) {
             setFormToDelete(null);
             setDeletePassword('');
+            setDeleteMode('hard');
           }
         }}
       >
@@ -2021,7 +2052,9 @@ ${STANDARD_INPUT_FOOTER_TEXT}
           <DialogHeader>
             <DialogTitle>מחיקת טופס מהמערכת</DialogTitle>
             <DialogDescription>
-              פעולה זו תעביר את הטופס לארכיון (הטופס לא יוצג למשתמשים, וניתן לשחזר מארכיון).
+              {deleteMode === 'hard'
+                ? 'מחיקה מלאה תסיר את הטופס מהמסד ומה-Storage. לא ניתן לשחזר.'
+                : 'העברה לארכיון תסתיר את הטופס מהמשתמשים אך תשמור אותו במסד הנתונים. ניתן לשחזר.'}
             </DialogDescription>
           </DialogHeader>
 
@@ -2029,6 +2062,43 @@ ${STANDARD_INPUT_FOOTER_TEXT}
             <p className="text-sm text-muted-foreground">
               האם למחוק את הטופס: <span className="font-semibold text-foreground">{formToDelete?.title ?? ''}</span>?
             </p>
+
+            <div className="space-y-2 rounded-md border border-border p-3">
+              <Label className="text-sm font-medium">אופן המחיקה</Label>
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="forms-delete-mode"
+                  value="hard"
+                  checked={deleteMode === 'hard'}
+                  onChange={() => setDeleteMode('hard')}
+                  className="mt-1"
+                />
+                <span>
+                  <span className="font-medium text-red-400">מחיקה לצמיתות</span>
+                  <span className="block text-xs text-muted-foreground">
+                    מסיר את הטופס מ-`org_documents` *וגם* מנסה למחוק את קובץ ה-PDF המקושר מ-Storage. אין שחזור.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="forms-delete-mode"
+                  value="archive"
+                  checked={deleteMode === 'archive'}
+                  onChange={() => setDeleteMode('archive')}
+                  className="mt-1"
+                />
+                <span>
+                  <span className="font-medium">העברה לארכיון</span>
+                  <span className="block text-xs text-muted-foreground">
+                    מסומן כלא פעיל ונסתר מהמשתמשים. ניתן לשחזר ממסך הארכיון.
+                  </span>
+                </span>
+              </label>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="delete-form-password">סיסמת מנהל</Label>
               <Input
@@ -2054,7 +2124,7 @@ ${STANDARD_INPUT_FOOTER_TEXT}
               disabled={isDeleting}
             >
               {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-              אישור מחיקה
+              {deleteMode === 'hard' ? 'אישור מחיקה לצמיתות' : 'אישור העברה לארכיון'}
             </Button>
           </DialogFooter>
         </DialogContent>

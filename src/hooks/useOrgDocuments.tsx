@@ -143,15 +143,103 @@ export function useUpdateOrgDocument(options?: OrgDocumentHookOptions) {
   });
 }
 
-export function useDeleteOrgDocument() {
+/**
+ * הסרה רכה (ארכיון בלבד) — סומן ב-`is_active=false`. ניתן לשחזור.
+ */
+export function useArchiveOrgDocument() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await (supabase as any)
+      const { data, error } = await (supabase as any)
         .from('org_documents')
         .update({ is_active: false, updated_at: new Date().toISOString() })
-        .eq('id', id);
+        .eq('id', id)
+        .select('id');
       if (error) throw error;
+      if (!data || (Array.isArray(data) && data.length === 0)) {
+        throw new Error('לא בוצע עדכון — ייתכן שאין לך הרשאה (RLS) או שהמסמך כבר נמחק.');
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: [...QUERY_KEY, 'admin'] });
+      queryClient.invalidateQueries({ queryKey: ORG_DOCS_PERMISSION_REGISTRY_KEY });
+    },
+  });
+}
+
+/**
+ * תאימות לאחור — שמירת השם הקודם `useDeleteOrgDocument` כדי לא לשבור צרכנים
+ * שעדיין מצפים להתנהגות הישנה (ארכיון). למחיקה מלאה השתמש ב-`useHardDeleteOrgDocument`.
+ */
+export const useDeleteOrgDocument = useArchiveOrgDocument;
+
+/**
+ * חילוץ נתיב הקובץ ב-Storage מתוך `file_url` ציבורי. תומך גם בנתיבי
+ * `/object/sign/...` (חתומים) וגם ב-`/object/public/...`.
+ */
+function storagePathFromPublicUrl(url: string | null | undefined, bucket: string): string | null {
+  if (!url || typeof url !== 'string') return null;
+  try {
+    const u = new URL(url);
+    /** הצורה הסטנדרטית: /storage/v1/object/public/<bucket>/<path...> */
+    const m = u.pathname.match(
+      new RegExp(`/storage/v1/object/(?:public|sign)/${bucket}/(.+)$`),
+    );
+    if (m && m[1]) return decodeURIComponent(m[1].split('?')[0]);
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * מחיקה מלאה (Hard Delete) של מסמך ארגוני: מסיר מ-`org_documents` *וגם*
+ * מנסה למחוק את הקובץ מ-Storage כדי לא להשאיר זבל. אם המחיקה ב-DB מוצלחת
+ * אבל קובץ ה-Storage לא נמצא/לא נמחק — לא נכשלים, רק כותבים אזהרה ב-console.
+ */
+export function useHardDeleteOrgDocument() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      /** קודם נטען את שורת המסמך כדי לזכור את ה-`file_url` למחיקה ב-Storage. */
+      const { data: existing, error: loadErr } = await (supabase as any)
+        .from('org_documents')
+        .select('id, file_url')
+        .eq('id', id)
+        .maybeSingle();
+      if (loadErr) {
+        console.warn('[useHardDeleteOrgDocument] load row failed', loadErr.message);
+      }
+      const fileUrl = (existing as { file_url?: string | null } | null)?.file_url ?? null;
+
+      /** DELETE — `.select()` מחזיר את השורות שנמחקו, כדי לזהות מצב שבו RLS חסם בשקט. */
+      const { data, error } = await (supabase as any)
+        .from('org_documents')
+        .delete()
+        .eq('id', id)
+        .select('id');
+      if (error) throw error;
+      if (!data || (Array.isArray(data) && data.length === 0)) {
+        throw new Error(
+          'המחיקה לא בוצעה — ייתכן שאין לך הרשאה (RLS) או שהמסמך כבר נמחק. רענן/י את המסך ונסה/י שוב.',
+        );
+      }
+
+      /** Storage cleanup — best-effort: לא נכשלים אם הקובץ כבר לא קיים. */
+      const path = storagePathFromPublicUrl(fileUrl, 'vehicle-documents');
+      if (path) {
+        try {
+          const { error: rmErr } = await supabase.storage
+            .from('vehicle-documents')
+            .remove([path]);
+          if (rmErr) {
+            console.warn('[useHardDeleteOrgDocument] storage remove failed', rmErr.message, path);
+          }
+        } catch (e) {
+          console.warn('[useHardDeleteOrgDocument] storage remove threw', e);
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEY });
