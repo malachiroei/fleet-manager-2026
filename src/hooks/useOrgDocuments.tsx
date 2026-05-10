@@ -194,52 +194,74 @@ function storagePathFromPublicUrl(url: string | null | undefined, bucket: string
 }
 
 /**
- * מחיקה מלאה (Hard Delete) של מסמך ארגוני: מסיר מ-`org_documents` *וגם*
- * מנסה למחוק את הקובץ מ-Storage כדי לא להשאיר זבל. אם המחיקה ב-DB מוצלחת
- * אבל קובץ ה-Storage לא נמצא/לא נמחק — לא נכשלים, רק כותבים אזהרה ב-console.
+ * מחיקה מלאה (Hard Delete) של מסמכי ארגון. עוברת דרך Edge Function
+ * `delete-org-document` שמשתמשת ב-service role ולכן עוקפת RLS — חיוני כי
+ * בפרודקשן זוהו מקרים בהם המדיניות חסמה בשקט (DELETE שהחזיר 0 שורות בלי
+ * שגיאה) למרות שהקורא הוא platform owner.
+ *
+ * נתמך גם מזהה יחיד (string) וגם רשימה (string[]).
+ *
+ * הפרמטר `password` נדרש (מצריך אימות מנהל באותו ערך כמו `DELETE_FORMS_PASSWORD`
+ * בלקוח — `2101`). אם הסיסמה חסרה הפונקציה משתדלת להחזיר שגיאה ברורה.
  */
+export interface HardDeleteOrgDocumentInput {
+  ids: string | string[];
+  password: string;
+}
+
+export interface HardDeleteOrgDocumentResult {
+  ok: boolean;
+  deleted: number;
+  storage_removed: number;
+  failures: { id: string; message: string }[];
+}
+
 export function useHardDeleteOrgDocument() {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: string) => {
-      /** קודם נטען את שורת המסמך כדי לזכור את ה-`file_url` למחיקה ב-Storage. */
-      const { data: existing, error: loadErr } = await (supabase as any)
-        .from('org_documents')
-        .select('id, file_url')
-        .eq('id', id)
-        .maybeSingle();
-      if (loadErr) {
-        console.warn('[useHardDeleteOrgDocument] load row failed', loadErr.message);
+  return useMutation<HardDeleteOrgDocumentResult, Error, HardDeleteOrgDocumentInput>({
+    mutationFn: async ({ ids, password }) => {
+      const idArray = Array.isArray(ids) ? ids.filter(Boolean) : (ids ? [ids] : []);
+      if (idArray.length === 0) {
+        throw new Error('לא נשלחו מזהי מסמכים למחיקה');
       }
-      const fileUrl = (existing as { file_url?: string | null } | null)?.file_url ?? null;
-
-      /** DELETE — `.select()` מחזיר את השורות שנמחקו, כדי לזהות מצב שבו RLS חסם בשקט. */
-      const { data, error } = await (supabase as any)
-        .from('org_documents')
-        .delete()
-        .eq('id', id)
-        .select('id');
-      if (error) throw error;
-      if (!data || (Array.isArray(data) && data.length === 0)) {
-        throw new Error(
-          'המחיקה לא בוצעה — ייתכן שאין לך הרשאה (RLS) או שהמסמך כבר נמחק. רענן/י את המסך ונסה/י שוב.',
-        );
+      if (!password || password.trim().length === 0) {
+        throw new Error('סיסמת מנהל נדרשת');
       }
 
-      /** Storage cleanup — best-effort: לא נכשלים אם הקובץ כבר לא קיים. */
-      const path = storagePathFromPublicUrl(fileUrl, 'vehicle-documents');
-      if (path) {
-        try {
-          const { error: rmErr } = await supabase.storage
-            .from('vehicle-documents')
-            .remove([path]);
-          if (rmErr) {
-            console.warn('[useHardDeleteOrgDocument] storage remove failed', rmErr.message, path);
+      const { data, error } = await supabase.functions.invoke('delete-org-document', {
+        body: { ids: idArray, password },
+      });
+      if (error) {
+        /** ה-SDK של Supabase עוטף 4xx ב-FunctionsHttpError גנרי. כדי לחלץ
+         *  את ההודעה האמיתית קוראים ל-`context.response.json()`. */
+        const ctx = (error as { context?: { response?: Response } }).context;
+        if (ctx?.response) {
+          try {
+            const j = await ctx.response.clone().json();
+            if (j && typeof j === 'object' && 'error' in j) {
+              throw new Error(String((j as { error: unknown }).error));
+            }
+          } catch {
+            /* fall through */
           }
-        } catch (e) {
-          console.warn('[useHardDeleteOrgDocument] storage remove threw', e);
         }
+        throw new Error(error.message || 'המחיקה נכשלה');
       }
+
+      const result = (data ?? {}) as Partial<HardDeleteOrgDocumentResult> & { error?: string };
+      if (typeof result.error === 'string') {
+        throw new Error(result.error);
+      }
+      const final: HardDeleteOrgDocumentResult = {
+        ok: Boolean(result.ok),
+        deleted: typeof result.deleted === 'number' ? result.deleted : 0,
+        storage_removed: typeof result.storage_removed === 'number' ? result.storage_removed : 0,
+        failures: Array.isArray(result.failures) ? result.failures : [],
+      };
+      if (final.deleted === 0 && idArray.length > 0) {
+        throw new Error('המחיקה לא בוצעה — ייתכן שהמסמכים כבר נמחקו או שאין הרשאה');
+      }
+      return final;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEY });

@@ -1353,7 +1353,7 @@ ${STANDARD_INPUT_FOOTER_TEXT}
     setIsDeleting(true);
     try {
       if (deleteMode === 'hard') {
-        await hardDeleteForm.mutateAsync(formToDelete.id);
+        await hardDeleteForm.mutateAsync({ ids: formToDelete.id, password: deletePassword });
         /** מנקים גם את סימוני הסקירה ב-localStorage כדי שלא יישארו "רוחות" של מסמך שנמחק. */
         setFormReviewMarks((prev) => {
           if (!prev || !(formToDelete.id in prev)) return prev;
@@ -1415,50 +1415,48 @@ ${STANDARD_INPUT_FOOTER_TEXT}
     }
 
     setBulkDeletingBroken(true);
-    let okCount = 0;
-    const failures: { id: string; message: string }[] = [];
-    for (const id of ids) {
-      try {
-        await hardDeleteForm.mutateAsync(id);
-        okCount += 1;
-      } catch (err: any) {
-        failures.push({ id, message: err?.message ?? 'שגיאה לא צפויה' });
-      }
-    }
+    try {
+      /** קריאה אחת ל-Edge Function עם כל המזהים — מהיר ומחזיר failures מפורט. */
+      const result = await hardDeleteForm.mutateAsync({ ids, password: pwd });
 
-    /** ניקוי localStorage: מסמני סקירה של מסמכים שנמחקו. */
-    setFormReviewMarks((prev) => {
-      let mutated = false;
-      const next = { ...prev };
-      for (const id of ids) {
-        if (id in next) {
-          delete next[id];
-          mutated = true;
+      /** ניקוי localStorage: מסמני סקירה של מסמכים שנמחקו. */
+      setFormReviewMarks((prev) => {
+        let mutated = false;
+        const next = { ...prev };
+        for (const id of ids) {
+          if (id in next) {
+            delete next[id];
+            mutated = true;
+          }
         }
+        return mutated ? next : prev;
+      });
+
+      await queryClient.invalidateQueries({ queryKey: ['org-documents'] });
+      await queryClient.invalidateQueries({ queryKey: ['org-documents', 'admin'] });
+      await queryClient.invalidateQueries({ queryKey: ['org-documents', 'permission-registry'] });
+
+      const failedIds = new Set(result.failures.map((f) => f.id));
+      setBrokenFormIds((prev) => {
+        const next = new Set(prev);
+        for (const id of ids) {
+          if (!failedIds.has(id)) next.delete(id);
+        }
+        return next;
+      });
+
+      if (result.failures.length === 0) {
+        toast.success(`נמחקו ${result.deleted} טפסים שבורים${result.storage_removed > 0 ? ` (${result.storage_removed} קבצים מ-Storage)` : ''}`);
+      } else {
+        toast.error(
+          `נמחקו ${result.deleted}/${ids.length}. ${result.failures.length} נכשלו — ${result.failures[0]?.message ?? ''}`,
+        );
       }
-      return mutated ? next : prev;
-    });
-
-    await queryClient.invalidateQueries({ queryKey: ['org-documents'] });
-    await queryClient.invalidateQueries({ queryKey: ['org-documents', 'admin'] });
-    await queryClient.invalidateQueries({ queryKey: ['org-documents', 'permission-registry'] });
-
-    setBrokenFormIds((prev) => {
-      const next = new Set(prev);
-      for (const id of ids) {
-        if (!failures.some((f) => f.id === id)) next.delete(id);
-      }
-      return next;
-    });
-
-    if (failures.length === 0) {
-      toast.success(`נמחקו ${okCount} טפסים שבורים`);
-    } else {
-      toast.error(
-        `נמחקו ${okCount}/${ids.length} טפסים. ${failures.length} נכשלו — ${failures[0]?.message ?? ''}`,
-      );
+    } catch (err: any) {
+      toast.error(`מחיקה מרובה נכשלה: ${err?.message ?? 'שגיאה לא צפויה'}`);
+    } finally {
+      setBulkDeletingBroken(false);
     }
-    setBulkDeletingBroken(false);
   };
 
   const handleRestoreArchivedForm = async (formId: string) => {
