@@ -283,7 +283,19 @@ export function DriverCard({
             {/* organizational — תואם DriverSectionEditPage */}
             <SectionBlock sectionId="organizational" driverId={driver.id}>
               <FieldRow label="מ. עובד" className="dir-ltr">
-                {str(driver.employee_number)}
+                {driver.employee_number != null && String(driver.employee_number).trim() !== '' ? (
+                  <span className="text-slate-200" dir="ltr">
+                    {String(driver.employee_number).trim()}
+                  </span>
+                ) : (
+                  <Link
+                    to={`/drivers/${driver.id}/section/organizational`}
+                    className="text-xs font-semibold text-amber-300 hover:text-amber-100"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    הוספת מספר עובד
+                  </Link>
+                )}
               </FieldRow>
               <FieldRow label="קוד נהג" className="dir-ltr">
                 {str(driver.driver_code)}

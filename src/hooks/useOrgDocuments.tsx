@@ -28,6 +28,14 @@ export interface OrgDocument {
   requires_signature: boolean;
   sort_order: number;
   is_active: boolean;
+  show_date?: boolean | null;
+  show_time?: boolean | null;
+  show_driver_name?: boolean | null;
+  show_license_plate?: boolean | null;
+  show_employee_id?: boolean | null;
+  show_id_number?: boolean | null;
+  show_mobile?: boolean | null;
+  show_signature_block?: boolean | null;
   created_at: string;
   updated_at: string;
 }
@@ -129,11 +137,18 @@ export function useUpdateOrgDocument(options?: OrgDocumentHookOptions) {
       if (file) {
         file_url = await uploadOrgPdf(file, `doc_${id}`, options?.storageFolder);
       }
-      const { error } = await (supabase as any)
+      const { data, error } = await (supabase as any)
         .from('org_documents')
         .update({ ...updates, file_url, updated_at: new Date().toISOString() })
-        .eq('id', id);
+        .eq('id', id)
+        .select('id')
+        .maybeSingle();
       if (error) throw error;
+      if (!data?.id) {
+        throw new Error(
+          'העדכון לא הוחל — ייתכן שאין הרשאה (RLS) או שהמסמך לא נמצא. בדקו הרשאות מנהל צי.',
+        );
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEY });

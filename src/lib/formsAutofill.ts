@@ -3,6 +3,8 @@ import type { User } from '@supabase/supabase-js';
 type DriverLike = {
   full_name?: string | null;
   id_number?: string | null;
+  employee_number?: string | null;
+  phone?: string | null;
 };
 
 type VehicleLike = {
@@ -33,6 +35,8 @@ export function buildFormsAutoFillContext(params: {
     employee_name: driver?.full_name || sessionName || '',
     id_number: driver?.id_number || '',
     vehicle_number: vehicle?.plate_number || '',
+    employee_number: driver?.employee_number != null ? String(driver.employee_number).trim() : '',
+    mobile: (driver?.phone && String(driver.phone).trim()) || '',
     date: (date ?? new Date()).toLocaleDateString('he-IL'),
   };
 }

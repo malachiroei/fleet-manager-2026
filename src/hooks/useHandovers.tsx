@@ -16,6 +16,14 @@ import {
   summarizeDamageReport,
   type VehicleDamageReport,
 } from '@/lib/vehicleDamage';
+import type { OrgDocument } from '@/hooks/useOrgDocuments';
+import {
+  appendChecklistTablesToGenericHandoverPdf,
+  normalizePdfDisplayFlags,
+  type ChecklistTableRowResponse,
+  type FormsTemplateExtensions,
+} from '@/lib/formsGeneratedPdf';
+import { buildHandoverFormHeaderMetaLines } from '@/lib/handoverOrgDocumentHeader';
 
 export type AssignmentMode = 'permanent' | 'replacement';
 
@@ -494,6 +502,8 @@ async function buildWizardPdfDoc(
   vehicleLabel: string,
   driverName: string,
   date: string,
+  /** אם מועבר — מחליף את שלוש שורות ברירת המחדל (תאריך/רכב/נהג). מערך ריק = רק כותרת וקו מפריד */
+  headerMetaLines?: string[] | null,
 ) {
   if (!cachedHebrewFontBase64) {
     const fontResponse = await fetch(hebrewFontUrl);
@@ -515,7 +525,9 @@ async function buildWizardPdfDoc(
 
   doc.setFontSize(10);
   let y = 76;
-  for (const line of [`תאריך: ${date}`, `רכב: ${formatVehicleLabelForPdf(vehicleLabel)}`, `נהג: ${driverName}`]) {
+  const defaultLines = [`תאריך: ${date}`, `רכב: ${formatVehicleLabelForPdf(vehicleLabel)}`, `נהג: ${driverName}`];
+  const lines = headerMetaLines !== undefined && headerMetaLines !== null ? headerMetaLines : defaultLines;
+  for (const line of lines) {
     doc.text(line, rightX, y, { align: 'right' });
     y += 14;
   }
@@ -790,6 +802,13 @@ export async function generateGenericFormPDF({
   upgradeUi,
   returnFormUi,
   receptionFields,
+  orgDocumentForFlags,
+  headerMetaLines,
+  preSignatureMetaLines,
+  printedAt,
+  templateExtensions,
+  checklistTableResponses,
+  showSignatureBlock,
 }: {
   title: string;
   builtinTemplateKey?: string;
@@ -837,8 +856,50 @@ export async function generateGenericFormPDF({
     address?: string;
     ignitionCode?: string;
   };
+  /** שורת org_documents — דגלי כותרת/חתימה כמו במרכז הטפסים */
+  orgDocumentForFlags?: Pick<
+    OrgDocument,
+    | 'show_date'
+    | 'show_time'
+    | 'show_driver_name'
+    | 'show_license_plate'
+    | 'show_employee_id'
+    | 'show_id_number'
+    | 'show_mobile'
+    | 'show_signature_block'
+  > | null;
+  /** דורס חישוב מ-orgDocumentForFlags */
+  headerMetaLines?: string[] | null;
+  /** שורות פרטי חתימה מעל חתימת הנהג (באשף: כאן מודפסות במקום בכותרת העליונה) */
+  preSignatureMetaLines?: string[] | null;
+  printedAt?: Date;
+  templateExtensions?: FormsTemplateExtensions | null;
+  checklistTableResponses?: Record<string, ChecklistTableRowResponse[]>;
+  showSignatureBlock?: boolean;
 }): Promise<Blob> {
-  const { doc, pageWidth, rightX, y: startY } = await buildWizardPdfDoc(title, vehicleLabel, driverName, date);
+  const printedAtResolved = printedAt ?? new Date();
+  const resolvedHeaderLines =
+    headerMetaLines !== undefined && headerMetaLines !== null
+      ? headerMetaLines
+      : orgDocumentForFlags
+        ? buildHandoverFormHeaderMetaLines(orgDocumentForFlags, {
+            dateLabel: date,
+            printedAt: printedAtResolved,
+            vehicleLabel,
+            driverName,
+            employeeNumber: receptionFields?.employeeNumber ?? '',
+            idNumber: receptionFields?.idNumber ?? '',
+            mobile: receptionFields?.phone?.trim() ?? '',
+          })
+        : undefined;
+
+  const { doc, pageWidth, rightX, y: startY } = await buildWizardPdfDoc(
+    title,
+    vehicleLabel,
+    driverName,
+    date,
+    resolvedHeaderLines,
+  );
   const pageHeight = doc.internal.pageSize.getHeight();
   let y = startY;
 
@@ -1059,9 +1120,32 @@ export async function generateGenericFormPDF({
     y += notesSplit.length * 13 + 4;
   }
 
+  if (preSignatureMetaLines !== undefined && preSignatureMetaLines !== null && preSignatureMetaLines.length > 0) {
+    ensureSpace(preSignatureMetaLines.length * 16 + 24);
+    y += 10;
+    doc.setDrawColor(180, 190, 205);
+    doc.line(40, y, pageWidth - 40, y);
+    y += 16;
+    doc.setFontSize(10);
+    for (const line of preSignatureMetaLines) {
+      ensureSpace(18);
+      doc.text(line, rightX, y, { align: 'right' });
+      y += 14;
+    }
+  }
+
+  const showSig =
+    showSignatureBlock !== undefined
+      ? showSignatureBlock
+      : orgDocumentForFlags
+        ? normalizePdfDisplayFlags(orgDocumentForFlags).show_signature_block
+        : true;
+
   y += 10;
-  ensureSpace(96);
-  addSignatureToPdf(doc as any, signatureDataUrl, y, pageWidth, rightX, 'חתימת הנהג:');
+  if (showSig) {
+    ensureSpace(96);
+    addSignatureToPdf(doc as any, signatureDataUrl, y, pageWidth, rightX, 'חתימת הנהג:');
+  }
   return doc.output('blob');
 }
 

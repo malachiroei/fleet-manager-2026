@@ -12,11 +12,17 @@ export interface FormsChecklistColumn {
   label: string;
 }
 
+/** tri_state = תקין/לא תקין/טופל (ברירת מחדל); accessory = ✓/✗/פריט/תקרה/הערות כמו טופס קבלת רכב */
+export type FormsChecklistTableVariant = 'tri_state' | 'accessory';
+
 export interface FormsChecklistTableDef {
   id: string;
   title?: string;
   rows: string[];
   columns: FormsChecklistColumn[];
+  variant?: FormsChecklistTableVariant;
+  /** לוריאנט accessory — תווית תקרה לכל שורה (מקביל ל־rows) */
+  row_ceiling_labels?: string[];
 }
 
 export interface FormsTemplateExtensions {
@@ -48,11 +54,19 @@ export function normalizeChecklistTable(table: FormsChecklistTableDef): FormsChe
   const cols =
     Array.isArray(table.columns) && table.columns.length > 0 ? table.columns : DEFAULT_CHECKLIST_COLUMNS;
   const rows = Array.isArray(table.rows) ? table.rows.filter((r) => String(r).trim().length > 0) : [];
+  const variant: FormsChecklistTableVariant = table.variant === 'accessory' ? 'accessory' : 'tri_state';
+  const ceilingsRaw = Array.isArray(table.row_ceiling_labels) ? table.row_ceiling_labels : [];
+  const row_ceiling_labels =
+    variant === 'accessory'
+      ? rows.map((_, i) => String(ceilingsRaw[i] ?? '').trim() || '—')
+      : undefined;
   return {
     id: table.id,
     title: table.title?.trim() || undefined,
     columns: cols,
     rows: rows.length > 0 ? rows : ['פריט 1'],
+    variant,
+    row_ceiling_labels,
   };
 }
 
@@ -90,11 +104,65 @@ export function mergeExtensionsIntoSchema(
   return next;
 }
 
-const MANDATORY_SIGNATURE_FOOTER = [
+/** תחתית קבועה בכל PDF מובנה — תואם למה שנאסף באשף (חתימה/תאריך) */
+export const FORMS_PDF_SIGNATURE_BLOCK = [
   '────────────── אישור עובד ──────────────',
   'תאריך: ____________________    שעה: ____________________',
   'חתימת העובד: __________________________________________________________',
 ].join('\n');
+
+const MANDATORY_SIGNATURE_FOOTER = FORMS_PDF_SIGNATURE_BLOCK;
+
+/** תיאור שורות כותרת אפשריות ב-PDF (ההדפסה בפועל נשלטת ב-display flags לכל טופס) */
+export const FORMS_PDF_AUTOMATIC_HEADER_LINES = [
+  'תאריך חתימה: נקבע בעת יצירת הקובץ',
+  'שעת חתימה: נקבע בעת יצירת הקובץ',
+  'שם הנהג/עובד: נמשך מפרטי המסירה',
+  'מספר רישוי: נמשך מפרטי הרכב במסירה',
+  'מספר עובד: נמשך מפרטי העובד במסירה',
+  'מספר ת.ז: נמשך מפרטי העובד במסירה',
+  'מספר נייד: נמשך מפרטי העובד במסירה',
+] as const;
+
+export type FormsPdfDisplayFlags = {
+  show_date: boolean;
+  show_time: boolean;
+  show_driver_name: boolean;
+  show_license_plate: boolean;
+  show_employee_id: boolean;
+  show_id_number: boolean;
+  show_mobile: boolean;
+  show_signature_block: boolean;
+};
+
+export const DEFAULT_FORMS_PDF_DISPLAY_FLAGS: FormsPdfDisplayFlags = {
+  show_date: true,
+  show_time: true,
+  show_driver_name: true,
+  show_license_plate: true,
+  show_employee_id: true,
+  show_id_number: true,
+  show_mobile: true,
+  show_signature_block: true,
+};
+
+export type PdfDisplayFlagsInput = Partial<Record<keyof FormsPdfDisplayFlags, boolean | null | undefined>>;
+
+export function normalizePdfDisplayFlags(input: PdfDisplayFlagsInput | null | undefined): FormsPdfDisplayFlags {
+  const i = input ?? {};
+  const pick = (key: keyof FormsPdfDisplayFlags, fallback = true) =>
+    i[key] === null || i[key] === undefined ? fallback : Boolean(i[key]);
+  return {
+    show_date: pick('show_date'),
+    show_time: pick('show_time'),
+    show_driver_name: pick('show_driver_name'),
+    show_license_plate: pick('show_license_plate'),
+    show_employee_id: pick('show_employee_id'),
+    show_id_number: pick('show_id_number'),
+    show_mobile: pick('show_mobile'),
+    show_signature_block: pick('show_signature_block'),
+  };
+}
 
 /**
  * יוצר PDF עברי RTL למסמך מובנה (טפסים), כולל שדות דינמיים, טבלאות סימון,
@@ -104,11 +172,19 @@ export async function generateFormsPdfBlob(params: {
   formTitle: string;
   mainContent: string;
   extensions?: FormsTemplateExtensions | null;
-  headerContext?: { employeeName?: string; vehicleNumber?: string };
+  headerContext?: {
+    employeeName?: string;
+    vehicleNumber?: string;
+    employeeNumber?: string;
+    idNumber?: string;
+    mobile?: string;
+  };
+  displayFlags?: PdfDisplayFlagsInput | null;
   /** תאריך/שעה לכותרת (מילוי אוטומטי בזמן יצירת הקובץ) */
   printedAt?: Date;
 }): Promise<Blob> {
   const { formTitle, mainContent, extensions, headerContext, printedAt } = params;
+  const flags = normalizePdfDisplayFlags(params.displayFlags);
   const now = printedAt ?? new Date();
 
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
@@ -132,16 +208,63 @@ export async function generateFormsPdfBlob(params: {
   doc.setFontSize(22);
   doc.text(formTitle, rightX, 56, { align: 'right' });
   doc.setFontSize(11);
-  doc.text(`תאריך (הדפסה): ${now.toLocaleDateString('he-IL')}`, rightX, 78, { align: 'right' });
-  doc.text(`שעה (הדפסה): ${now.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`, rightX, 94, {
-    align: 'right',
-  });
-  doc.text(`שם הנהג/עובד: ${headerContext?.employeeName || 'לא זמין'}`, rightX, 110, { align: 'right' });
-  doc.text(`מספר רישוי: ${headerContext?.vehicleNumber || 'לא זמין'}`, rightX, 126, { align: 'right' });
-  doc.setDrawColor(180, 190, 205);
-  doc.line(leftX, 136, pageW - leftX, 136);
 
-  let y = 152;
+  let headerLineY = 78;
+  const lineGap = 16;
+  if (flags.show_date) {
+    doc.text(`תאריך חתימה: ${now.toLocaleDateString('he-IL')}`, rightX, headerLineY, { align: 'right' });
+    headerLineY += lineGap;
+  }
+  if (flags.show_time) {
+    doc.text(
+      `שעת חתימה: ${now.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`,
+      rightX,
+      headerLineY,
+      { align: 'right' },
+    );
+    headerLineY += lineGap;
+  }
+  if (flags.show_driver_name) {
+    doc.text(`שם הנהג/עובד: ${headerContext?.employeeName || 'לא זמין'}`, rightX, headerLineY, { align: 'right' });
+    headerLineY += lineGap;
+  }
+  if (flags.show_license_plate) {
+    doc.text(`מספר רישוי: ${headerContext?.vehicleNumber || 'לא זמין'}`, rightX, headerLineY, { align: 'right' });
+    headerLineY += lineGap;
+  }
+  if (flags.show_employee_id) {
+    doc.text(`מספר עובד: ${headerContext?.employeeNumber?.trim() || 'לא זמין'}`, rightX, headerLineY, {
+      align: 'right',
+    });
+    headerLineY += lineGap;
+  }
+  if (flags.show_id_number) {
+    doc.text(`מספר ת.ז: ${headerContext?.idNumber?.trim() || 'לא זמין'}`, rightX, headerLineY, { align: 'right' });
+    headerLineY += lineGap;
+  }
+  if (flags.show_mobile) {
+    doc.text(`מספר נייד: ${headerContext?.mobile?.trim() || 'לא זמין'}`, rightX, headerLineY, { align: 'right' });
+    headerLineY += lineGap;
+  }
+
+  const hasHeaderDetailLines =
+    flags.show_date ||
+    flags.show_time ||
+    flags.show_driver_name ||
+    flags.show_license_plate ||
+    flags.show_employee_id ||
+    flags.show_id_number ||
+    flags.show_mobile;
+
+  let y: number;
+  if (hasHeaderDetailLines) {
+    doc.setDrawColor(180, 190, 205);
+    const sepY = headerLineY + 6;
+    doc.line(leftX, sepY, pageW - leftX, sepY);
+    y = sepY + 16;
+  } else {
+    y = Math.max(headerLineY, 88);
+  }
   doc.setFontSize(13);
 
   const ensureSpace = (needed: number) => {
@@ -198,32 +321,125 @@ export async function generateFormsPdfBlob(params: {
     const tableTitle = table.title?.trim() || 'טבלת ביקורת / סימון';
     doc.text(tableTitle, rightX, y, { align: 'right' });
     y += 22;
-    doc.setFontSize(10);
-    /** כותרות עמודות — משמאל לימין: פריט | עמודות סימון */
-    const colLabels = [...table.columns].reverse().map((c) => c.label).join('    ');
-    doc.text(`פריט / בדיקה                    ${colLabels}`, rightX, y, { align: 'right' });
-    y += 16;
-    doc.setFontSize(11);
-    for (const rowLabel of table.rows) {
-      const marks = table.columns.map(() => '☐').join('      ');
-      const line = `${String(rowLabel).trim()}     ${marks}`;
-      ensureSpace(22);
-      const wrapped = doc.splitTextToSize(line, pageW - 80);
-      for (const row of wrapped) {
-        doc.text(row, rightX, y, { align: 'right' });
-        y += 16;
+
+    if (table.variant === 'accessory') {
+      doc.setFontSize(9);
+      doc.text('✓      ✗      פריט (תיאור)                        תקרה        הערות', rightX, y, { align: 'right' });
+      y += 14;
+      doc.setFontSize(10);
+      table.rows.forEach((rowLabel, idx) => {
+        const ceiling = table.row_ceiling_labels?.[idx] ?? '—';
+        const line = `☐      ☐      ${String(rowLabel).trim()}    ${ceiling}    _______________`;
+        ensureSpace(22);
+        const wrapped = doc.splitTextToSize(line, pageW - 72);
+        for (const row of wrapped) {
+          doc.text(row, rightX, y, { align: 'right' });
+          y += 14;
+        }
+        y += 2;
+      });
+    } else {
+      doc.setFontSize(10);
+      /** כותרות עמודות — משמאל לימין: פריט | עמודות סימון */
+      const colLabels = [...table.columns].reverse().map((c) => c.label).join('    ');
+      doc.text(`פריט / בדיקה                    ${colLabels}`, rightX, y, { align: 'right' });
+      y += 16;
+      doc.setFontSize(11);
+      for (const rowLabel of table.rows) {
+        const marks = table.columns.map(() => '☐').join('      ');
+        const line = `${String(rowLabel).trim()}     ${marks}`;
+        ensureSpace(22);
+        const wrapped = doc.splitTextToSize(line, pageW - 80);
+        for (const row of wrapped) {
+          doc.text(row, rightX, y, { align: 'right' });
+          y += 16;
+        }
+        y += 4;
       }
-      y += 4;
     }
     y += 12;
   }
 
-  ensureSpace(80);
-  doc.setFontSize(12);
-  doc.setDrawColor(160, 170, 185);
-  doc.line(leftX, y, pageW - leftX, y);
-  y += 20;
-  writeParagraphBlock(MANDATORY_SIGNATURE_FOOTER, 12);
+  if (flags.show_signature_block) {
+    ensureSpace(80);
+    doc.setFontSize(12);
+    doc.setDrawColor(160, 170, 185);
+    doc.line(leftX, y, pageW - leftX, y);
+    y += 20;
+    writeParagraphBlock(MANDATORY_SIGNATURE_FOOTER, 12);
+  }
 
   return doc.output('blob');
+}
+
+export type ChecklistTableRowResponse = { checked?: boolean; missing?: boolean; notes?: string };
+
+/** טבלאות מתוך template_extensions ב-PDF של אשף המסירה (טופס גנרי) */
+export function appendChecklistTablesToGenericHandoverPdf(
+  doc: InstanceType<typeof jsPDF>,
+  yStart: number,
+  extensions: FormsTemplateExtensions | null | undefined,
+  layout: { pageW: number; rightX: number; leftX: number; pageHeight: number },
+  responsesByTableId?: Record<string, ChecklistTableRowResponse[]>,
+): number {
+  let y = yStart;
+  const { pageW, rightX, pageHeight } = layout;
+  const ensureSpace = (needed: number) => {
+    if (y + needed > pageHeight - 36) {
+      doc.addPage();
+      y = 50;
+    }
+  };
+
+  const tables = extensions?.checklist_tables ?? [];
+  for (const raw of tables) {
+    const table = normalizeChecklistTable(raw);
+    ensureSpace(50);
+    doc.setFontSize(14);
+    const tableTitle = table.title?.trim() || 'טבלה';
+    doc.text(tableTitle, rightX, y, { align: 'right' });
+    y += 22;
+
+    if (table.variant === 'accessory') {
+      doc.setFontSize(9);
+      doc.text('✓      ✗      פריט                        תקרה        הערות', rightX, y, { align: 'right' });
+      y += 14;
+      doc.setFontSize(10);
+      const respList = responsesByTableId?.[table.id] ?? [];
+      table.rows.forEach((rowLabel, idx) => {
+        const ceiling = table.row_ceiling_labels?.[idx] ?? '—';
+        const r = respList[idx];
+        const ok = r?.checked ? '✓' : '☐';
+        const miss = r?.missing ? '✗' : '☐';
+        const notes = (r?.notes ?? '').trim() || '—';
+        const line = `${ok}      ${miss}      ${String(rowLabel).trim()}    ${ceiling}    ${notes}`;
+        ensureSpace(28);
+        const wrapped = doc.splitTextToSize(line, pageW - 72) as string[];
+        for (const wline of wrapped) {
+          doc.text(wline, rightX, y, { align: 'right' });
+          y += 14;
+        }
+        y += 2;
+      });
+    } else {
+      doc.setFontSize(10);
+      const colLabels = [...table.columns].reverse().map((c) => c.label).join('    ');
+      doc.text(`פריט / בדיקה                    ${colLabels}`, rightX, y, { align: 'right' });
+      y += 16;
+      doc.setFontSize(11);
+      for (const rowLabel of table.rows) {
+        const marks = table.columns.map(() => '☐').join('      ');
+        const line = `${String(rowLabel).trim()}     ${marks}`;
+        ensureSpace(22);
+        const wrapped = doc.splitTextToSize(line, pageW - 80) as string[];
+        for (const row of wrapped) {
+          doc.text(row, rightX, y, { align: 'right' });
+          y += 16;
+        }
+        y += 4;
+      }
+    }
+    y += 12;
+  }
+  return y;
 }

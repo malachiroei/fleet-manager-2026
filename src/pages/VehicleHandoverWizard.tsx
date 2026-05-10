@@ -23,6 +23,14 @@ import { FleetDatePicker } from '@/components/ui/FleetDatePicker';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { orgDocumentTemplateBody } from '@/lib/orgDocumentTemplate';
+import { buildHandoverFormHeaderMetaLines } from '@/lib/handoverOrgDocumentHeader';
+import {
+  parseTemplateExtensions,
+  normalizeChecklistTable,
+  normalizePdfDisplayFlags,
+  type ChecklistTableRowResponse,
+} from '@/lib/formsGeneratedPdf';
+import type { OrgDocument } from '@/hooks/useOrgDocuments';
 import { isOrgDocumentUsableForHandoverList, orgDocumentHandoverLabel } from '@/lib/orgDocumentHandoverFilter';
 import { HANDOVER_ACCESSORY_CEILINGS, formatCeilingPrice } from '@/lib/accessoryCeilings';
 import { cloneEmptyDamageReport, hasAnyDamage, summarizeDamageReport, type VehicleDamageReport } from '@/lib/vehicleDamage';
@@ -90,6 +98,17 @@ interface ReceptionManualFields {
   phone: string;
   address: string;
   ignitionCode: string;
+}
+
+/** פרטי חתימה לעריכה בטפסים גנריים באשף — לפני חתימת הנהג וב-PDF */
+interface GenericHandoverSigMeta {
+  dateLabel: string;
+  timeLabel: string;
+  driverName: string;
+  vehicleLabel: string;
+  employeeNumber: string;
+  idNumber: string;
+  mobile: string;
 }
 
 type ReceptionFieldErrors = Partial<Record<keyof ReceptionManualFields, string>>;
@@ -331,22 +350,176 @@ const INITIAL_HEALTH: HealthDeclaration[] = [
 // Sub-components
 // ─────────────────────────────────────────────
 
-function OfficialDocHeader({ title, subtitle, date, vehicleLabel, driverName }: {
-  title: string; subtitle?: string; date: string; vehicleLabel?: string; driverName?: string;
+function OfficialDocHeader({
+  title,
+  subtitle,
+  date,
+  vehicleLabel,
+  driverName,
+  metaLines,
+  hideMeta,
+}: {
+  title: string;
+  subtitle?: string;
+  date: string;
+  vehicleLabel?: string;
+  driverName?: string;
+  /** אם מועבר — מחליף את תאריך/רכב/נהג (לפי דגלי org_documents) */
+  metaLines?: string[];
+  /** רק כותרת — בלי עמודת פרטים (פרטי חתימה מוצגים מעל החתימה) */
+  hideMeta?: boolean;
 }) {
+  const rightCol =
+    hideMeta ? null : metaLines !== undefined ? (
+      <div className="text-right text-sm text-slate-500 space-y-0.5">
+        {metaLines.length === 0 ? (
+          <div className="text-xs text-slate-400">ללא שורות פרטים בכותרת (הוגדר בעריכת הטופס)</div>
+        ) : (
+          metaLines.map((line) => (
+            <div key={line} className="font-medium text-slate-600">
+              {line}
+            </div>
+          ))
+        )}
+      </div>
+    ) : (
+      <div className="text-right text-sm text-slate-500 space-y-0.5">
+        <div className="font-medium">תאריך: {date}</div>
+        {vehicleLabel && (
+          <div>
+            רכב: <span className="font-semibold text-slate-700">{vehicleLabel}</span>
+          </div>
+        )}
+        {driverName && (
+          <div>
+            נהג: <span className="font-semibold text-slate-700">{driverName}</span>
+          </div>
+        )}
+      </div>
+    );
   return (
     <div className="border-b-2 border-slate-300 pb-4 mb-6">
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-2xl font-black text-slate-900 tracking-tight">{title}</h2>
           {subtitle && <p className="text-sm text-slate-500 mt-0.5">{subtitle}</p>}
         </div>
-        <div className="text-right text-sm text-slate-500 space-y-0.5">
-          <div className="font-medium">תאריך: {date}</div>
-          {vehicleLabel && <div>רכב: <span className="font-semibold text-slate-700">{vehicleLabel}</span></div>}
-          {driverName  && <div>נהג: <span className="font-semibold text-slate-700">{driverName}</span></div>}
-        </div>
+        {rightCol}
       </div>
+    </div>
+  );
+}
+
+function GenericEmbeddedChecklistsFromSchema({
+  docId,
+  jsonSchema,
+  checklistByDocId,
+  setChecklistByDocId,
+}: {
+  docId: string;
+  jsonSchema: unknown;
+  checklistByDocId: Record<string, Record<string, ChecklistTableRowResponse[]>>;
+  setChecklistByDocId: React.Dispatch<
+    React.SetStateAction<Record<string, Record<string, ChecklistTableRowResponse[]>>>
+  >;
+}) {
+  const ext = parseTemplateExtensions(jsonSchema as Record<string, unknown>);
+  const tables = ext.checklist_tables ?? [];
+  if (tables.length === 0) return null;
+
+  const patchRows = (tableId: string, rows: ChecklistTableRowResponse[]) => {
+    setChecklistByDocId((prev) => ({
+      ...prev,
+      [docId]: { ...(prev[docId] ?? {}), [tableId]: rows },
+    }));
+  };
+
+  return (
+    <div className="mt-4 space-y-6 border-t border-slate-200 pt-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">טבלאות מהתבנית</p>
+      {tables.map((raw) => {
+        const table = normalizeChecklistTable(raw);
+        const stored = checklistByDocId[docId]?.[table.id];
+        const rowResponses: ChecklistTableRowResponse[] = table.rows.map((_, i) => ({
+          checked: Boolean(stored?.[i]?.checked),
+          missing: Boolean(stored?.[i]?.missing),
+          notes: String(stored?.[i]?.notes ?? ''),
+        }));
+
+        if (table.variant === 'accessory') {
+          return (
+            <div key={table.id} className="space-y-2">
+              {table.title ? <h4 className="text-sm font-bold text-slate-800">{table.title}</h4> : null}
+              <div className="overflow-x-auto rounded-lg border border-slate-200">
+                <table className="w-full min-w-[480px] text-sm">
+                  <thead className="bg-slate-100">
+                    <tr>
+                      <th className="w-9 px-2 py-2 text-center font-semibold text-slate-700">✓</th>
+                      <th className="w-9 px-2 py-2 text-center font-semibold text-slate-700">✗</th>
+                      <th className="px-3 py-2 text-right font-semibold text-slate-700">פריט</th>
+                      <th className="w-24 px-2 py-2 text-right font-semibold text-slate-700">תקרה</th>
+                      <th className="w-40 px-2 py-2 text-right font-semibold text-slate-700">הערות</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {table.rows.map((rowLabel, idx) => {
+                      const row = rowResponses[idx] ?? { checked: false, missing: false, notes: '' };
+                      const ceiling = table.row_ceiling_labels?.[idx] ?? '—';
+                      return (
+                        <tr key={`${table.id}-row-${idx}`} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                          <td className="px-2 py-2 text-center">
+                            <Checkbox
+                              checked={row.checked && !row.missing}
+                              onCheckedChange={() => {
+                                const next = [...rowResponses];
+                                next[idx] = { ...row, checked: true, missing: false };
+                                patchRows(table.id, next);
+                              }}
+                              className="border-slate-400 data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
+                            />
+                          </td>
+                          <td className="px-2 py-2 text-center">
+                            <Checkbox
+                              checked={row.missing}
+                              onCheckedChange={() => {
+                                const next = [...rowResponses];
+                                next[idx] = { ...row, missing: true, checked: false };
+                                patchRows(table.id, next);
+                              }}
+                              className="border-slate-400 data-[state=checked]:bg-red-500 data-[state=checked]:border-red-500"
+                            />
+                          </td>
+                          <td className="px-3 py-2 font-medium text-slate-800">{rowLabel}</td>
+                          <td className="px-2 py-2 tabular-nums text-xs text-slate-500">{ceiling}</td>
+                          <td className="px-2 py-2">
+                            <Input
+                              value={row.notes}
+                              onChange={(e) => {
+                                const next = [...rowResponses];
+                                next[idx] = { ...row, notes: e.target.value };
+                                patchRows(table.id, next);
+                              }}
+                              placeholder="הערה..."
+                              className="h-8 border-slate-200 text-xs"
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div key={table.id} className="rounded-md border border-dashed border-slate-300 bg-slate-100/80 p-3 text-xs text-slate-600">
+            {table.title ? <span className="font-semibold text-slate-700">{table.title}: </span> : null}
+            טבלת סימון (תקין / לא תקין / טופל) תוצג ב-PDF עם משבצות סימון — סימון ידני על הניר.
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1090,6 +1263,12 @@ type RenderStepContentProps = {
   setUpgradeUiByDocId: React.Dispatch<React.SetStateAction<Record<string, UpgradeUiState>>>;
   returnFormUiByDocId: Record<string, ReturnFormUiState>;
   setReturnFormUiByDocId: React.Dispatch<React.SetStateAction<Record<string, ReturnFormUiState>>>;
+  genericChecklistByDocId: Record<string, Record<string, ChecklistTableRowResponse[]>>;
+  setGenericChecklistByDocId: React.Dispatch<
+    React.SetStateAction<Record<string, Record<string, ChecklistTableRowResponse[]>>>
+  >;
+  genericSigMetaByDocId: Record<string, GenericHandoverSigMeta>;
+  setGenericSigMetaByDocId: React.Dispatch<React.SetStateAction<Record<string, GenericHandoverSigMeta>>>;
 };
 
 function renderStepContent({
@@ -1154,6 +1333,10 @@ function renderStepContent({
   setUpgradeUiByDocId,
   returnFormUiByDocId,
   setReturnFormUiByDocId,
+  genericChecklistByDocId,
+  setGenericChecklistByDocId,
+  genericSigMetaByDocId,
+  setGenericSigMetaByDocId,
 }: RenderStepContentProps) {
   const currentStep = wizardSteps[stepIdx];
   if (!currentStep) return null;
@@ -1303,9 +1486,36 @@ function renderStepContent({
     missingAccessories: '',
   };
 
+  const pdfFlags = normalizePdfDisplayFlags(doc as OrgDocument);
+  const sigMetaFallback: GenericHandoverSigMeta = {
+    dateLabel: today,
+    timeLabel: new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
+    driverName,
+    vehicleLabel,
+    employeeNumber: manualFields.employeeNumber,
+    idNumber: manualFields.idNumber,
+    mobile: manualFields.phone,
+  };
+  const sigMeta = genericSigMetaByDocId[doc.id] ?? sigMetaFallback;
+  const showSigDetailFields =
+    pdfFlags.show_date ||
+    pdfFlags.show_time ||
+    pdfFlags.show_driver_name ||
+    pdfFlags.show_license_plate ||
+    pdfFlags.show_employee_id ||
+    pdfFlags.show_id_number ||
+    pdfFlags.show_mobile;
+
+  const patchGenericSigMeta = (patch: Partial<GenericHandoverSigMeta>) => {
+    setGenericSigMetaByDocId((prev) => ({
+      ...prev,
+      [doc.id]: { ...(prev[doc.id] ?? sigMetaFallback), ...patch },
+    }));
+  };
+
   return (
     <div className="bg-white text-slate-900 rounded-2xl p-4 pb-32 sm:p-6 shadow-xl">
-      <OfficialDocHeader title={doc.title} date={today} vehicleLabel={vehicleLabel} driverName={driverName} />
+      <OfficialDocHeader title={doc.title} hideMeta date={today} vehicleLabel={vehicleLabel} driverName={driverName} />
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
         {isPracticalDrivingTestForm ? (
           <div className="space-y-4">
@@ -1585,6 +1795,12 @@ function renderStepContent({
               ))}
           </div>
         )}
+        <GenericEmbeddedChecklistsFromSchema
+          docId={doc.id}
+          jsonSchema={doc.json_schema}
+          checklistByDocId={genericChecklistByDocId}
+          setChecklistByDocId={setGenericChecklistByDocId}
+        />
       </div>
       <div className="mt-4">
         <Label className="text-slate-700 text-sm font-semibold block mb-1">הערות לטופס</Label>
@@ -1598,6 +1814,90 @@ function renderStepContent({
           className="border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:border-blue-400 resize-none"
         />
       </div>
+      {showSigDetailFields && (
+        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50/80 p-4">
+          <p className="mb-3 text-sm font-semibold text-slate-800">פרטים להחתמה (יופיעו ב-PDF מעל חתימת הנהג)</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {pdfFlags.show_date && (
+              <div>
+                <Label className="text-slate-700 text-sm">תאריך חתימה</Label>
+                <Input
+                  value={sigMeta.dateLabel}
+                  onChange={(e) => patchGenericSigMeta({ dateLabel: e.target.value })}
+                  className="border-slate-300 bg-white"
+                  dir="ltr"
+                />
+              </div>
+            )}
+            {pdfFlags.show_time && (
+              <div>
+                <Label className="text-slate-700 text-sm">שעת חתימה</Label>
+                <Input
+                  value={sigMeta.timeLabel}
+                  onChange={(e) => patchGenericSigMeta({ timeLabel: e.target.value })}
+                  className="border-slate-300 bg-white"
+                  dir="ltr"
+                  placeholder="למשל 15:50"
+                />
+              </div>
+            )}
+            {pdfFlags.show_driver_name && (
+              <div>
+                <Label className="text-slate-700 text-sm">נהג</Label>
+                <Input
+                  value={sigMeta.driverName}
+                  onChange={(e) => patchGenericSigMeta({ driverName: e.target.value })}
+                  className="border-slate-300 bg-white"
+                />
+              </div>
+            )}
+            {pdfFlags.show_license_plate && (
+              <div>
+                <Label className="text-slate-700 text-sm">רכב</Label>
+                <Input
+                  value={sigMeta.vehicleLabel}
+                  onChange={(e) => patchGenericSigMeta({ vehicleLabel: e.target.value })}
+                  className="border-slate-300 bg-white"
+                  dir="ltr"
+                />
+              </div>
+            )}
+            {pdfFlags.show_employee_id && (
+              <div>
+                <Label className="text-slate-700 text-sm">מספר עובד</Label>
+                <Input
+                  value={sigMeta.employeeNumber}
+                  onChange={(e) => patchGenericSigMeta({ employeeNumber: e.target.value })}
+                  className="border-slate-300 bg-white"
+                  dir="ltr"
+                />
+              </div>
+            )}
+            {pdfFlags.show_id_number && (
+              <div>
+                <Label className="text-slate-700 text-sm">מספר ת.ז</Label>
+                <Input
+                  value={sigMeta.idNumber}
+                  onChange={(e) => patchGenericSigMeta({ idNumber: e.target.value })}
+                  className="border-slate-300 bg-white"
+                  dir="ltr"
+                />
+              </div>
+            )}
+            {pdfFlags.show_mobile && (
+              <div>
+                <Label className="text-slate-700 text-sm">מספר נייד</Label>
+                <Input
+                  value={sigMeta.mobile}
+                  onChange={(e) => patchGenericSigMeta({ mobile: e.target.value })}
+                  className="border-slate-300 bg-white"
+                  dir="ltr"
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       <div className="mt-4">
         <SignatureBlock
           sigRef={genericSigRef}
@@ -1765,8 +2065,12 @@ export default function VehicleHandoverWizard() {
   const [sig3OK, setSig3OK] = useState(false);
   const [genericFormApprovals, setGenericFormApprovals] = useState<Record<string, boolean>>({});
   const [genericFormNotes, setGenericFormNotes] = useState<Record<string, string>>({});
+  const [genericChecklistByDocId, setGenericChecklistByDocId] = useState<
+    Record<string, Record<string, ChecklistTableRowResponse[]>>
+  >({});
   const [genericSigOkByDocId, setGenericSigOkByDocId] = useState<Record<string, boolean>>({});
   const [genericSigDataUrlByDocId, setGenericSigDataUrlByDocId] = useState<Record<string, string>>({});
+  const [genericSigMetaByDocId, setGenericSigMetaByDocId] = useState<Record<string, GenericHandoverSigMeta>>({});
   const [practicalTestUiByDocId, setPracticalTestUiByDocId] = useState<Record<string, PracticalTestUiState>>({});
   const [trafficLiabilityUiByDocId, setTrafficLiabilityUiByDocId] = useState<Record<string, TrafficLiabilityUiState>>({});
   const [upgradeUiByDocId, setUpgradeUiByDocId] = useState<Record<string, UpgradeUiState>>({});
@@ -2069,6 +2373,35 @@ export default function VehicleHandoverWizard() {
 
   const currentStepDef = wizardSteps[step];
 
+  useEffect(() => {
+    const docId = currentStepDef?.kind === 'generic' ? currentStepDef.docId : undefined;
+    if (!docId) return;
+    setGenericSigMetaByDocId((prev) => {
+      if (prev[docId]) return prev;
+      return {
+        ...prev,
+        [docId]: {
+          dateLabel: today,
+          timeLabel: new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
+          driverName,
+          vehicleLabel,
+          employeeNumber: manualFields.employeeNumber,
+          idNumber: manualFields.idNumber,
+          mobile: manualFields.phone,
+        },
+      };
+    });
+  }, [
+    currentStepDef?.kind,
+    currentStepDef?.docId,
+    today,
+    driverName,
+    vehicleLabel,
+    manualFields.employeeNumber,
+    manualFields.idNumber,
+    manualFields.phone,
+  ]);
+
   const canAdvance = useMemo(() => {
     if (!currentStepDef) return false;
 
@@ -2218,6 +2551,19 @@ export default function VehicleHandoverWizard() {
           const trafficUi = trafficLiabilityUiByDocId[doc.id];
           const upgradeUi = upgradeUiByDocId[doc.id];
           const returnUi = returnFormUiByDocId[doc.id];
+          const sigFallbackPdf: GenericHandoverSigMeta = {
+            dateLabel: today,
+            timeLabel: new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
+            driverName,
+            vehicleLabel,
+            employeeNumber: manualFields.employeeNumber,
+            idNumber: manualFields.idNumber,
+            mobile: manualFields.phone,
+          };
+          const sigForPdf: GenericHandoverSigMeta = {
+            ...sigFallbackPdf,
+            ...genericSigMetaByDocId[doc.id],
+          };
           const genericBlob = await generateGenericFormPDF({
             title: doc.title,
             builtinTemplateKey: orgDocSchemaStringField(doc.json_schema, 'builtin_template_key'),
@@ -2242,6 +2588,18 @@ export default function VehicleHandoverWizard() {
               address: manualFields.address.trim(),
               ignitionCode: manualFields.ignitionCode.trim(),
             },
+            orgDocumentForFlags: doc as OrgDocument,
+            headerMetaLines: [],
+            preSignatureMetaLines: buildHandoverFormHeaderMetaLines(doc as OrgDocument, {
+              dateLabel: sigForPdf.dateLabel,
+              printedAt: new Date(),
+              timeLabel: sigForPdf.timeLabel,
+              vehicleLabel: sigForPdf.vehicleLabel,
+              driverName: sigForPdf.driverName,
+              employeeNumber: sigForPdf.employeeNumber,
+              idNumber: sigForPdf.idNumber,
+              mobile: sigForPdf.mobile,
+            }),
           }).catch((e) => {
             console.error(`[Wizard] generic PDF generation failed for "${doc.title}":`, e);
             return null;
@@ -2369,7 +2727,7 @@ export default function VehicleHandoverWizard() {
       }
 
       const uuidLike = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (vehicleId && handoverId && uuidLike.test(vehicleId) && uuidLike.test(handoverId)) {
+      if (vehicleId && uuidLike.test(vehicleId)) {
         const vehicleDocRows: Array<{
           vehicle_id: string;
           handover_id: string;
@@ -2378,10 +2736,11 @@ export default function VehicleHandoverWizard() {
           document_type: string;
           metadata?: Record<string, unknown>;
         }> = [];
+        const handoverFk = uuidLike.test(handoverId) ? handoverId : null;
         if (sig1Url) {
           vehicleDocRows.push({
             vehicle_id: vehicleId,
-            handover_id: handoverId,
+            handover_id: handoverFk,
             title: `${receptionFormDoc?.title || 'טופס קבלת רכב'} (חתום)`,
             file_url: sig1Url,
             document_type: 'delivery',
@@ -2391,7 +2750,7 @@ export default function VehicleHandoverWizard() {
         if (hasProcedureStep && sig2Url) {
           vehicleDocRows.push({
             vehicle_id: vehicleId,
-            handover_id: handoverId,
+            handover_id: handoverFk,
             title: `${procedureFormDoc?.title || 'התחייבות נוהל שימוש ברכב'} (חתום)`,
             file_url: sig2Url,
             document_type: 'delivery',
@@ -2401,7 +2760,7 @@ export default function VehicleHandoverWizard() {
         if (hasHealthStep && sig3Url) {
           vehicleDocRows.push({
             vehicle_id: vehicleId,
-            handover_id: handoverId,
+            handover_id: handoverFk,
             title: `${healthFormDoc?.title || 'הצהרת בריאות'} (חתום)`,
             file_url: sig3Url,
             document_type: 'delivery',
@@ -2413,7 +2772,7 @@ export default function VehicleHandoverWizard() {
           const doc = availableDeliveryForms.find((form) => form.id === docId);
           vehicleDocRows.push({
             vehicle_id: vehicleId,
-            handover_id: handoverId,
+            handover_id: handoverFk,
             title: `${doc?.title || 'מסמך מסירה'} (חתום)`,
             file_url: genUrl,
             document_type: 'delivery',
@@ -2423,7 +2782,7 @@ export default function VehicleHandoverWizard() {
         if (hasLicenseStep && !skipLicenseStep && frontUrl) {
           vehicleDocRows.push({
             vehicle_id: vehicleId,
-            handover_id: handoverId,
+            handover_id: handoverFk,
             title: `רישיון נהיגה (קדמי) — מסירה`,
             file_url: frontUrl,
             document_type: 'delivery',
@@ -2433,7 +2792,7 @@ export default function VehicleHandoverWizard() {
         if (hasLicenseStep && !skipLicenseStep && backUrl) {
           vehicleDocRows.push({
             vehicle_id: vehicleId,
-            handover_id: handoverId,
+            handover_id: handoverFk,
             title: `רישיון נהיגה (אחורי) — מסירה`,
             file_url: backUrl,
             document_type: 'delivery',
@@ -2688,6 +3047,10 @@ export default function VehicleHandoverWizard() {
           setUpgradeUiByDocId,
           returnFormUiByDocId,
           setReturnFormUiByDocId,
+          genericChecklistByDocId,
+          setGenericChecklistByDocId,
+          genericSigMetaByDocId,
+          setGenericSigMetaByDocId,
         })}
       </main>
 

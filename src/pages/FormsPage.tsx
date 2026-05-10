@@ -45,14 +45,19 @@ import { HANDOVER_ACCESSORY_CEILINGS, formatCeilingPrice } from '@/lib/accessory
 import { buildFormsAutoFillContext, FormsCategory, resolveSchemaAutoFill } from '@/lib/formsAutofill';
 import {
   type FormsChecklistTableDef,
+  type FormsChecklistTableVariant,
   type FormsCustomFieldDef,
   type FormsTemplateExtensions,
   DEFAULT_FORMS_CHECKLIST_COLUMNS,
+  DEFAULT_FORMS_PDF_DISPLAY_FLAGS,
+  type FormsPdfDisplayFlags,
   generateFormsPdfBlob,
   mergeExtensionsIntoSchema,
   normalizeChecklistTable,
+  normalizePdfDisplayFlags,
   parseTemplateExtensions,
 } from '@/lib/formsGeneratedPdf';
+import { orgDocumentHandoverLabel } from '@/lib/orgDocumentHandoverFilter';
 import {
   Dialog,
   DialogContent,
@@ -81,7 +86,7 @@ function FormCardSkeleton() {
 
 const DEFAULT_FORM_FOLDERS: FormsCategory[] = ['תפעול', 'בטיחות', 'מסמכים אישיים'];
 type CategoryFilter = FormsCategory | 'הכל';
-const FORMS_MANAGER_EMAIL_ALLOWLIST = ['malachiroei@gmail.com'];
+const FORMS_MANAGER_EMAIL_ALLOWLIST = ['malachiroei@gmail.com', 'malachiroel@gmail.com'];
 const ALLOWED_FORM_EXTENSIONS = ['pdf', 'doc', 'docx'];
 type TemplateMode = 'file' | 'generated';
 const DELETE_FORMS_PASSWORD = '2101';
@@ -152,6 +157,7 @@ export default function FormsPage() {
     () => buildFormsAutoFillContext({ user, driver: contextDriver, vehicle: contextVehicle }),
     [contextDriver, contextVehicle, user],
   );
+
   const canManageForms = useMemo(() => {
     if (isManager) return true;
     if (user?.email && FORMS_MANAGER_EMAIL_ALLOWLIST.includes(user.email.toLowerCase())) return true;
@@ -195,6 +201,8 @@ export default function FormsPage() {
   const [contentEditorConverting, setContentEditorConverting] = useState(false);
   const [contentEditorCustomFields, setContentEditorCustomFields] = useState<FormsCustomFieldDef[]>([]);
   const [contentEditorChecklistTables, setContentEditorChecklistTables] = useState<FormsChecklistTableDef[]>([]);
+  const [pdfDisplayFlags, setPdfDisplayFlags] = useState<FormsPdfDisplayFlags>(DEFAULT_FORMS_PDF_DISPLAY_FLAGS);
+
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [formToDelete, setFormToDelete] = useState<(OrgDocument & { category: FormsCategory }) | null>(null);
   const [deletePassword, setDeletePassword] = useState('');
@@ -376,11 +384,14 @@ export default function FormsPage() {
     const isGenerated = schema?.template_mode === 'generated';
     const parsed = parseTemplateExtensions(schema);
     setContentEditingForm(form);
-    setContentEditorTitle(form.title ?? '');
+    setContentEditorTitle(orgDocumentHandoverLabel(form) || form.title || '');
     setContentEditorDescription(form.description ?? '');
-    setContentEditorValue(isGenerated ? String(schema?.template_content ?? '') : '');
+    const templateBody = String(schema?.template_content ?? '').trim();
+    const fallbackDesc = String(form.description ?? '').trim();
+    setContentEditorValue(isGenerated ? String(schema?.template_content ?? '') : templateBody || fallbackDesc);
     setContentEditorCustomFields(parsed.custom_fields ?? []);
     setContentEditorChecklistTables(parsed.checklist_tables ?? []);
+    setPdfDisplayFlags(normalizePdfDisplayFlags(form));
     setContentEditorConverting(!isGenerated);
     setContentEditorOpen(true);
   };
@@ -389,14 +400,20 @@ export default function FormsPage() {
     formTitle: string,
     content: string,
     templateExtensions?: FormsTemplateExtensions | null,
+    pdfDisplayFlags?: FormsPdfDisplayFlags | null,
   ) => {
     const blob = await generateFormsPdfBlob({
       formTitle,
       mainContent: content,
       extensions: templateExtensions ?? undefined,
+      displayFlags: normalizePdfDisplayFlags(pdfDisplayFlags),
+      printedAt: new Date(),
       headerContext: {
         employeeName: autoFillContext.employee_name,
         vehicleNumber: autoFillContext.vehicle_number,
+        employeeNumber: autoFillContext.employee_number,
+        idNumber: autoFillContext.id_number,
+        mobile: autoFillContext.mobile,
       },
     });
     const safeTitle = formTitle.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80) || 'generated_form';
@@ -421,6 +438,7 @@ export default function FormsPage() {
     includeReturn?: boolean;
     includeHandover?: boolean;
     templateExtensions?: FormsTemplateExtensions | null;
+    pdfDisplayFlags?: FormsPdfDisplayFlags | null;
   }) => {
     const extPayload: FormsTemplateExtensions | undefined =
       (args.templateExtensions?.custom_fields?.length ?? 0) > 0 ||
@@ -428,7 +446,19 @@ export default function FormsPage() {
         ? args.templateExtensions ?? undefined
         : undefined;
 
-    const fileUrl = await uploadGeneratedDocumentPdf(args.formTitle, args.content, extPayload);
+    const displayFlags = normalizePdfDisplayFlags(args.pdfDisplayFlags ?? args.existing);
+    const fileUrl = await uploadGeneratedDocumentPdf(args.formTitle, args.content, extPayload, displayFlags);
+
+    const pdfFlagColumns = {
+      show_date: displayFlags.show_date,
+      show_time: displayFlags.show_time,
+      show_driver_name: displayFlags.show_driver_name,
+      show_license_plate: displayFlags.show_license_plate,
+      show_employee_id: displayFlags.show_employee_id,
+      show_id_number: displayFlags.show_id_number,
+      show_mobile: displayFlags.show_mobile,
+      show_signature_block: displayFlags.show_signature_block,
+    };
 
     const existingSchema =
       args.existing?.json_schema && typeof args.existing.json_schema === 'object'
@@ -452,9 +482,26 @@ export default function FormsPage() {
     const mergedSchema = mergeExtensionsIntoSchema(baseJsonSchema, extPayload ?? null);
     const jsonSchema = withCustomFolderInSchema(mergedSchema, args.formCategory);
 
-    const delivery = args.includeDelivery ?? includeInDelivery;
-    const ret = args.includeReturn ?? includeInReturn;
-    const effectiveIncludeInHandover = (args.includeHandover ?? includeInHandover) || delivery || ret;
+    /** אל תfallback ל-state של דיאלוג "טופס חדש" בעדכון מסמך קיים — זה דרס include_in_delivery והחזיר דגלים אחרי שמירה */
+    const delivery =
+      args.includeDelivery !== undefined
+        ? args.includeDelivery
+        : args.existing != null
+          ? Boolean(args.existing.include_in_delivery)
+          : includeInDelivery;
+    const ret =
+      args.includeReturn !== undefined
+        ? args.includeReturn
+        : args.existing != null
+          ? Boolean(args.existing.include_in_return)
+          : includeInReturn;
+    const handoverExplicit =
+      args.includeHandover !== undefined
+        ? args.includeHandover
+        : args.existing != null
+          ? Boolean(args.existing.include_in_handover)
+          : includeInHandover;
+    const effectiveIncludeInHandover = handoverExplicit || delivery || ret;
 
     if (args.existing) {
       await updateForm.mutateAsync({
@@ -467,6 +514,7 @@ export default function FormsPage() {
         include_in_handover: effectiveIncludeInHandover,
         include_in_delivery: delivery,
         include_in_return: ret,
+        ...pdfFlagColumns,
       } as any);
       return;
     }
@@ -485,6 +533,7 @@ export default function FormsPage() {
       requires_signature: true,
       sort_order: 0,
       is_active: true,
+      ...pdfFlagColumns,
     } as any);
   };
 
@@ -789,7 +838,10 @@ ${STANDARD_INPUT_FOOTER_TEXT}
           const schema = (f.json_schema as any) ?? {};
           const byKey = String(schema?.builtin_template_key ?? '').trim() === tpl.key;
           const byNormalizedTitle = String(f.title ?? '').replace(/\s+/g, ' ').trim() === normalizedTitle;
-          return byKey || byNormalizedTitle;
+          const titleNorm = String(f.title ?? '').replace(/\s+/g, ' ').trim();
+          const byReceptionFamily =
+            tpl.key === 'system-reception-form' && titleNorm.includes('טופס קבלת רכב');
+          return byKey || byNormalizedTitle || byReceptionFamily;
         }) ?? null;
         if (existing) {
           // Non-destructive sync: never overwrite existing form content edited by admins.
@@ -1019,9 +1071,7 @@ ${STANDARD_INPUT_FOOTER_TEXT}
         formDescription: contentEditorDescription.trim(),
         formCategory: contentEditingForm.category,
         content: contentEditorValue.trim(),
-        includeDelivery: Boolean(contentEditingForm.include_in_delivery),
-        includeReturn: Boolean(contentEditingForm.include_in_return),
-        includeHandover: Boolean(contentEditingForm.include_in_handover),
+        pdfDisplayFlags,
         templateExtensions: {
           custom_fields: contentEditorCustomFields.filter((f) => String(f.label).trim().length > 0),
           checklist_tables: contentEditorChecklistTables.map((t) => normalizeChecklistTable(t)),
@@ -1685,7 +1735,7 @@ ${STANDARD_INPUT_FOOTER_TEXT}
                       <CardHeader>
                         <CardTitle className="text-lg flex items-center gap-2">
                           <FileText className="h-4 w-4" />
-                          <span className="truncate forms-file-name">{form.title}</span>
+                          <span className="truncate forms-file-name">{orgDocumentHandoverLabel(form)}</span>
                           {canShowManagementControls && (
                             <button
                               type="button"
@@ -2007,6 +2057,7 @@ ${STANDARD_INPUT_FOOTER_TEXT}
             setContentEditorConverting(false);
             setContentEditorCustomFields([]);
             setContentEditorChecklistTables([]);
+            setPdfDisplayFlags({ ...DEFAULT_FORMS_PDF_DISPLAY_FLAGS });
           }
         }}
       >
@@ -2017,7 +2068,7 @@ ${STANDARD_INPUT_FOOTER_TEXT}
               <DialogDescription>
                 {contentEditorConverting
                   ? 'המסמך הנוכחי אינו מסמך מובנה. בשמירה, יווצר PDF חדש לפי התוכן שתזין/י כאן.'
-                  : 'עריכת תוכן הטופס. כל טופס כולל בכותרת ובסוף תאריך, שעה וחתימת עובד (ב-PDF). שמירה אינה סוגרת את החלון — סגרו בסיום העריכה.'}
+                  : 'עריכת תוכן התבנית. שמירה אינה סוגרת את החלון — סגרו בסיום העריכה.'}
               </DialogDescription>
             </DialogHeader>
 
@@ -2042,6 +2093,37 @@ ${STANDARD_INPUT_FOOTER_TEXT}
                   placeholder="הזן/י תיאור טופס"
                   className="resize-none"
                 />
+              </div>
+
+              <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-3">
+                <Label className="text-base font-semibold">שדות להצגה ב-PDF</Label>
+                <p className="text-xs text-muted-foreground">
+                  בחרו מה יופיע בכותרת ובסוף הקובץ המודפס לכל טופס בנפרד. הערכים נשמרים עם &quot;שמור תוכן&quot;.
+                </p>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {(
+                    [
+                      ['show_date', 'תאריך חתימה'],
+                      ['show_time', 'שעת חתימה'],
+                      ['show_driver_name', 'שם נהג / עובד'],
+                      ['show_license_plate', 'מספר רישוי'],
+                      ['show_employee_id', 'מספר עובד'],
+                      ['show_id_number', 'מספר ת.ז'],
+                      ['show_mobile', 'מספר נייד'],
+                      ['show_signature_block', 'בלוק חתימה בתחתית'],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <label key={key} className="flex cursor-pointer items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={pdfDisplayFlags[key]}
+                        onCheckedChange={(v) =>
+                          setPdfDisplayFlags((prev) => ({ ...prev, [key]: Boolean(v) }))
+                        }
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
               </div>
 
               <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">
@@ -2140,7 +2222,7 @@ ${STANDARD_INPUT_FOOTER_TEXT}
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  ב-PDF יוצגו עמודות: {DEFAULT_FORMS_CHECKLIST_COLUMNS.map((c) => c.label).join(' · ')} — סימון ידני (☐) ליד כל פריט.
+                  ניתן לבחור טבלת סימון רגילה (תקין / לא תקין / טופל) או טבלת אביזרים כמו בטופס קבלת רכב (✓/✗, תקרה, הערות באשף).
                 </p>
                 {contentEditorChecklistTables.length === 0 ? (
                   <p className="text-sm text-muted-foreground">אין טבלאות — לחצו &quot;הוסף טבלה&quot;.</p>
@@ -2148,7 +2230,7 @@ ${STANDARD_INPUT_FOOTER_TEXT}
                   <div className="space-y-4">
                     {contentEditorChecklistTables.map((table) => (
                       <div key={table.id} className="space-y-2 rounded-md border border-cyan-500/20 bg-background/40 p-3">
-                        <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                           <Input
                             value={table.title ?? ''}
                             onChange={(e) => {
@@ -2160,6 +2242,30 @@ ${STANDARD_INPUT_FOOTER_TEXT}
                             placeholder="כותרת הטבלה"
                             className="max-w-md flex-1"
                           />
+                          <label className="flex flex-wrap items-center gap-2 text-sm">
+                            <span className="text-muted-foreground">סוג:</span>
+                            <select
+                              className="rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                              value={table.variant === 'accessory' ? 'accessory' : 'tri_state'}
+                              onChange={(e) => {
+                                const v = (e.target.value === 'accessory' ? 'accessory' : 'tri_state') as FormsChecklistTableVariant;
+                                setContentEditorChecklistTables((prev) =>
+                                  prev.map((t) => {
+                                    if (t.id !== table.id) return t;
+                                    if (v === 'accessory') {
+                                      const ceilings = t.rows.map((_, i) => t.row_ceiling_labels?.[i] ?? '');
+                                      return normalizeChecklistTable({ ...t, variant: 'accessory', row_ceiling_labels: ceilings });
+                                    }
+                                    const { row_ceiling_labels: _r, variant: _v, ...rest } = t;
+                                    return normalizeChecklistTable({ ...rest, variant: 'tri_state' });
+                                  }),
+                                );
+                              }}
+                            >
+                              <option value="tri_state">תקין / לא תקין / טופל</option>
+                              <option value="accessory">אביזרים (✓/✗/תקרה)</option>
+                            </select>
+                          </label>
                           <Button
                             type="button"
                             size="sm"
@@ -2176,7 +2282,7 @@ ${STANDARD_INPUT_FOOTER_TEXT}
                         <div className="space-y-2">
                           <span className="text-xs text-muted-foreground">שורות הפריטים (כל שורה = פריט לבדיקה):</span>
                           {table.rows.map((row, rowIdx) => (
-                            <div key={`${table.id}-row-${rowIdx}`} className="flex gap-2">
+                            <div key={`${table.id}-row-${rowIdx}`} className="flex flex-wrap items-center gap-2">
                               <Input
                                 value={row}
                                 onChange={(e) => {
@@ -2191,7 +2297,26 @@ ${STANDARD_INPUT_FOOTER_TEXT}
                                   );
                                 }}
                                 placeholder={`פריט ${rowIdx + 1}`}
+                                className="min-w-[140px] flex-1"
                               />
+                              {table.variant === 'accessory' ? (
+                                <Input
+                                  value={table.row_ceiling_labels?.[rowIdx] ?? ''}
+                                  onChange={(e) => {
+                                    const v = e.target.value;
+                                    setContentEditorChecklistTables((prev) =>
+                                      prev.map((t) => {
+                                        if (t.id !== table.id) return t;
+                                        const ceilings = [...(t.row_ceiling_labels ?? t.rows.map(() => ''))];
+                                        ceilings[rowIdx] = v;
+                                        return normalizeChecklistTable({ ...t, row_ceiling_labels: ceilings });
+                                      }),
+                                    );
+                                  }}
+                                  placeholder="תקרה (₪)"
+                                  className="w-28 shrink-0"
+                                />
+                              ) : null}
                               <Button
                                 type="button"
                                 size="icon"
@@ -2200,10 +2325,16 @@ ${STANDARD_INPUT_FOOTER_TEXT}
                                   setContentEditorChecklistTables((prev) =>
                                     prev.map((t) => {
                                       if (t.id !== table.id) return t;
-                                      return {
+                                      const nextRows = t.rows.filter((_, i) => i !== rowIdx);
+                                      const nextCeilings =
+                                        t.variant === 'accessory' && t.row_ceiling_labels
+                                          ? t.row_ceiling_labels.filter((_, i) => i !== rowIdx)
+                                          : t.row_ceiling_labels;
+                                      return normalizeChecklistTable({
                                         ...t,
-                                        rows: t.rows.filter((_, i) => i !== rowIdx),
-                                      };
+                                        rows: nextRows,
+                                        row_ceiling_labels: nextCeilings,
+                                      });
                                     }),
                                   )
                                 }
@@ -2220,7 +2351,16 @@ ${STANDARD_INPUT_FOOTER_TEXT}
                             onClick={() =>
                               setContentEditorChecklistTables((prev) =>
                                 prev.map((t) =>
-                                  t.id === table.id ? { ...t, rows: [...t.rows, `פריט ${t.rows.length + 1}`] } : t,
+                                  t.id === table.id
+                                    ? normalizeChecklistTable({
+                                        ...t,
+                                        rows: [...t.rows, `פריט ${t.rows.length + 1}`],
+                                        row_ceiling_labels:
+                                          t.variant === 'accessory'
+                                            ? [...(t.row_ceiling_labels ?? t.rows.map(() => '')), '']
+                                            : t.row_ceiling_labels,
+                                      })
+                                    : t,
                                 ),
                               )
                             }
@@ -2687,7 +2827,7 @@ ${STANDARD_INPUT_FOOTER_TEXT}
               filteredArchivedForms.map((form) => (
                 <div key={form.id} className="flex items-center gap-2 rounded-md border border-border p-3">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{form.title}</p>
+                    <p className="truncate font-medium">{orgDocumentHandoverLabel(form)}</p>
                     <p className="text-xs text-muted-foreground">
                       מזהה: {form.id} | עודכן: {new Date(form.updated_at).toLocaleString('he-IL')}
                     </p>
