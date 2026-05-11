@@ -1,5 +1,11 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  emailsSubscribedToTopic,
+  parseNotificationEmailList,
+  parseTopicPrefs,
+} from '../_shared/notificationEmailRouting.ts';
+import { wrapEmailBodyWithBrand } from '../_shared/emailBrandHeader.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -269,13 +275,13 @@ serve(async (req) => {
         .maybeSingle();
       const uiEmail = String((ui as any)?.admin_email ?? '').trim();
 
-      const { data: kv } = await admin
-        .from('system_settings')
-        .select('value')
-        .eq('key', 'notification_emails')
-        .maybeSingle();
-      const list = (kv as any)?.value;
-      const kvEmails: string[] = Array.isArray(list) ? list.map((x) => String(x ?? '').trim()) : [];
+      const [kvRes, prefRes] = await Promise.all([
+        admin.from('system_settings').select('value').eq('key', 'notification_emails').maybeSingle(),
+        admin.from('system_settings').select('value').eq('key', 'notification_email_topic_prefs').maybeSingle(),
+      ]);
+      const list = parseNotificationEmailList((kvRes as { data?: { value?: unknown } | null })?.data?.value);
+      const prefs = parseTopicPrefs((prefRes as { data?: { value?: unknown } | null })?.data?.value);
+      const kvEmails = emailsSubscribedToTopic(list, prefs, 'mileage_update');
 
       recipients = uniqueEmails([uiEmail, ...kvEmails]);
     } catch {
@@ -287,7 +293,7 @@ serve(async (req) => {
     if (resendApiKey && recipients.length > 0) {
       const safeDocUrl = escHtml(docUrl);
       const safeVehicleUrl = escHtml(vehicleUrl || '');
-      const html = `
+      const innerHtml = `
         <div dir="rtl" style="font-family: Arial, sans-serif; text-align: right;">
           <h2 style="margin-bottom: 8px;">עדכון ק״מ</h2>
           <p style="margin: 0 0 10px 0;">
@@ -303,6 +309,8 @@ serve(async (req) => {
           <p style="font-size: 12px; color: #6b7280; margin-top: 16px;">נשלח אוטומטית ממערכת Fleet Manager Pro.</p>
         </div>
       `.trim();
+
+      const html = wrapEmailBodyWithBrand(supabaseUrl, innerHtml);
 
       const subject = `עדכון ק״מ — ${plate || 'רכב'} — ${Number(odometerValue).toLocaleString('he-IL')} ק״מ`;
       const send = await sendResendEmail({

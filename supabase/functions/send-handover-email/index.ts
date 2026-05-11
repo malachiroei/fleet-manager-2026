@@ -27,7 +27,12 @@
 
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { supabasePublicObjectUrl } from '../_shared/supabasePublicUrl.ts';
+import { emailFleetBrandHeaderHtml } from '../_shared/emailBrandHeader.ts';
+import {
+  emailsSubscribedToTopic,
+  parseNotificationEmailList,
+  parseTopicPrefs,
+} from '../_shared/notificationEmailRouting.ts';
 
 // ── CORS ────────────────────────────────────────────────────────────────────
 const corsHeaders = {
@@ -161,14 +166,16 @@ serve(async (req) => {
     // ── 0. Resolve CC recipients from public.system_settings ─────────────────
     let ccEmails: string[] = [fallbackManagerEmail];
     try {
-      const { data: settingsRow } = await supabase
-        .from('system_settings' as never)
-        .select('value')
-        .eq('key', 'notification_emails')
-        .maybeSingle() as { data: { value: unknown } | null };
-      const arr = settingsRow?.value;
-      if (Array.isArray(arr) && arr.length > 0) {
-        ccEmails = (arr as string[]).filter((e) => typeof e === 'string' && e.includes('@'));
+      const [emRes, prefRes] = await Promise.all([
+        supabase.from('system_settings' as never).select('value').eq('key', 'notification_emails').maybeSingle(),
+        supabase.from('system_settings' as never).select('value').eq('key', 'notification_email_topic_prefs').maybeSingle(),
+      ]);
+
+      const list = parseNotificationEmailList((emRes as { data?: { value?: unknown } | null })?.data?.value);
+      const prefs = parseTopicPrefs((prefRes as { data?: { value?: unknown } | null })?.data?.value);
+      const filtered = emailsSubscribedToTopic(list, prefs, 'handover_wizard');
+      if (filtered.length > 0) {
+        ccEmails = filtered;
       }
     } catch (settingsErr) {
       console.warn('Could not read system_settings.notification_emails — using env fallback:', settingsErr);
@@ -250,7 +257,7 @@ serve(async (req) => {
       .join('');
 
     const sentAt = new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
-    const logoUrl = supabasePublicObjectUrl(supabaseUrl, 'logos/logo.jpg');
+    const brandHeader = emailFleetBrandHeaderHtml(supabaseUrl);
 
     const html = `
 <div dir="rtl" style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f8fafc;">
@@ -258,7 +265,7 @@ serve(async (req) => {
   <!-- Header -->
   <div style="background: linear-gradient(135deg, #0d1b2e 0%, #1e3a5f 100%); padding: 32px 28px; border-radius: 12px 12px 0 0;">
     <div style="margin: 0 0 14px; text-align: right;">
-      <img src="${logoUrl}" alt="Fleet Manager Pro" style="height: 44px; width: auto; display: inline-block;" />
+      ${brandHeader}
     </div>
     <h1 style="color: #22d3ee; margin: 0 0 6px; font-size: 22px;">✅ אשף מסירת רכב — הושלם בהצלחה</h1>
     <p style="color: rgba(255,255,255,0.6); margin: 0; font-size: 14px;">מערכת ניהול ציי רכב — Fleet Manager 2026</p>

@@ -1,6 +1,8 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { callerMayManageOrgForComplianceActions } from '../_shared/complianceActionPermission.ts';
+import { wrapEmailBodyWithBrand } from '../_shared/emailBrandHeader.ts';
+import { bccExcludingPrimary, loadFilteredNotificationEmails } from '../_shared/loadFilteredNotificationEmails.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -249,7 +251,7 @@ serve(async (req) => {
       return json({ error: ins.error.message }, 500);
     }
 
-    const html = buildLeasingEmailHtml({
+    const innerHtml = buildLeasingEmailHtml({
       taskLabel,
       plate: String(v.plate_number ?? '—'),
       manufacturer: String(v.manufacturer ?? '—'),
@@ -258,10 +260,24 @@ serve(async (req) => {
       primaryHref: magicLinkUrl,
     });
 
+    const html = wrapEmailBodyWithBrand(supabaseUrl, innerHtml);
+    const staffBcc = bccExcludingPrimary(
+      [externalTo],
+      await loadFilteredNotificationEmails(admin, 'compliance_vehicle_renewal_copy'),
+    );
+
     const subject =
       taskKey === 'insurance'
         ? `בקשת עדכון ביטוח — רכב ${v.plate_number ?? ''}`.trim()
         : `בקשת עדכון רישוי שנתי — רכב ${v.plate_number ?? ''}`.trim();
+
+    const resendPayload: Record<string, unknown> = {
+      from: FROM_EMAIL,
+      to: [externalTo],
+      subject,
+      html,
+    };
+    if (staffBcc.length > 0) resendPayload.bcc = staffBcc;
 
     const resendResp = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -269,12 +285,7 @@ serve(async (req) => {
         Authorization: `Bearer ${resendApiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        from: FROM_EMAIL,
-        to: [externalTo],
-        subject,
-        html,
-      }),
+      body: JSON.stringify(resendPayload),
     });
 
     const resendText = await resendResp.text();

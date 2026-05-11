@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { supabasePublicObjectUrl } from '../_shared/supabasePublicUrl.ts';
+import { wrapEmailBodyWithBrand } from '../_shared/emailBrandHeader.ts';
 
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -11,7 +11,8 @@ const corsHeaders: Record<string, string> = {
 };
 
 interface NotificationRequest {
-  to: string;
+  /** כתובת אחת או רשימה (Resend) */
+  to: string | string[];
   subject: string;
   payload: {
     handoverId?: string;
@@ -123,8 +124,15 @@ serve(async (req) => {
     }
 
     const { to, subject, payload } = (await req.json()) as NotificationRequest;
+    const toList = Array.isArray(to) ? to.map((x) => String(x ?? '').trim()).filter(Boolean) : [String(to ?? '').trim()].filter(Boolean);
+    if (toList.length === 0) {
+      return new Response(JSON.stringify({ error: 'Missing or empty `to` recipient(s)' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
     console.log('[send-handover-notification] received request:', {
-      to,
+      to: toList,
       subject,
       handoverId: payload.handoverId,
       odometerReading: payload.odometerReading,
@@ -202,12 +210,8 @@ serve(async (req) => {
       ? `${appBaseUrl}/vehicles/${payload.vehicleId}#handover-${payload.handoverId}`
       : persistedPdfUrl);
 
-    const logoUrl = supabasePublicObjectUrl(supabaseUrl, 'logos/logo.jpg');
-    const html = `
+    const innerHtml = `
       <div style="font-family: Arial, sans-serif; direction: rtl; text-align: right;">
-        <div style="margin: 0 0 14px; text-align: right;">
-          <img src="${logoUrl}" alt="Fleet Manager Pro" style="height: 44px; width: auto; display: inline-block;" />
-        </div>
         <h2>${payload.handoverType === 'delivery' ? 'עודכן טופס מסירת רכב' : 'עודכן טופס החזרת רכב'}</h2>
         <p><strong>סוג מסירה:</strong> ${payload.assignmentMode === 'replacement' ? 'מסירת רכב חליפי' : 'מסירה קבועה'}</p>
         <p><strong>רכב:</strong> ${payload.vehicleLabel}</p>
@@ -228,6 +232,8 @@ serve(async (req) => {
       </div>
     `;
 
+    const html = wrapEmailBodyWithBrand(supabaseUrl, innerHtml);
+
     const resendResponse = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -236,7 +242,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         from: fromEmail,
-        to: [to],
+        to: toList,
         subject,
         html,
         attachments: await buildAttachments(payload, pdfContentBase64),

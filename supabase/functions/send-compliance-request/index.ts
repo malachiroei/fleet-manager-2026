@@ -1,6 +1,8 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { callerMayManageOrgForComplianceActions } from '../_shared/complianceActionPermission.ts';
+import { wrapEmailBodyWithBrand } from '../_shared/emailBrandHeader.ts';
+import { bccExcludingPrimary, loadFilteredNotificationEmails } from '../_shared/loadFilteredNotificationEmails.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -333,7 +335,7 @@ serve(async (req) => {
     }
 
     const primaryHref = persistedToken ? magicLinkUrl : `${appBase}/auth`;
-    const html = buildHebrewComplianceEmail({
+    const innerHtml = buildHebrewComplianceEmail({
       taskKey,
       driverName,
       taskLabel,
@@ -343,10 +345,23 @@ serve(async (req) => {
       persistedToken,
       adminNotePlain: adminNote || null,
     });
+    const html = wrapEmailBodyWithBrand(supabaseUrl, innerHtml);
+    const staffBcc = bccExcludingPrimary(
+      [driverEmail],
+      await loadFilteredNotificationEmails(admin, 'compliance_driver_copy'),
+    );
 
     /** נושא בעברית בלבד */
     const emailSubject =
       taskKey === 'driver_license' ? 'נדרש עדכון רישיון נהיגה' : `נדרש עדכון מסמך: ${taskLabel}`;
+
+    const resendPayload: Record<string, unknown> = {
+      from: FROM_EMAIL,
+      to: [driverEmail],
+      subject: emailSubject,
+      html,
+    };
+    if (staffBcc.length > 0) resendPayload.bcc = staffBcc;
 
     const resendResp = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -354,12 +369,7 @@ serve(async (req) => {
         Authorization: `Bearer ${resendApiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        from: FROM_EMAIL,
-        to: [driverEmail],
-        subject: emailSubject,
-        html,
-      }),
+      body: JSON.stringify(resendPayload),
     });
 
     const resendText = await resendResp.text();

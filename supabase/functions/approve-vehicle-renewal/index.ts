@@ -1,6 +1,8 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { callerMayManageOrgForComplianceActions } from '../_shared/complianceActionPermission.ts';
+import { wrapEmailBodyWithBrand } from '../_shared/emailBrandHeader.ts';
+import { bccExcludingPrimary, loadFilteredNotificationEmails } from '../_shared/loadFilteredNotificationEmails.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -246,7 +248,7 @@ serve(async (req) => {
     } else {
       const plate = String(vehicle.plate_number ?? '');
       const vehLabel = `${vehicle.manufacturer ?? ''} ${vehicle.model ?? ''}`.trim();
-      const html = `
+      const innerHtml = `
 <div dir="rtl" style="font-family:'Segoe UI',Tahoma,Arial,sans-serif;max-width:560px;margin:0 auto;text-align:right;color:#0f172a;">
   <p style="font-size:17px;"><strong>${driverName ? `שלום ${driverName}` : 'שלום'}</strong>,</p>
   <p style="line-height:1.7;">מצורף צילום מעודכן של ${taskKey === 'insurance' ? 'ביטוח הרכב' : 'רישיון הרכב (טסט)'} עבור רכב החברה.</p>
@@ -255,6 +257,13 @@ serve(async (req) => {
   <p style="line-height:1.7;">נא <strong>להדפיס</strong> ולשים העתק ברכב.</p>
   <p style="margin-top:24px;color:#64748b;">בברכה,<br/>מחלקת רכב</p>
 </div>`.trim();
+
+      const html = wrapEmailBodyWithBrand(supabaseUrl, innerHtml);
+
+      const staffBcc = bccExcludingPrimary(
+        [driverEmail],
+        await loadFilteredNotificationEmails(admin, 'compliance_vehicle_renewal_copy'),
+      );
 
       let attachment:
         | { filename: string; content: string }
@@ -292,6 +301,7 @@ serve(async (req) => {
         html,
       };
       if (attachment) payload.attachments = [attachment];
+      if (staffBcc.length > 0) payload.bcc = staffBcc;
 
       const resendResp = await fetch('https://api.resend.com/emails', {
         method: 'POST',

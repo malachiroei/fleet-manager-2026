@@ -599,6 +599,7 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
       }
       await updateVehicle.mutateAsync(payload);
       const notify = await sendFleetFieldUpdateNotification({
+        emailTopic: 'vehicle_test_license',
         subject: `עדכון טסט — ${vehicle.plate_number}`,
         headline: 'תוקף טסט עודכן במערכת',
         plateNumber: String(vehicle.plate_number ?? ''),
@@ -646,6 +647,7 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
       }
       await updateVehicle.mutateAsync(payload);
       const notify = await sendFleetFieldUpdateNotification({
+        emailTopic: 'vehicle_insurance',
         subject: `עדכון ביטוח — ${vehicle.plate_number}`,
         headline: 'תוקף ביטוח עודכן במערכת',
         plateNumber: String(vehicle.plate_number ?? ''),
@@ -704,6 +706,7 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
         next_tire_change_date: tireNextDate.trim() || null,
       });
       const notify = await sendFleetFieldUpdateNotification({
+        emailTopic: 'vehicle_tires',
         subject: `עדכון צמיגים — ${vehicle.plate_number}`,
         headline: 'הוחלפו צמיגים (רישום במערכת)',
         plateNumber: String(vehicle.plate_number ?? ''),
@@ -750,6 +753,7 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
         'car_wash',
       );
       const notify = await sendFleetFieldUpdateNotification({
+        emailTopic: 'fleet_misc_updates',
         subject: `עדכון שטיפה — ${vehicle.plate_number}`,
         headline: 'תועדה שטיפת רכב (מסמך במערכת)',
         plateNumber: String(vehicle.plate_number ?? ''),
@@ -916,6 +920,7 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
       const checklistUrl = await uploadToVehicleBucket(vehicle.id, 'periodic_inspection_snapshot', snapshotFile);
       await insertVehicleDocument(vehicle.id, 'ביקורת תקופתית — צילום טופס', checklistUrl, 'periodic_inspection');
       const notify = await sendFleetFieldUpdateNotification({
+        emailTopic: 'vehicle_periodic_inspection',
         subject: `ביקורת תקופתית — ${vehicle.plate_number}`,
         headline: 'ביקורת תקופתית נרשמה במערכת',
         plateNumber: String(vehicle.plate_number ?? ''),

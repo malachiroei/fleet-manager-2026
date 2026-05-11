@@ -7,6 +7,13 @@
  * - `notificationType: "fleet_field"`: מייל גנרי לטסט / ביטוח / צמיגים (אותו endpoint פרוס כמו טיפול).
  */
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { wrapEmailBodyWithBrand } from '../_shared/emailBrandHeader.ts';
+import {
+  coerceEmailTopic,
+  type NotificationEmailTopicId,
+} from '../_shared/notificationEmailRouting.ts';
+import { loadFilteredNotificationEmails, uniqueEmailList } from '../_shared/loadFilteredNotificationEmails.ts';
 
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -35,6 +42,8 @@ export interface ServiceUpdateNotificationBody {
   nextServiceKm: number | null;
   serviceIntervalKm: number | null;
   invoicePhotoUrl: string;
+  /** fleet_field בלבד — נושא לניתוב מייל בהגדרות */
+  emailTopic?: string;
   /** fleet_field בלבד */
   headline?: string;
   rows?: FleetFieldUpdateRow[];
@@ -81,9 +90,8 @@ serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      const to =
-        (body.to && String(body.to).includes('@') ? String(body.to).trim() : '') ||
-        'malachiroei@gmail.com';
+      const fleetTopic = coerceEmailTopic(body.emailTopic);
+      const recipients = await resolveRecipients(fleetTopic, body.to);
       const headline = esc(body.headline?.trim() || subject);
       const safeDoc = String(body.documentUrl ?? '').trim().replace(/"/g, '');
 
@@ -111,7 +119,7 @@ serve(async (req) => {
           ? `<p style="margin-top:18px;"><a href="${ctaHrefRaw}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:10px 16px;background:#0891b2;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;">${ctaLbl}</a></p>`
           : '';
 
-      const html = `
+      const innerHtml = `
       <div dir="rtl" style="font-family: Arial, sans-serif; text-align: right;">
         <h2 style="margin-bottom:8px;">${headline}</h2>
         ${plateBlock}
@@ -122,6 +130,8 @@ serve(async (req) => {
       </div>
     `.trim();
 
+      const html = supabaseUrl ? wrapEmailBodyWithBrand(supabaseUrl, innerHtml) : innerHtml;
+
       const resendResp = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
@@ -130,7 +140,7 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           from: fromEmail,
-          to: [to],
+          to: recipients,
           subject,
           html,
         }),
@@ -161,7 +171,7 @@ serve(async (req) => {
 
     const safePhotoHref = String(body.invoicePhotoUrl ?? '').replace(/"/g, '');
 
-    const html = `
+    const innerHtml = `
       <div dir="rtl" style="font-family: Arial, sans-serif; text-align: right;">
         <h2>${esc(subject)}</h2>
         <table style="border-collapse: collapse; width: 100%; max-width: 480px;">
@@ -180,6 +190,8 @@ serve(async (req) => {
       </div>
     `.trim();
 
+    const html = supabaseUrl ? wrapEmailBodyWithBrand(supabaseUrl, innerHtml) : innerHtml;
+
     const resendResp = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -188,7 +200,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         from: fromEmail,
-        to: [to],
+        to: recipients,
         subject,
         html,
       }),

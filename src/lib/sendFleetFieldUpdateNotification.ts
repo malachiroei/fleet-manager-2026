@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { invokeSupabaseEdgeFunction } from '@/lib/supabase/invokeEdgeFunction';
+import type { NotificationEmailTopicId } from '@/lib/notificationEmailRouting';
 
 export type FleetFieldUpdateRow = { label: string; value: string };
 
@@ -8,6 +9,8 @@ const FUNCTION_NAME = 'send-service-update-notification';
 
 /** מייל עדכון שדה (טסט / ביטוח / צמיגים וכו׳) — לא חוסם שמירה אם נכשל */
 export async function sendFleetFieldUpdateNotification(params: {
+  /** נושא לניהול הרשאות מייל בהגדרות מערכת */
+  emailTopic: NotificationEmailTopicId;
   subject: string;
   headline?: string;
   plateNumber?: string;
@@ -21,6 +24,7 @@ export async function sendFleetFieldUpdateNotification(params: {
 }): Promise<{ ok: true } | { ok: false; message: string }> {
   const body: Record<string, unknown> = {
     notificationType: 'fleet_field',
+    emailTopic: params.emailTopic,
     to: params.to,
     subject: params.subject,
     headline: params.headline,

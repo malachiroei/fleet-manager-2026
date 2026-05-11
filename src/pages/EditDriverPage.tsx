@@ -213,6 +213,7 @@ export default function EditDriverPage() {
         ];
         const docUrl = licenseFrontUrl || licenseBackUrl || healthDeclarationUrl || null;
         const notify = await sendFleetFieldUpdateNotification({
+          emailTopic: 'driver_license_docs_update',
           subject: `עדכון סריקות / נהג — ${driver.full_name}`,
           headline: 'עודכנו פרטים או סריקות לנהג',
           vehicleLabel: driver.full_name,

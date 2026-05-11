@@ -18,6 +18,12 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import { FLEET_KV_TABLE } from '@/lib/fleetKvTable';
+import {
+  emailsSubscribedToTopic,
+  parseNotificationEmailList,
+  parseTopicPrefs,
+} from '@/lib/notificationEmailRouting';
+import { emailFleetBrandHeaderHtmlFromClient } from '@/lib/emailBrandHeader';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -88,18 +94,20 @@ export async function sendHandoverEmail({
     return { success: false, error: 'driver has no email' };
   }
 
-  // ── 3. Read notification_emails from system_settings ──────────────────────
+  // ── 3. Read notification_emails + topic prefs from system_settings ───────
   let ccEmails: string[] = [];
   try {
-    const { data } = await (supabase as any)
-      .from(FLEET_KV_TABLE)
-      .select('value')
-      .eq('key', 'notification_emails')
-      .maybeSingle() as { data: { value: unknown } | null };
-    const arr = data?.value;
-    if (Array.isArray(arr)) {
-      ccEmails = (arr as string[]).filter((e) => typeof e === 'string' && e.includes('@'));
-    }
+    const [emRes, prefRes] = await Promise.all([
+      (supabase as any).from(FLEET_KV_TABLE).select('value').eq('key', 'notification_emails').maybeSingle() as Promise<{
+        data: { value: unknown } | null;
+      }>,
+      (supabase as any).from(FLEET_KV_TABLE).select('value').eq('key', 'notification_email_topic_prefs').maybeSingle() as Promise<{
+        data: { value: unknown } | null;
+      }>,
+    ]);
+    const list = parseNotificationEmailList(emRes?.data?.value);
+    const prefs = parseTopicPrefs(prefRes?.data?.value);
+    ccEmails = emailsSubscribedToTopic(list, prefs, 'handover_wizard');
   } catch (e) {
     console.warn('sendHandoverEmail: could not read system_settings:', e);
   }
@@ -124,8 +132,10 @@ export async function sendHandoverEmail({
     .map((d) => `<li style="padding:4px 0">📎 ${labelFor(d.title)}</li>`)
     .join('');
 
+  const brandHtml = emailFleetBrandHeaderHtmlFromClient();
   const html = `
 <div dir="rtl" style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#f8fafc">
+  ${brandHtml}
   <div style="background:linear-gradient(135deg,#0d1b2e 0%,#1e3a5f 100%);padding:32px 28px;border-radius:12px 12px 0 0">
     <h1 style="color:#22d3ee;margin:0 0 6px;font-size:22px">✅ אשף מסירת רכב — הושלם בהצלחה</h1>
     <p style="color:rgba(255,255,255,0.6);margin:0;font-size:14px">מערכת ניהול ציי רכב — Fleet Manager 2026</p>

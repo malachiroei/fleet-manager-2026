@@ -12,7 +12,7 @@
 
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { supabasePublicObjectUrl } from '../_shared/supabasePublicUrl.ts';
+import { wrapEmailBodyWithBrand } from '../_shared/emailBrandHeader.ts';
 import { callerMayManageOrgForTeamActions } from '../_shared/teamAdminActionPermission.ts';
 
 const corsHeaders = {
@@ -169,18 +169,15 @@ serve(async (req) => {
       .maybeSingle();
     organizationName = (orgRow as { name?: string } | null)?.name?.trim() || organizationName;
 
-    const logoUrl = supabaseUrl ? supabasePublicObjectUrl(supabaseUrl, 'logos/logo.jpg') : '';
-    const html = `
+    const inviteInner = `
 <div dir="rtl" style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 560px; margin: 0 auto;">
-  <div style="margin: 0 0 12px; text-align: right;">
-    <img src="${logoUrl}" alt="Fleet Manager Pro" style="height: 40px; width: auto; display: inline-block;" />
-  </div>
   <h1 style="color: #0f172a;">הזמנה להצטרף לצוות</h1>
   <p><strong>${organizationName}</strong> מזמין/ה אותך להצטרף לצוות.</p>
   <p>ההזמנה נרשמה עבור: <strong>${email}</strong></p>
   <p><a href="${inviteUrl}" style="color: #0891b2;">קבל את ההזמנה ופתח את האפליקציה</a></p>
   <p style="color: #64748b; font-size: 12px;">Fleet Manager Pro</p>
 </div>`.trim();
+    const html = supabaseUrl ? wrapEmailBodyWithBrand(supabaseUrl, inviteInner) : inviteInner;
 
     console.log('[send-invite] invite URL resolved', {
       app_origin: appOrigin || '(missing)',

@@ -297,7 +297,6 @@ export default function ServiceUpdatePage() {
       let emailProblem: string | null = null;
       try {
         const invokeResult = await invokeSupabaseEdgeFunction('send-service-update-notification', {
-          to: 'malachiroei@gmail.com',
           subject: 'עדכון טיפול',
           plateNumber: resolvedVehicle.plate_number,
           vehicleLabel,

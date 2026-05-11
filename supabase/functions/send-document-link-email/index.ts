@@ -1,5 +1,7 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { wrapEmailBodyWithBrand } from '../_shared/emailBrandHeader.ts';
+import { bccExcludingPrimary, loadFilteredNotificationEmails } from '../_shared/loadFilteredNotificationEmails.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -77,7 +79,7 @@ serve(async (req) => {
     if (orgName) subjectParts.push(`(${orgName})`);
     const subject = subjectParts.join(' ');
 
-    const html = `
+    const innerHtml = `
 <div dir="rtl" style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto;">
   <h2 style="margin: 0 0 10px; color: #0f172a;">${docTitle}</h2>
   ${driverName ? `<p style="margin: 0 0 6px;"><strong>עובד:</strong> ${driverName}</p>` : ''}
@@ -92,12 +94,19 @@ serve(async (req) => {
 </div>
 `.trim();
 
-    const resendPayload = {
+    const html = wrapEmailBodyWithBrand(supabaseUrl, innerHtml);
+    const staffBcc = bccExcludingPrimary(
+      [to],
+      await loadFilteredNotificationEmails(admin, 'document_share_copy'),
+    );
+
+    const resendPayload: Record<string, unknown> = {
       from: FROM_EMAIL,
       to: [to],
       subject,
       html,
     };
+    if (staffBcc.length > 0) resendPayload.bcc = staffBcc;
 
     const resendResp = await fetch('https://api.resend.com/emails', {
       method: 'POST',

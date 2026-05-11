@@ -58,6 +58,19 @@ import {
 } from '@/lib/versionManifest';
 import { isFleetProductionHost } from '@/lib/pwaPromptRegister';
 import { FLEET_KV_TABLE } from '@/lib/fleetKvTable';
+import { formatSupabaseError } from '@/lib/supabaseError';
+import {
+  mergeTopicPrefsForNewEmails,
+  NOTIFICATION_EMAIL_TOPIC_IDS,
+  NOTIFICATION_EMAIL_TOPIC_LABELS_HE,
+  NOTIFICATION_EMAIL_TOPIC_PREFS_KEY,
+  normalizeNotificationEmailKey,
+  parseEmailsFromTextarea,
+  parseNotificationEmailList,
+  parseTopicPrefs,
+  type NotificationEmailTopicId,
+  type NotificationEmailTopicPrefsMap,
+} from '@/lib/notificationEmailRouting';
 
 export default function AdminSettingsPage() {
     const { theme, setTheme } = useTheme();
@@ -75,29 +88,52 @@ export default function AdminSettingsPage() {
 
     // ── notification_emails — stored in system_settings ───────────────────────
     const [notificationEmailsRaw, setNotificationEmailsRaw] = useState('malachiroei@gmail.com');
+    const [notificationTopicPrefs, setNotificationTopicPrefs] = useState<NotificationEmailTopicPrefsMap>({});
     const [isSavingEmails, setIsSavingEmails] = useState(false);
+    const [isSavingTopicPrefs, setIsSavingTopicPrefs] = useState(false);
     const [isLoadingEmails, setIsLoadingEmails] = useState(true);
+
+    const notificationEmailList = useMemo(
+      () => parseEmailsFromTextarea(notificationEmailsRaw),
+      [notificationEmailsRaw]
+    );
 
     useEffect(() => {
       (async () => {
         try {
-          const { data, error } = await (supabase as any)
-            .from(FLEET_KV_TABLE)
-            .select('value')
-            .eq('key', 'notification_emails')
-            .maybeSingle();
-          if (error) throw error;
-          const arr: string[] = Array.isArray(data?.value) ? data.value : [];
-          if (arr.length > 0) setNotificationEmailsRaw(arr.join(', '));
+          const [emRes, prefRes] = await Promise.all([
+            (supabase as any).from(FLEET_KV_TABLE).select('value').eq('key', 'notification_emails').maybeSingle(),
+            (supabase as any).from(FLEET_KV_TABLE).select('value').eq('key', NOTIFICATION_EMAIL_TOPIC_PREFS_KEY).maybeSingle(),
+          ]);
+          if (emRes.error) throw emRes.error;
+          const arr = parseNotificationEmailList(emRes.data?.value);
+          const prefsFromDb = parseTopicPrefs(prefRes.data?.value);
+          if (arr.length > 0) {
+            setNotificationEmailsRaw(arr.join(', '));
+            setNotificationTopicPrefs(mergeTopicPrefsForNewEmails(prefsFromDb, arr));
+          } else {
+            const saved = localStorage.getItem('handover_notification_email');
+            if (saved) {
+              setNotificationEmailsRaw(saved);
+              setNotificationTopicPrefs(mergeTopicPrefsForNewEmails(prefsFromDb, [saved]));
+            }
+          }
         } catch {
-          // fallback to localStorage value if table not yet migrated
           const saved = localStorage.getItem('handover_notification_email');
-          if (saved) setNotificationEmailsRaw(saved);
+          if (saved) {
+            setNotificationEmailsRaw(saved);
+            setNotificationTopicPrefs(mergeTopicPrefsForNewEmails({}, [saved]));
+          }
         } finally {
           setIsLoadingEmails(false);
         }
       })();
     }, []);
+
+    useEffect(() => {
+      if (isLoadingEmails) return;
+      setNotificationTopicPrefs((prev) => mergeTopicPrefsForNewEmails(prev, notificationEmailList));
+    }, [isLoadingEmails, notificationEmailList.join('|')]);
 
     // ── last_pricing_upload_date — stored in system_settings (shared for all users)
     useEffect(() => {
@@ -145,36 +181,66 @@ export default function AdminSettingsPage() {
     };
 
     const saveNotificationEmails = async () => {
-      const emails = notificationEmailsRaw
-        .split(/[\n,]+/)
-        .map((e) => e.trim())
-        .filter((e) => e.length > 0 && e.includes('@'));
+      const emails = parseEmailsFromTextarea(notificationEmailsRaw);
 
       if (emails.length === 0) {
         toast.error('נא להזין לפחות כתובת מייל תקינה אחת');
         return;
       }
 
+      const mergedPrefs = mergeTopicPrefsForNewEmails(notificationTopicPrefs, emails);
+
       setIsSavingEmails(true);
       try {
-        const { error } = await (supabase as any)
+        const { error: emErr } = await (supabase as any)
           .from(FLEET_KV_TABLE)
           .upsert({ key: 'notification_emails', value: emails }, { onConflict: 'key' });
-        if (error) throw error;
+        if (emErr) throw emErr;
+        const { error: prefErr } = await (supabase as any)
+          .from(FLEET_KV_TABLE)
+          .upsert({ key: NOTIFICATION_EMAIL_TOPIC_PREFS_KEY, value: mergedPrefs }, { onConflict: 'key' });
+        if (prefErr) throw prefErr;
+        setNotificationTopicPrefs(mergedPrefs);
         setNotificationEmailsRaw(emails.join(', '));
+        localStorage.setItem('handover_notification_email', emails[0]);
         toast.success(`נשמרו ${emails.length} כתובות מייל להתראות`);
       } catch (err) {
         console.error(err);
-        toast.error('שמירה נכשלה — ודא שטבלת settings קיימת ב-Supabase');
+        toast.error('שמירת כתובות המייל נכשלה', {
+          description: formatSupabaseError(err),
+          duration: 12_000,
+        });
       } finally {
         setIsSavingEmails(false);
       }
     };
 
-    // ── legacy single-email field (kept for test-email button) ────────────────
-    const [notificationEmail, setNotificationEmail] = useState(
-      localStorage.getItem('handover_notification_email') || 'malachiroei@gmail.com'
-    );
+    const saveNotificationTopicPrefsOnly = async () => {
+      const emails = notificationEmailList;
+      if (emails.length === 0) {
+        toast.error('אין כתובות ברשימה — הזן מיילים בכרטיס למעלה ושמור תחילה');
+        return;
+      }
+      const mergedPrefs = mergeTopicPrefsForNewEmails(notificationTopicPrefs, emails);
+      setIsSavingTopicPrefs(true);
+      try {
+        const { error } = await (supabase as any)
+          .from(FLEET_KV_TABLE)
+          .upsert({ key: NOTIFICATION_EMAIL_TOPIC_PREFS_KEY, value: mergedPrefs }, { onConflict: 'key' });
+        if (error) throw error;
+        setNotificationTopicPrefs(mergedPrefs);
+        toast.success('העדפות נושאי מייל נשמרו');
+      } catch (err) {
+        console.error(err);
+        toast.error('שמירת העדפות נושא נכשלה', {
+          description: formatSupabaseError(err),
+          duration: 12_000,
+        });
+      } finally {
+        setIsSavingTopicPrefs(false);
+      }
+    };
+
     const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
     const DEFAULT_APP_VERSION = codeVersion;
     // Default visible timestamp for the last update (updated by the "עדכן" flow)
@@ -274,42 +340,65 @@ export default function AdminSettingsPage() {
     }, []);
 
     const sendTestEmail = async () => {
-      if (!notificationEmail.trim() || !notificationEmail.includes('@')) {
-        toast.error('נא להזין כתובת מייל תקינה לפני בדיקה');
+      const emails = parseEmailsFromTextarea(notificationEmailsRaw);
+      if (emails.length === 0) {
+        toast.error('נא להזין לפחות כתובת מייל תקינה לפני בדיקה');
         return;
       }
 
       setIsSendingTestEmail(true);
       try {
-        localStorage.setItem('handover_notification_email', notificationEmail.trim());
+        localStorage.setItem('handover_notification_email', emails[0]);
 
-        const { error } = await supabase.functions.invoke('send-handover-notification', {
-          body: {
-            to: notificationEmail.trim(),
-            subject: 'בדיקת מייל - Fleet Manager 2026',
-            payload: {
-              handoverType: 'delivery',
-              assignmentMode: 'permanent',
-              vehicleLabel: 'בדיקת מערכת',
-              driverLabel: 'בדיקת מערכת',
-              odometerReading: 12345,
-              fuelLevel: 4,
-              notes: 'מייל בדיקה ממסך הגדרות',
-              reportUrl: window.location.origin,
-              sentAt: new Date().toISOString(),
-            },
+        const testBody = {
+          subject: 'בדיקת מייל - Fleet Manager 2026',
+          payload: {
+            handoverType: 'delivery' as const,
+            assignmentMode: 'permanent' as const,
+            vehicleLabel: 'בדיקת מערכת',
+            driverLabel: 'בדיקת מערכת',
+            odometerReading: 12345,
+            fuelLevel: 4,
+            notes: 'מייל בדיקה ממסך הגדרות',
+            reportUrl: window.location.origin,
+            sentAt: new Date().toISOString(),
           },
-        });
+        };
 
-        if (error) throw error;
+        const failures: string[] = [];
+        for (const addr of emails) {
+          const { error } = await supabase.functions.invoke('send-handover-notification', {
+            body: { ...testBody, to: addr },
+          });
+          if (error) failures.push(`${addr}: ${error.message}`);
+        }
 
-        toast.success('מייל בדיקה נשלח בהצלחה');
+        if (failures.length > 0) {
+          toast.error(`חלק מהמיילים נכשלו (${failures.length}/${emails.length})`, {
+            description: failures.slice(0, 3).join(' · '),
+          });
+        } else {
+          toast.success(`נשלח מייל בדיקה ל-${emails.length} כתובות`);
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'שגיאה לא ידועה';
         toast.error(`שליחת מייל בדיקה נכשלה: ${message}`);
       } finally {
         setIsSendingTestEmail(false);
       }
+    };
+
+    const setTopicFlag = (email: string, topic: NotificationEmailTopicId, checked: boolean) => {
+      const key = normalizeNotificationEmailKey(email);
+      setNotificationTopicPrefs((prev) => ({
+        ...prev,
+        [key]: { ...prev[key], [topic]: checked },
+      }));
+    };
+
+    const topicFlag = (email: string, topic: NotificationEmailTopicId) => {
+      const row = notificationTopicPrefs[normalizeNotificationEmailKey(email)];
+      return row?.[topic] !== false;
     };
 
     return (
@@ -342,7 +431,8 @@ export default function AdminSettingsPage() {
                 <div>
                   <CardTitle>כתובות מייל לקבלת התראות</CardTitle>
                   <CardDescription>
-                    כל הכתובות ברשימה יקבלו עותק של הודעות מסירת רכב, החזרה ואשף המסירה הדיגיטלי.
+                    רשימת כתובות גלובלית. &quot;בדיקת שליחה&quot; שולח מייל לכל כתובת תקינה ברשימה.
+                    מתחת: ניהול נפרד — איזה סוג התראה יגיע לכל כתובת (ברירת מחדל: הכול פעיל).
                     הפרד בין כתובות בפסיק או שורה חדשה.
                   </CardDescription>
                 </div>
@@ -366,12 +456,7 @@ export default function AdminSettingsPage() {
                   />
                   <p className="text-xs text-muted-foreground">
                     כתובות תקינות זוהו:{' '}
-                    <strong>
-                      {notificationEmailsRaw
-                        .split(/[\n,]+/)
-                        .map((e) => e.trim())
-                        .filter((e) => e.includes('@')).length}
-                    </strong>
+                    <strong>{parseEmailsFromTextarea(notificationEmailsRaw).length}</strong>
                   </p>
                   <div className="flex flex-wrap gap-2">
                     <Button onClick={saveNotificationEmails} disabled={isSavingEmails}>
@@ -379,6 +464,79 @@ export default function AdminSettingsPage() {
                     </Button>
                     <Button variant="outline" onClick={sendTestEmail} disabled={isSendingTestEmail}>
                       {isSendingTestEmail ? 'שולח...' : 'בדיקת שליחה'}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-500/10">
+                  <Mail className="h-5 w-5 text-cyan-400" />
+                </div>
+                <div>
+                  <CardTitle>ניהול נושאי מייל לפי כתובת</CardTitle>
+                  <CardDescription>
+                    סמן לכל כתובת מאיזה סוגי פעולות לקבל התראה. שמירה כאן לא משנה את רשימת הכתובות — רק את מפת הנושאים.
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {notificationEmailList.length === 0 ? (
+                <p className="text-sm text-muted-foreground">הזן כתובות בכרטיס למעלה כדי לערוך הרשאות נושא.</p>
+              ) : (
+                <>
+                  <div className="max-h-[min(520px,70vh)] overflow-auto rounded-md border border-border touch-pan-x">
+                    <Table className="min-w-max text-[11px]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="sticky right-0 z-[1] bg-card text-right min-w-[200px] border-l border-border">
+                            מייל
+                          </TableHead>
+                          {NOTIFICATION_EMAIL_TOPIC_IDS.map((tid) => (
+                            <TableHead key={tid} className="text-center max-w-[120px] min-w-[100px] leading-tight whitespace-normal px-1">
+                              {NOTIFICATION_EMAIL_TOPIC_LABELS_HE[tid]}
+                            </TableHead>
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {notificationEmailList.map((email) => (
+                          <TableRow key={normalizeNotificationEmailKey(email)}>
+                            <TableCell
+                              className="sticky right-0 z-[1] bg-card font-mono text-xs text-left border-l border-border"
+                              dir="ltr"
+                            >
+                              {email}
+                            </TableCell>
+                            {NOTIFICATION_EMAIL_TOPIC_IDS.map((tid) => (
+                              <TableCell key={tid} className="text-center">
+                                <Checkbox
+                                  checked={topicFlag(email, tid)}
+                                  onCheckedChange={(v) => setTopicFlag(email, tid, v === true)}
+                                  aria-label={`${email} — ${NOTIFICATION_EMAIL_TOPIC_LABELS_HE[tid]}`}
+                                />
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <div className="flex justify-end">
+                    <Button type="button" onClick={saveNotificationTopicPrefsOnly} disabled={isSavingTopicPrefs}>
+                      {isSavingTopicPrefs ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin ml-2" />
+                          שומר...
+                        </>
+                      ) : (
+                        'שמור העדפות נושא'
+                      )}
                     </Button>
                   </div>
                 </>

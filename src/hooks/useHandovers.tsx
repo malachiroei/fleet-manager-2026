@@ -23,6 +23,7 @@ import {
   type FormsTemplateExtensions,
 } from '@/lib/formsGeneratedPdf';
 import { buildHandoverFormHeaderMetaLines } from '@/lib/handoverOrgDocumentHeader';
+import { resolveNotificationEmailsForTopic } from '@/lib/notificationEmailRouting';
 
 export type AssignmentMode = 'permanent' | 'replacement';
 
@@ -1685,14 +1686,18 @@ interface SendHandoverEmailInput {
 }
 
 export async function sendHandoverNotificationEmail(input: SendHandoverEmailInput) {
-  const toEmail = localStorage.getItem('handover_notification_email') || 'malachiroei@gmail.com';
+  const legacySingle =
+    (typeof localStorage !== 'undefined' && localStorage.getItem('handover_notification_email')) ||
+    'malachiroei@gmail.com';
+  const toList = await resolveNotificationEmailsForTopic(supabase, 'handover_form', [legacySingle]);
   const hasReceptionAttachment = (input.additionalAttachments ?? []).some((file) => file.filename.includes('טופס קבלת רכב'));
   console.log('[sendHandoverNotificationEmail] reception attachment pushed', {
     hasReceptionAttachment,
     attachmentNames: (input.additionalAttachments ?? []).map((file) => file.filename),
+    toCount: toList.length,
   });
   const body = {
-    to: toEmail,
+    to: toList.length === 1 ? toList[0] : toList,
     subject: `${input.handoverType === 'delivery' ? 'מסירת רכב' : 'החזרת רכב'} - ${input.vehicleLabel}`,
     payload: {
       ...input,
@@ -1733,7 +1738,7 @@ export async function sendHandoverNotificationEmail(input: SendHandoverEmailInpu
     console.error('[sendHandoverNotificationEmail] Edge function returned error', {
       sdkError: error ? { name: error.name, message: error.message } : null,
       data,
-      to: toEmail,
+      to: toList,
       subject: body.subject,
       attachments: (input.additionalAttachments ?? []).map((f) => f.filename),
     });

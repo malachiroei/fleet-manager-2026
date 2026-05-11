@@ -653,12 +653,12 @@ export function AppLayout({ children }: AppLayoutProps) {
         isRtl && 'flex-row-reverse'
       )}
     >
-      {/* מסכים קטנים: לוגו הרכב ליד "מנהל צי" בסרגל העליון */}
-      <div className="md:hidden mr-2 ml-0 rtl:ml-2 rtl:mr-0 h-9 w-14 shrink-0 overflow-hidden rounded-md bg-[#0a1525]">
+      {/* מסכים קטנים: אותה פרופורציה כמו במייל (גובה ~44px, ללא חיתוך מרובע) */}
+      <div className="md:hidden shrink-0 mr-2 ml-0 rtl:ml-2 rtl:mr-0 flex items-center">
         <img
           src={getBrandLogoUrl()}
           alt=""
-          className="h-full w-full object-contain object-center scale-[1.9]"
+          className="h-11 max-h-[44px] w-auto max-w-[min(140px,30vw)] object-contain object-right"
           loading="lazy"
           decoding="async"
           aria-hidden

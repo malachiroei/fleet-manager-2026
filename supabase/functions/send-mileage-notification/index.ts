@@ -1,4 +1,7 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { wrapEmailBodyWithBrand } from '../_shared/emailBrandHeader.ts';
+import { loadFilteredNotificationEmails, uniqueEmailList } from '../_shared/loadFilteredNotificationEmails.ts';
 
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -42,14 +45,24 @@ serve(async (req) => {
       );
     }
 
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const admin =
+      supabaseUrl && serviceRoleKey
+        ? createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } })
+        : null;
+
     const body = (await req.json()) as DirectMileageNotificationRequest;
     console.log('Payload received:', body);
 
-    const to = (body.to && String(body.to).includes('@') ? String(body.to).trim() : '') || 'malachiroei@gmail.com';
+    const extra = body.to && String(body.to).includes('@') ? [String(body.to).trim()] : [];
+    const fromDb = admin ? await loadFilteredNotificationEmails(admin, 'mileage_update') : [];
+    const recipients = uniqueEmailList([...extra, ...fromDb]);
+    const to = recipients.length > 0 ? recipients : ['malachiroei@gmail.com'];
     const subject = body.subject;
     const km = Number(body.odometerReading);
     const safeUrl = escHtml(body.reportUrl);
-    const html = `
+    const innerHtml = `
       <div dir="rtl" style="font-family: Arial, sans-serif; text-align: right;">
         <h2>דווח קילומטראז׳ חדש</h2>
         <p><strong>קילומטראז׳:</strong> ${km.toLocaleString('he-IL')} ק"מ</p>
@@ -59,6 +72,8 @@ serve(async (req) => {
         </p>
       </div>
     `.trim();
+
+    const html = supabaseUrl ? wrapEmailBodyWithBrand(supabaseUrl, innerHtml) : innerHtml;
 
     let result: unknown = null;
     try {
@@ -71,7 +86,7 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           from: fromEmail,
-          to: [to],
+          to,
           subject,
           html,
         }),

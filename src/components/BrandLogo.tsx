@@ -1,8 +1,11 @@
+import { getSupabaseUrl } from '@/integrations/supabase/publicEnv';
+
 /**
- * Brand logo — same source as build-time favicon/PWA icons (`public/car.png` via generate-app-icon.mjs).
- * Keeps tab icon, install icon, header and login visually aligned.
+ * ברירת מחדל fallback — `public/car.png`; בפריסה עם Supabase משתמשים באותו `logos/logo.jpg` כמו במיילים.
  */
 export function getBrandLogoUrl(): string {
+  const base = String(getSupabaseUrl() ?? '').trim().replace(/\/+$/, '');
+  if (base) return `${base}/storage/v1/object/public/logos/logo.jpg`;
   return '/car.png';
 }
 
