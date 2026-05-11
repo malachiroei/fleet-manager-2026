@@ -56,18 +56,6 @@ import { isLikelyUuid } from '@/lib/fleetUuid';
 /** קישור מנהל ראשי ↔ מנהל צי ↔ נהג — כש־RLS לא מחזיר את כל ה־profiles במחליף */
 const MAIN_ADMIN_SWITCHER_EMAIL = 'malachiroei@gmail.com';
 
-/** ניווט מלא לדף הבית: מסכים צרים, מגע גס (טאבלטים), או WebView. */
-function shouldUseHardNavigationToHome(): boolean {
-  if (typeof window === 'undefined') return false;
-  if (window.matchMedia('(max-width: 767px)').matches) return true;
-  try {
-    if (window.matchMedia('(pointer: coarse)').matches) return true;
-  } catch {
-    /* ignore */
-  }
-  return false;
-}
-
 interface AppLayoutProps {
   children: ReactNode;
 }
@@ -619,16 +607,12 @@ export function AppLayout({ children }: AppLayoutProps) {
     </>
   );
 
-  /** ללא `<Link>` — מונע התנגשות עם React Router ומקל על לחיצה אמינה (במיוחד עם dirty / מגע). */
+  /** ללא `<Link>` — tryNavigate מכבד dirty; בלי location.assign (מונע מסך boot מ-index.html). */
   const handleGoHomeNav = () => {
     try {
       window.dispatchEvent(new CustomEvent('app:go-home'));
     } catch {
       /* ignore */
-    }
-    if (shouldUseHardNavigationToHome()) {
-      window.location.assign(`${window.location.origin}/`);
-      return;
     }
     tryNavigate('/');
   };
@@ -775,7 +759,8 @@ export function AppLayout({ children }: AppLayoutProps) {
               <UtilityCluster />
               <UserInline />
             </div>
-            <div className={cn('flex min-w-0 items-center gap-2', isRtl ? 'order-1' : 'order-2')}>
+            {/* מעל UtilityCluster/UserInline (z~10k) — מונע חפיפה בכותרת צרה שחוסמת לחיצות על בית/חזרה */}
+            <div className={cn('relative z-[12000] flex min-w-0 items-center gap-2', isRtl ? 'order-1' : 'order-2')}>
               {isRtl ? (
                 <>
                   <HomeNavLink />
@@ -796,7 +781,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         {/* מובייל (מתחת ל־768px): בית + חזרה בשורה העליונה ליד המותג — בלי שורת ניווט נפרדת */}
         <div className="mx-auto flex w-full max-w-[1920px] flex-col gap-2 px-4 py-2 md:hidden">
           <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-2">
-            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+            <div className="relative z-[12050] flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
               {isRtl ? (
                 <>
                   <HomeNavLink />

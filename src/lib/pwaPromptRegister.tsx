@@ -132,6 +132,28 @@ export function useRegisterSW(options?: RegisterSWOptions) {
       return;
     }
 
+    /**
+     * Vite dev: אין `sw-v2.js` בשרת — `register()` מקבל index.html (MIME text/html),
+     * ו־`updatefound` עלול להפעיל `applyServiceWorkerUpdateAndReload` בכל חזרה לטאב.
+     */
+    if (import.meta.env.DEV) {
+      void (async () => {
+        try {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          for (const r of regs) {
+            try {
+              await r.unregister();
+            } catch {
+              // ignore
+            }
+          }
+        } catch {
+          // ignore
+        }
+      })();
+      return;
+    }
+
     let registration: ServiceWorkerRegistration | null = null;
     let cancelled = false;
 

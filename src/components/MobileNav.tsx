@@ -64,7 +64,7 @@ export function MobileNav() {
                   } catch {
                     // ignore
                   }
-                  window.location.assign(`${window.location.origin}/`);
+                  tryNavigate('/');
                 }}
                 className="block"
               >

@@ -10,12 +10,6 @@ import {
 
 export const BUILTIN_RECEPTION_PRINT_FORM_KEY = 'system-reception-form-printable' as const;
 
-export function isReceptionPrintPdfFormDoc(doc: Pick<OrgDocument, 'json_schema'>): boolean {
-  const s = doc.json_schema;
-  if (!s || typeof s !== 'object') return false;
-  return String((s as Record<string, unknown>).builtin_template_key ?? '').trim() === BUILTIN_RECEPTION_PRINT_FORM_KEY;
-}
-
 /** כותרת תצוגה שמזהה את טופס ההדפסה (גם רשומות ישנות בלי builtin_template_key) */
 export const RECEPTION_PRINT_FORM_DISPLAY_TITLE = 'טופס קבלת רכב';
 
@@ -23,6 +17,17 @@ export const RECEPTION_PRINT_FORM_DISPLAY_TITLE = 'טופס קבלת רכב';
  * האם למלא בעריכת תוכן ברירות מהתבנית (תוכן, טבלה, תיאור, דגלי PDF).
  * כולל שורות ישנות: כותרת «טופס קבלת רכב» בלי מפתח / בלי template_content / או רק x_forms_download_only.
  */
+export function isReceptionPrintPdfBuiltinDoc(doc: Pick<OrgDocument, 'json_schema'>): boolean {
+  const s = doc.json_schema;
+  if (!s || typeof s !== 'object') return false;
+  return String((s as Record<string, unknown>).builtin_template_key ?? '').trim() === BUILTIN_RECEPTION_PRINT_FORM_KEY;
+}
+
+/** טופס הקבלה האינטראקטיבי באשף — לא עותק ה-PDF (printable) */
+export function isInteractiveHandoverReceptionDoc(doc: Pick<OrgDocument, 'title' | 'name' | 'json_schema'>): boolean {
+  return orgDocumentHandoverLabel(doc as OrgDocument).includes('טופס קבלת רכב') && !isReceptionPrintPdfBuiltinDoc(doc);
+}
+
 export function shouldHydrateReceptionPrintFormDefaults(
   form: Pick<OrgDocument, 'title' | 'name'>,
   schema: unknown,
@@ -101,4 +106,6 @@ export const builtinReceptionPrintFormSyncTpl = {
   includeDelivery: true,
   includeReturn: false,
   includeHandover: false,
+  /** נשמר ב-json_schema — לא נכלל באשף מסירה / בחירת טפסים במסך מסירה */
+  formsLibraryOnly: true,
 };

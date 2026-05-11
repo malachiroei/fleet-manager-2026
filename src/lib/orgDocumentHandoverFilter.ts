@@ -7,11 +7,41 @@ export function orgDocumentHandoverLabel(doc: Pick<OrgDocument, 'title' | 'name'
   return String(doc.name ?? '').trim();
 }
 
-/** מסמכי הורדה בלבד למרכז הטפסים — לא משתתפים באשף מסירה / בחירת טפסים במסירה */
-export function isOrgDocumentFormsDownloadOnly(doc: Pick<OrgDocument, 'json_schema'>): boolean {
+/** כותרות טפסים ישנים שלא יוצגו במסך מסירת רכב / באשף (מוחלף במסמכים מהמרכז) */
+export const ORG_DOCUMENT_DELIVERY_PICKER_TITLE_BLOCKLIST = ['טופס מסירת רכב'] as const;
+
+export function isOrgDocumentExcludedFromVehicleDeliveryPicker(
+  doc: Pick<OrgDocument, 'title' | 'name'>,
+): boolean {
+  const label = orgDocumentHandoverLabel(doc).replace(/\s+/g, ' ').trim();
+  return (ORG_DOCUMENT_DELIVERY_PICKER_TITLE_BLOCKLIST as readonly string[]).includes(label);
+}
+
+/**
+ * מסמכי הורדה בלבד למרכז הטפסים — לא באשף/מסירה, **אלא** אם סומן במפורש `include_in_delivery`
+ * (אז מוצג בבחירת טפסים במסך מסירה).
+ */
+export function isOrgDocumentFormsDownloadOnly(
+  doc: Pick<OrgDocument, 'json_schema' | 'include_in_delivery'>,
+): boolean {
+  if (doc.include_in_delivery === true) return false;
   const s = doc.json_schema;
   if (!s || typeof s !== 'object') return false;
   return (s as Record<string, unknown>).x_forms_download_only === true;
+}
+
+/**
+ * טפסים לבחירת מסירה — **אותו סט** בדף המסירה ובאשף («הוספת טפסים»).
+ * רק מסמכים שסומנו במרכז הטפסים כ־`include_in_delivery` (ולא הורדה בלבד / לא בחסימה).
+ */
+export function filterOrgDocumentsForVehicleDeliveryPicker(docs: OrgDocument[]): OrgDocument[] {
+  return docs.filter(
+    (doc) =>
+      doc.is_active &&
+      Boolean(doc.include_in_delivery) &&
+      !isOrgDocumentFormsDownloadOnly(doc) &&
+      !isOrgDocumentExcludedFromVehicleDeliveryPicker(doc),
+  );
 }
 
 /**
@@ -27,9 +57,4 @@ export function isOrgDocumentUsableForHandoverList(doc: OrgDocument): boolean {
     schema != null && typeof schema === 'object' && Object.keys(schema as object).length > 0;
   const hasDesc = String(doc.description ?? '').trim().length > 0;
   return hasFile || hasSchema || hasDesc;
-}
-
-/** טופס מסירה ישן מזריעת מערכת — מוחלף בטפסים מהמרכז; לא ברשימת בחירה במסירה/אשף */
-export function isLegacySeededVehicleDeliveryForm(doc: Pick<OrgDocument, 'title' | 'name'>): boolean {
-  return orgDocumentHandoverLabel(doc).replace(/\s+/g, ' ').trim() === 'טופס מסירת רכב';
 }

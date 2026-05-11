@@ -200,7 +200,8 @@ export default function FormsPage() {
   const [templateMode, setTemplateMode] = useState<TemplateMode>('file');
   const [generatedContent, setGeneratedContent] = useState('');
   const [includeInHandover, setIncludeInHandover] = useState(false);
-  const [includeInDelivery, setIncludeInDelivery] = useState(false);
+  /** ברירת מחדל true — כך טופס חדש מופיע מיד בבחירת טפסים במסירת רכב (ניתן לבטל למסמכי ארכיון בלבד). */
+  const [includeInDelivery, setIncludeInDelivery] = useState(true);
   const [includeInReturn, setIncludeInReturn] = useState(false);
   const [syncingBuiltin, setSyncingBuiltin] = useState(false);
   const [editingForm, setEditingForm] = useState<OrgDocument | null>(null);
@@ -364,7 +365,7 @@ export default function FormsPage() {
     setTemplateMode('file');
     setGeneratedContent('');
     setIncludeInHandover(false);
-    setIncludeInDelivery(false);
+    setIncludeInDelivery(true);
     setIncludeInReturn(false);
     if (fileRef.current) fileRef.current.value = '';
   };
@@ -537,8 +538,6 @@ export default function FormsPage() {
     >;
     if (args.formsLibraryOnly) {
       jsonSchema = { ...jsonSchema, x_forms_download_only: true };
-    } else {
-      delete jsonSchema.x_forms_download_only;
     }
 
     /** אל תfallback ל-state של דיאלוג "טופס חדש" בעדכון מסמך קיים — זה דרס include_in_delivery והחזיר דגלים אחרי שמירה */
@@ -560,7 +559,9 @@ export default function FormsPage() {
         : args.existing != null
           ? Boolean(args.existing.include_in_handover)
           : includeInHandover;
-    const effectiveIncludeInHandover = handoverExplicit || delivery || ret;
+    const effectiveIncludeInHandover = args.formsLibraryOnly
+      ? Boolean(handoverExplicit)
+      : handoverExplicit || delivery || ret;
 
     if (args.existing) {
       await updateForm.mutateAsync({
@@ -1159,9 +1160,9 @@ ${STANDARD_INPUT_FOOTER_TEXT}
       const attachReceptionPrintKey =
         String(prevSchema.builtin_template_key ?? '').trim() === BUILTIN_RECEPTION_PRINT_FORM_KEY ||
         (labelNorm === RECEPTION_PRINT_FORM_DISPLAY_TITLE && titleNorm === RECEPTION_PRINT_FORM_DISPLAY_TITLE);
-      const formsLibraryOnly = attachReceptionPrintKey
-        ? false
-        : prevSchema.x_forms_download_only === true;
+      const formsLibraryOnly =
+        prevSchema.x_forms_download_only === true ||
+        attachReceptionPrintKey;
       await upsertGeneratedTemplate({
         existing: contentEditingForm,
         builtinTemplateKey: attachReceptionPrintKey ? BUILTIN_RECEPTION_PRINT_FORM_KEY : undefined,
@@ -1959,8 +1960,11 @@ ${STANDARD_INPUT_FOOTER_TEXT}
           if (!next) resetForm();
         }}
       >
-        <DialogContent className="sm:max-w-xl" dir="rtl">
-          <DialogHeader>
+        <DialogContent
+          className="left-[50%] top-3 flex max-h-[calc(100dvh-1.5rem)] w-[calc(100vw-1.25rem)] max-w-xl -translate-x-1/2 translate-y-0 flex-col gap-0 overflow-hidden p-0 sm:top-4 sm:w-full sm:max-w-xl"
+          dir="rtl"
+        >
+          <DialogHeader className="flex-shrink-0 space-y-1.5 border-b border-border px-6 pb-4 pt-6 text-right sm:text-right">
             <DialogTitle>{editingForm ? 'עדכון טופס' : 'הוסף טופס חדש'}</DialogTitle>
             <DialogDescription>
               {editingForm
@@ -1969,6 +1973,7 @@ ${STANDARD_INPUT_FOOTER_TEXT}
             </DialogDescription>
           </DialogHeader>
 
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="form-title">שם הטופס</Label>
@@ -2035,6 +2040,9 @@ ${STANDARD_INPUT_FOOTER_TEXT}
 
             <div className="space-y-2 rounded-md border border-border p-3">
               <p className="text-sm font-medium">הצגה בפעולות אשף</p>
+              <p className="text-xs text-muted-foreground leading-snug">
+                «מסירה» קובע אם המסמך יופיע בבחירת הטפסים במסך מסירת רכב ובאשף. בלי סימון — המסמך יישאר במרכז הטפסים בלבד (הורדה/צפייה).
+              </p>
               <label className="flex items-center gap-2 text-sm">
                 <Checkbox checked={includeInDelivery} onCheckedChange={(v) => setIncludeInDelivery(Boolean(v))} />
                 מסירה
@@ -2074,16 +2082,18 @@ ${STANDARD_INPUT_FOOTER_TEXT}
                 <Label htmlFor="generated-content">תוכן מסמך מובנה</Label>
                 <Textarea
                   id="generated-content"
-                  rows={10}
+                  rows={8}
                   value={generatedContent}
                   onChange={(e) => setGeneratedContent(e.target.value)}
                   placeholder="הדבק/י כאן את תוכן המסמך. האפליקציה תיצור ממנו PDF בפורמט אחיד."
+                  className="min-h-[10rem] max-h-[min(42vh,22rem)] resize-y"
                 />
               </div>
             )}
           </div>
+          </div>
 
-          <DialogFooter className="gap-2">
+          <DialogFooter className="flex-shrink-0 gap-2 border-t border-border bg-background px-6 py-4">
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
               ביטול
             </Button>

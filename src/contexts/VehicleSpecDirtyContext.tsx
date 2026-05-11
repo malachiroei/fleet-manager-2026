@@ -139,6 +139,7 @@ export function VehicleSpecDirtyProvider({ children }: { children: ReactNode }) 
     if (!window.confirm(confirmMsg)) return;
     // סדר קשיח: קודם setDirty(false) בסינכרון — רק אחרי commit, navigate (מונע התקעות)
     deliveryExitConfirmedRef.current = true;
+    const leavingVehicleDelivery = pathnameIsVehicleDelivery(location.pathname);
     flushSync(() => {
       setDirty(DIRTY_SOURCE_VEHICLE_DELIVERY, false);
     });
@@ -147,16 +148,19 @@ export function VehicleSpecDirtyProvider({ children }: { children: ReactNode }) 
     // אחרי ניקוי מסירה — רוקנים הכל כדי שלא יישאר dirty ממקור אחר שיחסום ניווט
     sourcesRef.current = {};
     setVersion((v) => v + 1);
-    // navigate() אחרי flushSync עלול להשאיר את ה-URL בדפדפן מעודכן בעוד ש-React Router
-    // והדOM נשארים על דף המסירה (דסינכרון). ניווט מלא מכריח טעינה נכונה של היעד.
-    const target =
-      to.startsWith('http://') || to.startsWith('https://')
-        ? to
-        : to.startsWith('/')
-          ? `${window.location.origin}${to}`
-          : `${window.location.origin}/${to}`;
-    window.location.assign(target);
-  }, [navigate, setDirty]);
+    // רק ממסך מסירת רכב: navigate() אחרי flushSync עלול להשאיר URL מעודכן בזמן שה-DOM תקוע — ריענון מלא.
+    if (leavingVehicleDelivery) {
+      const target =
+        to.startsWith('http://') || to.startsWith('https://')
+          ? to
+          : to.startsWith('/')
+            ? `${window.location.origin}${to}`
+            : `${window.location.origin}/${to}`;
+      window.location.assign(target);
+      return;
+    }
+    navigate(to);
+  }, [navigate, setDirty, location.pathname]);
 
   const getIsDirty = useCallback(() => Object.keys(sourcesRef.current).length > 0, []);
 

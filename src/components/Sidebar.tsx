@@ -37,7 +37,7 @@ export function Sidebar() {
               } catch {
                 // ignore
               }
-              window.location.assign(`${window.location.origin}/`);
+              tryNavigate('/');
             }}
           >
             <Button

@@ -23,6 +23,15 @@ function isFleetManagerProProductionHost(): boolean {
   return h === "fleet-manager-pro.com" || h === "www.fleet-manager-pro.com";
 }
 
+/** פיתוח: מסיר SW ישן — מונע החזרת HTML במקום JS (שגיאת MIME) וריענונים אוטומטיים */
+if (import.meta.env.DEV && typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+  void navigator.serviceWorker.getRegistrations().then((regs) => {
+    for (const r of regs) {
+      void r.unregister();
+    }
+  });
+}
+
 void (async () => {
   /** כל הסביבות: ניקוי דגלי עדכון/SW bypass שלא יישארו תקועים אחרי רענון */
   try {

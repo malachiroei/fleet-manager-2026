@@ -38,11 +38,12 @@ import {
   type ChecklistTableRowResponse,
 } from '@/lib/formsGeneratedPdf';
 import type { OrgDocument } from '@/hooks/useOrgDocuments';
-import { isReceptionPrintPdfFormDoc } from '@/lib/builtinReceptionPrintFormTemplate';
 import {
-  isLegacySeededVehicleDeliveryForm,
-  isOrgDocumentFormsDownloadOnly,
-  isOrgDocumentUsableForHandoverList,
+  isInteractiveHandoverReceptionDoc,
+  isReceptionPrintPdfBuiltinDoc,
+} from '@/lib/builtinReceptionPrintFormTemplate';
+import {
+  filterOrgDocumentsForVehicleDeliveryPicker,
   orgDocumentHandoverLabel,
 } from '@/lib/orgDocumentHandoverFilter';
 import { HANDOVER_ACCESSORY_CEILINGS, formatCeilingPrice } from '@/lib/accessoryCeilings';
@@ -1248,7 +1249,9 @@ function ProgressBar({ current, steps = STEPS }: { current: number; steps?: type
       <div className="mt-3 h-1 bg-white/10 rounded-full overflow-hidden">
         <div
           className="h-full bg-gradient-to-r from-cyan-500 to-cyan-300 rounded-full transition-all duration-500"
-          style={{ width: `${((current) / (steps.length - 1)) * 100}%` }}
+          style={{
+            width: `${steps.length <= 1 ? 100 : (current / (steps.length - 1)) * 100}%`,
+          }}
         />
       </div>
     </div>
@@ -2236,26 +2239,18 @@ export default function VehicleHandoverWizard() {
   const [recentlyToggledFormId, setRecentlyToggledFormId] = useState<string | null>(null);
   const [recentlyToggledAdded, setRecentlyToggledAdded] = useState(false);
 
-  // טפסים עם כותרת + תוכן (קובץ/סכמה/תיאור) — בלי שורות ריקות מ־DB
+  // אותו סט כמו בדף מסירת רכב — רק `include_in_delivery` ממרכז הטפסים
   const availableDeliveryForms = useMemo(
-    () =>
-      (orgDocuments ?? []).filter(
-        (doc) =>
-          isOrgDocumentUsableForHandoverList(doc) &&
-          !isOrgDocumentFormsDownloadOnly(doc) &&
-          !isLegacySeededVehicleDeliveryForm(doc),
-      ),
+    () => filterOrgDocumentsForVehicleDeliveryPicker(orgDocuments ?? []),
     [orgDocuments],
   );
 
-  /** טפסים נוספים: לא מקור ההצהרה האינטראקטיבית (טופס קבלת רכב מהאשף), אבל כן «טופס קבלת רכב» להדפסה/PDF */
+  // טופס קבלת רכב אינטראקטיבי ב-BASE_STEPS; עותק PDF להדפסה לא כשלב נפרד (מצורף אם נבחר במסירה)
   const formsPickerForms = useMemo(
     () =>
-      availableDeliveryForms.filter((doc) => {
-        const label = orgDocumentHandoverLabel(doc);
-        if (!label.includes('טופס קבלת רכב')) return true;
-        return isReceptionPrintPdfFormDoc(doc);
-      }),
+      availableDeliveryForms.filter(
+        (doc) => !isInteractiveHandoverReceptionDoc(doc) && !isReceptionPrintPdfBuiltinDoc(doc),
+      ),
     [availableDeliveryForms],
   );
   const selectedFormsInitializedRef = useRef(false);
@@ -2303,13 +2298,23 @@ export default function VehicleHandoverWizard() {
     return availableDeliveryForms.filter((doc) => selectedSet.has(doc.id));
   }, [availableDeliveryForms, selectedDeliveryFormIds]);
 
+  /** שלב טופס הקבלה האינטראקטיבי רק אם נבחר במסך המסירה (אינטראקטיבי או PDF מובנה). */
+  const wantsHandoverReceptionStep = useMemo(
+    () =>
+      selectedDeliveryFormIds.some((id) => {
+        const doc = availableDeliveryForms.find((f) => f.id === id);
+        if (!doc) return false;
+        return isInteractiveHandoverReceptionDoc(doc) || isReceptionPrintPdfBuiltinDoc(doc);
+      }),
+    [selectedDeliveryFormIds, availableDeliveryForms],
+  );
+
   const receptionFormDoc = useMemo(() => {
-    const isReceptionDeclarationSource = (doc: OrgDocument) =>
-      orgDocumentHandoverLabel(doc).includes('טופס קבלת רכב') && !isReceptionPrintPdfFormDoc(doc);
-    const inSelection = selectedDeliveryForms.find(isReceptionDeclarationSource);
+    if (!wantsHandoverReceptionStep) return null;
+    const inSelection = selectedDeliveryForms.find((doc) => isInteractiveHandoverReceptionDoc(doc));
     if (inSelection) return inSelection;
-    return availableDeliveryForms.find(isReceptionDeclarationSource) ?? null;
-  }, [selectedDeliveryForms, availableDeliveryForms]);
+    return availableDeliveryForms.find((doc) => isInteractiveHandoverReceptionDoc(doc)) ?? null;
+  }, [wantsHandoverReceptionStep, selectedDeliveryForms, availableDeliveryForms]);
 
   const receptionDeclarationText = orgDocumentTemplateBody(
     receptionFormDoc?.json_schema,
@@ -2503,15 +2508,13 @@ export default function VehicleHandoverWizard() {
   }, [canSignReception, sig1OK]);
 
   const wizardSteps = useMemo<WizardStep[]>(() => {
-    const steps: WizardStep[] = [...BASE_STEPS];
+    const steps: WizardStep[] = wantsHandoverReceptionStep ? [...BASE_STEPS] : [];
     const dynamicSteps = selectedDeliveryFormIds
       .map((id) =>
-        availableDeliveryForms.find((f) => {
-          if (f.id !== id) return false;
-          const label = orgDocumentHandoverLabel(f);
-          if (!label.includes('טופס קבלת רכב')) return true;
-          return isReceptionPrintPdfFormDoc(f);
-        }),
+        availableDeliveryForms.find(
+          (f) =>
+            f.id === id && !isInteractiveHandoverReceptionDoc(f) && !isReceptionPrintPdfBuiltinDoc(f),
+        ),
       )
       .filter(Boolean)
       .map((doc) => ({
@@ -2521,7 +2524,14 @@ export default function VehicleHandoverWizard() {
         docId: (doc as DeliveryFormDoc).id,
       }));
     return [...steps, ...dynamicSteps];
-  }, [selectedDeliveryFormIds, availableDeliveryForms]);
+  }, [wantsHandoverReceptionStep, selectedDeliveryFormIds, availableDeliveryForms]);
+
+  useEffect(() => {
+    setStep((s) => {
+      if (wizardSteps.length === 0) return 0;
+      return Math.min(s, wizardSteps.length - 1);
+    });
+  }, [wizardSteps]);
 
   const currentStepDef = wizardSteps[step];
 
@@ -2586,7 +2596,7 @@ export default function VehicleHandoverWizard() {
   ]);
 
   const advanceWizardStep = useCallback(async () => {
-    if (step === 0) {
+    if (currentStepDef?.kind === 'reception') {
       if (requiredStep1FieldsMissing.length > 0) {
         const labels = requiredStep1FieldsMissing.map((item) => item.label);
         toast.error(`נא למלא ${joinHebrewList(labels)}`);
@@ -2643,7 +2653,6 @@ export default function VehicleHandoverWizard() {
     requiredStep1FieldsInvalid,
     requiredStep1FieldsMissing,
     sig2OK,
-    step,
   ]);
 
   const hasLicenseStep = useMemo(() => wizardSteps.some((wizardStep) => wizardStep.kind === 'license'), [wizardSteps]);
@@ -2714,15 +2723,20 @@ export default function VehicleHandoverWizard() {
       driverName,
       date: today,
     };
+    const hasReceptionWizardStep = wizardSteps.some((s) => s.kind === 'reception');
     const [pdf1Blob, pdf2Blob, pdf3Blob] = await Promise.all([
-      generateReceptionPDF({
-        ...deliveryPdfBase,
-        accessories,
-        signatureDataUrl: effectiveSig1DataUrl,
-        declarationText: extractCommitmentSection(receptionDeclarationText).join('\n'),
-        manualFields,
-      })
-        .catch((e) => { console.error('[Wizard] PDF1 failed:', e); return null; }),
+      hasReceptionWizardStep
+        ? generateReceptionPDF({
+            ...deliveryPdfBase,
+            accessories,
+            signatureDataUrl: effectiveSig1DataUrl,
+            declarationText: extractCommitmentSection(receptionDeclarationText).join('\n'),
+            manualFields,
+          }).catch((e) => {
+            console.error('[Wizard] PDF1 failed:', e);
+            return null;
+          })
+        : Promise.resolve(null),
       hasProcedureStep
         ? generateProcedurePDF({
             ...deliveryPdfBase,
@@ -3252,7 +3266,7 @@ export default function VehicleHandoverWizard() {
           vehicleModelSummary,
           vehiclePlate,
           receptionInlineNav:
-            step === 0 && currentStepDef?.kind === 'reception'
+            currentStepDef?.kind === 'reception'
               ? {
                   validationHint: !canAdvance
                     ? firstStep1ProblemLabel
@@ -3274,17 +3288,17 @@ export default function VehicleHandoverWizard() {
       {/* שורת ניווט תחתונה אחת — כפתורי טפסים בכותרת למעלה */}
       <div
         className={`fixed bottom-0 inset-x-0 z-30 pb-[max(0.75rem,env(safe-area-inset-bottom))] ${
-          step === 0 && currentStepDef?.kind === 'reception'
+          currentStepDef?.kind === 'reception'
             ? 'border-t border-white/5 bg-[#0d1b2e]/80 backdrop-blur-sm'
             : 'border-t border-white/10 bg-[#0d1b2e]/97 backdrop-blur-md shadow-[0_-12px_32px_rgba(0,0,0,0.35)]'
         }`}
       >
         <div
           className={`container max-w-3xl mx-auto px-3 ${
-            step === 0 && currentStepDef?.kind === 'reception' ? 'py-1' : 'pt-2.5 pb-3'
+            currentStepDef?.kind === 'reception' ? 'py-1' : 'pt-2.5 pb-3'
           }`}
         >
-          {!canAdvance && !(step === 0 && currentStepDef?.kind === 'reception') && (
+          {!canAdvance && !(currentStepDef?.kind === 'reception') && (
             <p className="mb-2 text-center text-xs text-amber-400/95 leading-snug px-1">
               {currentStepDef?.kind === 'reception' && (firstStep1ProblemLabel
                 ? `שדה בעייתי: ${firstStep1ProblemLabel}`
@@ -3304,7 +3318,7 @@ export default function VehicleHandoverWizard() {
 
           <div
             className={`flex items-center justify-between gap-3 ${
-              step === 0 && currentStepDef?.kind === 'reception' ? 'min-h-0' : 'min-h-[48px]'
+              currentStepDef?.kind === 'reception' ? 'min-h-0' : 'min-h-[48px]'
             }`}
           >
             <div className="flex min-w-0 flex-1 justify-start">
@@ -3323,16 +3337,14 @@ export default function VehicleHandoverWizard() {
             </div>
             <div className="flex min-w-0 flex-1 justify-end">
               {step < wizardSteps.length - 1 ? (
-                !(step === 0 && currentStepDef?.kind === 'reception') ? (
+                !(currentStepDef?.kind === 'reception') ? (
                   <Button
                     onClick={() => void advanceWizardStep()}
                     disabled={submitting || !canAdvance}
                     className="gap-2 bg-cyan-500 hover:bg-cyan-400 text-[#020617] font-bold px-5 sm:px-6 max-w-[min(100vw-8rem,20rem)] truncate touch-manipulation"
                     style={{ touchAction: 'manipulation' }}
                   >
-                    {step === 0 && step1MissingRequiredCount > 0
-                      ? `חסרים ${step1MissingRequiredCount} שדות למילוי`
-                      : 'הבא'}
+                    הבא
                     <ArrowLeft className="h-4 w-4 shrink-0" />
                   </Button>
                 ) : null
