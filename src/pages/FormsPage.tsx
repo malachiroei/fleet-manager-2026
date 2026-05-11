@@ -40,6 +40,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
 import { HANDOVER_ACCESSORY_CEILINGS, formatCeilingPrice } from '@/lib/accessoryCeilings';
+import {
+  BUILTIN_RECEPTION_PRINT_FORM_KEY,
+  builtinReceptionPrintFormSyncTpl,
+  RECEPTION_PRINT_FORM_DISPLAY_TITLE,
+  shouldHydrateReceptionPrintFormDefaults,
+} from '@/lib/builtinReceptionPrintFormTemplate';
 import { buildFormsAutoFillContext, FormsCategory, resolveSchemaAutoFill } from '@/lib/formsAutofill';
 import {
   type FormsChecklistTableDef,
@@ -64,6 +70,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+
+function formatOrgDocumentUpdatedHe(iso: string | null | undefined): string {
+  if (iso == null || typeof iso !== 'string' || !iso.trim()) return '—';
+  const d = new Date(iso);
+  const n = d.getTime();
+  if (!Number.isFinite(n) || n === 0 || d.getUTCFullYear() < 1971) return '—';
+  return d.toLocaleDateString('he-IL');
+}
 
 function FormCardSkeleton() {
   return (
@@ -387,17 +401,45 @@ export default function FormsPage() {
   const openContentEditor = (form: OrgDocument & { category: FormsCategory }) => {
     const schema = (form.json_schema as any) ?? {};
     const isGenerated = schema?.template_mode === 'generated';
+    const hydrateDefaults = shouldHydrateReceptionPrintFormDefaults(form, schema);
     const parsed = parseTemplateExtensions(schema);
     setContentEditingForm(form);
     setContentEditorTitle(orgDocumentHandoverLabel(form) || form.title || '');
-    setContentEditorDescription(form.description ?? '');
-    const templateBody = String(schema?.template_content ?? '').trim();
-    const fallbackDesc = String(form.description ?? '').trim();
-    setContentEditorValue(isGenerated ? String(schema?.template_content ?? '') : templateBody || fallbackDesc);
+    let desc = String(form.description ?? '').trim();
+    if (!desc && hydrateDefaults) {
+      desc = builtinReceptionPrintFormSyncTpl.description;
+    }
+    setContentEditorDescription(desc);
+    let body = String(schema?.template_content ?? '').trim();
+    if (!body) body = String(form.description ?? '').trim();
+    if (!body && hydrateDefaults) {
+      body = builtinReceptionPrintFormSyncTpl.content;
+    }
+    setContentEditorValue(body);
     setContentEditorCustomFields(parsed.custom_fields ?? []);
-    setContentEditorChecklistTables(parsed.checklist_tables ?? []);
+    let tables = parsed.checklist_tables ?? [];
+    if ((!tables || tables.length === 0) && hydrateDefaults) {
+      tables = builtinReceptionPrintFormSyncTpl.templateExtensions?.checklist_tables ?? [];
+    }
+    setContentEditorChecklistTables(tables.map((t) => normalizeChecklistTable(t)));
     setContentEditorIncludeDamageDiagram(Boolean(parsed.include_damage_diagram));
-    setPdfDisplayFlags(normalizePdfDisplayFlags(form));
+    if (hydrateDefaults) {
+      const b = builtinReceptionPrintFormSyncTpl.pdfDisplayFlags;
+      setPdfDisplayFlags(
+        normalizePdfDisplayFlags({
+          show_date: form.show_date ?? b.show_date,
+          show_time: form.show_time ?? b.show_time,
+          show_driver_name: form.show_driver_name ?? b.show_driver_name,
+          show_license_plate: form.show_license_plate ?? b.show_license_plate,
+          show_employee_id: form.show_employee_id ?? b.show_employee_id,
+          show_id_number: form.show_id_number ?? b.show_id_number,
+          show_mobile: form.show_mobile ?? b.show_mobile,
+          show_signature_block: form.show_signature_block ?? b.show_signature_block,
+        }),
+      );
+    } else {
+      setPdfDisplayFlags(normalizePdfDisplayFlags(form));
+    }
     setContentEditorConverting(!isGenerated);
     setContentEditorOpen(true);
   };
@@ -445,6 +487,8 @@ export default function FormsPage() {
     includeHandover?: boolean;
     templateExtensions?: FormsTemplateExtensions | null;
     pdfDisplayFlags?: FormsPdfDisplayFlags | null;
+    /** מסמך להורדה/עריכה במרכז הטפסים בלבד — לא באשף מסירה */
+    formsLibraryOnly?: boolean;
   }) => {
     const extPayload: FormsTemplateExtensions | undefined =
       (args.templateExtensions?.custom_fields?.length ?? 0) > 0 ||
@@ -487,7 +531,15 @@ export default function FormsPage() {
     };
     const persistedCategory = getPersistedCategory(args.formCategory);
     const mergedSchema = mergeExtensionsIntoSchema(baseJsonSchema, extPayload ?? null);
-    const jsonSchema = withCustomFolderInSchema(mergedSchema, args.formCategory);
+    let jsonSchema: Record<string, unknown> = withCustomFolderInSchema(mergedSchema, args.formCategory) as Record<
+      string,
+      unknown
+    >;
+    if (args.formsLibraryOnly) {
+      jsonSchema = { ...jsonSchema, x_forms_download_only: true };
+    } else {
+      delete jsonSchema.x_forms_download_only;
+    }
 
     /** אל תfallback ל-state של דיאלוג "טופס חדש" בעדכון מסמך קיים — זה דרס include_in_delivery והחזיר דגלים אחרי שמירה */
     const delivery =
@@ -599,6 +651,7 @@ ${STANDARD_INPUT_FOOTER_TEXT}
           includeDelivery: true,
           includeReturn: false,
         },
+        builtinReceptionPrintFormSyncTpl,
         {
           key: 'system-upgrade-request',
           title: 'בקשה לשדרוג רכב חברה - מסמך מערכת',
@@ -839,24 +892,49 @@ ${STANDARD_INPUT_FOOTER_TEXT}
 
       let createdCount = 0;
       let skippedCount = 0;
+      const list = allForms ?? forms ?? [];
       for (const tpl of templates) {
         const normalizedTitle = tpl.title.replace(/\s+/g, ' ').trim();
-        const existing = (allForms ?? forms ?? []).find((f) => {
+        const keyMatch = list.find((f) => {
           const schema = (f.json_schema as any) ?? {};
-          const byKey = String(schema?.builtin_template_key ?? '').trim() === tpl.key;
-          const byNormalizedTitle = String(f.title ?? '').replace(/\s+/g, ' ').trim() === normalizedTitle;
-          const titleNorm = String(f.title ?? '').replace(/\s+/g, ' ').trim();
-          const byReceptionFamily =
-            tpl.key === 'system-reception-form' && titleNorm.includes('טופס קבלת רכב');
-          return byKey || byNormalizedTitle || byReceptionFamily;
-        }) ?? null;
-        if (existing) {
-          // Non-destructive sync: never overwrite existing form content edited by admins.
+          return String(schema?.builtin_template_key ?? '').trim() === tpl.key;
+        });
+        if (keyMatch) {
           skippedCount += 1;
           continue;
         }
+
+        let existing: OrgDocument | null = null;
+        if (tpl.key === BUILTIN_RECEPTION_PRINT_FORM_KEY) {
+          existing =
+            list.find((f) => {
+              const s = (f.json_schema as any) ?? {};
+              const t = orgDocumentHandoverLabel(f as OrgDocument).replace(/\s+/g, ' ').trim();
+              if (t !== normalizedTitle) return false;
+              if (String(s.builtin_template_key ?? '').trim() === tpl.key) return false;
+              const weak =
+                s.template_mode !== 'generated' || !String(s.template_content ?? '').trim();
+              return weak;
+            }) ?? null;
+        }
+        if (!existing) {
+          existing =
+            list.find((f) => {
+              const schema = (f.json_schema as any) ?? {};
+              const byNormalizedTitle = String(f.title ?? '').replace(/\s+/g, ' ').trim() === normalizedTitle;
+              const titleNorm = String(f.title ?? '').replace(/\s+/g, ' ').trim();
+              const byReceptionFamily =
+                tpl.key === 'system-reception-form' && titleNorm.includes('טופס קבלת רכב');
+              return byNormalizedTitle || byReceptionFamily;
+            }) ?? null;
+        }
+        if (existing && tpl.key !== BUILTIN_RECEPTION_PRINT_FORM_KEY) {
+          skippedCount += 1;
+          continue;
+        }
+
         await upsertGeneratedTemplate({
-          existing,
+          existing: existing ?? undefined,
           builtinTemplateKey: tpl.key,
           formTitle: tpl.title,
           formDescription: tpl.description,
@@ -865,6 +943,9 @@ ${STANDARD_INPUT_FOOTER_TEXT}
           includeDelivery: tpl.includeDelivery,
           includeReturn: tpl.includeReturn,
           includeHandover: tpl.includeHandover ?? true,
+          templateExtensions: tpl.templateExtensions,
+          pdfDisplayFlags: tpl.pdfDisplayFlags,
+          formsLibraryOnly: tpl.formsLibraryOnly,
         });
         createdCount += 1;
       }
@@ -1072,8 +1153,18 @@ ${STANDARD_INPUT_FOOTER_TEXT}
     }
 
     try {
+      const prevSchema = (contentEditingForm.json_schema as Record<string, unknown> | null) ?? {};
+      const titleNorm = contentEditorTitle.replace(/\s+/g, ' ').trim();
+      const labelNorm = orgDocumentHandoverLabel(contentEditingForm).replace(/\s+/g, ' ').trim();
+      const attachReceptionPrintKey =
+        String(prevSchema.builtin_template_key ?? '').trim() === BUILTIN_RECEPTION_PRINT_FORM_KEY ||
+        (labelNorm === RECEPTION_PRINT_FORM_DISPLAY_TITLE && titleNorm === RECEPTION_PRINT_FORM_DISPLAY_TITLE);
+      const formsLibraryOnly = attachReceptionPrintKey
+        ? false
+        : prevSchema.x_forms_download_only === true;
       await upsertGeneratedTemplate({
         existing: contentEditingForm,
+        builtinTemplateKey: attachReceptionPrintKey ? BUILTIN_RECEPTION_PRINT_FORM_KEY : undefined,
         formTitle: contentEditorTitle.trim(),
         formDescription: contentEditorDescription.trim(),
         formCategory: contentEditingForm.category,
@@ -1084,6 +1175,7 @@ ${STANDARD_INPUT_FOOTER_TEXT}
           checklist_tables: contentEditorChecklistTables.map((t) => normalizeChecklistTable(t)),
           include_damage_diagram: contentEditorIncludeDamageDiagram,
         },
+        formsLibraryOnly,
       });
 
       toast.success(contentEditorConverting ? 'המסמך הומר למסמך עריך ונשמר' : 'תוכן המסמך עודכן בהצלחה');
@@ -1781,7 +1873,7 @@ ${STANDARD_INPUT_FOOTER_TEXT}
                           </div>
                         )}
                         <p className="text-xs text-muted-foreground">
-                          עודכן: {new Date(form.updated_at).toLocaleDateString('he-IL')}
+                          עודכן: {formatOrgDocumentUpdatedHe(form.updated_at)}
                         </p>
                         {autoFillKeys.length > 0 && (
                           <p className="text-xs text-cyan-400">

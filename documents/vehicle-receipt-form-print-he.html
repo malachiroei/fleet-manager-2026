@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>טופס קבלת רכב — מילוי ידני / הדפסה</title>
+  <style>
+    :root {
+      --ink: #0f172a;
+      --muted: #475569;
+      --line: #cbd5e1;
+      --bg: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 1.25rem;
+      font-family: "Segoe UI", "Rubik", "Arial Hebrew", Arial, sans-serif;
+      color: var(--ink);
+      background: #f1f5f9;
+      line-height: 1.5;
+    }
+    .sheet {
+      max-width: 210mm;
+      margin: 0 auto;
+      background: var(--bg);
+      padding: 14mm 16mm 18mm;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+    }
+    h1 {
+      margin: 0 0 0.35rem;
+      font-size: 1.35rem;
+      text-align: center;
+      letter-spacing: 0.02em;
+    }
+    .subtitle {
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin: 0 0 1.25rem;
+    }
+    h2 {
+      margin: 1.1rem 0 0.5rem;
+      font-size: 0.95rem;
+      border-bottom: 2px solid var(--ink);
+      padding-bottom: 0.25rem;
+    }
+    .commitment {
+      font-size: 0.88rem;
+      color: var(--muted);
+    }
+    .commitment p { margin: 0.35rem 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 0.35rem 0.45rem;
+      vertical-align: middle;
+    }
+    th {
+      background: #f8fafc;
+      font-weight: 600;
+    }
+    .cell-check {
+      width: 2.1rem;
+      text-align: center;
+    }
+    .cell-item { text-align: right; font-weight: 500; }
+    .cell-ceiling {
+      width: 3.2rem;
+      text-align: center;
+      white-space: nowrap;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .cell-notes { min-height: 1.6rem; }
+    .notes-line {
+      border-bottom: 1px dotted var(--line);
+      min-height: 1.1rem;
+      display: block;
+    }
+    .fields-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.65rem 1.25rem;
+      font-size: 0.86rem;
+    }
+    @media (max-width: 640px) {
+      .fields-grid { grid-template-columns: 1fr; }
+    }
+    .field label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 0.15rem;
+      font-size: 0.8rem;
+    }
+    .field .line {
+      border-bottom: 1px solid var(--ink);
+      min-height: 1.35rem;
+    }
+    .field.full { grid-column: 1 / -1; }
+    .hint {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 0.35rem;
+    }
+    .sign-block {
+      margin-top: 1.25rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--line);
+    }
+    .sign-block h2 { margin-top: 0; }
+    .sign-area {
+      border: 2px dashed var(--line);
+      min-height: 56mm;
+      margin-top: 0.5rem;
+      border-radius: 6px;
+      background: #fafafa;
+    }
+    .meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-top: 0.75rem;
+      font-size: 0.85rem;
+    }
+    .meta-row .line {
+      flex: 1;
+      min-width: 8rem;
+      border-bottom: 1px solid var(--ink);
+      min-height: 1.25rem;
+    }
+    @media print {
+      body { background: #fff; padding: 0; }
+      .sheet {
+        box-shadow: none;
+        border-radius: 0;
+        max-width: none;
+        padding: 12mm;
+      }
+      .no-print { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <p class="no-print hint" style="text-align:center;margin-bottom:1rem;">
+    מסמך סטטי להדפסה או שמירה כ-PDF (דפדפן: Ctrl+P). התאימו לנוהל הארגון — אינו מחובר לאפליקציה.
+  </p>
+  <article class="sheet">
+    <h1>טופס קבלת רכב</h1>
+    <p class="subtitle">יש לסמן ✓ על כל פריט המצוי ברכב ולחתום בתחתית הטופס</p>
+
+    <h2>1. התחייבות והצהרת הנהג</h2>
+    <div class="commitment">
+      <p>הנני מתחייב להשתמש ברכב אך ורק לשם מילוי תפקידי ולנהוג לפי חוקי התעבורה והנחיות החברה.</p>
+      <p>ידוע לי כי אחריותי המלאה חלה על שימוש תקין ברכב ועל החזרתו בשלמות.</p>
+    </div>
+
+    <h2>2. טבלת אישור אביזרים</h2>
+    <table aria-label="טבלת אביזרים">
+      <thead>
+        <tr>
+          <th class="cell-check">✓</th>
+          <th class="cell-check">✗</th>
+          <th class="cell-item">פריט</th>
+          <th class="cell-ceiling">תקרה</th>
+          <th class="cell-notes">הערות</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td class="cell-check"></td><td class="cell-check"></td><td class="cell-item">גלגל רזרבי</td><td class="cell-ceiling">₪200</td><td><span class="notes-line"></span></td></tr>
+        <tr><td class="cell-check"></td><td class="cell-check"></td><td class="cell-item">מגבה</td><td class="cell-ceiling">₪90</td><td><span class="notes-line"></span></td></tr>
+        <tr><td class="cell-check"></td><td class="cell-check"></td><td class="cell-item">מפתח גלגלים</td><td class="cell-ceiling">₪30</td><td><span class="notes-line"></span></td></tr>
+        <tr><td class="cell-check"></td><td class="cell-check"></td><td class="cell-item">משולש אזהרה</td><td class="cell-ceiling">₪40</td><td><span class="notes-line"></span></td></tr>
+        <tr><td class="cell-check"></td><td class="cell-check"></td><td class="cell-item">סט כלים</td><td class="cell-ceiling">₪80</td><td><span class="notes-line"></span></td></tr>
+        <tr><td class="cell-check"></td><td class="cell-check"></td><td class="cell-item">ערכת עזרה ראשונה</td><td class="cell-ceiling">₪75</td><td><span class="notes-line"></span></td></tr>
+        <tr><td class="cell-check"></td><td class="cell-check"></td><td class="cell-item">מטף כיבוי אש</td><td class="cell-ceiling">₪120</td><td><span class="notes-line"></span></td></tr>
+        <tr><td class="cell-check"></td><td class="cell-check"></td><td class="cell-item">כרטיס דלק</td><td class="cell-ceiling">—</td><td><span class="notes-line"></span></td></tr>
+        <tr><td class="cell-check"></td><td class="cell-check"></td><td class="cell-item">ספר הוראות הפעלה</td><td class="cell-ceiling">₪50</td><td><span class="notes-line"></span></td></tr>
+        <tr><td class="cell-check"></td><td class="cell-check"></td><td class="cell-item">אפוד זוהר</td><td class="cell-ceiling">₪25</td><td><span class="notes-line"></span></td></tr>
+      </tbody>
+    </table>
+    <p class="hint" style="margin-top:0.5rem;">בעמודות ✓ / ✗ — סמנו רק אחת לכל שורה (מצוי / חסר).</p>
+
+    <h2>3. שדות מילוי נדרשים</h2>
+    <div class="fields-grid">
+      <div class="field">
+        <label>שם מלא</label>
+        <div class="line"></div>
+      </div>
+      <div class="field">
+        <label>מספר תעודת זהות <span style="color:#b91c1c">*</span></label>
+        <div class="line"></div>
+      </div>
+      <div class="field">
+        <label>מספר עובד <span style="color:#b91c1c">*</span></label>
+        <div class="line"></div>
+      </div>
+      <div class="field">
+        <label>טלפון נייד <span style="color:#b91c1c">*</span></label>
+        <div class="line"></div>
+      </div>
+      <div class="field full">
+        <label>כתובת העובד (עיר ורחוב) <span style="color:#b91c1c">*</span></label>
+        <div class="line"></div>
+      </div>
+      <div class="field">
+        <label>דגם רכב</label>
+        <div class="line"></div>
+      </div>
+      <div class="field">
+        <label>מספר רכב (לוחית)</label>
+        <div class="line"></div>
+      </div>
+      <div class="field">
+        <label>קוד קודנית <span style="color:#b91c1c">*</span></label>
+        <div class="line"></div>
+      </div>
+      <div class="field">
+        <label>תאריך ושעת מסירה</label>
+        <div class="line"></div>
+      </div>
+    </div>
+
+    <div class="sign-block">
+      <h2>4. חתימת הנהג — אישור קבלת הרכב והאביזרים</h2>
+      <div class="sign-area" aria-label="אזור חתימה"></div>
+      <div class="meta-row">
+        <div>
+          <strong>תאריך</strong>
+          <div class="line"></div>
+        </div>
+        <div>
+          <strong>שם מלא (חוזר)</strong>
+          <div class="line"></div>
+        </div>
+      </div>
+    </div>
+  </article>
+</body>
+</html>

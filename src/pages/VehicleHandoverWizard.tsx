@@ -38,7 +38,13 @@ import {
   type ChecklistTableRowResponse,
 } from '@/lib/formsGeneratedPdf';
 import type { OrgDocument } from '@/hooks/useOrgDocuments';
-import { isOrgDocumentUsableForHandoverList, orgDocumentHandoverLabel } from '@/lib/orgDocumentHandoverFilter';
+import { isReceptionPrintPdfFormDoc } from '@/lib/builtinReceptionPrintFormTemplate';
+import {
+  isLegacySeededVehicleDeliveryForm,
+  isOrgDocumentFormsDownloadOnly,
+  isOrgDocumentUsableForHandoverList,
+  orgDocumentHandoverLabel,
+} from '@/lib/orgDocumentHandoverFilter';
 import { HANDOVER_ACCESSORY_CEILINGS, formatCeilingPrice } from '@/lib/accessoryCeilings';
 import { cloneEmptyDamageReport, hasAnyDamage, summarizeDamageReport, type VehicleDamageReport } from '@/lib/vehicleDamage';
 // Badge no longer needed — replaced with plain span
@@ -2232,16 +2238,24 @@ export default function VehicleHandoverWizard() {
 
   // טפסים עם כותרת + תוכן (קובץ/סכמה/תיאור) — בלי שורות ריקות מ־DB
   const availableDeliveryForms = useMemo(
-    () => (orgDocuments ?? []).filter((doc) => isOrgDocumentUsableForHandoverList(doc)),
+    () =>
+      (orgDocuments ?? []).filter(
+        (doc) =>
+          isOrgDocumentUsableForHandoverList(doc) &&
+          !isOrgDocumentFormsDownloadOnly(doc) &&
+          !isLegacySeededVehicleDeliveryForm(doc),
+      ),
     [orgDocuments],
   );
 
-  // All forms except 'טופס קבלת רכב' for the picker
+  /** טפסים נוספים: לא מקור ההצהרה האינטראקטיבית (טופס קבלת רכב מהאשף), אבל כן «טופס קבלת רכב» להדפסה/PDF */
   const formsPickerForms = useMemo(
     () =>
-      availableDeliveryForms.filter(
-        (doc) => !orgDocumentHandoverLabel(doc).includes('טופס קבלת רכב'),
-      ),
+      availableDeliveryForms.filter((doc) => {
+        const label = orgDocumentHandoverLabel(doc);
+        if (!label.includes('טופס קבלת רכב')) return true;
+        return isReceptionPrintPdfFormDoc(doc);
+      }),
     [availableDeliveryForms],
   );
   const selectedFormsInitializedRef = useRef(false);
@@ -2290,15 +2304,11 @@ export default function VehicleHandoverWizard() {
   }, [availableDeliveryForms, selectedDeliveryFormIds]);
 
   const receptionFormDoc = useMemo(() => {
-    const inSelection = selectedDeliveryForms.find((doc) =>
-      orgDocumentHandoverLabel(doc).includes('טופס קבלת רכב'),
-    );
+    const isReceptionDeclarationSource = (doc: OrgDocument) =>
+      orgDocumentHandoverLabel(doc).includes('טופס קבלת רכב') && !isReceptionPrintPdfFormDoc(doc);
+    const inSelection = selectedDeliveryForms.find(isReceptionDeclarationSource);
     if (inSelection) return inSelection;
-    return (
-      availableDeliveryForms.find((doc) =>
-        orgDocumentHandoverLabel(doc).includes('טופס קבלת רכב'),
-      ) ?? null
-    );
+    return availableDeliveryForms.find(isReceptionDeclarationSource) ?? null;
   }, [selectedDeliveryForms, availableDeliveryForms]);
 
   const receptionDeclarationText = orgDocumentTemplateBody(
@@ -2496,10 +2506,12 @@ export default function VehicleHandoverWizard() {
     const steps: WizardStep[] = [...BASE_STEPS];
     const dynamicSteps = selectedDeliveryFormIds
       .map((id) =>
-        availableDeliveryForms.find(
-          (f) =>
-            f.id === id && !orgDocumentHandoverLabel(f).includes('טופס קבלת רכב'),
-        ),
+        availableDeliveryForms.find((f) => {
+          if (f.id !== id) return false;
+          const label = orgDocumentHandoverLabel(f);
+          if (!label.includes('טופס קבלת רכב')) return true;
+          return isReceptionPrintPdfFormDoc(f);
+        }),
       )
       .filter(Boolean)
       .map((doc) => ({

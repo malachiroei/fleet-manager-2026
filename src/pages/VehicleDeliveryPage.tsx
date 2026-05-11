@@ -37,7 +37,11 @@ import {
   hasAnyDamage,
   summarizeDamageReport,
 } from '@/lib/vehicleDamage';
-import { isOrgDocumentUsableForHandoverList, orgDocumentHandoverLabel } from '@/lib/orgDocumentHandoverFilter';
+import {
+  isLegacySeededVehicleDeliveryForm,
+  isOrgDocumentFormsDownloadOnly,
+  orgDocumentHandoverLabel,
+} from '@/lib/orgDocumentHandoverFilter';
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -90,7 +94,12 @@ export default function VehicleDeliveryPage() {
   const fieldClass = 'h-11 rounded-xl border-cyan-300/25 bg-[#061325]/80 text-white placeholder:text-cyan-100/45 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.08)] focus-visible:ring-cyan-300/45';
   const labelClass = 'mb-1.5 block text-xs font-semibold tracking-wide text-cyan-100/80';
 
-  const availableDeliveryForms = (orgDocuments ?? []).filter((doc) => doc.is_active);
+  const availableDeliveryForms = (orgDocuments ?? []).filter(
+    (doc) =>
+      doc.is_active &&
+      !isOrgDocumentFormsDownloadOnly(doc) &&
+      !isLegacySeededVehicleDeliveryForm(doc),
+  );
   const preselectedVehicleId = (searchParams.get('vehicleId') ?? '').trim();
   const preselectedDriverId = (searchParams.get('driverId') ?? '').trim();
 
