@@ -5,7 +5,6 @@ import { commitFleetProAcknowledgedVersionAndHardReload } from "@/lib/pwaService
 import { isFleetManagerProHostname, normalizeVersion, toCanonicalThreePartVersion } from "@/lib/versionManifest";
 import {
   FLEET_PRO_ACK_VERSION_STORAGE_KEY,
-  FLEET_PRO_ACK_VERSION_UPDATED_EVENT,
   FLEET_PRO_PRIVATE_ANCHOR_KEY_PREFIX,
   version as bundleVersion,
 } from "@/constants/version";
@@ -177,11 +176,6 @@ export function UpdateModal() {
                   // ignore
                 }
                 clearFleetProPrivateAnchorLocalStorageKeys();
-                try {
-                  window.dispatchEvent(new Event(FLEET_PRO_ACK_VERSION_UPDATED_EVENT));
-                } catch {
-                  // ignore
-                }
                 toast.success("העדכון הושלם בהצלחה! האפליקציה תתרענן כעת.");
                 window.location.href = `${window.location.origin}?updated=${Date.now()}`;
                 return;

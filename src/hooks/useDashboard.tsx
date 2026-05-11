@@ -361,12 +361,12 @@ export function useDashboardStats() {
       let vehiclesCount = 0;
       let driversCount = 0;
 
-      if (isDriverContextOnly) {
+      /**
+       * רק כשיש שורת `drivers` מקושרת ל-user — ספירה לפי שיוך רכב (כמו useVehicles עם scopedDriverId).
+       * בלי `scopedDriverId` הרשימות (useVehicles/useDrivers) עדיין מציגות את כל הארגון — הדשבורד חייב להתאים.
+       */
+      if (isDriverContextOnly && scopedDriverId) {
         const driverId = scopedDriverId;
-        if (!driverId) {
-          return { totalVehicles: 0, totalDrivers: 0, alertsCount: 0, warningCount: 0, expiredCount: 0 };
-        }
-
         const { data: vRows, error: vErr } = await supabase
           .from('vehicles')
           .select('id')

@@ -33,10 +33,19 @@ export function isFleetManagerTestHost(): boolean {
   if (h.endsWith(".vercel.app")) {
     const first = h.split(".")[0];
     if (first === "fleet-manager-dev" || first.startsWith("fleet-manager-dev-")) return true;
-    // fleet-manager-2026 (דיפלוי Git / פריוויו) — כמו dev: ניקוי cache + עדכון SW אוטומטי
+    /** פריוויו Git / fleet-manager-2026 — רק דגל UI (כותרת), בלי ניקוי cache/SW אגרסיבי */
     if (first === "fleet-manager-2026" || first.startsWith("fleet-manager-2026-")) return true;
   }
   return false;
+}
+
+
+/** ניקוי cache מלא רק בדפלוי dev המיועד לכך — לא ב־fleet-manager-2026 ופריוויו אחרים. */
+function isFleetManagerDevVercelDeploy(): boolean {
+  if (typeof window === "undefined") return false;
+  const h = (window.location.hostname || "").toLowerCase();
+  if (h === "fleet-manager-dev.vercel.app") return true;
+  return /^fleet-manager-dev-[^.]+\.vercel\.app$/.test(h);
 }
 
 /**
@@ -75,9 +84,8 @@ const initialPrompt: PromptState = {
 };
 
 /**
- * fleet-manager-pro.com: ללא registration.update(), ללא תגובה ל-updatefound (אין עדכון SW אוטומטי).
- * זיהוי גרסה חדשה בייצור — רק ב-UpdateModal (מול Supabase), לא כאן.
- * שאר hosts: עדכון אוטומטי בזיהוי SW חדש (update + applyServiceWorkerUpdateAndReload).
+ * רק fleet-manager-pro.com (ו-www): registration.update() + מסלול updatefound → reload (PWA מעודכן).
+ * ב-localhost, ב-*.vercel.app ובכל דומיין אחר — אין update אוטומטי ואין reload מ-SW (חוויית SPA).
  */
 export function useRegisterSW(options?: RegisterSWOptions) {
   const [prompt, setPrompt] = useState<PromptState>(initialPrompt);
@@ -159,6 +167,7 @@ export function useRegisterSW(options?: RegisterSWOptions) {
 
     const onControllerChange = () => {
       try {
+        if (!isFleetProductionHost()) return;
         if (sessionStorage.getItem("pwa-waiting-reload") === "1") {
           sessionStorage.removeItem("pwa-waiting-reload");
           window.location.reload();
@@ -169,9 +178,10 @@ export function useRegisterSW(options?: RegisterSWOptions) {
     };
 
     (async () => {
-      const isProduction =
-        window.location.hostname.toLowerCase() === "fleet-manager-pro.com" ||
-        window.location.hostname.toLowerCase() === "www.fleet-manager-pro.com";
+      const hostname = (window.location.hostname || "").toLowerCase();
+      /** לפי דרישה: hostname שמכיל את המחרוזת `vercel` (דפלויי preview / Vercel). */
+      const isVercelPreview = hostname.includes("vercel");
+      const allowSwAutoUpdateAndReload = isFleetProductionHost() && !isVercelPreview;
 
       try {
         try {
@@ -180,7 +190,7 @@ export function useRegisterSW(options?: RegisterSWOptions) {
           // ignore
         }
 
-        if (!isProduction && isFleetManagerTestHost()) {
+        if (!allowSwAutoUpdateAndReload && isFleetManagerDevVercelDeploy()) {
           try {
             await clearAllBrowserCaches();
           } catch {
@@ -200,8 +210,8 @@ export function useRegisterSW(options?: RegisterSWOptions) {
         bindServiceWorkerRegistration(registration);
         onRegisteredRef.current?.(registration);
 
-        // ייצור: ללא registration.update() אוטומטי. טסט/שאר: עדכון אוטומטי לזיהוי SW חדש
-        if (!isProduction) {
+        // רק דומיין הייצור המוחלט: בדיקת עדכון SW + reload אחרי waiting (שאר הסביבות — ללא).
+        if (allowSwAutoUpdateAndReload) {
           try {
             await unregisterNonV2ServiceWorkers();
           } catch {
@@ -223,8 +233,7 @@ export function useRegisterSW(options?: RegisterSWOptions) {
               setOfflineReady(true);
               return;
             }
-            /** ייצור: אין החלה אוטומטית ואין מודאל מ-SW — רק סקר מול Supabase */
-            if (isProduction) return;
+            if (!allowSwAutoUpdateAndReload) return;
             void applyServiceWorkerUpdateAndReload();
           });
         });

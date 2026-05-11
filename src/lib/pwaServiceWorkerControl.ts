@@ -10,7 +10,6 @@ import {
   version as bundleVersion,
   FLEET_BYPASS_SESSION_STORAGE_KEY,
   FLEET_PRO_ACK_VERSION_STORAGE_KEY,
-  FLEET_PRO_ACK_VERSION_UPDATED_EVENT,
   FLEET_PRO_PRIVATE_ANCHOR_ACKNOWLEDGED_KEY,
   FORCE_UPDATE_RELOAD_STORAGE_KEY,
   FLEET_SW_BYPASS_TTL_MS,
@@ -46,11 +45,6 @@ export async function commitFleetProAcknowledgedVersionAndHardReload(
     } catch {
       // ignore
     }
-  }
-  try {
-    window.dispatchEvent(new Event(FLEET_PRO_ACK_VERSION_UPDATED_EVENT));
-  } catch {
-    // ignore
   }
   await new Promise<void>((resolve) => window.setTimeout(resolve, 500));
   const loc = window.location as Location & { reload?: (forceReload?: boolean) => void };
@@ -298,14 +292,6 @@ export async function applyServiceWorkerUpdateAndReload(
     } catch {
       // ignore
     }
-    try {
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new Event(FLEET_PRO_ACK_VERSION_UPDATED_EVENT));
-      }
-    } catch {
-      // ignore
-    }
-
     try {
       await clearAllBrowserCaches();
     } catch {
