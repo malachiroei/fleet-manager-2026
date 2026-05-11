@@ -101,13 +101,12 @@ export default function AdminSettingsPage() {
     useEffect(() => {
       (async () => {
         try {
-          const [emRes, prefRes] = await Promise.all([
-            (supabase as any).from(FLEET_KV_TABLE).select('value').eq('key', 'notification_emails').maybeSingle(),
-            (supabase as any).from(FLEET_KV_TABLE).select('value').eq('key', NOTIFICATION_EMAIL_TOPIC_PREFS_KEY).maybeSingle(),
-          ]);
-          if (emRes.error) throw emRes.error;
-          const arr = parseNotificationEmailList(emRes.data?.value);
-          const prefsFromDb = parseTopicPrefs(prefRes.data?.value);
+          const { data: bundle, error: bundleErr } = await (supabase as any).rpc(
+            'get_notification_email_settings'
+          );
+          if (bundleErr) throw bundleErr;
+          const arr = parseNotificationEmailList(bundle?.emails);
+          const prefsFromDb = parseTopicPrefs(bundle?.topic_prefs);
           if (arr.length > 0) {
             setNotificationEmailsRaw(arr.join(', '));
             setNotificationTopicPrefs(mergeTopicPrefsForNewEmails(prefsFromDb, arr));

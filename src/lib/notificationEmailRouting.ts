@@ -64,18 +64,37 @@ export function parseEmailsFromTextarea(text: string): string[] {
     .filter((e) => e.length > 0 && e.includes('@'));
 }
 
+function tryParseJsonUnknown(raw: string): unknown {
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+/** מערך מיילים מתוך עמודת jsonb / תגובת RPC — כולל מחרוזת JSON או אלמנטים לא-מחרוזתיים */
 export function parseNotificationEmailList(raw: unknown): string[] {
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .filter((e): e is string => typeof e === 'string' && e.includes('@'))
+  let v: unknown = raw;
+  if (typeof v === 'string') {
+    const parsed = tryParseJsonUnknown(v.trim());
+    if (parsed !== undefined) v = parsed;
+  }
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((e) => (typeof e === 'string' ? e : e == null ? '' : String(e)))
     .map((e) => e.trim())
-    .filter(Boolean);
+    .filter((e) => e.includes('@'));
 }
 
 export function parseTopicPrefs(value: unknown): NotificationEmailTopicPrefsMap {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  let root: unknown = value;
+  if (typeof root === 'string') {
+    const parsed = tryParseJsonUnknown(root.trim());
+    if (parsed !== undefined) root = parsed;
+  }
+  if (!root || typeof root !== 'object' || Array.isArray(root)) return {};
   const out: NotificationEmailTopicPrefsMap = {};
-  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+  for (const [k, v] of Object.entries(root as Record<string, unknown>)) {
     if (!k.includes('@')) continue;
     if (typeof v !== 'object' || v === null || Array.isArray(v)) continue;
     const flags: Partial<Record<NotificationEmailTopicId, boolean>> = {};
