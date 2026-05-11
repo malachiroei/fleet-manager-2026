@@ -192,14 +192,11 @@ export default function AdminSettingsPage() {
 
       setIsSavingEmails(true);
       try {
-        const { error: emErr } = await (supabase as any)
-          .from(FLEET_KV_TABLE)
-          .upsert({ key: 'notification_emails', value: emails }, { onConflict: 'key' });
-        if (emErr) throw emErr;
-        const { error: prefErr } = await (supabase as any)
-          .from(FLEET_KV_TABLE)
-          .upsert({ key: NOTIFICATION_EMAIL_TOPIC_PREFS_KEY, value: mergedPrefs }, { onConflict: 'key' });
-        if (prefErr) throw prefErr;
+        const { error: rpcErr } = await (supabase as any).rpc('upsert_notification_email_settings', {
+          p_emails: emails,
+          p_topic_prefs: mergedPrefs,
+        });
+        if (rpcErr) throw rpcErr;
         setNotificationTopicPrefs(mergedPrefs);
         setNotificationEmailsRaw(emails.join(', '));
         localStorage.setItem('handover_notification_email', emails[0]);
@@ -224,9 +221,10 @@ export default function AdminSettingsPage() {
       const mergedPrefs = mergeTopicPrefsForNewEmails(notificationTopicPrefs, emails);
       setIsSavingTopicPrefs(true);
       try {
-        const { error } = await (supabase as any)
-          .from(FLEET_KV_TABLE)
-          .upsert({ key: NOTIFICATION_EMAIL_TOPIC_PREFS_KEY, value: mergedPrefs }, { onConflict: 'key' });
+        const { error } = await (supabase as any).rpc('upsert_notification_email_settings', {
+          p_emails: null,
+          p_topic_prefs: mergedPrefs,
+        });
         if (error) throw error;
         setNotificationTopicPrefs(mergedPrefs);
         toast.success('העדפות נושאי מייל נשמרו');
