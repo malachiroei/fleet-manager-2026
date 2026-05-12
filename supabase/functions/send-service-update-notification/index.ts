@@ -29,6 +29,8 @@ export interface FleetFieldUpdateRow {
 }
 
 export interface ServiceUpdateNotificationBody {
+  /** לאיחוד ניתוב מיילים per-admin לארגון */
+  orgId?: string;
   /** `fleet_field` — מייל גנרי (טסט, ביטוח, צמיגים); חסר או `service` — מייל טיפול */
   notificationType?: 'service' | 'fleet_field';
   /** אופציונלי — תואם send-mileage-notification (ברירת מחדל malachiroei@gmail.com) */
@@ -78,6 +80,24 @@ serve(async (req) => {
       );
     }
 
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const admin =
+      supabaseUrl && serviceRoleKey
+        ? createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } })
+        : null;
+
+    async function resolveRecipients(
+      topic: NotificationEmailTopicId,
+      toOverride: string | undefined,
+      orgId?: string | null,
+    ): Promise<string[]> {
+      const extra = toOverride && String(toOverride).includes('@') ? [String(toOverride).trim()] : [];
+      const fromDb = admin ? await loadFilteredNotificationEmails(admin, topic, orgId ?? null) : [];
+      const list = uniqueEmailList([...extra, ...fromDb]);
+      return list.length > 0 ? list : ['malachiroei@gmail.com'];
+    }
+
     const body = (await req.json()) as ServiceUpdateNotificationBody;
     const mode = body.notificationType === 'fleet_field' ? 'fleet_field' : 'service';
 
@@ -91,7 +111,8 @@ serve(async (req) => {
         });
       }
       const fleetTopic = coerceEmailTopic(body.emailTopic);
-      const recipients = await resolveRecipients(fleetTopic, body.to);
+      const orgIdTrim = String(body.orgId ?? '').trim() || null;
+      const recipients = await resolveRecipients(fleetTopic, body.to, orgIdTrim);
       const headline = esc(body.headline?.trim() || subject);
       const safeDoc = String(body.documentUrl ?? '').trim().replace(/"/g, '');
 
@@ -162,9 +183,8 @@ serve(async (req) => {
     }
 
     const subject = body.subject?.trim() || 'עדכון טיפול';
-    const to =
-      (body.to && String(body.to).includes('@') ? String(body.to).trim() : '') ||
-      'malachiroei@gmail.com';
+    const orgIdTrim = String(body.orgId ?? '').trim() || null;
+    const recipients = await resolveRecipients('maintenance_update', body.to, orgIdTrim);
 
     const kmStr = (n: number | null | undefined) =>
       n != null && Number.isFinite(n) ? `${Number(n).toLocaleString('he-IL')} ק"מ` : '—';

@@ -2909,6 +2909,8 @@ export default function VehicleHandoverWizard() {
         },
       };
       const latestNotes = [healthNotes.trim()].filter(Boolean).join(' | ') || null;
+      const vehicleRow = vehicles?.find((v) => v.id === vehicleId);
+      const handoverEmailOrgId = vehicleRow?.org_id ?? activeOrgId ?? profile?.org_id ?? undefined;
       await sendHandoverNotificationEmail({
         handoverId,
         vehicleId,
@@ -2923,6 +2925,7 @@ export default function VehicleHandoverWizard() {
         receptionFormData: wizardState.data.receptionForm,
         reportUrl,
         additionalAttachments: allAttachments,
+        orgId: handoverEmailOrgId,
       });
       console.log('[Wizard] Email sent OK');
       toast.success(

@@ -6,8 +6,7 @@ import {
   type NotificationEmailTopicId,
 } from './notificationEmailRouting.ts';
 
-/** כתובות מ-notification_emails שמופעלות לנושא (לפי notification_email_topic_prefs). */
-export async function loadFilteredNotificationEmails(
+async function loadLegacyGlobalFiltered(
   admin: SupabaseClient,
   topic: NotificationEmailTopicId,
 ): Promise<string[]> {
@@ -18,6 +17,36 @@ export async function loadFilteredNotificationEmails(
   const list = parseNotificationEmailList((emRes as { data?: { value?: unknown } | null }).data?.value);
   const prefs = parseTopicPrefs((prefRes as { data?: { value?: unknown } | null }).data?.value);
   return emailsSubscribedToTopic(list, prefs, topic);
+}
+
+/**
+ * כתובות מנותבות לפי נושא:
+ * - אם יש `orgId`: מאחד את כל שורות user_org_notification_routing של הארגון (כל אדמין + ההעדפות שלו).
+ * - אם אין תוצאות — נופל ל-legacy ב-system_settings (התאמה לאחור).
+ */
+export async function loadFilteredNotificationEmails(
+  admin: SupabaseClient,
+  topic: NotificationEmailTopicId,
+  orgId?: string | null,
+): Promise<string[]> {
+  const oid = typeof orgId === 'string' ? orgId.trim() : '';
+  if (oid) {
+    const { data: rows, error } = await admin
+      .from('user_org_notification_routing')
+      .select('emails, topic_prefs')
+      .eq('org_id', oid);
+    if (!error && Array.isArray(rows) && rows.length > 0) {
+      const merged: string[] = [];
+      for (const r of rows as { emails?: unknown; topic_prefs?: unknown }[]) {
+        const list = parseNotificationEmailList(r?.emails);
+        const prefs = parseTopicPrefs(r?.topic_prefs);
+        merged.push(...emailsSubscribedToTopic(list, prefs, topic));
+      }
+      const u = uniqueEmailList(merged);
+      if (u.length > 0) return u;
+    }
+  }
+  return await loadLegacyGlobalFiltered(admin, topic);
 }
 
 export function uniqueEmailList(emails: string[]): string[] {

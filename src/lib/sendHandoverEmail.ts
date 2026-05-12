@@ -9,7 +9,7 @@
  * All signed document URLs and the license photos are fetched, base64-encoded,
  * and attached to the email.  The recipient list is always:
  *   • The driver's own email address (primary)
- *   • Every address stored in system_settings → notification_emails (CC)
+ *   • כתובות CC לפי ניתוב לארגון (כל אדמין) + legacy ב-system_settings
  *
  * Usage:
  *   await sendHandoverEmail({ docs, driverName, driverEmail, vehicleLabel,
@@ -17,11 +17,8 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
-import { FLEET_KV_TABLE } from '@/lib/fleetKvTable';
 import {
-  emailsSubscribedToTopic,
-  parseNotificationEmailList,
-  parseTopicPrefs,
+  resolveNotificationEmailsForTopic,
 } from '@/lib/notificationEmailRouting';
 import { emailFleetBrandHeaderHtmlFromClient } from '@/lib/emailBrandHeader';
 
@@ -39,6 +36,8 @@ export interface SendHandoverEmailParams {
   vehicleLabel:  string;
   licenseNumber: string;
   supabase:      SupabaseClient;
+  /** לאיחוד ניתוב CC לפי ארגון (אשף מסירה) */
+  fleetOrgId?:  string | null;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -79,6 +78,7 @@ export async function sendHandoverEmail({
   vehicleLabel,
   licenseNumber,
   supabase,
+  fleetOrgId,
 }: SendHandoverEmailParams): Promise<{ success: boolean; error?: string }> {
 
   // ── 1. API key guard ───────────────────────────────────────────────────────
@@ -94,22 +94,12 @@ export async function sendHandoverEmail({
     return { success: false, error: 'driver has no email' };
   }
 
-  // ── 3. Read notification_emails + topic prefs from system_settings ───────
+  // ── 3. CC: ניתוב per-org + legacy system_settings ─────────────────────────
   let ccEmails: string[] = [];
   try {
-    const [emRes, prefRes] = await Promise.all([
-      (supabase as any).from(FLEET_KV_TABLE).select('value').eq('key', 'notification_emails').maybeSingle() as Promise<{
-        data: { value: unknown } | null;
-      }>,
-      (supabase as any).from(FLEET_KV_TABLE).select('value').eq('key', 'notification_email_topic_prefs').maybeSingle() as Promise<{
-        data: { value: unknown } | null;
-      }>,
-    ]);
-    const list = parseNotificationEmailList(emRes?.data?.value);
-    const prefs = parseTopicPrefs(prefRes?.data?.value);
-    ccEmails = emailsSubscribedToTopic(list, prefs, 'handover_wizard');
+    ccEmails = await resolveNotificationEmailsForTopic(supabase, 'handover_wizard', [], fleetOrgId ?? null);
   } catch (e) {
-    console.warn('sendHandoverEmail: could not read system_settings:', e);
+    console.warn('sendHandoverEmail: could not resolve notification CC list:', e);
   }
 
   // Build recipient list: driver first, then CCs (deduped)

@@ -9,6 +9,8 @@ const FUNCTION_NAME = 'send-service-update-notification';
 
 /** מייל עדכון שדה (טסט / ביטוח / צמיגים וכו׳) — לא חוסם שמירה אם נכשל */
 export async function sendFleetFieldUpdateNotification(params: {
+  /** לאיחוד ניתוב מיילים per-admin */
+  orgId?: string | null;
   /** נושא לניהול הרשאות מייל בהגדרות מערכת */
   emailTopic: NotificationEmailTopicId;
   subject: string;
@@ -25,6 +27,7 @@ export async function sendFleetFieldUpdateNotification(params: {
   const body: Record<string, unknown> = {
     notificationType: 'fleet_field',
     emailTopic: params.emailTopic,
+    orgId: params.orgId?.trim() || undefined,
     to: params.to,
     subject: params.subject,
     headline: params.headline,

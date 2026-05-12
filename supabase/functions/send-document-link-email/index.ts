@@ -18,6 +18,8 @@ type Body = {
   doc_title?: string;
   driver_name?: string;
   vehicle_label?: string;
+  /** לארגון — ניתוב התראות per-admin */
+  org_id?: string;
 };
 
 function json(body: unknown, status = 200): Response {
@@ -55,6 +57,7 @@ serve(async (req) => {
     const docTitle = clean(body.doc_title) || 'מסמך';
     const driverName = clean(body.driver_name);
     const vehicleLabel = clean(body.vehicle_label);
+    const orgId = clean(body.org_id);
 
     if (!to || !isValidEmail(to)) return json({ error: 'Missing or invalid to_email' }, 400);
     if (!docUrl || !isValidHttpUrl(docUrl)) return json({ error: 'Missing or invalid doc_url' }, 400);
@@ -97,7 +100,7 @@ serve(async (req) => {
     const html = wrapEmailBodyWithBrand(supabaseUrl, innerHtml);
     const staffBcc = bccExcludingPrimary(
       [to],
-      await loadFilteredNotificationEmails(admin, 'document_share_copy'),
+      await loadFilteredNotificationEmails(admin, 'document_share_copy', orgId || null),
     );
 
     const resendPayload: Record<string, unknown> = {

@@ -280,6 +280,7 @@ export default function VehicleReturnPage() {
           assignmentMode,
           damageSummary,
           reportUrl,
+          orgId: selectedVehicleData?.org_id ?? undefined,
         });
       } catch (emailError) {
         console.error('Email notification error:', emailError);

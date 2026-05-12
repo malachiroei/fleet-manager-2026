@@ -546,6 +546,7 @@ export default function VehicleDetailPage() {
           doc_title: docTitle,
           driver_name: assignedDriver?.full_name ?? '',
           vehicle_label: String(vehicle?.plate_number ?? '').trim(),
+          org_id: String(vehicle?.org_id ?? '').trim() || undefined,
         });
         if (error) throw error;
         const payload = data as { success?: boolean; sent_to?: string; error?: string } | null;
@@ -560,7 +561,7 @@ export default function VehicleDetailPage() {
         setSendingDocUrl(null);
       }
     },
-    [assignedDriver?.full_name, vehicle?.plate_number],
+    [assignedDriver?.full_name, vehicle?.org_id, vehicle?.plate_number],
   );
 
   const { data: pricingLookup } = usePricingLookup(

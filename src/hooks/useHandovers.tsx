@@ -1683,13 +1683,15 @@ interface SendHandoverEmailInput {
   reportUrl: string;
   /** Extra files to attach alongside the PDF (wizard documents). */
   additionalAttachments?: { filename: string; url: string }[];
+  /** לאיחוד ניתוב מייל טופס מסירה (handover_form) */
+  orgId?: string;
 }
 
 export async function sendHandoverNotificationEmail(input: SendHandoverEmailInput) {
   const legacySingle =
     (typeof localStorage !== 'undefined' && localStorage.getItem('handover_notification_email')) ||
     'malachiroei@gmail.com';
-  const toList = await resolveNotificationEmailsForTopic(supabase, 'handover_form', [legacySingle]);
+  const toList = await resolveNotificationEmailsForTopic(supabase, 'handover_form', [legacySingle], input.orgId ?? null);
   const hasReceptionAttachment = (input.additionalAttachments ?? []).some((file) => file.filename.includes('טופס קבלת רכב'));
   console.log('[sendHandoverNotificationEmail] reception attachment pushed', {
     hasReceptionAttachment,

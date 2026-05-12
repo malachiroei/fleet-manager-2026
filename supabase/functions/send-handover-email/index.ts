@@ -28,11 +28,7 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { emailFleetBrandHeaderHtml } from '../_shared/emailBrandHeader.ts';
-import {
-  emailsSubscribedToTopic,
-  parseNotificationEmailList,
-  parseTopicPrefs,
-} from '../_shared/notificationEmailRouting.ts';
+import { loadFilteredNotificationEmails } from '../_shared/loadFilteredNotificationEmails.ts';
 
 // ── CORS ────────────────────────────────────────────────────────────────────
 const corsHeaders = {
@@ -128,7 +124,7 @@ serve(async (req) => {
     const supabaseUrl         = Deno.env.get('SUPABASE_URL');
     const serviceRoleKey      = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const fromEmail           = Deno.env.get('NOTIFY_FROM_EMAIL') ?? 'Fleet Manager Pro <invites@fleet-manager-pro.com>';
-    // FLEET_MANAGER_EMAIL is now a last-resort fallback only — real list comes from system_settings
+    // FLEET_MANAGER_EMAIL is now a last-resort fallback only — routing from DB (per org + legacy)
     const fallbackManagerEmail = Deno.env.get('FLEET_MANAGER_EMAIL') ?? 'malachiroei@gmail.com';
 
     if (!resendApiKey || !supabaseUrl || !serviceRoleKey) {
@@ -163,24 +159,6 @@ serve(async (req) => {
     // ── Supabase admin client ────────────────────────────────────────────────
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    // ── 0. Resolve CC recipients from public.system_settings ─────────────────
-    let ccEmails: string[] = [fallbackManagerEmail];
-    try {
-      const [emRes, prefRes] = await Promise.all([
-        supabase.from('system_settings' as never).select('value').eq('key', 'notification_emails').maybeSingle(),
-        supabase.from('system_settings' as never).select('value').eq('key', 'notification_email_topic_prefs').maybeSingle(),
-      ]);
-
-      const list = parseNotificationEmailList((emRes as { data?: { value?: unknown } | null })?.data?.value);
-      const prefs = parseTopicPrefs((prefRes as { data?: { value?: unknown } | null })?.data?.value);
-      const filtered = emailsSubscribedToTopic(list, prefs, 'handover_wizard');
-      if (filtered.length > 0) {
-        ccEmails = filtered;
-      }
-    } catch (settingsErr) {
-      console.warn('Could not read system_settings.notification_emails — using env fallback:', settingsErr);
-    }
-
     // ── 1. Fetch all docs from this wizard session ───────────────────────────
     //   All docs for the same driver inserted within 90 seconds of the anchor
     const since = new Date(new Date(newDoc.created_at).getTime() - 5_000).toISOString(); // -5s safety
@@ -203,7 +181,7 @@ serve(async (req) => {
     // ── 2. Fetch driver info ─────────────────────────────────────────────────
     const { data: driverRow, error: driverErr } = await supabase
       .from('drivers')
-      .select('full_name, email, phone, license_number')
+      .select('full_name, email, phone, license_number, org_id')
       .eq('id', newDoc.driver_id)
       .maybeSingle();
 
@@ -222,6 +200,15 @@ serve(async (req) => {
         JSON.stringify({ skipped: 'driver has no email', driver_id: newDoc.driver_id }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
+    }
+
+    let ccEmails: string[] = [fallbackManagerEmail];
+    try {
+      const orgId = String((driverRow as { org_id?: string | null } | null)?.org_id ?? '').trim();
+      const filtered = await loadFilteredNotificationEmails(supabase, 'handover_wizard', orgId || null);
+      if (filtered.length > 0) ccEmails = filtered;
+    } catch (settingsErr) {
+      console.warn('Could not resolve handover_wizard notification emails — using env fallback:', settingsErr);
     }
 
     // ── 3. Download each file and encode as base64 ───────────────────────────

@@ -16,6 +16,7 @@ interface DirectMileageNotificationRequest {
   subject: string;
   odometerReading: number;
   reportUrl: string;
+  orgId?: string;
 }
 
 function escHtml(s: string): string {
@@ -56,7 +57,8 @@ serve(async (req) => {
     console.log('Payload received:', body);
 
     const extra = body.to && String(body.to).includes('@') ? [String(body.to).trim()] : [];
-    const fromDb = admin ? await loadFilteredNotificationEmails(admin, 'mileage_update') : [];
+    const orgIdTrim = String((body as DirectMileageNotificationRequest).orgId ?? '').trim() || null;
+    const fromDb = admin ? await loadFilteredNotificationEmails(admin, 'mileage_update', orgIdTrim) : [];
     const recipients = uniqueEmailList([...extra, ...fromDb]);
     const to = recipients.length > 0 ? recipients : ['malachiroei@gmail.com'];
     const subject = body.subject;

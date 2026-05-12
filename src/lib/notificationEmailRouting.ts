@@ -145,12 +145,49 @@ export function mergeTopicPrefsForNewEmails(
   return next;
 }
 
-/** טוען מ-system_settings ומסנן לפי נושא; אם אין כלום — מחזיר fallback */
+export const USER_ORG_NOTIFICATION_ROUTING_TABLE = 'user_org_notification_routing' as const;
+
+/** מאחד את כל שורות הניתוב של הארגון לנושא אחד (חברי הארגון רואים את כל השורות — RLS). */
+export async function fetchMergedOrgNotificationEmailsForTopic(
+  supabase: SupabaseClient,
+  orgId: string | null | undefined,
+  topic: NotificationEmailTopicId,
+): Promise<string[]> {
+  const oid = (orgId ?? '').trim();
+  if (!oid) return [];
+  const { data: rows, error } = await supabase
+    .from(USER_ORG_NOTIFICATION_ROUTING_TABLE)
+    .select('emails, topic_prefs')
+    .eq('org_id', oid);
+  if (error || !Array.isArray(rows) || rows.length === 0) return [];
+  const merged: string[] = [];
+  for (const r of rows as { emails?: unknown; topic_prefs?: unknown }[]) {
+    const list = parseNotificationEmailList(r?.emails);
+    const prefs = parseTopicPrefs(r?.topic_prefs);
+    merged.push(...emailsSubscribedToTopic(list, prefs, topic));
+  }
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const e of merged) {
+    const t = e.trim();
+    if (!t.includes('@')) continue;
+    const k = t.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(t);
+  }
+  return out;
+}
+
+/** ניתוב מיילים: קודם per-org (כל אדמין), אחר כך legacy ב-system_settings, אחרון fallback */
 export async function resolveNotificationEmailsForTopic(
   supabase: SupabaseClient,
   topic: NotificationEmailTopicId,
-  fallbackEmails: string[]
+  fallbackEmails: string[],
+  orgId?: string | null,
 ): Promise<string[]> {
+  const fromOrg = await fetchMergedOrgNotificationEmailsForTopic(supabase, orgId ?? null, topic);
+  if (fromOrg.length > 0) return fromOrg;
   try {
     const [emRes, prefRes] = await Promise.all([
       supabase.from(FLEET_KV_TABLE).select('value').eq('key', 'notification_emails').maybeSingle(),

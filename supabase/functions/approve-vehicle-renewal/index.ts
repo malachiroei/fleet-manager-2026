@@ -262,7 +262,7 @@ serve(async (req) => {
 
       const staffBcc = bccExcludingPrimary(
         [driverEmail],
-        await loadFilteredNotificationEmails(admin, 'compliance_vehicle_renewal_copy'),
+        await loadFilteredNotificationEmails(admin, 'compliance_vehicle_renewal_copy', String(reqRow.org_id ?? '').trim() || null),
       );
 
       let attachment:

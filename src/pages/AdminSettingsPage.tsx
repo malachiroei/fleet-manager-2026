@@ -63,7 +63,6 @@ import {
   mergeTopicPrefsForNewEmails,
   NOTIFICATION_EMAIL_TOPIC_IDS,
   NOTIFICATION_EMAIL_TOPIC_LABELS_HE,
-  NOTIFICATION_EMAIL_TOPIC_PREFS_KEY,
   normalizeNotificationEmailKey,
   parseEmailsFromTextarea,
   parseNotificationEmailList,
@@ -86,7 +85,7 @@ export default function AdminSettingsPage() {
     });
     const manifestUiGates = EMPTY_FLEET_MANIFEST_UI_GATES;
 
-    // ── notification_emails — stored in system_settings ───────────────────────
+    // ── notification routing: user_org_notification_routing (per admin + org); legacy fallback לתצוגה ראשונה
     const [notificationEmailsRaw, setNotificationEmailsRaw] = useState('malachiroei@gmail.com');
     const [notificationTopicPrefs, setNotificationTopicPrefs] = useState<NotificationEmailTopicPrefsMap>({});
     const [isSavingEmails, setIsSavingEmails] = useState(false);
@@ -100,10 +99,28 @@ export default function AdminSettingsPage() {
 
     useEffect(() => {
       (async () => {
+        const orgId = (settingsOrgIdForSnapshot ?? '').trim();
+        const uid = user?.id;
         try {
-          const { data: bundle, error: bundleErr } = await (supabase as any).rpc(
-            'get_notification_email_settings'
-          );
+          if (orgId && uid) {
+            const { data: mine, error: mineErr } = await supabase
+              .from('user_org_notification_routing')
+              .select('emails, topic_prefs')
+              .eq('org_id', orgId)
+              .eq('user_id', uid)
+              .maybeSingle();
+            if (!mineErr && mine) {
+              const rawEmails = (mine as { emails?: unknown }).emails;
+              const arr = parseNotificationEmailList(rawEmails);
+              const prefsFromDb = parseTopicPrefs((mine as { topic_prefs?: unknown }).topic_prefs);
+              if (arr.length > 0) {
+                setNotificationEmailsRaw(arr.join(', '));
+                setNotificationTopicPrefs(mergeTopicPrefsForNewEmails(prefsFromDb, arr));
+                return;
+              }
+            }
+          }
+          const { data: bundle, error: bundleErr } = await (supabase as any).rpc('get_notification_email_settings');
           if (bundleErr) throw bundleErr;
           const arr = parseNotificationEmailList(bundle?.emails);
           const prefsFromDb = parseTopicPrefs(bundle?.topic_prefs);
@@ -127,7 +144,7 @@ export default function AdminSettingsPage() {
           setIsLoadingEmails(false);
         }
       })();
-    }, []);
+    }, [settingsOrgIdForSnapshot, user?.id]);
 
     useEffect(() => {
       if (isLoadingEmails) return;
@@ -181,9 +198,14 @@ export default function AdminSettingsPage() {
 
     const saveNotificationEmails = async () => {
       const emails = parseEmailsFromTextarea(notificationEmailsRaw);
+      const orgId = (settingsOrgIdForSnapshot ?? '').trim();
 
       if (emails.length === 0) {
         toast.error('נא להזין לפחות כתובת מייל תקינה אחת');
+        return;
+      }
+      if (!orgId || !user?.id) {
+        toast.error('חסר ארגון פעיל או משתמש — לא ניתן לשמור');
         return;
       }
 
@@ -191,15 +213,21 @@ export default function AdminSettingsPage() {
 
       setIsSavingEmails(true);
       try {
-        const { error: rpcErr } = await (supabase as any).rpc('upsert_notification_email_settings', {
-          p_emails: emails,
-          p_topic_prefs: mergedPrefs,
-        });
-        if (rpcErr) throw rpcErr;
+        const { error: upErr } = await supabase.from('user_org_notification_routing').upsert(
+          {
+            user_id: user.id,
+            org_id: orgId,
+            emails,
+            topic_prefs: mergedPrefs,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id,org_id' },
+        );
+        if (upErr) throw upErr;
         setNotificationTopicPrefs(mergedPrefs);
         setNotificationEmailsRaw(emails.join(', '));
         localStorage.setItem('handover_notification_email', emails[0]);
-        toast.success(`נשמרו ${emails.length} כתובות מייל להתראות`);
+        toast.success(`נשמרו ${emails.length} כתובות מייל להתראות (הגדרה אישית לארגון)`);
       } catch (err) {
         console.error(err);
         toast.error('שמירת כתובות המייל נכשלה', {
@@ -213,17 +241,28 @@ export default function AdminSettingsPage() {
 
     const saveNotificationTopicPrefsOnly = async () => {
       const emails = notificationEmailList;
+      const orgId = (settingsOrgIdForSnapshot ?? '').trim();
       if (emails.length === 0) {
         toast.error('אין כתובות ברשימה — הזן מיילים בכרטיס למעלה ושמור תחילה');
+        return;
+      }
+      if (!orgId || !user?.id) {
+        toast.error('חסר ארגון פעיל או משתמש — לא ניתן לשמור');
         return;
       }
       const mergedPrefs = mergeTopicPrefsForNewEmails(notificationTopicPrefs, emails);
       setIsSavingTopicPrefs(true);
       try {
-        const { error } = await (supabase as any).rpc('upsert_notification_email_settings', {
-          p_emails: null,
-          p_topic_prefs: mergedPrefs,
-        });
+        const { error } = await supabase.from('user_org_notification_routing').upsert(
+          {
+            user_id: user.id,
+            org_id: orgId,
+            emails,
+            topic_prefs: mergedPrefs,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id,org_id' },
+        );
         if (error) throw error;
         setNotificationTopicPrefs(mergedPrefs);
         toast.success('העדפות נושאי מייל נשמרו');
@@ -418,7 +457,7 @@ export default function AdminSettingsPage() {
           {/* Fleet Data Importer */}
           <FleetDataImporter />
 
-          {/* Notification Emails — system_settings */}
+          {/* Notification Emails — user_org_notification_routing + legacy fallback */}
           <Card>
             <CardHeader>
               <div className="flex items-center gap-3">
@@ -428,9 +467,11 @@ export default function AdminSettingsPage() {
                 <div>
                   <CardTitle>כתובות מייל לקבלת התראות</CardTitle>
                   <CardDescription>
-                    רשימת כתובות גלובלית. &quot;בדיקת שליחה&quot; שולח מייל לכל כתובת תקינה ברשימה.
-                    מתחת: ניהול נפרד — איזה סוג התראה יגיע לכל כתובת (ברירת מחדל: הכול פעיל).
-                    הפרד בין כתובות בפסיק או שורה חדשה.
+                    הגדרה אישית לחשבון שלך בארגון הנבחר: כל מנהל רואה ועורך רק את הרשימה שלו. בעת שליחת התראות
+                    המערכת מאחדת את כל המנהלים ששמרו הגדרות לאותו ארגון (מיילים ללא כפילויות). אם לא נשמרה אף הגדרה
+                    לארגון — משתמשים בהגדרות הגלובליות הישנות (system_settings) כגיבוי.
+                    &quot;בדיקת שליחה&quot; שולח מייל לכל כתובת תקינה ברשימה שלך.
+                    מתחת: איזה סוג התראה יגיע לכל כתובת (ברירת מחדל: הכול פעיל). הפרד בין כתובות בפסיק או שורה חדשה.
                   </CardDescription>
                 </div>
               </div>

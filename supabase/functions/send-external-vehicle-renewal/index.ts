@@ -263,7 +263,7 @@ serve(async (req) => {
     const html = wrapEmailBodyWithBrand(supabaseUrl, innerHtml);
     const staffBcc = bccExcludingPrimary(
       [externalTo],
-      await loadFilteredNotificationEmails(admin, 'compliance_vehicle_renewal_copy'),
+      await loadFilteredNotificationEmails(admin, 'compliance_vehicle_renewal_copy', orgId || null),
     );
 
     const subject =

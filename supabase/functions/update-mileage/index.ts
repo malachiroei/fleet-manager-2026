@@ -1,10 +1,6 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import {
-  emailsSubscribedToTopic,
-  parseNotificationEmailList,
-  parseTopicPrefs,
-} from '../_shared/notificationEmailRouting.ts';
+import { loadFilteredNotificationEmails } from '../_shared/loadFilteredNotificationEmails.ts';
 import { wrapEmailBodyWithBrand } from '../_shared/emailBrandHeader.ts';
 
 const corsHeaders = {
@@ -265,7 +261,7 @@ serve(async (req) => {
     } as any);
     if (docErr) return json({ error: docErr.message }, 500);
 
-    // Resolve recipients: ui_settings.admin_email + system_settings.notification_emails (dedupe)
+    // Resolve recipients: ui_settings.admin_email + ניתוב מיילים לארגון (כל אדמין + legacy)
     let recipients: string[] = [];
     try {
       const { data: ui } = await admin
@@ -275,13 +271,7 @@ serve(async (req) => {
         .maybeSingle();
       const uiEmail = String((ui as any)?.admin_email ?? '').trim();
 
-      const [kvRes, prefRes] = await Promise.all([
-        admin.from('system_settings').select('value').eq('key', 'notification_emails').maybeSingle(),
-        admin.from('system_settings').select('value').eq('key', 'notification_email_topic_prefs').maybeSingle(),
-      ]);
-      const list = parseNotificationEmailList((kvRes as { data?: { value?: unknown } | null })?.data?.value);
-      const prefs = parseTopicPrefs((prefRes as { data?: { value?: unknown } | null })?.data?.value);
-      const kvEmails = emailsSubscribedToTopic(list, prefs, 'mileage_update');
+      const kvEmails = await loadFilteredNotificationEmails(admin, 'mileage_update', orgId);
 
       recipients = uniqueEmails([uiEmail, ...kvEmails]);
     } catch {

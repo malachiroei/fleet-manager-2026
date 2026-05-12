@@ -348,7 +348,7 @@ serve(async (req) => {
     const html = wrapEmailBodyWithBrand(supabaseUrl, innerHtml);
     const staffBcc = bccExcludingPrimary(
       [driverEmail],
-      await loadFilteredNotificationEmails(admin, 'compliance_driver_copy'),
+      await loadFilteredNotificationEmails(admin, 'compliance_driver_copy', orgId || null),
     );
 
     /** נושא בעברית בלבד */

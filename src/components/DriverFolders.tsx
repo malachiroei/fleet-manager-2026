@@ -926,6 +926,7 @@ function DocumentsTab({ driver }: { driver: Driver }) {
         doc_url: docUrl,
         doc_title: docTitle,
         driver_name: driver.full_name,
+        org_id: String(driver.org_id ?? '').trim() || undefined,
       });
       if (error) throw error;
       const payload = data as { success?: boolean; sent_to?: string; error?: string } | null;
