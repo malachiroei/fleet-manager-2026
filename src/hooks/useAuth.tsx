@@ -398,6 +398,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
+        // חזרה לטאב / מזעור חלון: Supabase לעיתים שולח שוב SIGNED_IN לאותו משתמש.
+        // setLoading(true) כאן מנתק את AppLayout ומרגיש כמו «רענון דף».
+        if (event === 'SIGNED_IN' && authBootstrapLastUserId === session.user.id) {
+          void (async () => {
+            await fetchUserRoles(session.user.id);
+            await fetchProfileRef.current(session.user.id);
+            await fetchMemberOrganizations(session.user.id);
+          })();
+          return;
+        }
+
         setLoading(true);
         setTimeout(() => {
           void (async () => {

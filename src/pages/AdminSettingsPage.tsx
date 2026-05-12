@@ -486,11 +486,8 @@ export default function AdminSettingsPage() {
                 <div>
                   <CardTitle>כתובות מייל לקבלת התראות</CardTitle>
                   <CardDescription>
-                    הגדרה אישית לחשבון שלך בארגון הנבחר: כל מנהל רואה ועורך רק את הרשימה שלו. בעת שליחת התראות
-                    המערכת מאחדת את כל המנהלים ששמרו הגדרות לאותו ארגון (מיילים ללא כפילויות). אם לא נשמרה אף הגדרה
-                    לארגון — משתמשים בהגדרות הגלובליות הישנות (system_settings) כגיבוי.
-                    &quot;בדיקת שליחה&quot; שולח מייל לכל כתובת תקינה ברשימה שלך.
-                    מתחת: איזה סוג התראה יגיע לכל כתובת (ברירת מחדל: הכול פעיל). הפרד בין כתובות בפסיק או שורה חדשה.
+                    הגדרה אישית לחשבון שלך : איזה סוג התראה יגיע לכל כתובת (ברירת מחדל: הכול פעיל). הפרד בין כתובות
+                    בפסיק או שורה חדשה.
                   </CardDescription>
                 </div>
               </div>
@@ -537,7 +534,7 @@ export default function AdminSettingsPage() {
                 <div>
                   <CardTitle>ניהול נושאי מייל לפי כתובת</CardTitle>
                   <CardDescription>
-                    לכל שורה: עמודת «נהג» — האם לשלוח עותק לנהג המשויך לרכב (לפי המייל בכרטיס הנהג) לאותו סוג התראה.
+                    לכל שורה: עמודת נהג — האם לשלוח עותק לנהג המשויך לרכב (לפי המייל בכרטיס הנהג) לאותו סוג התראה.
                     תחת כל כתובת מייל: האם לשלוח לשם התראה. שמירה כאן לא משנה את רשימת הכתובות.
                   </CardDescription>
                 </div>
@@ -551,22 +548,26 @@ export default function AdminSettingsPage() {
                   <div className="max-h-[min(520px,70vh)] overflow-auto rounded-md border border-border touch-pan-x">
                     <Table className="min-w-max text-[11px]">
                       <TableHeader>
-                        <TableRow>
-                          <TableHead className="sticky right-0 z-[1] bg-card text-right min-w-[72px] max-w-[100px] w-[100px] border-l border-border align-bottom px-1.5 text-[10px] leading-tight">
+                        <TableRow className="hover:bg-transparent">
+                          <TableHead className="sticky right-0 z-[1] bg-card text-card-foreground text-right min-w-[72px] max-w-[100px] w-[100px] border-l border-border align-bottom px-1.5 text-[10px] leading-tight">
                             סוג התראה
                           </TableHead>
-                          <TableHead className="text-center align-bottom min-w-[44px] max-w-[52px] px-0.5 text-[9px] leading-tight text-muted-foreground">
+                          <TableHead className="bg-card text-center text-card-foreground align-bottom min-w-[44px] max-w-[52px] px-0.5 text-[9px] leading-tight">
                             נהג
                           </TableHead>
                           {notificationEmailList.map((email) => (
                             <TableHead
                               key={normalizeNotificationEmailKey(email)}
-                              className="text-center align-bottom min-w-[88px] max-w-[140px] px-1 border-border/60"
+                              className="bg-card text-center text-card-foreground align-bottom min-w-[88px] max-w-[140px] px-1 border-border/60"
                             >
-                              <div dir="ltr" className="font-mono text-[10px] truncate mx-auto max-w-[132px]" title={email}>
+                              <div
+                                dir="ltr"
+                                className="font-mono text-[10px] truncate mx-auto max-w-[132px] text-card-foreground"
+                                title={email}
+                              >
                                 {email}
                               </div>
-                              <div className="mt-1 text-[9px] text-muted-foreground leading-none">התראה</div>
+                              <div className="mt-1 text-[9px] text-slate-400 dark:text-slate-300 leading-none">התראה</div>
                             </TableHead>
                           ))}
                         </TableRow>
@@ -574,7 +575,7 @@ export default function AdminSettingsPage() {
                       <TableBody>
                         {NOTIFICATION_EMAIL_TOPIC_IDS.map((tid) => (
                           <TableRow key={tid}>
-                            <TableCell className="sticky right-0 z-[1] bg-card text-right align-middle border-l border-border leading-tight px-1.5 text-[10px] max-w-[100px]">
+                            <TableCell className="sticky right-0 z-[1] bg-card text-card-foreground text-right align-middle border-l border-border leading-tight px-1.5 text-[10px] max-w-[100px]">
                               {NOTIFICATION_EMAIL_TOPIC_LABELS_HE[tid]}
                             </TableCell>
                             <TableCell className="text-center align-middle px-0.5">
