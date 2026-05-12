@@ -4,6 +4,18 @@ import type { NotificationEmailTopicId } from '@/lib/notificationEmailRouting';
 
 export type FleetFieldUpdateRow = { label: string; value: string };
 
+/** מייל הנהג המשויך לרכב — לשליחת עותק כשמסומן «עותק לנהג» בהגדרות */
+export async function fetchDriverEmailByDriverId(
+  driverId: string | null | undefined,
+): Promise<string | undefined> {
+  const id = String(driverId ?? '').trim();
+  if (!id) return undefined;
+  const { data, error } = await supabase.from('drivers').select('email').eq('id', id).maybeSingle();
+  if (error || !data) return undefined;
+  const e = String((data as { email?: string | null }).email ?? '').trim();
+  return e.includes('@') ? e : undefined;
+}
+
 /** אותה Edge Function כמו עמוד טיפול — כבר פרוסה בפרויקט; מצב `fleet_field` בגוף הבקשה */
 const FUNCTION_NAME = 'send-service-update-notification';
 
@@ -23,6 +35,8 @@ export async function sendFleetFieldUpdateNotification(params: {
   /** כפתור CTA בתחתית המייל (טופס חיצוני) */
   primaryLinkUrl?: string;
   primaryLinkLabel?: string;
+  /** אם מוגדר ומסומן «עותק לנהג» בהגדרות — הנהג יקבל עותק */
+  assignedDriverEmail?: string | null;
 }): Promise<{ ok: true } | { ok: false; message: string }> {
   const body: Record<string, unknown> = {
     notificationType: 'fleet_field',
@@ -37,6 +51,7 @@ export async function sendFleetFieldUpdateNotification(params: {
     documentUrl: params.documentUrl ?? null,
     primaryLinkUrl: params.primaryLinkUrl,
     primaryLinkLabel: params.primaryLinkLabel,
+    assignedDriverEmail: params.assignedDriverEmail?.trim() || undefined,
   };
 
   try {

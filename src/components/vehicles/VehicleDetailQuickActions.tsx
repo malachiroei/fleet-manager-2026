@@ -64,7 +64,7 @@ import {
 } from '@/lib/periodicInspectionChecklist';
 import { resolveSessionEmail } from '@/lib/fleetBootstrapEmails';
 import { useQueryClient } from '@tanstack/react-query';
-import { sendFleetFieldUpdateNotification } from '@/lib/sendFleetFieldUpdateNotification';
+import { sendFleetFieldUpdateNotification, fetchDriverEmailByDriverId } from '@/lib/sendFleetFieldUpdateNotification';
 import {
   compressImageFileForUpload,
   isAndroidUserAgent,
@@ -598,6 +598,7 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
         docUrl = licenseUrl;
       }
       await updateVehicle.mutateAsync(payload);
+      const assignedDriverEmail = await fetchDriverEmailByDriverId(vehicle.assigned_driver_id);
       const notify = await sendFleetFieldUpdateNotification({
         orgId: vehicle.org_id ?? undefined,
         emailTopic: 'vehicle_test_license',
@@ -610,6 +611,7 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
           { label: 'צילום / מסמך', value: licenseFile ? 'הועלה' : 'לא צורף' },
         ],
         documentUrl: docUrl,
+        assignedDriverEmail,
       });
       toast.success('תוקף טסט עודכן' + (licenseFile ? ' והמסמך נשמר במסמכים' : ''));
       suggestPeriodicInspectionToast({ vehicleId: vehicle.id, mode: 'test', onVehicleDetailPage: true });
@@ -647,6 +649,7 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
         docUrl = insUrl;
       }
       await updateVehicle.mutateAsync(payload);
+      const assignedDriverEmail = await fetchDriverEmailByDriverId(vehicle.assigned_driver_id);
       const notify = await sendFleetFieldUpdateNotification({
         orgId: vehicle.org_id ?? undefined,
         emailTopic: 'vehicle_insurance',
@@ -659,6 +662,7 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
           { label: 'מסמך', value: insuranceFile ? 'הועלה' : 'לא צורף' },
         ],
         documentUrl: docUrl,
+        assignedDriverEmail,
       });
       toast.success('תוקף ביטוח עודכן' + (insuranceFile ? ' והמסמך נשמר במסמכים' : ''));
       if (!notify.ok) {
@@ -707,6 +711,7 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
         last_tire_change_date: tireDate,
         next_tire_change_date: tireNextDate.trim() || null,
       });
+      const assignedDriverEmail = await fetchDriverEmailByDriverId(vehicle.assigned_driver_id);
       const notify = await sendFleetFieldUpdateNotification({
         orgId: vehicle.org_id ?? undefined,
         emailTopic: 'vehicle_tires',
@@ -721,6 +726,7 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
           { label: 'צילום', value: tireFile ? 'הועלה' : 'לא צורף' },
         ],
         documentUrl: docUrl,
+        assignedDriverEmail,
       });
       toast.success('פרטי צמיגים עודכנו' + (tireFile ? ' והמסמך נשמר במסמכים' : ''));
       if (!notify.ok) {
@@ -755,6 +761,7 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
         url,
         'car_wash',
       );
+      const assignedDriverEmail = await fetchDriverEmailByDriverId(vehicle.assigned_driver_id);
       const notify = await sendFleetFieldUpdateNotification({
         orgId: vehicle.org_id ?? undefined,
         emailTopic: 'fleet_misc_updates',
@@ -764,6 +771,7 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
         vehicleLabel: `${vehicle.manufacturer ?? ''} ${vehicle.model ?? ''}`.trim(),
         rows: [{ label: 'צילום רכב', value: 'הועלה למסמכי הרכב' }],
         documentUrl: url,
+        assignedDriverEmail,
       });
       toast.success('תמונת השטיפה נשמרה במסמכי הרכב');
       if (!notify.ok) {
@@ -923,6 +931,7 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
       });
       const checklistUrl = await uploadToVehicleBucket(vehicle.id, 'periodic_inspection_snapshot', snapshotFile);
       await insertVehicleDocument(vehicle.id, 'ביקורת תקופתית — צילום טופס', checklistUrl, 'periodic_inspection');
+      const assignedDriverEmail = await fetchDriverEmailByDriverId(vehicle.assigned_driver_id);
       const notify = await sendFleetFieldUpdateNotification({
         orgId: vehicle.org_id ?? undefined,
         emailTopic: 'vehicle_periodic_inspection',
@@ -944,6 +953,7 @@ export function VehicleDetailQuickActions({ vehicle, showReportMileage, showServ
           { label: 'צילום מצורף', value: periodicFile ? 'הועלה' : 'לא צורף' },
         ],
         documentUrl: docUrl ?? checklistUrl,
+        assignedDriverEmail,
       });
       toast.success('הטופס נשלח למסמכים בהצלחה');
       if (!nextDue) {

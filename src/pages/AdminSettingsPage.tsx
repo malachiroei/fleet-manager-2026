@@ -60,7 +60,9 @@ import { isFleetProductionHost } from '@/lib/pwaPromptRegister';
 import { FLEET_KV_TABLE } from '@/lib/fleetKvTable';
 import { formatSupabaseError } from '@/lib/supabaseError';
 import {
+  DRIVER_COPY_PREF_KEY,
   mergeTopicPrefsForNewEmails,
+  NOTIFICATION_EMAIL_DRIVER_COPY_LABEL_HE,
   NOTIFICATION_EMAIL_TOPIC_IDS,
   NOTIFICATION_EMAIL_TOPIC_LABELS_HE,
   normalizeNotificationEmailKey,
@@ -437,6 +439,19 @@ export default function AdminSettingsPage() {
       return row?.[topic] !== false;
     };
 
+    const setDriverCopyFlag = (email: string, checked: boolean) => {
+      const key = normalizeNotificationEmailKey(email);
+      setNotificationTopicPrefs((prev) => ({
+        ...prev,
+        [key]: { ...prev[key], [DRIVER_COPY_PREF_KEY]: checked },
+      }));
+    };
+
+    const driverCopyFlag = (email: string) => {
+      const row = notificationTopicPrefs[normalizeNotificationEmailKey(email)];
+      return row?.[DRIVER_COPY_PREF_KEY] === true;
+    };
+
     return (
      <div className="fleet-screen-page text-white">
        <header className="bg-card border-b border-border sticky top-0 z-10">
@@ -518,7 +533,9 @@ export default function AdminSettingsPage() {
                 <div>
                   <CardTitle>ניהול נושאי מייל לפי כתובת</CardTitle>
                   <CardDescription>
-                    סמן לכל כתובת מאיזה סוגי פעולות לקבל התראה. שמירה כאן לא משנה את רשימת הכתובות — רק את מפת הנושאים.
+                    סמן לכל כתובת מאיזה סוגי פעולות לקבל התראה. עמודת «{NOTIFICATION_EMAIL_DRIVER_COPY_LABEL_HE}»: כשמסומנת,
+                    במיילים הרלוונטיים (למשל דיווח ק״מ, עדכון טיפול, רישוי, ביטוח וכו׳) יישלח עותק גם לנהג המשויך לרכב —
+                    לפי המייל בכרטיס הנהג. שמירה כאן לא משנה את רשימת הכתובות — רק את מפת הנושאים.
                   </CardDescription>
                 </div>
               </div>
@@ -535,6 +552,9 @@ export default function AdminSettingsPage() {
                           <TableHead className="sticky right-0 z-[1] bg-card text-right min-w-[200px] border-l border-border">
                             מייל
                           </TableHead>
+                          <TableHead className="text-center max-w-[88px] min-w-[72px] leading-tight whitespace-normal px-1">
+                            {NOTIFICATION_EMAIL_DRIVER_COPY_LABEL_HE}
+                          </TableHead>
                           {NOTIFICATION_EMAIL_TOPIC_IDS.map((tid) => (
                             <TableHead key={tid} className="text-center max-w-[120px] min-w-[100px] leading-tight whitespace-normal px-1">
                               {NOTIFICATION_EMAIL_TOPIC_LABELS_HE[tid]}
@@ -550,6 +570,13 @@ export default function AdminSettingsPage() {
                               dir="ltr"
                             >
                               {email}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Checkbox
+                                checked={driverCopyFlag(email)}
+                                onCheckedChange={(v) => setDriverCopyFlag(email, v === true)}
+                                aria-label={`${email} — ${NOTIFICATION_EMAIL_DRIVER_COPY_LABEL_HE}`}
+                              />
                             </TableCell>
                             {NOTIFICATION_EMAIL_TOPIC_IDS.map((tid) => (
                               <TableCell key={tid} className="text-center">

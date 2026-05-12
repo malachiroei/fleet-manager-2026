@@ -5,6 +5,7 @@ import { Loader2, Wrench } from 'lucide-react';
 
 import { supabase } from '@/integrations/supabase/client';
 import { invokeSupabaseEdgeFunction } from '@/lib/supabase/invokeEdgeFunction';
+import { fetchDriverEmailByDriverId } from '@/lib/sendFleetFieldUpdateNotification';
 import { useAuth } from '@/hooks/useAuth';
 import { isFeatureEnabled, useFeatureFlags } from '@/hooks/useFeatureFlags';
 import { useVehicles, useUpdateVehicle } from '@/hooks/useVehicles';
@@ -296,6 +297,7 @@ export default function ServiceUpdatePage() {
 
       let emailProblem: string | null = null;
       try {
+        const assignedDriverEmail = await fetchDriverEmailByDriverId(resolvedVehicle.assigned_driver_id);
         const invokeResult = await invokeSupabaseEdgeFunction('send-service-update-notification', {
           orgId: resolvedVehicle.org_id,
           subject: 'עדכון טיפול',
@@ -307,6 +309,7 @@ export default function ServiceUpdatePage() {
           nextServiceKm,
           serviceIntervalKm: resolvedVehicle.service_interval_km ?? null,
           invoicePhotoUrl: photoUrl,
+          assignedDriverEmail,
         });
         if (invokeResult.error) {
           console.error('[send-service-update-notification] invoke error', invokeResult.error);

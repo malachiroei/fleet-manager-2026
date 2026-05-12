@@ -24,27 +24,34 @@ export const NOTIFICATION_EMAIL_TOPIC_IDS = [
 ] as const;
 export type NotificationEmailTopicId = (typeof NOTIFICATION_EMAIL_TOPIC_IDS)[number];
 
-/** תוויות לעברית — מסך הגדרות */
-export const NOTIFICATION_EMAIL_TOPIC_LABELS_HE: Record<NotificationEmailTopicId, string> = {
-  handover_form: 'טופס מסירה / החזרה (PDF + הודעת מערכת)',
-  handover_wizard: 'אשף מסירה דיגיטלי (מסמכים לנהג + עותק צוות)',
-  mileage_update: 'עדכון ק״מ מהשטח',
-  maintenance_update: 'עדכון טיפול',
-  vehicle_test_license: 'טסט / רישיון רכב (עדכון מהיר)',
-  vehicle_insurance: 'ביטוח (עדכון מהיר)',
-  vehicle_tires: 'צמיגים (עדכון מהיר)',
-  fleet_misc_updates: 'אחר (שטיפה וכו׳ — עדכון מהיר)',
-  vehicle_periodic_inspection: 'ביקורת תקופתית',
-  driver_license_docs_update: 'רישיון נהיגה / סריקות נהג',
-  compliance_driver_copy: 'ציות: מייל לנהג (עותק צוות • BCC)',
-  compliance_vehicle_renewal_copy: 'ציות: חידוש רכב (עותק צוות • BCC)',
-  document_share_copy: 'שיתוף קישור למסמך (עותק צוות • BCC)',
+/** מפתח JSON ב-topic_prefs — לא נושא מייל; ברירת מחדל false */
+export const DRIVER_COPY_PREF_KEY = 'driver_copy' as const;
+
+export type NotificationEmailPrefsRow = Partial<Record<NotificationEmailTopicId, boolean>> & {
+  [DRIVER_COPY_PREF_KEY]?: boolean;
 };
 
-export type NotificationEmailTopicPrefsMap = Record<
-  string,
-  Partial<Record<NotificationEmailTopicId, boolean>>
->;
+/** תוויות לעברית — מסך הגדרות (קצר, כמו בשיחה עם המשתמש) */
+export const NOTIFICATION_EMAIL_TOPIC_LABELS_HE: Record<NotificationEmailTopicId, string> = {
+  handover_form: 'מסירת רכב (PDF)',
+  handover_wizard: 'מסירת רכב (אשף)',
+  mileage_update: 'דיווח ק״מ',
+  maintenance_update: 'עדכון טיפול',
+  vehicle_test_license: 'רישוי שנתי',
+  vehicle_insurance: 'ביטוח',
+  vehicle_tires: 'צמיגים',
+  fleet_misc_updates: 'שטיפה וכו׳',
+  vehicle_periodic_inspection: 'ביקורת תקופתית',
+  driver_license_docs_update: 'רישיון נהיגה',
+  compliance_driver_copy: 'צוות: מייל לנהג (BCC)',
+  compliance_vehicle_renewal_copy: 'צוות: חידוש רכב (BCC)',
+  document_share_copy: 'צוות: קישור למסמך (BCC)',
+};
+
+/** כותרת עמודה נפרדת — חל על כל סוגי ההתראות למייל staff */
+export const NOTIFICATION_EMAIL_DRIVER_COPY_LABEL_HE = 'עותק לנהג';
+
+export type NotificationEmailTopicPrefsMap = Record<string, NotificationEmailPrefsRow>;
 
 export function defaultTopicFlagsTrue(): Record<NotificationEmailTopicId, boolean> {
   return Object.fromEntries(NOTIFICATION_EMAIL_TOPIC_IDS.map((id) => [id, true])) as Record<
@@ -97,11 +104,13 @@ export function parseTopicPrefs(value: unknown): NotificationEmailTopicPrefsMap 
   for (const [k, v] of Object.entries(root as Record<string, unknown>)) {
     if (!k.includes('@')) continue;
     if (typeof v !== 'object' || v === null || Array.isArray(v)) continue;
-    const flags: Partial<Record<NotificationEmailTopicId, boolean>> = {};
+    const flags: NotificationEmailPrefsRow = {};
     for (const tid of NOTIFICATION_EMAIL_TOPIC_IDS) {
       const b = (v as Record<string, unknown>)[tid];
       if (typeof b === 'boolean') flags[tid] = b;
     }
+    const dc = (v as Record<string, unknown>)[DRIVER_COPY_PREF_KEY];
+    if (typeof dc === 'boolean') flags[DRIVER_COPY_PREF_KEY] = dc;
     out[normalizeNotificationEmailKey(k)] = flags;
   }
   return out;
@@ -140,7 +149,7 @@ export function mergeTopicPrefsForNewEmails(
     const key = normalizeNotificationEmailKey(email);
     if (!key.includes('@')) continue;
     const existing = prev[key];
-    next[key] = { ...defaults, ...(existing ?? {}) };
+    next[key] = { ...defaults, [DRIVER_COPY_PREF_KEY]: false, ...(existing ?? {}) };
   }
   return next;
 }

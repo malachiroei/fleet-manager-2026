@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { loadFilteredNotificationEmails } from '../_shared/loadFilteredNotificationEmails.ts';
+import { shouldAppendDriverCopyForRecipients } from '../_shared/notificationDriverCopy.ts';
 import { wrapEmailBodyWithBrand } from '../_shared/emailBrandHeader.ts';
 
 const corsHeaders = {
@@ -274,6 +275,16 @@ serve(async (req) => {
       const kvEmails = await loadFilteredNotificationEmails(admin, 'mileage_update', orgId);
 
       recipients = uniqueEmails([uiEmail, ...kvEmails]);
+      let driverEmail = '';
+      if (assignedDriverId && isUuid(assignedDriverId)) {
+        const { data: dr } = await admin.from('drivers').select('email').eq('id', assignedDriverId).maybeSingle();
+        driverEmail = String((dr as { email?: string | null } | null)?.email ?? '').trim();
+      }
+      if (driverEmail.includes('@') && recipients.length > 0) {
+        if (await shouldAppendDriverCopyForRecipients(admin, orgId, recipients)) {
+          recipients = uniqueEmails([...recipients, driverEmail]);
+        }
+      }
     } catch {
       recipients = [];
     }

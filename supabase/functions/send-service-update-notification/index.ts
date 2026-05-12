@@ -14,6 +14,7 @@ import {
   type NotificationEmailTopicId,
 } from '../_shared/notificationEmailRouting.ts';
 import { loadFilteredNotificationEmails, uniqueEmailList } from '../_shared/loadFilteredNotificationEmails.ts';
+import { shouldAppendDriverCopyForRecipients } from '../_shared/notificationDriverCopy.ts';
 
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -53,6 +54,8 @@ export interface ServiceUpdateNotificationBody {
   /** קישור יחיד בתחתית המייל (טפסי ציות) */
   primaryLinkUrl?: string;
   primaryLinkLabel?: string;
+  /** מייל הנהג המשויך לרכב — עותק אם מסומן בהגדרות */
+  assignedDriverEmail?: string;
 }
 
 function esc(s: string): string {
@@ -98,6 +101,19 @@ serve(async (req) => {
       return list.length > 0 ? list : ['malachiroei@gmail.com'];
     }
 
+    async function expandRecipientsWithDriverCopy(
+      orgId: string | null,
+      recipients: string[],
+      assignedDriverEmail: string | undefined,
+    ): Promise<string[]> {
+      const d = String(assignedDriverEmail ?? '').trim();
+      if (!admin || !d.includes('@') || recipients.length === 0) return recipients;
+      if (await shouldAppendDriverCopyForRecipients(admin, orgId, recipients)) {
+        return uniqueEmailList([...recipients, d]);
+      }
+      return recipients;
+    }
+
     const body = (await req.json()) as ServiceUpdateNotificationBody;
     const mode = body.notificationType === 'fleet_field' ? 'fleet_field' : 'service';
 
@@ -112,7 +128,12 @@ serve(async (req) => {
       }
       const fleetTopic = coerceEmailTopic(body.emailTopic);
       const orgIdTrim = String(body.orgId ?? '').trim() || null;
-      const recipients = await resolveRecipients(fleetTopic, body.to, orgIdTrim);
+      let recipients = await resolveRecipients(fleetTopic, body.to, orgIdTrim);
+      recipients = await expandRecipientsWithDriverCopy(
+        orgIdTrim,
+        recipients,
+        String(body.assignedDriverEmail ?? '').trim() || undefined,
+      );
       const headline = esc(body.headline?.trim() || subject);
       const safeDoc = String(body.documentUrl ?? '').trim().replace(/"/g, '');
 
@@ -184,7 +205,12 @@ serve(async (req) => {
 
     const subject = body.subject?.trim() || 'עדכון טיפול';
     const orgIdTrim = String(body.orgId ?? '').trim() || null;
-    const recipients = await resolveRecipients('maintenance_update', body.to, orgIdTrim);
+    let recipients = await resolveRecipients('maintenance_update', body.to, orgIdTrim);
+    recipients = await expandRecipientsWithDriverCopy(
+      orgIdTrim,
+      recipients,
+      String(body.assignedDriverEmail ?? '').trim() || undefined,
+    );
 
     const kmStr = (n: number | null | undefined) =>
       n != null && Number.isFinite(n) ? `${Number(n).toLocaleString('he-IL')} ק"מ` : '—';

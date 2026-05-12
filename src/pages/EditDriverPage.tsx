@@ -220,6 +220,7 @@ export default function EditDriverPage() {
           vehicleLabel: driver.full_name,
           rows,
           documentUrl: typeof docUrl === 'string' ? docUrl : null,
+          assignedDriverEmail: (formData.get('email') as string)?.trim() || undefined,
         });
         if (!notify.ok) console.warn('[EditDriverPage] email', notify.message);
       }
