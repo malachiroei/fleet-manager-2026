@@ -105,10 +105,11 @@ serve(async (req) => {
       orgId: string | null,
       recipients: string[],
       assignedDriverEmail: string | undefined,
+      topic: NotificationEmailTopicId,
     ): Promise<string[]> {
       const d = String(assignedDriverEmail ?? '').trim();
       if (!admin || !d.includes('@') || recipients.length === 0) return recipients;
-      if (await shouldAppendDriverCopyForRecipients(admin, orgId, recipients)) {
+      if (await shouldAppendDriverCopyForRecipients(admin, orgId, recipients, topic)) {
         return uniqueEmailList([...recipients, d]);
       }
       return recipients;
@@ -133,6 +134,7 @@ serve(async (req) => {
         orgIdTrim,
         recipients,
         String(body.assignedDriverEmail ?? '').trim() || undefined,
+        fleetTopic,
       );
       const headline = esc(body.headline?.trim() || subject);
       const safeDoc = String(body.documentUrl ?? '').trim().replace(/"/g, '');
@@ -210,6 +212,7 @@ serve(async (req) => {
       orgIdTrim,
       recipients,
       String(body.assignedDriverEmail ?? '').trim() || undefined,
+      'maintenance_update',
     );
 
     const kmStr = (n: number | null | undefined) =>

@@ -19,11 +19,15 @@ export const NOTIFICATION_EMAIL_TOPIC_IDS = [
 ] as const;
 export type NotificationEmailTopicId = (typeof NOTIFICATION_EMAIL_TOPIC_IDS)[number];
 
-/** מפתח JSON ב-topic_prefs — לא נושא מייל; ברירת מחדל false */
+/** מפתח JSON ב-topic_prefs — legacy: עותק לנהג לכל הנושאים */
 export const DRIVER_COPY_PREF_KEY = 'driver_copy' as const;
+
+/** מפתח JSON — עותק לנהג לפי נושא */
+export const DRIVER_COPY_BY_TOPIC_PREF_KEY = 'driver_copy_by_topic' as const;
 
 export type NotificationEmailPrefsRow = Partial<Record<NotificationEmailTopicId, boolean>> & {
   [DRIVER_COPY_PREF_KEY]?: boolean;
+  [DRIVER_COPY_BY_TOPIC_PREF_KEY]?: Partial<Record<NotificationEmailTopicId, boolean>>;
 };
 
 export type NotificationEmailTopicPrefsMap = Record<string, NotificationEmailPrefsRow>;
@@ -71,6 +75,15 @@ export function parseTopicPrefs(value: unknown): NotificationEmailTopicPrefsMap 
     }
     const dc = (v as Record<string, unknown>)[DRIVER_COPY_PREF_KEY];
     if (typeof dc === 'boolean') flags[DRIVER_COPY_PREF_KEY] = dc;
+    const rawDct = (v as Record<string, unknown>)[DRIVER_COPY_BY_TOPIC_PREF_KEY];
+    if (rawDct && typeof rawDct === 'object' && !Array.isArray(rawDct)) {
+      const byTopic: Partial<Record<NotificationEmailTopicId, boolean>> = {};
+      for (const tid of NOTIFICATION_EMAIL_TOPIC_IDS) {
+        const b = (rawDct as Record<string, unknown>)[tid];
+        if (typeof b === 'boolean') byTopic[tid] = b;
+      }
+      flags[DRIVER_COPY_BY_TOPIC_PREF_KEY] = byTopic;
+    }
     out[normalizeNotificationEmailKey(k)] = flags;
   }
   return out;

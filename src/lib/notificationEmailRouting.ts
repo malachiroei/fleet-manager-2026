@@ -24,11 +24,15 @@ export const NOTIFICATION_EMAIL_TOPIC_IDS = [
 ] as const;
 export type NotificationEmailTopicId = (typeof NOTIFICATION_EMAIL_TOPIC_IDS)[number];
 
-/** מפתח JSON ב-topic_prefs — לא נושא מייל; ברירת מחדל false */
+/** מפתח JSON ב-topic_prefs — legacy: עותק לנהג לכל הנושאים */
 export const DRIVER_COPY_PREF_KEY = 'driver_copy' as const;
+
+/** מפתח JSON — עותק לנהג לפי נושא (מומלץ) */
+export const DRIVER_COPY_BY_TOPIC_PREF_KEY = 'driver_copy_by_topic' as const;
 
 export type NotificationEmailPrefsRow = Partial<Record<NotificationEmailTopicId, boolean>> & {
   [DRIVER_COPY_PREF_KEY]?: boolean;
+  [DRIVER_COPY_BY_TOPIC_PREF_KEY]?: Partial<Record<NotificationEmailTopicId, boolean>>;
 };
 
 /** תוויות לעברית — מסך הגדרות (קצר, כמו בשיחה עם המשתמש) */
@@ -48,10 +52,24 @@ export const NOTIFICATION_EMAIL_TOPIC_LABELS_HE: Record<NotificationEmailTopicId
   document_share_copy: 'צוות: קישור למסמך (BCC)',
 };
 
-/** כותרת עמודה נפרדת — חל על כל סוגי ההתראות למייל staff */
-export const NOTIFICATION_EMAIL_DRIVER_COPY_LABEL_HE = 'עותק לנהג';
-
 export type NotificationEmailTopicPrefsMap = Record<string, NotificationEmailPrefsRow>;
+
+/** עותק לנהג לנושא ספציפי (כולל legacy driver_copy=true לכל הנושאים) */
+export function topicWantsDriverCopy(
+  row: NotificationEmailPrefsRow | undefined,
+  topic: NotificationEmailTopicId,
+): boolean {
+  const dct = row?.[DRIVER_COPY_BY_TOPIC_PREF_KEY];
+  if (dct && typeof dct === 'object' && dct[topic] === true) return true;
+  if (row?.[DRIVER_COPY_PREF_KEY] === true) return true;
+  return false;
+}
+
+function emptyDriverCopyByTopic(): Partial<Record<NotificationEmailTopicId, boolean>> {
+  return Object.fromEntries(NOTIFICATION_EMAIL_TOPIC_IDS.map((id) => [id, false])) as Partial<
+    Record<NotificationEmailTopicId, boolean>
+  >;
+}
 
 export function defaultTopicFlagsTrue(): Record<NotificationEmailTopicId, boolean> {
   return Object.fromEntries(NOTIFICATION_EMAIL_TOPIC_IDS.map((id) => [id, true])) as Record<
@@ -111,6 +129,15 @@ export function parseTopicPrefs(value: unknown): NotificationEmailTopicPrefsMap 
     }
     const dc = (v as Record<string, unknown>)[DRIVER_COPY_PREF_KEY];
     if (typeof dc === 'boolean') flags[DRIVER_COPY_PREF_KEY] = dc;
+    const rawDct = (v as Record<string, unknown>)[DRIVER_COPY_BY_TOPIC_PREF_KEY];
+    if (rawDct && typeof rawDct === 'object' && !Array.isArray(rawDct)) {
+      const byTopic: Partial<Record<NotificationEmailTopicId, boolean>> = {};
+      for (const tid of NOTIFICATION_EMAIL_TOPIC_IDS) {
+        const b = (rawDct as Record<string, unknown>)[tid];
+        if (typeof b === 'boolean') byTopic[tid] = b;
+      }
+      flags[DRIVER_COPY_BY_TOPIC_PREF_KEY] = byTopic;
+    }
     out[normalizeNotificationEmailKey(k)] = flags;
   }
   return out;
@@ -149,7 +176,15 @@ export function mergeTopicPrefsForNewEmails(
     const key = normalizeNotificationEmailKey(email);
     if (!key.includes('@')) continue;
     const existing = prev[key];
-    next[key] = { ...defaults, [DRIVER_COPY_PREF_KEY]: false, ...(existing ?? {}) };
+    const mergedDct = {
+      ...emptyDriverCopyByTopic(),
+      ...(existing?.[DRIVER_COPY_BY_TOPIC_PREF_KEY] ?? {}),
+    };
+    next[key] = {
+      ...defaults,
+      ...(existing ?? {}),
+      [DRIVER_COPY_BY_TOPIC_PREF_KEY]: mergedDct,
+    };
   }
   return next;
 }

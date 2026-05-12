@@ -281,7 +281,7 @@ serve(async (req) => {
         driverEmail = String((dr as { email?: string | null } | null)?.email ?? '').trim();
       }
       if (driverEmail.includes('@') && recipients.length > 0) {
-        if (await shouldAppendDriverCopyForRecipients(admin, orgId, recipients)) {
+        if (await shouldAppendDriverCopyForRecipients(admin, orgId, recipients, 'mileage_update')) {
           recipients = uniqueEmails([...recipients, driverEmail]);
         }
       }

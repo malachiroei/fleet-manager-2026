@@ -60,15 +60,16 @@ import { isFleetProductionHost } from '@/lib/pwaPromptRegister';
 import { FLEET_KV_TABLE } from '@/lib/fleetKvTable';
 import { formatSupabaseError } from '@/lib/supabaseError';
 import {
+  DRIVER_COPY_BY_TOPIC_PREF_KEY,
   DRIVER_COPY_PREF_KEY,
   mergeTopicPrefsForNewEmails,
-  NOTIFICATION_EMAIL_DRIVER_COPY_LABEL_HE,
   NOTIFICATION_EMAIL_TOPIC_IDS,
   NOTIFICATION_EMAIL_TOPIC_LABELS_HE,
   normalizeNotificationEmailKey,
   parseEmailsFromTextarea,
   parseNotificationEmailList,
   parseTopicPrefs,
+  topicWantsDriverCopy,
   type NotificationEmailTopicId,
   type NotificationEmailTopicPrefsMap,
 } from '@/lib/notificationEmailRouting';
@@ -439,17 +440,18 @@ export default function AdminSettingsPage() {
       return row?.[topic] !== false;
     };
 
-    const setDriverCopyFlag = (email: string, checked: boolean) => {
+    const setTopicDriverCopyFlag = (email: string, topic: NotificationEmailTopicId, checked: boolean) => {
       const key = normalizeNotificationEmailKey(email);
-      setNotificationTopicPrefs((prev) => ({
-        ...prev,
-        [key]: { ...prev[key], [DRIVER_COPY_PREF_KEY]: checked },
-      }));
-    };
-
-    const driverCopyFlag = (email: string) => {
-      const row = notificationTopicPrefs[normalizeNotificationEmailKey(email)];
-      return row?.[DRIVER_COPY_PREF_KEY] === true;
+      setNotificationTopicPrefs((prev) => {
+        const prevRow = { ...(prev[key] ?? {}) };
+        const dct = { ...(prevRow[DRIVER_COPY_BY_TOPIC_PREF_KEY] ?? {}) } as Partial<
+          Record<NotificationEmailTopicId, boolean>
+        >;
+        dct[topic] = checked;
+        prevRow[DRIVER_COPY_BY_TOPIC_PREF_KEY] = dct;
+        delete prevRow[DRIVER_COPY_PREF_KEY];
+        return { ...prev, [key]: prevRow };
+      });
     };
 
     return (
@@ -533,9 +535,8 @@ export default function AdminSettingsPage() {
                 <div>
                   <CardTitle>ניהול נושאי מייל לפי כתובת</CardTitle>
                   <CardDescription>
-                    סמן לכל כתובת מאיזה סוגי פעולות לקבל התראה. עמודת «{NOTIFICATION_EMAIL_DRIVER_COPY_LABEL_HE}»: כשמסומנת,
-                    במיילים הרלוונטיים (למשל דיווח ק״מ, עדכון טיפול, רישוי, ביטוח וכו׳) יישלח עותק גם לנהג המשויך לרכב —
-                    לפי המייל בכרטיס הנהג. שמירה כאן לא משנה את רשימת הכתובות — רק את מפת הנושאים.
+                    לכל שורה (סוג התראה): סמן לכל כתובת אם לשלוח התראה למייל, ואם לשלוח גם עותק לנהג המשויך לרכב
+                    (לפי המייל בכרטיס הנהג) — ניתן לבחור בנפרד לכל סוג. שמירה כאן לא משנה את רשימת הכתובות.
                   </CardDescription>
                 </div>
               </div>
@@ -549,44 +550,51 @@ export default function AdminSettingsPage() {
                     <Table className="min-w-max text-[11px]">
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="sticky right-0 z-[1] bg-card text-right min-w-[200px] border-l border-border">
-                            מייל
+                          <TableHead className="sticky right-0 z-[1] bg-card text-right min-w-[160px] max-w-[220px] border-l border-border align-bottom">
+                            סוג התראה
                           </TableHead>
-                          <TableHead className="text-center max-w-[88px] min-w-[72px] leading-tight whitespace-normal px-1">
-                            {NOTIFICATION_EMAIL_DRIVER_COPY_LABEL_HE}
-                          </TableHead>
-                          {NOTIFICATION_EMAIL_TOPIC_IDS.map((tid) => (
-                            <TableHead key={tid} className="text-center max-w-[120px] min-w-[100px] leading-tight whitespace-normal px-1">
-                              {NOTIFICATION_EMAIL_TOPIC_LABELS_HE[tid]}
+                          {notificationEmailList.map((email) => (
+                            <TableHead
+                              key={normalizeNotificationEmailKey(email)}
+                              className="text-center align-bottom min-w-[100px] max-w-[150px] px-1 border-border/60"
+                            >
+                              <div dir="ltr" className="font-mono text-[10px] truncate mx-auto max-w-[140px]" title={email}>
+                                {email}
+                              </div>
+                              <div className="flex justify-center gap-3 mt-1.5 text-[9px] text-muted-foreground leading-none">
+                                <span>התראה</span>
+                                <span>נהג</span>
+                              </div>
                             </TableHead>
                           ))}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {notificationEmailList.map((email) => (
-                          <TableRow key={normalizeNotificationEmailKey(email)}>
-                            <TableCell
-                              className="sticky right-0 z-[1] bg-card font-mono text-xs text-left border-l border-border"
-                              dir="ltr"
-                            >
-                              {email}
+                        {NOTIFICATION_EMAIL_TOPIC_IDS.map((tid) => (
+                          <TableRow key={tid}>
+                            <TableCell className="sticky right-0 z-[1] bg-card text-right align-middle border-l border-border leading-tight">
+                              {NOTIFICATION_EMAIL_TOPIC_LABELS_HE[tid]}
                             </TableCell>
-                            <TableCell className="text-center">
-                              <Checkbox
-                                checked={driverCopyFlag(email)}
-                                onCheckedChange={(v) => setDriverCopyFlag(email, v === true)}
-                                aria-label={`${email} — ${NOTIFICATION_EMAIL_DRIVER_COPY_LABEL_HE}`}
-                              />
-                            </TableCell>
-                            {NOTIFICATION_EMAIL_TOPIC_IDS.map((tid) => (
-                              <TableCell key={tid} className="text-center">
-                                <Checkbox
-                                  checked={topicFlag(email, tid)}
-                                  onCheckedChange={(v) => setTopicFlag(email, tid, v === true)}
-                                  aria-label={`${email} — ${NOTIFICATION_EMAIL_TOPIC_LABELS_HE[tid]}`}
-                                />
-                              </TableCell>
-                            ))}
+                            {notificationEmailList.map((email) => {
+                              const ek = normalizeNotificationEmailKey(email);
+                              const row = notificationTopicPrefs[ek];
+                              return (
+                                <TableCell key={`${ek}-${tid}`} className="text-center align-middle px-1">
+                                  <div className="flex justify-center items-center gap-3">
+                                    <Checkbox
+                                      checked={topicFlag(email, tid)}
+                                      onCheckedChange={(v) => setTopicFlag(email, tid, v === true)}
+                                      aria-label={`${email} — ${NOTIFICATION_EMAIL_TOPIC_LABELS_HE[tid]} — התראה`}
+                                    />
+                                    <Checkbox
+                                      checked={topicWantsDriverCopy(row, tid)}
+                                      onCheckedChange={(v) => setTopicDriverCopyFlag(email, tid, v === true)}
+                                      aria-label={`${email} — ${NOTIFICATION_EMAIL_TOPIC_LABELS_HE[tid]} — עותק לנהג`}
+                                    />
+                                  </div>
+                                </TableCell>
+                              );
+                            })}
                           </TableRow>
                         ))}
                       </TableBody>

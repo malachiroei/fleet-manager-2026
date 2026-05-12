@@ -1,7 +1,9 @@
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
+  DRIVER_COPY_BY_TOPIC_PREF_KEY,
   DRIVER_COPY_PREF_KEY,
   parseTopicPrefs,
+  type NotificationEmailTopicId,
   type NotificationEmailTopicPrefsMap,
 } from './notificationEmailRouting.ts';
 
@@ -17,23 +19,26 @@ function recipientKeySet(recipientEmails: string[]): Set<string> {
 function driverCopyTrueForRecipientsInPrefs(
   prefs: NotificationEmailTopicPrefsMap,
   want: Set<string>,
+  topic: NotificationEmailTopicId,
 ): boolean {
   for (const [emailKey, row] of Object.entries(prefs)) {
     if (!want.has(emailKey)) continue;
-    if (row && typeof row === 'object' && row[DRIVER_COPY_PREF_KEY] === true) {
-      return true;
-    }
+    if (!row || typeof row !== 'object') continue;
+    const dct = row[DRIVER_COPY_BY_TOPIC_PREF_KEY];
+    if (dct && typeof dct === 'object' && dct[topic] === true) return true;
+    if (row[DRIVER_COPY_PREF_KEY] === true) return true;
   }
   return false;
 }
 
 /**
- * האם יש לפחות כתובת staff שמקבלת את המייל ומסומנת «עותק לנהג» (באחת משורות הניתוב או ב-legacy).
+ * האם יש לפחות כתובת staff ברשימת הנמענים שמסומנת «עותק לנהג» לאותו נושא (או legacy driver_copy לכל הנושאים).
  */
 export async function shouldAppendDriverCopyForRecipients(
   admin: SupabaseClient,
   orgId: string | null | undefined,
   recipientEmails: string[],
+  topic: NotificationEmailTopicId,
 ): Promise<boolean> {
   const want = recipientKeySet(recipientEmails);
   if (want.size === 0) return false;
@@ -47,7 +52,7 @@ export async function shouldAppendDriverCopyForRecipients(
     if (!error && Array.isArray(rows)) {
       for (const r of rows as { topic_prefs?: unknown }[]) {
         const prefs = parseTopicPrefs(r?.topic_prefs);
-        if (driverCopyTrueForRecipientsInPrefs(prefs, want)) return true;
+        if (driverCopyTrueForRecipientsInPrefs(prefs, want, topic)) return true;
       }
     }
   }
@@ -59,7 +64,7 @@ export async function shouldAppendDriverCopyForRecipients(
       .eq('key', 'notification_email_topic_prefs')
       .maybeSingle();
     const prefs = parseTopicPrefs((data as { value?: unknown } | null)?.value);
-    if (driverCopyTrueForRecipientsInPrefs(prefs, want)) return true;
+    if (driverCopyTrueForRecipientsInPrefs(prefs, want, topic)) return true;
   } catch {
     // ignore
   }
