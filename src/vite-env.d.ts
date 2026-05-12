@@ -1,5 +1,8 @@
 /// <reference types="vite/client" />
 
+/** מוזרק ב־vite.config (זמן `vite build`) — תאריך פריסת לקוח כשאין ערך במסד */
+declare const __FLEET_APP_BUILD_ISO__: string;
+
 interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL?: string;
   readonly VITE_SUPABASE_ANON_KEY?: string;

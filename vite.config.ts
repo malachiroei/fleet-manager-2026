@@ -72,6 +72,8 @@ export default defineConfig(({ mode }) => {
       },
     },
     define: {
+      /** ISO של ריצת `vite build` — לתצוגת «עדכון אחרון» כשאין `last_update_date` במסד */
+      __FLEET_APP_BUILD_ISO__: JSON.stringify(new Date().toISOString()),
       // הזרקה מפורשת של משתני הסביבה כדי למנוע Cache
       'process.env.VITE_APP_STATUS': JSON.stringify(env.VITE_APP_STATUS),
       'process.env.VITE_SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL ?? ''),

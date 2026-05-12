@@ -198,6 +198,18 @@ export default function AdminSettingsPage() {
       return `${date} ${time}`;
     };
 
+    /** כשאין `last_update_date` ב־Supabase — מועד בניית חבילת ה־JS (כל פריסה מקבלת ערך חדש) */
+    const clientBundleBuildDisplay = useMemo(() => {
+      try {
+        const iso = typeof __FLEET_APP_BUILD_ISO__ === 'string' ? __FLEET_APP_BUILD_ISO__ : '';
+        const ms = Date.parse(iso);
+        if (!Number.isNaN(ms)) return formatDateTimeForUi(new Date(ms));
+      } catch {
+        // ignore
+      }
+      return '';
+    }, []);
+
     const saveNotificationEmails = async () => {
       const emails = parseEmailsFromTextarea(notificationEmailsRaw);
       const orgId = (settingsOrgIdForSnapshot ?? '').trim();
@@ -618,7 +630,8 @@ export default function AdminSettingsPage() {
             <CardContent>
               <p className="mb-3 text-xs text-muted-foreground">
                 תאריכי טעינת רכבים/נהגים משלבים את הטעינה האחרונה ממכשיר זה (אם בוצעה) ואת מועד השינוי האחרון
-                ברשומות במסד הנתונים (לפי הרשאות הארגון).
+                ברשומות במסד הנתונים (לפי הרשאות הארגון). «תאריך עדכון אחרון (מערכת)» נטען מ־מסד הנתונים
+                (מפתח <span dir="ltr">last_update_date</span>) אם קיים; אחרת מוצג מועד בניית גרסת הדפדפן מהפריסה האחרונה.
               </p>
               <div className="space-y-2 text-sm">
                 <div className="flex flex-row-reverse flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -635,7 +648,7 @@ export default function AdminSettingsPage() {
                 </div>
                 <div className="flex flex-row-reverse flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                   <span className="font-medium tabular-nums">
-                    {lastUpdateDate || 'לא נשמר במערכת (מתעדכן בפרסום גרסה / סנכרון מנהלים)'}
+                    {lastUpdateDate || clientBundleBuildDisplay || 'לא נשמר במערכת (מתעדכן בפרסום גרסה / סנכרון מנהלים)'}
                   </span>
                   <span className="text-muted-foreground">תאריך עדכון אחרון (מערכת):</span>
                 </div>
