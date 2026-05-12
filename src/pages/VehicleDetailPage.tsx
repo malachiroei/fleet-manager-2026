@@ -239,6 +239,9 @@ function HandoverHistoryList({ handovers }: { handovers: any[] }) {
               <div className="flex items-center gap-3">
                 <Badge variant={h.handover_type === 'delivery' ? 'default' : 'secondary'} className="text-xs">
                   {h.handover_type === 'delivery' ? 'מסירה' : 'החזרה'}
+                  {h.handover_type === 'delivery' && String(h.assignment_mode ?? 'permanent') === 'replacement'
+                    ? ' — זמנית'
+                    : ''}
                 </Badge>
                 <span className="font-medium">{dateStr}</span>
                 <span className="text-muted-foreground">{timeStr}</span>

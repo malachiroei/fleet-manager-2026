@@ -44,6 +44,7 @@ import {
 } from '@/lib/builtinReceptionPrintFormTemplate';
 import {
   filterOrgDocumentsForVehicleDeliveryPicker,
+  isTrafficLiabilityConversionHandoverDoc,
   orgDocumentHandoverLabel,
 } from '@/lib/orgDocumentHandoverFilter';
 import { HANDOVER_ACCESSORY_CEILINGS, formatCeilingPrice } from '@/lib/accessoryCeilings';
@@ -2044,6 +2045,7 @@ export default function VehicleHandoverWizard() {
   const handoverTypeParam = searchParams.get('handoverType') ?? searchParams.get('type') ?? 'delivery';
   const handoverType = handoverTypeParam === 'return' ? 'return' : 'delivery';
   const selectedFormsParam = searchParams.get('selectedForms') ?? '';
+  const wizardAssignmentMode = searchParams.get('mode') === 'replacement' ? 'replacement' : 'permanent';
   const reportUrl  = stateReportUrl || queryReportUrl;
   const handoverId = decodeURIComponent(searchParams.get('handoverId') ?? '');
   const odometerFromQuery = searchParams.get('odometer')?.trim() ?? '';
@@ -2270,6 +2272,11 @@ export default function VehicleHandoverWizard() {
       let effective: string[] = [];
       if (fromQuery.length > 0) {
         effective = fromQuery.filter((id) => allowed.has(id));
+      } else if (wizardAssignmentMode === 'replacement') {
+        effective = availableDeliveryForms
+          .filter(isTrafficLiabilityConversionHandoverDoc)
+          .map((d) => d.id)
+          .filter((id) => allowed.has(id));
       }
       setSelectedDeliveryFormIds(effective);
       selectedFormsInitializedRef.current = true;
@@ -2277,7 +2284,7 @@ export default function VehicleHandoverWizard() {
     }
 
     setSelectedDeliveryFormIds((prev) => prev.filter((id) => allowed.has(id)));
-  }, [availableDeliveryForms, selectedFormsParam]);
+  }, [availableDeliveryForms, selectedFormsParam, wizardAssignmentMode]);
 
   useEffect(() => {
     setManualFields({
@@ -2778,11 +2785,15 @@ export default function VehicleHandoverWizard() {
           const trafficUi = trafficLiabilityUiByDocId[doc.id];
           const upgradeUi = upgradeUiByDocId[doc.id];
           const returnUi = returnFormUiByDocId[doc.id];
+          const vehicleRowForPdf = vehicle ?? vehicles?.find((v) => v.id === vehicleId) ?? null;
+          const humanVehicleLabelForPdf = vehicleRowForPdf
+            ? `${vehicleRowForPdf.manufacturer ?? ''} ${vehicleRowForPdf.model ?? ''} (${String(vehicleRowForPdf.plate_number ?? '').trim()})`.trim()
+            : vehicleLabel;
           const sigFallbackPdf: GenericHandoverSigMeta = {
             dateLabel: today,
             timeLabel: new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
             driverName,
-            vehicleLabel,
+            vehicleLabel: humanVehicleLabelForPdf,
             employeeNumber: manualFields.employeeNumber,
             idNumber: manualFields.idNumber,
             mobile: manualFields.phone,
@@ -2790,11 +2801,12 @@ export default function VehicleHandoverWizard() {
           const sigForPdf: GenericHandoverSigMeta = {
             ...sigFallbackPdf,
             ...genericSigMetaByDocId[doc.id],
+            vehicleLabel: humanVehicleLabelForPdf,
           };
           const genericBlob = await generateGenericFormPDF({
             title: doc.title,
             builtinTemplateKey: orgDocSchemaStringField(doc.json_schema, 'builtin_template_key'),
-            vehicleLabel,
+            vehicleLabel: humanVehicleLabelForPdf,
             driverName,
             date: today,
             templateText,

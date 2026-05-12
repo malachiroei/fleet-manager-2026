@@ -23,7 +23,6 @@ import { useOrgDocuments } from '@/hooks/useOrgDocuments';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -47,6 +46,7 @@ import {
 } from '@/lib/handoverFormClasses';
 import {
   filterOrgDocumentsForVehicleDeliveryPicker,
+  isTrafficLiabilityConversionHandoverDoc,
   orgDocumentHandoverLabel,
 } from '@/lib/orgDocumentHandoverFilter';
 
@@ -73,7 +73,6 @@ export default function VehicleDeliveryPage() {
   const createHandover = useCreateHandover();
   const { user, profile, activeOrgId } = useAuth();
   const signatureRef = useRef<SignaturePadRef>(null);
-  const replacementApprovalSignatureRef = useRef<SignaturePadRef>(null);
   const forcedMode = searchParams.get('mode') === 'replacement' ? 'replacement' : 'permanent';
   
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -82,10 +81,7 @@ export default function VehicleDeliveryPage() {
   const assignmentMode: AssignmentMode = forcedMode;
   const [odometer, setOdometer] = useState('');
   const [fuelLevel, setFuelLevel] = useState(4);
-  const [notes, setNotes] = useState('');
   const [hasSignature, setHasSignature] = useState(false);
-  const [replacementApprovalChecked, setReplacementApprovalChecked] = useState(false);
-  const [hasReplacementApprovalSignature, setHasReplacementApprovalSignature] = useState(false);
   const [damageReport, setDamageReport] = useState(cloneEmptyDamageReport());
   const [selectedDeliveryFormIds, setSelectedDeliveryFormIds] = useState<string[]>([]);
   
@@ -123,33 +119,32 @@ export default function VehicleDeliveryPage() {
         const existing = new Set(availableDeliveryForms.map((doc) => doc.id));
         return current.filter((id) => existing.has(id));
       }
+      if (assignmentMode === 'replacement') {
+        const trafficOnly = availableDeliveryForms.filter(isTrafficLiabilityConversionHandoverDoc);
+        return trafficOnly.length > 0 ? trafficOnly.map((d) => d.id) : [];
+      }
       return availableDeliveryForms.map((doc) => doc.id);
     });
-  }, [availableDeliveryForms]);
+  }, [availableDeliveryForms, assignmentMode]);
 
   /** דף תמיד מרונדר; יציאה רק עם ניקוי dirty ואז navigate — בלי return null */
   const deliveryDirty = useMemo(() => {
     if (selectedVehicle) return true;
     if (selectedDriver) return true;
     if (odometer.trim() !== '') return true;
-    if (notes.trim() !== '') return true;
     if (photoFront || photoBack || photoRight || photoLeft) return true;
     if (hasSignature) return true;
-    if (replacementApprovalChecked || hasReplacementApprovalSignature) return true;
     if (hasAnyDamage(damageReport)) return true;
     return false;
   }, [
     selectedVehicle,
     selectedDriver,
     odometer,
-    notes,
     photoFront,
     photoBack,
     photoRight,
     photoLeft,
     hasSignature,
-    replacementApprovalChecked,
-    hasReplacementApprovalSignature,
     damageReport,
   ]);
 
@@ -182,10 +177,7 @@ export default function VehicleDeliveryPage() {
       setSelectedDriver('');
       setOdometer('');
       setFuelLevel(4);
-      setNotes('');
       setHasSignature(false);
-      setReplacementApprovalChecked(false);
-      setHasReplacementApprovalSignature(false);
       setDamageReport(cloneEmptyDamageReport());
       setSelectedDeliveryFormIds([]);
       setPhotoFront(null);
@@ -278,26 +270,6 @@ export default function VehicleDeliveryPage() {
       return;
     }
 
-    if (assignmentMode === 'replacement') {
-      if (!replacementApprovalChecked) {
-        try {
-          toast.error('נא לאשר את הצהרת מסירת הרכב החליפי');
-        } catch {
-          // non-blocking
-        }
-        return;
-      }
-
-      if (replacementApprovalSignatureRef.current?.isEmpty()) {
-        try {
-          toast.error('נא לחתום על טופס האישור לרכב חליפי');
-        } catch {
-          // non-blocking
-        }
-        return;
-      }
-    }
-
     const existingActiveAssignments = await fetchActiveDriverAssignments(selectedDriver, selectedVehicle);
     if (existingActiveAssignments.length > 0) {
       const approved = window.confirm('שים לב, לנהג זה כבר משויך רכב. האם ברצונך להחליף את הרכב הקיים?');
@@ -308,12 +280,7 @@ export default function VehicleDeliveryPage() {
 
     setIsSubmitting(true);
     const damageSummary = summarizeDamageReport(damageReport);
-    const mergedNotes = [
-      notes.trim() || null,
-      hasAnyDamage(damageReport) ? `דיווח נזק: ${damageSummary}` : null,
-    ]
-      .filter(Boolean)
-      .join('\n');
+    const mergedNotes = [hasAnyDamage(damageReport) ? `דיווח נזק: ${damageSummary}` : null].filter(Boolean).join('\n');
 
     try {
       // Upload photos
@@ -450,7 +417,7 @@ export default function VehicleDeliveryPage() {
         `&selectedForms=${encodeURIComponent(selectedDeliveryFormIds.join(','))}`;
 
       setDirty(DIRTY_SOURCE_VEHICLE_DELIVERY, false);
-      window.location.assign(wizardUrl);
+      void navigate(wizardUrl);
     } catch (error) {
       console.error('Error creating handover:', error);
       try {
@@ -610,55 +577,21 @@ export default function VehicleDeliveryPage() {
             </CardContent>
           </Card>
 
-          {/* Signature */}
+          {/* חתימת נהג + הצהרת רכב חליפי (רק טקסט) לפני החתימה — בלי טופס נפרד מתחת */}
           <Card className={HANDOVER_CARD_CLASS}>
             <CardHeader>
               <CardTitle className="text-lg text-slate-900 dark:text-white">חתימת הנהג</CardTitle>
             </CardHeader>
-            <CardContent>
-              <SignaturePad ref={signatureRef} onSign={setHasSignature} />
-            </CardContent>
-          </Card>
-
-          {assignmentMode === 'replacement' && (
-            <Card className={HANDOVER_CARD_CLASS}>
-              <CardHeader>
-                <CardTitle className="text-lg text-slate-900 dark:text-white">אישור עובד למסירת רכב חליפי</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
+            <CardContent className="space-y-4">
+              {assignmentMode === 'replacement' && (
                 <div className={HANDOVER_NOTICE_CLASS}>
                   <p className="mb-2 font-semibold">הצהרת עובד/ת:</p>
-                  <p>אני מאשר/ת שקיבלתי רכב חליפי תקין, קיבלתי הסבר על השימוש ברכב, ואני מתחייב/ת להחזירו בהתאם לנהלי החברה.</p>
+                  <p>
+                    אני מאשר/ת שקיבלתי רכב חליפי תקין, קיבלתי הסבר על השימוש ברכב, ואני מתחייב/ת להחזירו בהתאם לנהלי החברה.
+                  </p>
                 </div>
-
-                <label className={HANDOVER_CHECK_ROW_CLASS}>
-                  <Checkbox
-                    checked={replacementApprovalChecked}
-                    onCheckedChange={(checked) => setReplacementApprovalChecked(checked === true)}
-                  />
-                  <span>קראתי ואני מאשר/ת את ההצהרה</span>
-                </label>
-
-                <div>
-                  <Label className={HANDOVER_LABEL_CLASS}>חתימת העובד על אישור נפרד</Label>
-                  <SignaturePad ref={replacementApprovalSignatureRef} onSign={setHasReplacementApprovalSignature} />
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Notes */}
-          <Card className={HANDOVER_CARD_CLASS}>
-            <CardContent className="pt-6">
-              <Label htmlFor="notes" className={HANDOVER_LABEL_CLASS}>הערות</Label>
-              <Textarea
-                id="notes"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="הערות נוספות לגבי מצב הרכב..."
-                rows={3}
-                className="min-h-[5rem] rounded-xl border border-input bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring dark:border-cyan-300/25 dark:bg-[#061325]/80 dark:text-white dark:placeholder:text-cyan-100/45 dark:focus-visible:ring-cyan-300/45"
-              />
+              )}
+              <SignaturePad ref={signatureRef} onSign={setHasSignature} />
             </CardContent>
           </Card>
 
@@ -673,8 +606,7 @@ export default function VehicleDeliveryPage() {
                   isSubmitting ||
                   !selectedVehicle ||
                   !selectedDriver ||
-                  !hasSignature ||
-                  (assignmentMode === 'replacement' && (!replacementApprovalChecked || !hasReplacementApprovalSignature))
+                  !hasSignature
                 }
               >
                 {isSubmitting && <Loader2 className="h-4 w-4 animate-spin ml-2" />}

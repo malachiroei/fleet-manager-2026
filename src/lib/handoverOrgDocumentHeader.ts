@@ -1,9 +1,10 @@
 import type { OrgDocument } from '@/hooks/useOrgDocuments';
 import { normalizePdfDisplayFlags } from '@/lib/formsGeneratedPdf';
 
-/** תוויות רכב כמו ב-PDF האשף — ללא כפילות קידומת */
+/** תוויות רכב כמו ב-PDF האשף — ללא כפילות קידומת; לא מציגים UUID גולמי */
 export function formatVehicleLabelForHandoverHeader(label: string): string {
   const t = String(label ?? '').trim();
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(t)) return 'לא זמין';
   return t.length > 0 ? t : 'לא זמין';
 }
 

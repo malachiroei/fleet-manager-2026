@@ -58,3 +58,19 @@ export function isOrgDocumentUsableForHandoverList(doc: OrgDocument): boolean {
   const hasDesc = String(doc.description ?? '').trim().length > 0;
   return hasFile || hasSchema || hasDesc;
 }
+
+/** מפתח `builtin_template_key` מתוך `json_schema` (טפסי מערכת). */
+export function orgDocBuiltinTemplateKey(doc: Pick<OrgDocument, 'json_schema'>): string {
+  const s = doc.json_schema;
+  if (!s || typeof s !== 'object') return '';
+  const raw = (s as Record<string, unknown>).builtin_template_key;
+  return typeof raw === 'string' ? raw.trim() : '';
+}
+
+/** טופס הסבת דוחות / נספח אחריות אישית לעבירות תנועה — ברירת מחדל למסירת רכב חליפי. */
+export function isTrafficLiabilityConversionHandoverDoc(doc: OrgDocument): boolean {
+  if (orgDocBuiltinTemplateKey(doc) === 'system-traffic-liability-annex') return true;
+  const label = orgDocumentHandoverLabel(doc);
+  if (label.includes('הסבת דוחות')) return true;
+  return label.includes('אחריות אישית') && label.includes('עבירות תנועה');
+}

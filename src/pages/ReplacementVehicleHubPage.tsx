@@ -5,16 +5,20 @@ import { cn } from '@/lib/utils';
 
 export default function ReplacementVehicleHubPage() {
   return (
-    <div className="relative text-foreground dark:text-white" dir="rtl">
+    <div className="relative text-slate-900 dark:text-white" dir="rtl">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-60 bg-[radial-gradient(ellipse_at_top,rgba(34,211,238,0.12),transparent_60%)] dark:bg-[radial-gradient(ellipse_at_top,rgba(34,211,238,0.16),transparent_60%)]" />
       <main className="container relative py-4 md:py-6">
-        <Card className="overflow-hidden border-slate-200 bg-white shadow-md dark:border-cyan-400/25 dark:bg-[#08162a] dark:shadow-none">
-          <CardHeader className="border-b border-slate-200 bg-slate-50 dark:border-cyan-400/15 dark:bg-gradient-to-r dark:from-cyan-500/10 dark:to-transparent">
-            <CardTitle className="flex items-center gap-2 text-xl text-slate-900 dark:text-white">
-              <Repeat className="h-6 w-6 text-cyan-600 dark:text-cyan-300" />
+        {/*
+          main.fleet-app-main-scene מגדיר color:#f8fafc — בלי text-slate-900 על הכרטיס
+          רצועת הכותרת הבהירה יורשת טקסט בהיר על רקע בהיר (לא קריא).
+        */}
+        <Card className="overflow-hidden border-slate-200 bg-white text-slate-900 shadow-md dark:border-cyan-400/25 dark:bg-[#08162a] dark:text-white dark:shadow-none">
+          <CardHeader className="border-b border-slate-200 bg-slate-50 text-slate-950 dark:border-cyan-400/15 dark:bg-gradient-to-r dark:from-cyan-950/80 dark:to-[#08162a] dark:text-white">
+            <CardTitle className="flex items-center gap-2 text-xl text-slate-950 dark:text-white">
+              <Repeat className="h-6 w-6 shrink-0 text-cyan-600 dark:text-cyan-300" />
               פעולות רכב חליפי
             </CardTitle>
-            <p className="flex items-center gap-2 text-sm text-slate-600 dark:text-cyan-100/75">
+            <p className="flex items-center gap-2 text-sm text-slate-700 dark:text-cyan-100/85">
               <Sparkles className="h-4 w-4 shrink-0 text-cyan-600 dark:text-cyan-200" />
               בחרי פעולה והמשיכי לטופס המותאם לרכב חליפי
             </p>
