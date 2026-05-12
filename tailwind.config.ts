@@ -1,20 +1,16 @@
 import type { Config } from "tailwindcss";
 
+/**
+ * Tailwind v4: עיקר העיצוב ב־`src/index.css` (@theme / @layer).
+ * קובץ זה נשמר לתאימות ל־`tailwindcss-animate` ול־`darkMode: class`.
+ */
 export default {
   darkMode: ["class"],
-  content: ["./pages/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./app/**/*.{ts,tsx}", "./src/**/*.{ts,tsx}"],
-  prefix: "",
+  content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
-    container: {
-      center: true,
-      padding: "1rem",
-      screens: {
-        "2xl": "1400px",
-      extend: {
-        fontFamily: {
-          sans: ['Heebo', 'sans-serif'],
-        },
-        colors: {
+    extend: {
+      fontFamily: {
+        sans: ["Heebo", "Inter", "system-ui", "sans-serif"],
       },
       colors: {
         border: "hsl(var(--border))",
@@ -38,17 +34,6 @@ export default {
           DEFAULT: "hsl(var(--muted))",
           foreground: "hsl(var(--muted-foreground))",
         },
-      },
-      borderColor: {
-        border: "hsl(var(--border))",
-        sidebar: "hsl(var(--sidebar-border))",
-      },
-      backgroundColor: {
-        background: "hsl(var(--background))",
-        card: "hsl(var(--card))",
-        popover: "hsl(var(--popover))",
-        sidebar: "hsl(var(--sidebar-background))",
-      },
         accent: {
           DEFAULT: "hsl(var(--accent))",
           foreground: "hsl(var(--accent-foreground))",
@@ -60,44 +45,6 @@ export default {
         card: {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
-        },
-        warning: {
-          DEFAULT: "hsl(var(--warning))",
-          foreground: "hsl(var(--warning-foreground))",
-        },
-        success: {
-          DEFAULT: "hsl(var(--success))",
-          foreground: "hsl(var(--success-foreground))",
-        },
-        info: {
-          DEFAULT: "hsl(var(--info))",
-          foreground: "hsl(var(--info-foreground))",
-        },
-        status: {
-          valid: "hsl(var(--status-valid))",
-        },
-        borderColor: {
-          border: "hsl(var(--border))",
-          sidebar: "hsl(var(--sidebar-border))",
-        },
-        backgroundColor: {
-          background: "hsl(var(--background))",
-          card: "hsl(var(--card))",
-          popover: "hsl(var(--popover))",
-          sidebar: "hsl(var(--sidebar-background))",
-        },
-          warning: "hsl(var(--status-warning))",
-          expired: "hsl(var(--status-expired))",
-        },
-        sidebar: {
-          DEFAULT: "hsl(var(--sidebar-background))",
-          foreground: "hsl(var(--sidebar-foreground))",
-          primary: "hsl(var(--sidebar-primary))",
-          "primary-foreground": "hsl(var(--sidebar-primary-foreground))",
-          accent: "hsl(var(--sidebar-accent))",
-          "accent-foreground": "hsl(var(--sidebar-accent-foreground))",
-          border: "hsl(var(--sidebar-border))",
-          ring: "hsl(var(--sidebar-ring))",
         },
       },
       borderRadius: {

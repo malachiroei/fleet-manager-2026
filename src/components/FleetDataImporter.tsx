@@ -8,6 +8,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Upload, Car, Users, Loader2 } from 'lucide-react';
 import { canonicalOwnershipType } from '@/lib/vehicleOwnership';
 import { normalizePlateNumber } from '@/lib/plateNumber';
+import { useAuth } from '@/hooks/useAuth';
+import {
+  FLEET_EXCEL_IMPORT_EVENT,
+  persistFleetExcelImportTimestamp,
+} from '@/lib/fleetExcelImportStorage';
 
 // ─── helpers ───
 
@@ -146,6 +151,8 @@ export default function FleetDataImporter() {
   const vehicleInputRef = useRef<HTMLInputElement>(null);
   const driverInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
+  const { profile, activeOrgId } = useAuth();
+  const effectiveOrgId = (activeOrgId ?? profile?.org_id ?? '').trim() || null;
 
   const readExcel = (file: File): Promise<Record<string, any>[]> => {
     return new Promise((resolve, reject) => {
@@ -186,7 +193,8 @@ export default function FleetDataImporter() {
       let inserted = 0;
 
       for (let i = 0; i < mapped.length; i += chunkSize) {
-        const chunk = mapped.slice(i, i + chunkSize);
+        const slice = mapped.slice(i, i + chunkSize);
+        const chunk = effectiveOrgId ? slice.map((row) => ({ ...row, org_id: effectiveOrgId })) : slice;
         const { error } = await supabase.from('vehicles').upsert(chunk as any, { onConflict: 'plate_number' });
         if (error) throw error;
         inserted += chunk.length;
@@ -196,7 +204,16 @@ export default function FleetDataImporter() {
       localStorage.setItem('vehicles_data', JSON.stringify(mapped));
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
-      localStorage.setItem('last_vehicle_upload', new Date().toISOString());
+      const vehicleIso = persistFleetExcelImportTimestamp('vehicle', effectiveOrgId);
+      try {
+        window.dispatchEvent(
+          new CustomEvent(FLEET_EXCEL_IMPORT_EVENT, {
+            detail: { kind: 'vehicle', iso: vehicleIso },
+          }),
+        );
+      } catch {
+        // ignore
+      }
       toast({ title: `נטענו ${inserted} רכבים בהצלחה` });
       window.location.reload();
     } catch (err: any) {
@@ -227,14 +244,24 @@ export default function FleetDataImporter() {
       let inserted = 0;
 
       for (let i = 0; i < mapped.length; i += chunkSize) {
-        const chunk = mapped.slice(i, i + chunkSize);
+        const slice = mapped.slice(i, i + chunkSize);
+        const chunk = effectiveOrgId ? slice.map((row) => ({ ...row, org_id: effectiveOrgId })) : slice;
         const { error } = await supabase.from('drivers').upsert(chunk as any, { onConflict: 'id_number' });
         if (error) throw error;
         inserted += chunk.length;
       }
 
       queryClient.invalidateQueries({ queryKey: ['drivers'] });
-      localStorage.setItem('last_driver_upload', new Date().toISOString());
+      const driverIso = persistFleetExcelImportTimestamp('driver', effectiveOrgId);
+      try {
+        window.dispatchEvent(
+          new CustomEvent(FLEET_EXCEL_IMPORT_EVENT, {
+            detail: { kind: 'driver', iso: driverIso },
+          }),
+        );
+      } catch {
+        // ignore
+      }
       toast({ title: `נטענו ${inserted} נהגים בהצלחה` });
     } catch (err: any) {
       toast({ title: 'שגיאה בטעינת נהגים', description: err.message, variant: 'destructive' });

@@ -46,7 +46,8 @@ export function FleetTableColumnsButton({
       type="button"
       variant="outline"
       size="sm"
-      className="h-10 shrink-0 border-cyan-500/30 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20"
+      data-no-theme
+      className="h-10 shrink-0 border-slate-300 bg-white text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50 dark:border-cyan-500/30 dark:bg-cyan-500/10 dark:text-cyan-100 dark:shadow-none dark:hover:bg-cyan-500/20"
       onClick={onClick}
     >
       <Columns3 className="ml-1.5 h-4 w-4" />

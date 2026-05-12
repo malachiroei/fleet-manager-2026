@@ -100,10 +100,10 @@ const statusCardConfig: Array<{
 ];
 
 const statusIconStroke: Record<'blue' | 'purple' | 'orange' | 'teal', string> = {
-  blue: 'text-[#00f2ff]',
-  purple: 'text-[#c4b5fd]',
-  orange: 'text-[#ff9100]',
-  teal: 'text-[#5eead4]',
+  blue: 'text-sky-700 dark:text-[#00f2ff]',
+  purple: 'text-violet-700 dark:text-[#c4b5fd]',
+  orange: 'text-orange-700 dark:text-[#ff9100]',
+  teal: 'text-teal-700 dark:text-[#5eead4]',
 };
 
 function StatusCard({
@@ -121,12 +121,12 @@ function StatusCard({
 }) {
   const glowClass =
     theme === 'blue'
-      ? 'shadow-[0_0_22px_rgba(0,242,255,0.42)]'
+      ? 'shadow-none dark:shadow-[0_0_22px_rgba(0,242,255,0.42)]'
       : theme === 'purple'
-        ? 'shadow-[0_0_22px_rgba(167,139,250,0.38)]'
+        ? 'shadow-none dark:shadow-[0_0_22px_rgba(167,139,250,0.38)]'
         : theme === 'orange'
-          ? 'shadow-[0_0_26px_rgba(255,49,49,0.55),0_0_40px_rgba(255,145,0,0.25)]'
-          : 'shadow-[0_0_22px_rgba(94,234,212,0.4)]';
+          ? 'shadow-none dark:shadow-[0_0_26px_rgba(255,49,49,0.55),0_0_40px_rgba(255,145,0,0.25)]'
+          : 'shadow-none dark:shadow-[0_0_22px_rgba(94,234,212,0.4)]';
 
   const iconStroke = statusIconStroke[theme];
 
@@ -141,7 +141,10 @@ function StatusCard({
         style={{ pointerEvents: 'none' } as React.CSSProperties}
       >
         <div className="hud-status-card-carbon pointer-events-none absolute inset-0 rounded-3xl opacity-85" aria-hidden />
-        <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-white/[0.08] via-transparent to-black/55 pointer-events-none" aria-hidden />
+        <div
+          className="status-card-vignette pointer-events-none absolute inset-0 rounded-3xl bg-gradient-to-br from-white/50 via-transparent to-slate-900/[0.06] dark:from-white/[0.08] dark:to-black/55"
+          aria-hidden
+        />
         <div
           className="pointer-events-none absolute inset-[1px] rounded-[1.2rem] border border-cyan-400/10 opacity-70"
           aria-hidden
@@ -149,7 +152,7 @@ function StatusCard({
 
         <div className="relative z-10 mt-0.5 flex flex-col items-center gap-1.5 xl:gap-2">
           <div
-            className={`status-card-icon-box dashboard-cyber-icon-dish inline-flex h-11 w-11 sm:h-12 sm:w-12 xl:h-14 xl:w-14 [@media(max-height:820px)]:h-11 [@media(max-height:820px)]:w-11 items-center justify-center rounded-2xl border bg-slate-950/65 backdrop-blur-md ${theme === 'blue' ? 'border-[#00f2ff]/55' : theme === 'purple' ? 'border-violet-400/50' : theme === 'orange' ? 'border-[#ff4d00]/65' : 'border-teal-400/50'}`}
+            className={`status-card-icon-box dashboard-cyber-icon-dish inline-flex h-11 w-11 sm:h-12 sm:w-12 xl:h-14 xl:w-14 [@media(max-height:820px)]:h-11 [@media(max-height:820px)]:w-11 items-center justify-center rounded-2xl border bg-slate-100 shadow-sm backdrop-blur-md dark:bg-slate-950/65 dark:shadow-none ${theme === 'blue' ? 'border-sky-300 dark:border-[#00f2ff]/55' : theme === 'purple' ? 'border-violet-300 dark:border-violet-400/50' : theme === 'orange' ? 'border-orange-300 dark:border-[#ff4d00]/65' : 'border-teal-300 dark:border-teal-400/50'}`}
           >
             <Icon
               className={`h-6 w-6 sm:h-7 sm:w-7 xl:h-8 xl:w-8 [@media(max-height:820px)]:h-6 [@media(max-height:820px)]:w-6 ${iconStroke}`}
@@ -164,14 +167,14 @@ function StatusCard({
 
         {value !== '' && (
           <div className="relative z-10 text-center">
-            <p className="hud-kpi-value text-2xl sm:text-3xl md:text-4xl xl:text-5xl [@media(max-height:820px)]:xl:text-4xl font-bold tracking-tight text-white tabular-nums">
+            <p className="hud-kpi-value text-2xl sm:text-3xl md:text-4xl xl:text-5xl [@media(max-height:820px)]:xl:text-4xl font-bold tracking-tight text-slate-900 tabular-nums dark:text-white">
               {value}
             </p>
           </div>
         )}
 
         <div className="relative z-10 mb-1 flex items-center gap-1 text-[10px] sm:text-xs font-medium hud-dashboard-muted">
-          <div className="status-card-entry-btn flex items-center justify-center h-6 w-6 sm:h-7 sm:w-7 rounded-full border border-white/20 bg-black/25 backdrop-blur-sm">
+          <div className="status-card-entry-btn flex items-center justify-center h-6 w-6 sm:h-7 sm:w-7 rounded-full border border-slate-300 bg-slate-100 backdrop-blur-sm dark:border-white/20 dark:bg-black/25">
             <ChevronLeft className="h-3 w-3 sm:h-3.5 sm:h-3.5 opacity-90" strokeWidth={1.5} />
           </div>
           <span className="tracking-wide">כניסה</span>
@@ -346,7 +349,7 @@ export default function Dashboard() {
       featureFlagKey: 'qa_forms',
     },
     {
-      title: 'הגדרות מערכת',
+      title: 'הגדרות מנהל',
       href: '/admin/settings',
       icon: Settings,
       adminOnly: true,

@@ -162,7 +162,7 @@ export default function DriverListPage() {
               placeholder="חיפוש נהג — שם, ת״ז, טלפון, מייל…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="h-10 border-white/15 bg-black/40 pr-10 text-white placeholder:text-slate-500"
+              className="h-10 border border-input bg-background pr-10 text-foreground placeholder:text-muted-foreground dark:border-white/10 dark:bg-black/30 dark:text-white dark:placeholder:text-slate-500"
               aria-label="חיפוש נהג"
             />
           </div>

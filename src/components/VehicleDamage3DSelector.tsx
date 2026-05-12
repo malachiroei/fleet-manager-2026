@@ -324,7 +324,7 @@ export default function VehicleDamage3DSelector({ value, onChange }: VehicleDama
         </div>
       </div>
 
-      <Dialog open={mobileDialogSide !== null} onOpenChange={(open) => !open && setMobileDialogSide(null)}>
+      <Dialog open={mobileDialogSide !== null} onOpenChange={(open) => !open && setMobileDialogSide(null)} modal={false}>
         <DialogContent className="border-cyan-500/30 bg-[#0a1628] text-white sm:max-w-md" dir="rtl">
           <DialogHeader>
             <DialogTitle className="text-right text-lg">

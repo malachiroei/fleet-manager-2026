@@ -155,8 +155,10 @@ export default function VehicleListPage() {
           {showReportMileage ? (
             <Link to="/report-mileage" className="w-full sm:w-auto">
               <Button
+                type="button"
+                data-no-theme
                 variant="outline"
-                className="w-full gap-2 border-cyan-500/40 bg-white/5 text-sm font-semibold text-cyan-100 hover:bg-cyan-500/10 sm:w-auto"
+                className="w-full gap-2 border-slate-300 bg-white text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50 sm:w-auto dark:border-cyan-500/40 dark:bg-white/5 dark:text-cyan-100 dark:shadow-none dark:hover:bg-cyan-500/10"
               >
                 <Gauge className="h-4 w-4" />
                 דיווח קילומטראז׳
@@ -165,8 +167,10 @@ export default function VehicleListPage() {
           ) : (
             <Link to="/vehicles/odometer" className="w-full sm:w-auto">
               <Button
+                type="button"
+                data-no-theme
                 variant="outline"
-                className="w-full gap-2 border-cyan-500/40 bg-white/5 text-sm font-semibold text-cyan-100 hover:bg-cyan-500/10 sm:w-auto"
+                className="w-full gap-2 border-slate-300 bg-white text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50 sm:w-auto dark:border-cyan-500/40 dark:bg-white/5 dark:text-cyan-100 dark:shadow-none dark:hover:bg-cyan-500/10"
               >
                 <Gauge className="h-4 w-4" />
                 עדכון קילומטראז׳
@@ -176,8 +180,10 @@ export default function VehicleListPage() {
           {showServiceUpdate ? (
             <Link to="/vehicles/service-update" className="w-full sm:w-auto">
               <Button
+                type="button"
+                data-no-theme
                 variant="outline"
-                className="w-full gap-2 border-purple-500/40 bg-white/5 text-sm font-semibold text-purple-100 hover:bg-purple-500/10 sm:w-auto"
+                className="w-full gap-2 border-slate-300 bg-white text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50 sm:w-auto dark:border-purple-500/40 dark:bg-white/5 dark:text-purple-100 dark:shadow-none dark:hover:bg-purple-500/10"
               >
                 <Wrench className="h-4 w-4" />
                 עדכון טיפול

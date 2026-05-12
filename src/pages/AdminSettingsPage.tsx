@@ -2,7 +2,7 @@ import type { ChangeEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
- import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -18,14 +18,10 @@ import FleetDataImporter from '@/components/FleetDataImporter';
 import {
   Loader2,
   Mail,
-  Monitor,
-  Moon,
   Settings,
   Shield,
-  Sun,
   Trash2,
 } from 'lucide-react';
-import { useTheme } from '@/hooks/useTheme';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrgSettings, useUpdateOrgSettings } from '@/hooks/useOrgSettings';
 import { getDefaultPermissions } from '@/lib/permissions';
@@ -45,20 +41,13 @@ import {
 } from '@/lib/settingsSyncReview';
 import { upsertSystemSettingsRows } from '@/lib/systemSettingsUpsert';
 import { toast } from 'sonner';
-import { version as codeVersion } from '@/constants/version';
-import { clearAllBrowserCaches, triggerServiceWorkerUpdateCheck } from '@/lib/pwaServiceWorkerControl';
-import {
-  hidePwaUpdateModal,
-  showPwaUpdateModal,
-} from '@/lib/pwaUpdateModalBridge';
-import { parseManifestChanges } from '@/lib/pwaManifest';
-import {
-  normalizeVersion,
-  compareSemver,
-} from '@/lib/versionManifest';
-import { isFleetProductionHost } from '@/lib/pwaPromptRegister';
 import { FLEET_KV_TABLE } from '@/lib/fleetKvTable';
 import { formatSupabaseError } from '@/lib/supabaseError';
+import {
+  FLEET_EXCEL_IMPORT_EVENT,
+  pickLatestIsoString,
+  readFleetExcelImportTimestamp,
+} from '@/lib/fleetExcelImportStorage';
 import {
   buildTopicPrefsDocumentForDb,
   mergeDriverMetaFromLegacyPrefs,
@@ -74,12 +63,14 @@ import {
 } from '@/lib/notificationEmailRouting';
 
 export default function AdminSettingsPage() {
-    const { theme, setTheme } = useTheme();
     const queryClient = useQueryClient();
     const { isAdmin, profile, refreshProfile, user, activeOrgId } = useAuth();
     const [lastPricingUpload, setLastPricingUpload] = useState<string | null>(localStorage.getItem('last_pricing_upload'));
-    const lastVehicleUpload = localStorage.getItem('last_vehicle_upload');
-    const lastDriverUpload = localStorage.getItem('last_driver_upload');
+
+    const [serverVehicleMaxAt, setServerVehicleMaxAt] = useState<string | null>(null);
+    const [serverDriverMaxAt, setServerDriverMaxAt] = useState<string | null>(null);
+    /** מגיב לאירוע טעינת אקסל (אותו טאב) ומרענן max(updated_at) מהמסד */
+    const [fleetImportRefresh, setFleetImportRefresh] = useState(0);
 
     const settingsOrgIdForSnapshot = activeOrgId ?? profile?.org_id ?? null;
     const { data: orgSettingsRow } = useOrgSettings(settingsOrgIdForSnapshot, {
@@ -291,8 +282,7 @@ export default function AdminSettingsPage() {
     };
 
     const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
-    const DEFAULT_APP_VERSION = codeVersion;
-    // Default visible timestamp for the last update (updated by the "עדכן" flow)
+    // תאריך עדכון אחרון במפתח last_update_date (system_settings) — מתעדכן בזרימת פרסום גרסה / bump
     const [lastUpdateDate, setLastUpdateDate] = useState<string>(() => {
       try {
         const iso = localStorage.getItem('fleet-manager-last_update_date_iso');
@@ -303,13 +293,8 @@ export default function AdminSettingsPage() {
       } catch {
         // ignore
       }
-      return formatDateTimeForUi(new Date(2026, 2, 18, 13, 0, 0));
+      return '';
     });
-
-    /** GitHub: version_snapshot.json (best-effort) — להשוואה מול ה-Timestamp המקומי */
-    const [githubSnapshotVersion, setGithubSnapshotVersion] = useState<string>('');
-    const [githubSnapshotReleaseDate, setGithubSnapshotReleaseDate] = useState<string>('');
-    const [isGithubSnapshotLoading, setIsGithubSnapshotLoading] = useState(false);
 
     const updateOrgSettingsMutation = useUpdateOrgSettings();
 
@@ -321,72 +306,77 @@ export default function AdminSettingsPage() {
       return `${date} ${time}`;
     };
 
-    // Load persisted version + last update timestamp (best-effort).
+    const fetchFleetTableActivity = useCallback(async () => {
+      try {
+        const [vRes, dRes] = await Promise.all([
+          supabase.from('vehicles').select('updated_at').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
+          supabase.from('drivers').select('updated_at').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
+        ]);
+        const v = vRes.data?.updated_at;
+        const d = dRes.data?.updated_at;
+        setServerVehicleMaxAt(v != null ? String(v) : null);
+        setServerDriverMaxAt(d != null ? String(d) : null);
+      } catch {
+        setServerVehicleMaxAt(null);
+        setServerDriverMaxAt(null);
+      }
+    }, []);
+
+    useEffect(() => {
+      void fetchFleetTableActivity();
+    }, [fetchFleetTableActivity, settingsOrgIdForSnapshot]);
+
+    useEffect(() => {
+      const onFleetExcel = () => {
+        setFleetImportRefresh((n) => n + 1);
+        void fetchFleetTableActivity();
+      };
+      window.addEventListener(FLEET_EXCEL_IMPORT_EVENT, onFleetExcel as EventListener);
+      return () => window.removeEventListener(FLEET_EXCEL_IMPORT_EVENT, onFleetExcel as EventListener);
+    }, [fetchFleetTableActivity]);
+
+    // טעינת תאריך עדכון אחרון מ־system_settings (זרימת פרסום גרסה / staff)
     useEffect(() => {
       (async () => {
         try {
-          const [versionRes, lastUpdateRes] = await Promise.all([
-            (supabase as any).from(FLEET_KV_TABLE).select('value').eq('key', 'app_version').maybeSingle(),
-            (supabase as any).from(FLEET_KV_TABLE).select('value').eq('key', 'last_update_date').maybeSingle(),
-          ]);
-
-          if (!lastUpdateRes?.error) {
-            const lastUpdateValue = lastUpdateRes?.data?.value;
-            if (typeof lastUpdateValue === 'string' && lastUpdateValue.trim()) {
-              const ms = Date.parse(lastUpdateValue);
-              if (!Number.isNaN(ms)) {
-                setLastUpdateDate(formatDateTimeForUi(new Date(ms)));
-              } else {
-                setLastUpdateDate(lastUpdateValue);
-              }
+          const { data, error } = await (supabase as any)
+            .from(FLEET_KV_TABLE)
+            .select('value')
+            .eq('key', 'last_update_date')
+            .maybeSingle();
+          if (error) return;
+          const lastUpdateValue = data?.value;
+          if (typeof lastUpdateValue === 'string' && lastUpdateValue.trim()) {
+            const ms = Date.parse(lastUpdateValue);
+            if (!Number.isNaN(ms)) {
+              setLastUpdateDate(formatDateTimeForUi(new Date(ms)));
+            } else {
+              setLastUpdateDate(lastUpdateValue);
             }
           }
         } catch {
-          // ignore (RLS/migration not ready yet)
+          // ignore (RLS / migration)
         }
       })();
     }, []);
 
-    /** בדיקת GitHub: משווה נתוני גרסה מול version_snapshot.json (best-effort; ייתכן ריפו פרטי). */
-    useEffect(() => {
-      void (async () => {
-        setIsGithubSnapshotLoading(true);
-        try {
-          const url =
-            `https://raw.githubusercontent.com/malachiroei/fleet-manager-2026/master/src/config/version_snapshot.json?t=${Date.now()}`;
-          const res = await fetch(url, { cache: 'no-store' });
-          if (!res.ok) {
-            setGithubSnapshotVersion('');
-            setGithubSnapshotReleaseDate('');
-            return;
-          }
-          const j = (await res.json()) as { version?: unknown; release_date?: unknown };
-          setGithubSnapshotVersion(typeof j.version === 'string' ? j.version.trim() : '');
-          setGithubSnapshotReleaseDate(typeof j.release_date === 'string' ? j.release_date.trim() : '');
-        } catch {
-          setGithubSnapshotVersion('');
-          setGithubSnapshotReleaseDate('');
-        } finally {
-          setIsGithubSnapshotLoading(false);
-        }
-      })();
-    }, []);
+    const mergedLastVehicleIso = useMemo(
+      () =>
+        pickLatestIsoString(
+          readFleetExcelImportTimestamp('vehicle', settingsOrgIdForSnapshot),
+          serverVehicleMaxAt,
+        ),
+      [settingsOrgIdForSnapshot, serverVehicleMaxAt, fleetImportRefresh],
+    );
 
-    const forceManualVersionUpdate = useCallback(async () => {
-      try {
-        await clearAllBrowserCaches();
-      } catch {
-        // ignore
-      }
-      const loc = window.location as Location & { reload?: (forceReload?: boolean) => void };
-      try {
-        loc.reload?.(true);
-        return;
-      } catch {
-        // ignore
-      }
-      window.location.reload();
-    }, []);
+    const mergedLastDriverIso = useMemo(
+      () =>
+        pickLatestIsoString(
+          readFleetExcelImportTimestamp('driver', settingsOrgIdForSnapshot),
+          serverDriverMaxAt,
+        ),
+      [settingsOrgIdForSnapshot, serverDriverMaxAt, fleetImportRefresh],
+    );
 
     const sendTestEmail = async () => {
       const emails = parseEmailsFromTextarea(notificationEmailsRaw);
@@ -613,50 +603,6 @@ export default function AdminSettingsPage() {
             </CardContent>
           </Card>
 
-          {/* Display Settings */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-500/10">
-                  <Monitor className="h-5 w-5 text-purple-400" />
-                </div>
-                <div>
-                  <CardTitle>הגדרות תצוגה</CardTitle>
-                  <CardDescription>בחר בין מצב כהה (קיימי) למצב בהיר. הבחירה נשמרת בקשיית הדפדפן.</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setTheme('dark')}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
-                    theme === 'dark'
-                      ? 'border-cyan-400 bg-cyan-500/15 text-cyan-300'
-                      : 'border-border bg-secondary/50 text-muted-foreground hover:border-cyan-400/50'
-                  }`}
-                >
-                  <Moon className="h-4 w-4" />
-                  מצב כהה
-                </button>
-                <button
-                  onClick={() => setTheme('light')}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
-                    theme === 'light'
-                      ? 'border-amber-400 bg-amber-500/15 text-amber-400'
-                      : 'border-border bg-secondary/50 text-muted-foreground hover:border-amber-400/50'
-                  }`}
-                >
-                  <Sun className="h-4 w-4" />
-                  מצב בהיר
-                </button>
-              </div>
-              <p className="text-xs text-muted-foreground mt-3">
-                מצב פעיל כעת: <strong>{theme === 'dark' ? 'כהה 🌙' : 'בהיר ☀️'}</strong>
-              </p>
-            </CardContent>
-          </Card>
-
           {/* System Info */}
           <Card>
             <CardHeader>
@@ -666,55 +612,32 @@ export default function AdminSettingsPage() {
                 </div>
                 <div>
                   <CardTitle>מידע מערכת</CardTitle>
-                  <CardDescription>
-                    גרסת האפליקציה (מ־<code className="text-[10px]">package.json</code>, כמו בכותרת):{' '}
-                    <span className="font-mono text-foreground">{codeVersion}</span>
-                  </CardDescription>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
+              <p className="mb-3 text-xs text-muted-foreground">
+                תאריכי טעינת רכבים/נהגים משלבים את הטעינה האחרונה ממכשיר זה (אם בוצעה) ואת מועד השינוי האחרון
+                ברשומות במסד הנתונים (לפי הרשאות הארגון).
+              </p>
               <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
+                <div className="flex flex-row-reverse flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <span className="font-medium tabular-nums">{formatDate(lastPricingUpload)}</span>
                   <span className="text-muted-foreground">טעינת קובץ משרד התחבורה אחרונה:</span>
-                  <span className="font-medium">{formatDate(lastPricingUpload)}</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex flex-row-reverse flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <span className="font-medium tabular-nums">{formatDate(mergedLastVehicleIso)}</span>
                   <span className="text-muted-foreground">טעינת רכבים אחרונה:</span>
-                  <span className="font-medium">{formatDate(lastVehicleUpload)}</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex flex-row-reverse flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <span className="font-medium tabular-nums">{formatDate(mergedLastDriverIso)}</span>
                   <span className="text-muted-foreground">טעינת נהגים אחרונה:</span>
-                  <span className="font-medium">{formatDate(lastDriverUpload)}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">תאריך עדכון אחרון:</span>
-                  <span className="font-medium">{lastUpdateDate}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">גרסת עדכון זמינה:</span>
-                  <span className="font-medium" dir="ltr">
-                    {isGithubSnapshotLoading
-                      ? 'טוען…'
-                      : githubSnapshotVersion || githubSnapshotReleaseDate
-                        ? `${githubSnapshotVersion || '—'} · ${githubSnapshotReleaseDate || '—'}`
-                        : 'לא זמין'}
+                <div className="flex flex-row-reverse flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <span className="font-medium tabular-nums">
+                    {lastUpdateDate || 'לא נשמר במערכת (מתעדכן בפרסום גרסה / סנכרון מנהלים)'}
                   </span>
-                </div>
-              </div>
-              <div className="pt-3 border-t border-border mt-3 space-y-3">
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => void forceManualVersionUpdate()}
-                    disabled={false}
-                  >
-                    ניקוי זיכרון ורענון אפליקציה
-                  </Button>
-                  <span className="text-xs text-muted-foreground">
-                    (מנקה מטמון דפדפן במקרה של תקלה)
-                  </span>
+                  <span className="text-muted-foreground">תאריך עדכון אחרון (מערכת):</span>
                 </div>
               </div>
             </CardContent>

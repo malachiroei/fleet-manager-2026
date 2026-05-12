@@ -97,9 +97,9 @@ export const FEATURE_FLAG_REGISTRY: FeatureFlagRegistryEntry[] = [
   },
   {
     key: 'qa_admin_settings',
-    display_name_he: 'הגדרות מערכת',
+    display_name_he: 'הגדרות מנהל',
     description: 'קישור מהיר — הגדרות מנהל',
-    ui_mapping: 'Dashboard quick actions -> הגדרות מערכת',
+    ui_mapping: 'Dashboard quick actions -> הגדרות מנהל',
     category: 'quick_actions',
   },
   {

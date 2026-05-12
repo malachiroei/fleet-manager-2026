@@ -348,8 +348,10 @@ export function AppLayout({ children }: AppLayoutProps) {
           size="sm"
           title="הגדרות"
           aria-label="הגדרות"
+          data-no-theme
           className={cn(
-            'h-8 gap-1.5 border-white/15 bg-white/5 text-white hover:bg-white/10 hover:text-white shrink-0',
+            'h-8 gap-1.5 shrink-0 border border-slate-300 bg-white text-slate-900 shadow-sm hover:bg-slate-50',
+            'dark:border-white/15 dark:bg-white/5 dark:text-white dark:shadow-none dark:hover:bg-white/10 dark:hover:text-white',
             className
           )}
         >
@@ -520,7 +522,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             variant="ghost"
             aria-label="תפריט פעולות"
             title="תפריט"
-            className="h-8 w-8 rounded-lg border border-cyan-400/30 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20 hover:text-white"
+            className="h-8 w-8 rounded-lg border border-cyan-600/25 bg-cyan-50 text-cyan-800 hover:bg-cyan-100 hover:text-cyan-950 dark:border-cyan-400/30 dark:bg-cyan-500/10 dark:text-cyan-100 dark:hover:bg-cyan-500/20 dark:hover:text-white"
           >
             <Menu className="h-4 w-4" />
           </Button>
@@ -564,7 +566,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             variant="ghost"
             aria-label="תפריט"
             title="תפריט"
-            className="h-10 min-h-[44px] w-10 min-w-[44px] rounded-lg border border-cyan-400/30 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20 hover:text-white"
+            className="h-10 min-h-[44px] w-10 min-w-[44px] rounded-lg border border-cyan-600/25 bg-cyan-50 text-cyan-800 hover:bg-cyan-100 hover:text-cyan-950 dark:border-cyan-400/30 dark:bg-cyan-500/10 dark:text-cyan-100 dark:hover:bg-cyan-500/20 dark:hover:text-white"
           >
             <Menu className="h-5 w-5 shrink-0" />
           </Button>
@@ -621,16 +623,17 @@ export function AppLayout({ children }: AppLayoutProps) {
   const HomeNavLink = () => (
     <button
       type="button"
+      data-no-theme
       onClick={handleGoHomeNav}
       className={cn(
-        'relative z-[110] inline-flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors touch-manipulation md:h-10 md:gap-2 md:px-5',
+        'relative z-[110] inline-flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border px-3 text-sm font-semibold transition-colors touch-manipulation md:h-10 md:gap-2 md:px-5',
         isHomeActive
-          ? 'border-cyan-400/35 bg-cyan-500/15 text-cyan-100'
-          : 'border-white/10 bg-white/[0.06] text-white/70 hover:bg-white/10 hover:text-white/90'
+          ? 'border-cyan-600/50 bg-cyan-100 text-slate-900 shadow-sm dark:border-cyan-400/35 dark:bg-cyan-500/15 dark:text-cyan-100 dark:shadow-none'
+          : 'border-slate-300 bg-white text-slate-900 shadow-sm hover:bg-slate-50 hover:text-slate-950 dark:border-white/10 dark:bg-white/[0.06] dark:text-white/70 dark:shadow-none dark:hover:bg-white/10 dark:hover:text-white/90'
       )}
       style={{ touchAction: 'manipulation' }}
     >
-      <Home className="h-4 w-4 shrink-0 opacity-90" />
+      <Home className="h-4 w-4 shrink-0 text-current opacity-95" />
       <span>{t('navigation.home')}</span>
     </button>
   );
@@ -640,8 +643,8 @@ export function AppLayout({ children }: AppLayoutProps) {
     isHomeActive ? (
       <div className="md:hidden pt-1 pb-0.5">
         <div className="flex items-center justify-between gap-2 px-1">
-          <span className="text-sm font-bold text-white">לוח בקרה</span>
-          <span className="text-[11px] font-medium text-white/55">תצוגה מהירה</span>
+          <span className="text-sm font-bold text-slate-900 dark:text-white">לוח בקרה</span>
+          <span className="text-[11px] font-medium text-slate-600 dark:text-white/55">תצוגה מהירה</span>
         </div>
       </div>
     ) : null;
@@ -665,10 +668,10 @@ export function AppLayout({ children }: AppLayoutProps) {
         />
       </div>
       <div className={cn('min-w-0', isRtl ? 'text-right' : 'text-left')}>
-        <span className="block max-w-[min(100%,70vw)] truncate text-sm font-bold leading-tight text-white md:max-w-[min(100%,28rem)]">
+        <span className="block max-w-[min(100%,70vw)] truncate text-sm font-bold leading-tight text-slate-900 md:max-w-[min(100%,28rem)] dark:text-white">
           {t('navigation.fleetManager')}
         </span>
-        <span className="hidden truncate text-[10px] text-cyan-400/55 md:block">{orgName || 'הצי הראשי - רועי'}</span>
+        <span className="hidden truncate text-[10px] text-cyan-700/80 md:block dark:text-cyan-400/55">{orgName || 'הצי הראשי - רועי'}</span>
       </div>
     </div>
   );
@@ -680,19 +683,19 @@ export function AppLayout({ children }: AppLayoutProps) {
     user ? (
       <div
         className={cn(
-          'relative z-[10000] hidden min-w-0 max-w-full items-center gap-2 rounded-full bg-black/40 px-2 py-1 text-xs md:flex md:shrink md:px-3',
+          'relative z-[10000] hidden min-w-0 max-w-full items-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-2 py-1 text-xs md:flex md:shrink md:px-3 dark:border-transparent dark:bg-black/40',
           isRtl ? 'flex-row-reverse' : 'flex-row'
         )}
       >
         <div
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-500/20 text-[10px] font-bold text-cyan-200"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-cyan-600/25 bg-cyan-100 text-[10px] font-bold text-cyan-900 dark:border-cyan-400/30 dark:bg-cyan-500/20 dark:text-cyan-200"
           title={name || email}
         >
           {initials}
         </div>
         {email ? (
           <span
-            className="min-w-0 max-w-[10rem] truncate text-[11px] text-white/70 sm:max-w-[14rem]"
+            className="min-w-0 max-w-[10rem] truncate text-[11px] text-slate-600 sm:max-w-[14rem] dark:text-white/70"
             title={email}
           >
             {email}
@@ -705,7 +708,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const MobileUserBadge = () =>
     user ? (
       <div
-        className="md:hidden flex h-10 min-h-[44px] w-10 min-w-[44px] shrink-0 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-500/20 text-cyan-200 touch-manipulation"
+        className="md:hidden flex h-10 min-h-[44px] w-10 min-w-[44px] shrink-0 items-center justify-center rounded-full border border-cyan-600/25 bg-cyan-50 text-cyan-800 touch-manipulation dark:border-cyan-400/30 dark:bg-cyan-500/20 dark:text-cyan-200"
         style={{ touchAction: 'manipulation' }}
         title={email ? `${name ? `${name} · ` : ''}${email}` : name || ''}
         aria-label={email || name || 'משתמש'}
@@ -724,10 +727,11 @@ export function AppLayout({ children }: AppLayoutProps) {
     return (
       <button
         type="button"
+        data-no-theme
         onClick={handleBack}
         className={cn(
-          'relative z-[110] inline-flex h-9 shrink-0 cursor-pointer items-center gap-1 rounded-lg border px-3 text-sm font-medium transition-colors touch-manipulation md:h-10 md:gap-1.5 md:px-4',
-          'border-white/10 bg-white/[0.06] text-white/70 hover:bg-white/10 hover:text-white/90'
+          'relative z-[110] inline-flex h-9 shrink-0 cursor-pointer items-center gap-1 rounded-lg border px-3 text-sm font-semibold transition-colors touch-manipulation md:h-10 md:gap-1.5 md:px-4',
+          'border-slate-300 bg-white text-slate-900 shadow-sm hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.06] dark:text-white/70 dark:shadow-none dark:hover:bg-white/10 dark:hover:text-white/90'
         )}
         style={{ touchAction: 'manipulation' }}
       >
@@ -744,7 +748,8 @@ export function AppLayout({ children }: AppLayoutProps) {
     >
       <header
         className={cn(
-          'sticky top-0 z-[100] border-b border-white/10 bg-[#0d1b2e] min-h-0 md:h-auto md:border-gray-800'
+          'sticky top-0 z-[100] min-h-0 border-b border-border bg-card text-foreground shadow-sm md:h-auto',
+          'dark:border-white/10 dark:bg-[#0d1b2e] dark:shadow-none md:dark:border-gray-800',
         )}
       >
         {/* דסקטופ (md+): שתי שורות — (כלים+משתמש / מותג) ואז ניווט מרכזי */}
@@ -857,7 +862,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         ) : (
           <Suspense
             fallback={
-              <div className="flex min-h-[35vh] items-center justify-center gap-3 text-sm text-white/75">
+              <div className="flex min-h-[35vh] items-center justify-center gap-3 text-sm text-muted-foreground dark:text-white/75">
                 <div
                   className="h-7 w-7 animate-spin rounded-full border-2 border-cyan-400/25 border-t-cyan-300"
                   aria-hidden

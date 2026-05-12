@@ -85,7 +85,28 @@ function maybePersistRearDeviceId(stream: MediaStream | null): void {
 const PERMISSION_BLOCKED_HE =
   'נראה שהרשאת המצלמה חסומה. אנא אפשר גישה למצלמה בהגדרות הדפדפן.';
 
+/** מונע תקיעה כש־getUserMedia / play() לא חוזרים (דרייברים, דיאלוג הרשאות תקוע, וכו׳) */
+const MEDIA_OPEN_TIMEOUT_MS = 16_000;
+const MEDIA_PLAY_TIMEOUT_MS = 12_000;
+const MEDIA_WARMUP_TIMEOUT_MS = 8_000;
+const MEDIA_TIMEOUT_MESSAGE = '__fleet_media_timeout__';
+
+async function withMediaTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(MEDIA_TIMEOUT_MESSAGE)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+  }
+}
+
 function mapGetUserMediaError(err: unknown): string {
+  if (err instanceof Error && err.message === MEDIA_TIMEOUT_MESSAGE) {
+    return 'פתיחת המצלמה ארכה יותר מדי. סגרו את החלון, נסו שוב או בחרו תמונה מהגלריה.';
+  }
   const dom = err as DOMException | undefined;
   const name = dom?.name ?? '';
   if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
@@ -405,7 +426,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
        */
       if (isAndroidUa() && cameraProfileRef.current === 'environment' && streamBootId === 0) {
         try {
-          const unlock = await getUserMediaWithChain(QUICK_USER_WARMUP);
+          const unlock = await withMediaTimeout(getUserMediaWithChain(QUICK_USER_WARMUP), MEDIA_WARMUP_TIMEOUT_MS);
           stopStream(unlock);
         } catch {
           /* still attempt rear */
@@ -413,7 +434,10 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
         await new Promise((r) => setTimeout(r, ANDROID_WEBCAM_WARMUP_POST_STOP_MS));
         if (!openRef.current) return;
       }
-      stream = await getUserMediaWithChain(constraintChainForProfile(cameraProfileRef.current));
+      stream = await withMediaTimeout(
+        getUserMediaWithChain(constraintChainForProfile(cameraProfileRef.current)),
+        MEDIA_OPEN_TIMEOUT_MS
+      );
     } catch (err) {
       if (!openRef.current) return;
       clearAndroidAutoFlipTimer();
@@ -496,14 +520,14 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
     }, 12000);
 
     try {
-      await video.play();
+      await withMediaTimeout(video.play(), MEDIA_PLAY_TIMEOUT_MS);
       requestAnimationFrame(() => markVideoPresenting());
       const rVfc = (video as HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => void })
         .requestVideoFrameCallback;
       if (typeof rVfc === 'function') {
         rVfc.call(video, () => markVideoPresenting());
       }
-    } catch {
+    } catch (playErr) {
       clearInitTimeout();
       clearAndroidAutoFlipTimer();
       androidRearBootstrappingRef.current = false;
@@ -513,7 +537,12 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
         streamRef.current = null;
         return;
       }
-      setError('לא ניתן להפעיל את תצוגת המצלמה. ' + PERMISSION_BLOCKED_HE);
+      const timedOut = playErr instanceof Error && playErr.message === MEDIA_TIMEOUT_MESSAGE;
+      setError(
+        timedOut
+          ? 'הפעלת תצוגת המצלמה נתקעה. סגרו את החלון, רעננו את הדף אם צריך, או השתמשו בגלריה.'
+          : 'לא ניתן להפעיל את תצוגת המצלמה. ' + PERMISSION_BLOCKED_HE
+      );
       stopStream(stream);
       streamRef.current = null;
       setLoading(false);
@@ -570,7 +599,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
         }
         rearWarmupDoneRef.current = true;
         try {
-          const wu = await getUserMediaWithChain(QUICK_USER_WARMUP);
+          const wu = await withMediaTimeout(getUserMediaWithChain(QUICK_USER_WARMUP), MEDIA_WARMUP_TIMEOUT_MS);
           stopStream(wu);
         } catch {
           /* ignore */
@@ -589,7 +618,7 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
           rearHardResetDoneRef.current = true;
           void (async () => {
             try {
-              const wu2 = await getUserMediaWithChain(QUICK_USER_WARMUP);
+              const wu2 = await withMediaTimeout(getUserMediaWithChain(QUICK_USER_WARMUP), MEDIA_WARMUP_TIMEOUT_MS);
               stopStream(wu2);
             } catch {
               /* ignore */
@@ -877,14 +906,14 @@ export function WebcamCapture({ open, onOpenChange, onCapture, disabled }: Webca
   }, [clearAndroidAutoFlipTimer, clearInitTimeout]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
       <DialogPortal>
         <DialogOverlay />
         <DialogPrimitive.Content
-          className="fixed inset-0 z-[51] flex items-center justify-center border-0 bg-transparent p-3 shadow-none outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 sm:p-4"
+          className="fixed inset-0 z-[51] flex items-center justify-center border-0 bg-transparent p-3 shadow-none outline-none pointer-events-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 sm:p-4"
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
-          <div className="relative grid max-h-[90vh] w-full max-w-lg gap-3 overflow-y-auto rounded-lg border border-border bg-card p-4 shadow-lg sm:gap-4 sm:p-6">
+          <div className="pointer-events-auto relative grid max-h-[90vh] w-full max-w-lg gap-3 overflow-y-auto rounded-lg border border-border bg-card p-4 shadow-lg sm:gap-4 sm:p-6">
             <DialogPrimitive.Close
               type="button"
               className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"

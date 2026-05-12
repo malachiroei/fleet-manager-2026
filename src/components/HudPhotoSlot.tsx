@@ -125,8 +125,8 @@ export function HudPhotoSlot({
         className={cn(
           'relative min-h-[9rem] overflow-hidden rounded-xl transition-colors sm:aspect-video sm:min-h-0',
           previewUrl
-            ? 'border border-emerald-500/45 bg-black/30'
-            : 'border border-cyan-400/15 bg-[#061325]/50',
+            ? 'border border-emerald-500/55 bg-slate-100 dark:border-emerald-500/45 dark:bg-black/30'
+            : 'border border-slate-200 bg-slate-50 shadow-sm dark:border-cyan-400/15 dark:bg-[#061325]/50 dark:shadow-none',
         )}
       >
         {previewUrl ? (
@@ -156,9 +156,11 @@ export function HudPhotoSlot({
             </Button>
           </>
         ) : (
-          <div className="flex min-h-[9rem] flex-col items-center justify-center gap-2.5 p-4 text-muted-foreground sm:min-h-[10rem]">
-            <Camera className="h-7 w-7 opacity-80" />
-            <span className="text-center text-sm font-medium text-foreground/90">מצלמה או גלריה</span>
+          <div className="flex min-h-[9rem] flex-col items-center justify-center gap-2.5 p-4 text-slate-600 dark:text-muted-foreground sm:min-h-[10rem]">
+            <Camera className="h-7 w-7 text-slate-600 opacity-90 dark:text-muted-foreground dark:opacity-80" />
+            <span className="text-center text-sm font-semibold text-slate-800 dark:text-foreground/90">
+              מצלמה או גלריה
+            </span>
             {subtitle ? (
               <span className="text-center text-xs text-muted-foreground">{subtitle}</span>
             ) : null}
@@ -167,6 +169,7 @@ export function HudPhotoSlot({
               <Button
                 type="button"
                 variant="outline"
+                data-no-theme
                 className={photoPickerActionButtonClassName()}
                 disabled={disabled}
                 onClick={() => setWebcamOpen(true)}
@@ -177,6 +180,7 @@ export function HudPhotoSlot({
               <Button
                 type="button"
                 variant="outline"
+                data-no-theme
                 className={photoPickerActionButtonClassName()}
                 disabled={disabled}
                 onClick={() => galleryRef.current?.click()}

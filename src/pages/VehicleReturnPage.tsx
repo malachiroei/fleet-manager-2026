@@ -31,6 +31,13 @@ import {
   hasAnyDamage,
   summarizeDamageReport,
 } from '@/lib/vehicleDamage';
+import {
+  HANDOVER_CARD_CLASS,
+  HANDOVER_FIELD_CLASS,
+  HANDOVER_LABEL_CLASS,
+  HANDOVER_SUBPANEL_CLASS,
+  HANDOVER_SUBPANEL_TIGHT_CLASS,
+} from '@/lib/handoverFormClasses';
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -134,9 +141,6 @@ export default function VehicleReturnPage() {
   const selectedVehicleData = vehicles?.find(v => v.id === selectedVehicle);
   const selectedDriverData = drivers?.find(d => d.id === selectedDriver);
   const allPhotosUploaded = photoFront && photoBack && photoRight && photoLeft;
-  const futuristicCardClass = 'rounded-2xl border border-cyan-400/25 bg-gradient-to-b from-[#0d233b] to-[#08182d] shadow-[0_12px_32px_rgba(0,0,0,0.38)]';
-  const fieldClass = 'h-11 rounded-xl border-cyan-300/25 bg-[#061325]/80 text-white placeholder:text-cyan-100/45 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.08)] focus-visible:ring-cyan-300/45';
-  const labelClass = 'mb-1.5 block text-xs font-semibold tracking-wide text-cyan-100/80';
 
   // Calculate differences from delivery
   const odometerDiff = lastHandover && odometer 
@@ -299,22 +303,22 @@ export default function VehicleReturnPage() {
   };
 
   return (
-    <div className="fleet-screen-page text-white">
+    <div className="fleet-screen-page text-foreground dark:text-white">
       <main className="container py-6 pb-24">
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Vehicle & Driver Selection */}
-          <Card className={futuristicCardClass}>
+          <Card className={HANDOVER_CARD_CLASS}>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
+              <CardTitle className="flex items-center gap-2 text-lg text-slate-900 dark:text-white">
                 <RotateCcw className="h-5 w-5 text-primary" />
                 פרטי ההחזרה
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <Label className={labelClass}>בחר רכב *</Label>
+                <Label className={HANDOVER_LABEL_CLASS}>בחר רכב *</Label>
                 <Select value={selectedVehicle} onValueChange={setSelectedVehicle}>
-                  <SelectTrigger className={fieldClass}>
+                  <SelectTrigger className={HANDOVER_FIELD_CLASS}>
                     <SelectValue placeholder="בחר רכב מהרשימה" />
                   </SelectTrigger>
                   <SelectContent className="z-[100000] max-h-72 bg-card border border-border shadow-xl">
@@ -333,20 +337,20 @@ export default function VehicleReturnPage() {
               </div>
 
               <div>
-                <Label className={labelClass}>סוג החזרה</Label>
-                <div className="rounded-xl border border-cyan-300/25 bg-[#061325]/70 px-3 py-2.5 text-sm text-cyan-50/90">
+                <Label className={HANDOVER_LABEL_CLASS}>סוג החזרה</Label>
+                <div className={HANDOVER_SUBPANEL_TIGHT_CLASS}>
                   {assignmentMode === 'replacement' ? 'החזרת רכב חליפי' : 'החזרת רכב קבוע'}
                 </div>
               </div>
 
               <div>
-                <Label className={labelClass}>בחר נהג *</Label>
+                <Label className={HANDOVER_LABEL_CLASS}>בחר נהג *</Label>
                 <Select
                   value={selectedDriver}
                   onValueChange={setSelectedDriver}
                   disabled={assignmentMode === 'replacement'}
                 >
-                  <SelectTrigger className={fieldClass}>
+                  <SelectTrigger className={HANDOVER_FIELD_CLASS}>
                     <SelectValue placeholder="בחר נהג מהרשימה" />
                   </SelectTrigger>
                   <SelectContent className="z-[100000] max-h-72 bg-card border border-border shadow-xl">
@@ -388,7 +392,7 @@ export default function VehicleReturnPage() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="odometer" className={labelClass}>קילומטראז׳ *</Label>
+                  <Label htmlFor="odometer" className={HANDOVER_LABEL_CLASS}>קילומטראז׳ *</Label>
                   <Input
                     id="odometer"
                     type="number"
@@ -398,7 +402,7 @@ export default function VehicleReturnPage() {
                     placeholder="קריאת מונה"
                     required
                     dir="ltr"
-                    className={fieldClass}
+                    className={HANDOVER_FIELD_CLASS}
                   />
                   {odometerDiff !== null && odometerDiff > 0 && (
                     <p className="text-xs text-muted-foreground mt-1">
@@ -419,9 +423,9 @@ export default function VehicleReturnPage() {
             </CardContent>
           </Card>
 
-          <Card className={futuristicCardClass}>
+          <Card className={HANDOVER_CARD_CLASS}>
             <CardHeader>
-              <CardTitle className="text-lg">סימון נזקים לפי צד ברכב</CardTitle>
+              <CardTitle className="text-lg text-slate-900 dark:text-white">סימון נזקים לפי צד ברכב</CardTitle>
             </CardHeader>
             <CardContent>
               <VehicleDamage3DSelector value={damageReport} onChange={setDamageReport} />
@@ -429,16 +433,16 @@ export default function VehicleReturnPage() {
           </Card>
 
           {/* Photos */}
-          <Card className={futuristicCardClass}>
+          <Card className={HANDOVER_CARD_CLASS}>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
+              <CardTitle className="flex items-center gap-2 text-lg text-slate-900 dark:text-white">
                 <Camera className="h-5 w-5 text-primary" />
                 צילום הרכב (4 זוויות)
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3">
+                <div className={`${HANDOVER_SUBPANEL_CLASS} p-3`}>
                   <HudPhotoSlot
                     subtitle="חזית"
                     imageAlt="חזית"
@@ -448,7 +452,7 @@ export default function VehicleReturnPage() {
                     disabled={isSubmitting}
                   />
                 </div>
-                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3">
+                <div className={`${HANDOVER_SUBPANEL_CLASS} p-3`}>
                   <HudPhotoSlot
                     subtitle="אחור"
                     imageAlt="אחור"
@@ -458,7 +462,7 @@ export default function VehicleReturnPage() {
                     disabled={isSubmitting}
                   />
                 </div>
-                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3">
+                <div className={`${HANDOVER_SUBPANEL_CLASS} p-3`}>
                   <HudPhotoSlot
                     subtitle="צד ימין"
                     imageAlt="צד ימין"
@@ -468,7 +472,7 @@ export default function VehicleReturnPage() {
                     disabled={isSubmitting}
                   />
                 </div>
-                <div className="rounded-xl border border-cyan-300/20 bg-[#061325]/70 p-3">
+                <div className={`${HANDOVER_SUBPANEL_CLASS} p-3`}>
                   <HudPhotoSlot
                     subtitle="צד שמאל"
                     imageAlt="צד שמאל"
@@ -483,9 +487,9 @@ export default function VehicleReturnPage() {
           </Card>
 
           {/* Signature */}
-          <Card className={futuristicCardClass}>
+          <Card className={HANDOVER_CARD_CLASS}>
             <CardHeader>
-              <CardTitle className="text-lg">חתימת הנהג</CardTitle>
+              <CardTitle className="text-lg text-slate-900 dark:text-white">חתימת הנהג</CardTitle>
             </CardHeader>
             <CardContent>
               <SignaturePad ref={signatureRef} onSign={setHasSignature} />
@@ -493,22 +497,22 @@ export default function VehicleReturnPage() {
           </Card>
 
           {/* Notes */}
-          <Card className={futuristicCardClass}>
+          <Card className={HANDOVER_CARD_CLASS}>
             <CardContent className="pt-6">
-              <Label htmlFor="notes" className={labelClass}>הערות</Label>
+              <Label htmlFor="notes" className={HANDOVER_LABEL_CLASS}>הערות</Label>
               <Textarea
                 id="notes"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="הערות נוספות לגבי מצב הרכב, נזקים חדשים וכו׳..."
                 rows={3}
-                className="rounded-xl border-cyan-300/25 bg-[#061325]/80 text-white placeholder:text-cyan-100/45 focus-visible:ring-cyan-300/45"
+                className="min-h-[5rem] rounded-xl border border-input bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring dark:border-cyan-300/25 dark:bg-[#061325]/80 dark:text-white dark:placeholder:text-cyan-100/45 dark:focus-visible:ring-cyan-300/45"
               />
             </CardContent>
           </Card>
 
           {/* Submit */}
-          <div className="fixed bottom-12 left-0 right-0 z-30 border-t border-white/10 bg-slate-950/90 px-6 py-4 backdrop-blur-sm">
+          <div className="fixed bottom-12 left-0 right-0 z-30 border-t border-slate-200 bg-white/95 px-6 py-4 backdrop-blur-sm dark:border-white/10 dark:bg-slate-950/90">
             <div className="fleet-app-form-column flex justify-center">
               <Button 
                 type="submit" 
