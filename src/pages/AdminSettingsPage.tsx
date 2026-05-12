@@ -60,8 +60,8 @@ import { isFleetProductionHost } from '@/lib/pwaPromptRegister';
 import { FLEET_KV_TABLE } from '@/lib/fleetKvTable';
 import { formatSupabaseError } from '@/lib/supabaseError';
 import {
-  DRIVER_COPY_BY_TOPIC_PREF_KEY,
-  DRIVER_COPY_PREF_KEY,
+  buildTopicPrefsDocumentForDb,
+  mergeDriverMetaFromLegacyPrefs,
   mergeTopicPrefsForNewEmails,
   NOTIFICATION_EMAIL_TOPIC_IDS,
   NOTIFICATION_EMAIL_TOPIC_LABELS_HE,
@@ -69,7 +69,6 @@ import {
   parseEmailsFromTextarea,
   parseNotificationEmailList,
   parseTopicPrefs,
-  topicWantsDriverCopy,
   type NotificationEmailTopicId,
   type NotificationEmailTopicPrefsMap,
 } from '@/lib/notificationEmailRouting';
@@ -91,6 +90,9 @@ export default function AdminSettingsPage() {
     // ── notification routing: user_org_notification_routing (per admin + org); legacy fallback לתצוגה ראשונה
     const [notificationEmailsRaw, setNotificationEmailsRaw] = useState('malachiroei@gmail.com');
     const [notificationTopicPrefs, setNotificationTopicPrefs] = useState<NotificationEmailTopicPrefsMap>({});
+    const [driverCopyByTopicMeta, setDriverCopyByTopicMeta] = useState<
+      Partial<Record<NotificationEmailTopicId, boolean>>
+    >({});
     const [isSavingEmails, setIsSavingEmails] = useState(false);
     const [isSavingTopicPrefs, setIsSavingTopicPrefs] = useState(false);
     const [isLoadingEmails, setIsLoadingEmails] = useState(true);
@@ -114,11 +116,13 @@ export default function AdminSettingsPage() {
               .maybeSingle();
             if (!mineErr && mine) {
               const rawEmails = (mine as { emails?: unknown }).emails;
+              const rawTp = (mine as { topic_prefs?: unknown }).topic_prefs;
               const arr = parseNotificationEmailList(rawEmails);
-              const prefsFromDb = parseTopicPrefs((mine as { topic_prefs?: unknown }).topic_prefs);
+              const prefsFromDb = parseTopicPrefs(rawTp);
               if (arr.length > 0) {
                 setNotificationEmailsRaw(arr.join(', '));
                 setNotificationTopicPrefs(mergeTopicPrefsForNewEmails(prefsFromDb, arr));
+                setDriverCopyByTopicMeta(mergeDriverMetaFromLegacyPrefs(prefsFromDb, rawTp));
                 return;
               }
             }
@@ -126,15 +130,18 @@ export default function AdminSettingsPage() {
           const { data: bundle, error: bundleErr } = await (supabase as any).rpc('get_notification_email_settings');
           if (bundleErr) throw bundleErr;
           const arr = parseNotificationEmailList(bundle?.emails);
-          const prefsFromDb = parseTopicPrefs(bundle?.topic_prefs);
+          const rawTp = bundle?.topic_prefs;
+          const prefsFromDb = parseTopicPrefs(rawTp);
           if (arr.length > 0) {
             setNotificationEmailsRaw(arr.join(', '));
             setNotificationTopicPrefs(mergeTopicPrefsForNewEmails(prefsFromDb, arr));
+            setDriverCopyByTopicMeta(mergeDriverMetaFromLegacyPrefs(prefsFromDb, rawTp));
           } else {
             const saved = localStorage.getItem('handover_notification_email');
             if (saved) {
               setNotificationEmailsRaw(saved);
               setNotificationTopicPrefs(mergeTopicPrefsForNewEmails(prefsFromDb, [saved]));
+              setDriverCopyByTopicMeta(mergeDriverMetaFromLegacyPrefs(prefsFromDb, rawTp));
             }
           }
         } catch {
@@ -142,6 +149,7 @@ export default function AdminSettingsPage() {
           if (saved) {
             setNotificationEmailsRaw(saved);
             setNotificationTopicPrefs(mergeTopicPrefsForNewEmails({}, [saved]));
+            setDriverCopyByTopicMeta({});
           }
         } finally {
           setIsLoadingEmails(false);
@@ -213,6 +221,7 @@ export default function AdminSettingsPage() {
       }
 
       const mergedPrefs = mergeTopicPrefsForNewEmails(notificationTopicPrefs, emails);
+      const topicPrefsDoc = buildTopicPrefsDocumentForDb(mergedPrefs, driverCopyByTopicMeta);
 
       setIsSavingEmails(true);
       try {
@@ -221,7 +230,7 @@ export default function AdminSettingsPage() {
             user_id: user.id,
             org_id: orgId,
             emails,
-            topic_prefs: mergedPrefs,
+            topic_prefs: topicPrefsDoc,
             updated_at: new Date().toISOString(),
           },
           { onConflict: 'user_id,org_id' },
@@ -254,6 +263,7 @@ export default function AdminSettingsPage() {
         return;
       }
       const mergedPrefs = mergeTopicPrefsForNewEmails(notificationTopicPrefs, emails);
+      const topicPrefsDoc = buildTopicPrefsDocumentForDb(mergedPrefs, driverCopyByTopicMeta);
       setIsSavingTopicPrefs(true);
       try {
         const { error } = await supabase.from('user_org_notification_routing').upsert(
@@ -261,7 +271,7 @@ export default function AdminSettingsPage() {
             user_id: user.id,
             org_id: orgId,
             emails,
-            topic_prefs: mergedPrefs,
+            topic_prefs: topicPrefsDoc,
             updated_at: new Date().toISOString(),
           },
           { onConflict: 'user_id,org_id' },
@@ -440,18 +450,8 @@ export default function AdminSettingsPage() {
       return row?.[topic] !== false;
     };
 
-    const setTopicDriverCopyFlag = (email: string, topic: NotificationEmailTopicId, checked: boolean) => {
-      const key = normalizeNotificationEmailKey(email);
-      setNotificationTopicPrefs((prev) => {
-        const prevRow = { ...(prev[key] ?? {}) };
-        const dct = { ...(prevRow[DRIVER_COPY_BY_TOPIC_PREF_KEY] ?? {}) } as Partial<
-          Record<NotificationEmailTopicId, boolean>
-        >;
-        dct[topic] = checked;
-        prevRow[DRIVER_COPY_BY_TOPIC_PREF_KEY] = dct;
-        delete prevRow[DRIVER_COPY_PREF_KEY];
-        return { ...prev, [key]: prevRow };
-      });
+    const setDriverCopyMetaTopic = (topic: NotificationEmailTopicId, checked: boolean) => {
+      setDriverCopyByTopicMeta((prev) => ({ ...prev, [topic]: checked }));
     };
 
     return (
@@ -535,8 +535,8 @@ export default function AdminSettingsPage() {
                 <div>
                   <CardTitle>ניהול נושאי מייל לפי כתובת</CardTitle>
                   <CardDescription>
-                    לכל שורה (סוג התראה): סמן לכל כתובת אם לשלוח התראה למייל, ואם לשלוח גם עותק לנהג המשויך לרכב
-                    (לפי המייל בכרטיס הנהג) — ניתן לבחור בנפרד לכל סוג. שמירה כאן לא משנה את רשימת הכתובות.
+                    לכל שורה: עמודת «נהג» — האם לשלוח עותק לנהג המשויך לרכב (לפי המייל בכרטיס הנהג) לאותו סוג התראה.
+                    תחת כל כתובת מייל: האם לשלוח לשם התראה. שמירה כאן לא משנה את רשימת הכתובות.
                   </CardDescription>
                 </div>
               </div>
@@ -550,21 +550,21 @@ export default function AdminSettingsPage() {
                     <Table className="min-w-max text-[11px]">
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="sticky right-0 z-[1] bg-card text-right min-w-[160px] max-w-[220px] border-l border-border align-bottom">
+                          <TableHead className="sticky right-0 z-[1] bg-card text-right min-w-[72px] max-w-[100px] w-[100px] border-l border-border align-bottom px-1.5 text-[10px] leading-tight">
                             סוג התראה
+                          </TableHead>
+                          <TableHead className="text-center align-bottom min-w-[44px] max-w-[52px] px-0.5 text-[9px] leading-tight text-muted-foreground">
+                            נהג
                           </TableHead>
                           {notificationEmailList.map((email) => (
                             <TableHead
                               key={normalizeNotificationEmailKey(email)}
-                              className="text-center align-bottom min-w-[100px] max-w-[150px] px-1 border-border/60"
+                              className="text-center align-bottom min-w-[88px] max-w-[140px] px-1 border-border/60"
                             >
-                              <div dir="ltr" className="font-mono text-[10px] truncate mx-auto max-w-[140px]" title={email}>
+                              <div dir="ltr" className="font-mono text-[10px] truncate mx-auto max-w-[132px]" title={email}>
                                 {email}
                               </div>
-                              <div className="flex justify-center gap-3 mt-1.5 text-[9px] text-muted-foreground leading-none">
-                                <span>התראה</span>
-                                <span>נהג</span>
-                              </div>
+                              <div className="mt-1 text-[9px] text-muted-foreground leading-none">התראה</div>
                             </TableHead>
                           ))}
                         </TableRow>
@@ -572,29 +572,25 @@ export default function AdminSettingsPage() {
                       <TableBody>
                         {NOTIFICATION_EMAIL_TOPIC_IDS.map((tid) => (
                           <TableRow key={tid}>
-                            <TableCell className="sticky right-0 z-[1] bg-card text-right align-middle border-l border-border leading-tight">
+                            <TableCell className="sticky right-0 z-[1] bg-card text-right align-middle border-l border-border leading-tight px-1.5 text-[10px] max-w-[100px]">
                               {NOTIFICATION_EMAIL_TOPIC_LABELS_HE[tid]}
                             </TableCell>
-                            {notificationEmailList.map((email) => {
-                              const ek = normalizeNotificationEmailKey(email);
-                              const row = notificationTopicPrefs[ek];
-                              return (
-                                <TableCell key={`${ek}-${tid}`} className="text-center align-middle px-1">
-                                  <div className="flex justify-center items-center gap-3">
-                                    <Checkbox
-                                      checked={topicFlag(email, tid)}
-                                      onCheckedChange={(v) => setTopicFlag(email, tid, v === true)}
-                                      aria-label={`${email} — ${NOTIFICATION_EMAIL_TOPIC_LABELS_HE[tid]} — התראה`}
-                                    />
-                                    <Checkbox
-                                      checked={topicWantsDriverCopy(row, tid)}
-                                      onCheckedChange={(v) => setTopicDriverCopyFlag(email, tid, v === true)}
-                                      aria-label={`${email} — ${NOTIFICATION_EMAIL_TOPIC_LABELS_HE[tid]} — עותק לנהג`}
-                                    />
-                                  </div>
-                                </TableCell>
-                              );
-                            })}
+                            <TableCell className="text-center align-middle px-0.5">
+                              <Checkbox
+                                checked={driverCopyByTopicMeta[tid] === true}
+                                onCheckedChange={(v) => setDriverCopyMetaTopic(tid, v === true)}
+                                aria-label={`${NOTIFICATION_EMAIL_TOPIC_LABELS_HE[tid]} — עותק לנהג`}
+                              />
+                            </TableCell>
+                            {notificationEmailList.map((email) => (
+                              <TableCell key={`${normalizeNotificationEmailKey(email)}-${tid}`} className="text-center align-middle px-1">
+                                <Checkbox
+                                  checked={topicFlag(email, tid)}
+                                  onCheckedChange={(v) => setTopicFlag(email, tid, v === true)}
+                                  aria-label={`${email} — ${NOTIFICATION_EMAIL_TOPIC_LABELS_HE[tid]} — התראה`}
+                                />
+                              </TableCell>
+                            ))}
                           </TableRow>
                         ))}
                       </TableBody>

@@ -22,8 +22,11 @@ export type NotificationEmailTopicId = (typeof NOTIFICATION_EMAIL_TOPIC_IDS)[num
 /** מפתח JSON ב-topic_prefs — legacy: עותק לנהג לכל הנושאים */
 export const DRIVER_COPY_PREF_KEY = 'driver_copy' as const;
 
-/** מפתח JSON — עותק לנהג לפי נושא */
+/** מפתח JSON — עותק לנהג לפי נושא (legacy: בתוך שורת מייל) */
 export const DRIVER_COPY_BY_TOPIC_PREF_KEY = 'driver_copy_by_topic' as const;
+
+/** מפתח ברמת מסמך topic_prefs — עותק לנהג פעם אחת לכל סוג התראה */
+export const DRIVER_COPY_TOPICS_META_ROOT_KEY = '__driver_copy_topics__' as const;
 
 export type NotificationEmailPrefsRow = Partial<Record<NotificationEmailTopicId, boolean>> & {
   [DRIVER_COPY_PREF_KEY]?: boolean;
@@ -85,6 +88,23 @@ export function parseTopicPrefs(value: unknown): NotificationEmailTopicPrefsMap 
       flags[DRIVER_COPY_BY_TOPIC_PREF_KEY] = byTopic;
     }
     out[normalizeNotificationEmailKey(k)] = flags;
+  }
+  return out;
+}
+
+export function parseDriverCopyTopicsMeta(value: unknown): Partial<Record<NotificationEmailTopicId, boolean>> {
+  let root: unknown = value;
+  if (typeof root === 'string') {
+    const parsed = tryParseJsonUnknown(root.trim());
+    if (parsed !== undefined) root = parsed;
+  }
+  if (!root || typeof root !== 'object' || Array.isArray(root)) return {};
+  const meta = (root as Record<string, unknown>)[DRIVER_COPY_TOPICS_META_ROOT_KEY];
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return {};
+  const out: Partial<Record<NotificationEmailTopicId, boolean>> = {};
+  for (const tid of NOTIFICATION_EMAIL_TOPIC_IDS) {
+    const b = (meta as Record<string, unknown>)[tid];
+    if (typeof b === 'boolean') out[tid] = b;
   }
   return out;
 }

@@ -2,6 +2,7 @@ import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
   DRIVER_COPY_BY_TOPIC_PREF_KEY,
   DRIVER_COPY_PREF_KEY,
+  parseDriverCopyTopicsMeta,
   parseTopicPrefs,
   type NotificationEmailTopicId,
   type NotificationEmailTopicPrefsMap,
@@ -31,6 +32,25 @@ function driverCopyTrueForRecipientsInPrefs(
   return false;
 }
 
+function routingRowTouchesRecipients(prefs: NotificationEmailTopicPrefsMap, want: Set<string>): boolean {
+  for (const k of Object.keys(prefs)) {
+    if (want.has(k)) return true;
+  }
+  return false;
+}
+
+function driverCopyFromRoutingRow(
+  raw: unknown,
+  prefs: NotificationEmailTopicPrefsMap,
+  want: Set<string>,
+  topic: NotificationEmailTopicId,
+): boolean {
+  if (parseDriverCopyTopicsMeta(raw)[topic] === true && routingRowTouchesRecipients(prefs, want)) {
+    return true;
+  }
+  return driverCopyTrueForRecipientsInPrefs(prefs, want, topic);
+}
+
 /**
  * האם יש לפחות כתובת staff ברשימת הנמענים שמסומנת «עותק לנהג» לאותו נושא (או legacy driver_copy לכל הנושאים).
  */
@@ -51,8 +71,9 @@ export async function shouldAppendDriverCopyForRecipients(
       .eq('org_id', oid);
     if (!error && Array.isArray(rows)) {
       for (const r of rows as { topic_prefs?: unknown }[]) {
-        const prefs = parseTopicPrefs(r?.topic_prefs);
-        if (driverCopyTrueForRecipientsInPrefs(prefs, want, topic)) return true;
+        const raw = r?.topic_prefs;
+        const prefs = parseTopicPrefs(raw);
+        if (driverCopyFromRoutingRow(raw, prefs, want, topic)) return true;
       }
     }
   }
@@ -63,8 +84,9 @@ export async function shouldAppendDriverCopyForRecipients(
       .select('value')
       .eq('key', 'notification_email_topic_prefs')
       .maybeSingle();
-    const prefs = parseTopicPrefs((data as { value?: unknown } | null)?.value);
-    if (driverCopyTrueForRecipientsInPrefs(prefs, want, topic)) return true;
+    const raw = (data as { value?: unknown } | null)?.value;
+    const prefs = parseTopicPrefs(raw);
+    if (driverCopyFromRoutingRow(raw, prefs, want, topic)) return true;
   } catch {
     // ignore
   }
