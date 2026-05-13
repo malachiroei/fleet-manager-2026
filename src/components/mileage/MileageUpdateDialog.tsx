@@ -181,7 +181,7 @@ export function MileageUpdateDialog({ open, onOpenChange, lockedVehicleId }: Mil
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
-      <DialogContent className="max-w-lg" dir="rtl">
+      <DialogContent className="max-w-md" dir="rtl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Gauge className="h-5 w-5 text-sky-400" />
@@ -197,10 +197,10 @@ export function MileageUpdateDialog({ open, onOpenChange, lockedVehicleId }: Mil
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <form onSubmit={submit} className="space-y-4">
+          <form onSubmit={submit} className="space-y-3 sm:space-y-4">
             {!isLocked ? (
               <>
-                <div className="space-y-2">
+                <div className="space-y-1.5 sm:space-y-2">
                   <Label htmlFor="mileage-search" className="flex items-center gap-2">
                     <Search className="h-4 w-4 text-muted-foreground" />
                     חיפוש רכב
@@ -228,7 +228,7 @@ export function MileageUpdateDialog({ open, onOpenChange, lockedVehicleId }: Mil
                   ) : null}
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-1.5 sm:space-y-2">
                   <Label>בחר רכב</Label>
                   <Select
                     value={selectedVehicleId}
@@ -263,7 +263,7 @@ export function MileageUpdateDialog({ open, onOpenChange, lockedVehicleId }: Mil
               </div>
             )}
 
-            <div className="space-y-2">
+            <div className="space-y-1.5 sm:space-y-2">
               <Label htmlFor="mileage-odo">ק״מ נוכחי</Label>
               <Input
                 id="mileage-odo"
@@ -283,13 +283,14 @@ export function MileageUpdateDialog({ open, onOpenChange, lockedVehicleId }: Mil
               ) : null}
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-1.5 sm:space-y-2">
               <Label>צילום לוח שעונים (אופציונלי)</Label>
               <HudPhotoSlot
                 file={photoFile}
                 onFileChange={setPhotoFile}
                 imageAlt="לוח שעונים"
                 disabled={submitting}
+                compact
               />
             </div>
 

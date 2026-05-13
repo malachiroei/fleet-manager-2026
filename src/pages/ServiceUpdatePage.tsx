@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Loader2, Wrench } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
 import { supabase } from '@/integrations/supabase/client';
 import { invokeSupabaseEdgeFunction } from '@/lib/supabase/invokeEdgeFunction';
@@ -14,7 +14,7 @@ import { toast } from '@/hooks/use-toast';
 import { suggestPeriodicInspectionToast } from '@/lib/periodicInspectionSuggestions';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { FleetDatePicker } from '@/components/ui/FleetDatePicker';
@@ -384,75 +384,60 @@ export default function ServiceUpdatePage() {
   return (
     <div className="fleet-screen-page text-white">
       <header className="bg-card border-b border-border sticky top-0 z-10">
-        <div className="container py-4">
+        <div className="container py-2.5 sm:py-4">
           <div className="flex items-center gap-3">
-            <h1 className="font-bold text-xl">עדכון טיפול</h1>
+            <h1 className="font-bold text-lg sm:text-xl">עדכון טיפול וחישוב טיפול הבא</h1>
           </div>
         </div>
       </header>
 
-      <main className="container py-6 pb-28">
+      <main className="container py-3 pb-20 sm:py-6 sm:pb-28">
         <Card>
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-500/15">
-                <Wrench className="h-5 w-5 text-purple-400" />
-              </div>
-              <div className="space-y-0.5">
-                <CardTitle className="text-base sm:text-lg">רישום טיפול וחישוב טיפול הבא</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  בחר רכב או הקלד מספר רישוי, הזן מדד מונה וצרף חשבונית
-                </p>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={submit} className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="plate-search">חיפוש / מספר רישוי</Label>
-                <Input
-                  id="plate-search"
-                  value={plateSearch}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setPlateSearch(v);
-                    if (!v.trim()) {
-                      setSelectedVehicleId(undefined);
-                      return;
-                    }
-                    const sel = vehicles.find((x) => x.id === selectedVehicleId);
-                    if (sel && normalizePlateNumber(v) !== normalizePlateNumber(sel.plate_number)) {
-                      setSelectedVehicleId(undefined);
-                    }
-                  }}
-                  placeholder="הקלד מספר רישוי או חפש"
-                  className="text-base"
-                  dir="ltr"
-                  autoComplete="off"
-                />
-                <p className="text-xs text-muted-foreground">
-                  אפשר לבחור מהרשימה או להזין רישוי זהה לרכב קיים (ללא רווחים ומקפים — יזוהה אוטומטית)
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label>בחירה מהרשימה</Label>
-                <Select value={selectedVehicleId} onValueChange={onSelectVehicle}>
-                  <SelectTrigger className="h-12">
-                    <SelectValue placeholder="בחר רכב (אופציונלי)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {filteredVehicles.map((v) => (
-                      <SelectItem key={v.id} value={v.id}>
-                        {v.plate_number} · {v.manufacturer} {v.model}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+          <CardContent className="px-4 pt-4 sm:px-6 sm:pt-6">
+            <form onSubmit={submit} className="space-y-3 sm:space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="plate-search">חיפוש / מספר רישוי</Label>
+                  <Input
+                    id="plate-search"
+                    value={plateSearch}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setPlateSearch(v);
+                      if (!v.trim()) {
+                        setSelectedVehicleId(undefined);
+                        return;
+                      }
+                      const sel = vehicles.find((x) => x.id === selectedVehicleId);
+                      if (sel && normalizePlateNumber(v) !== normalizePlateNumber(sel.plate_number)) {
+                        setSelectedVehicleId(undefined);
+                      }
+                    }}
+                    placeholder="הקלד מספר רישוי או חפש"
+                    className="h-10 text-base"
+                    dir="ltr"
+                    autoComplete="off"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>בחירה מהרשימה</Label>
+                  <Select value={selectedVehicleId} onValueChange={onSelectVehicle}>
+                    <SelectTrigger className="h-10">
+                      <SelectValue placeholder="בחר רכב (אופציונלי)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {filteredVehicles.map((v) => (
+                        <SelectItem key={v.id} value={v.id}>
+                          {v.plate_number} · {v.manufacturer} {v.model}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               {resolvedVehicle ? (
-                <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4 text-sm space-y-1">
+                <div className="rounded-lg border border-white/10 bg-white/[0.03] p-2.5 text-sm space-y-0.5">
                   <p className="font-semibold text-slate-200">
                     {resolvedVehicle.manufacturer} {resolvedVehicle.model}
                   </p>
@@ -473,23 +458,23 @@ export default function ServiceUpdatePage() {
                 </p>
               ) : null}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
                   <FleetDatePicker
                     id="service-date"
                     label="תאריך טיפול"
-                    className="[&_input]:h-11"
+                    className="[&_input]:h-10"
                     value={serviceDate}
                     onChange={setServiceDate}
                   />
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-1">
                   <Label>תאריך טיפול הבא (אוטומטי — שנה אחת קדימה)</Label>
-                  <Input readOnly value={nextServiceDate} className="h-11 bg-muted/40" dir="ltr" />
+                  <Input readOnly value={nextServiceDate} className="h-10 bg-muted/40" dir="ltr" />
                 </div>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-1">
                 <Label htmlFor="mileage">קילומטראז׳ בטיפול (חייב גבוה מהמד במערכת)</Label>
                 <Input
                   id="mileage"
@@ -499,21 +484,21 @@ export default function ServiceUpdatePage() {
                   onChange={(e) => setMileageInput(e.target.value)}
                   placeholder="למשל 48200"
                   dir="ltr"
-                  className="h-11 text-lg"
+                  className="h-10 text-base"
                 />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-1">
                 <Label>ק״מ לטיפול הבא (אוטומטי)</Label>
                 <Input
                   readOnly
                   value={nextServiceKm != null ? nextServiceKm.toLocaleString() : '—'}
-                  className="h-11 bg-muted/40"
+                  className="h-10 bg-muted/40"
                   dir="ltr"
                 />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-1">
                 <Label>צילום חשבונית / טיפול</Label>
                 <HudPhotoSlot
                   file={photoFile}
@@ -522,10 +507,11 @@ export default function ServiceUpdatePage() {
                   imageAlt="חשבונית או טפסי טיפול"
                   required
                   disabled={submitting}
+                  compact
                 />
               </div>
 
-              <div className="flex gap-3 pt-2">
+              <div className="flex gap-3 pt-1">
                 <Button
                   type="submit"
                   className="flex-1"

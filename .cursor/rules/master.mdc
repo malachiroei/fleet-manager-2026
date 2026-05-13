@@ -1,0 +1,7 @@
+---
+alwaysApply: true
+---
+
+Always use 'git push origin master' when asked to push changes to the remote repository. 
+The 'master' branch is the production branch for this project and triggers the Vercel deployment.
+Never use feature branches or auto-generated branch names for pushing unless explicitly requested.

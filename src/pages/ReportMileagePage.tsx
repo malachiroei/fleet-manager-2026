@@ -23,7 +23,6 @@ export default function ReportMileagePage() {
   return (
     <FleetHudPageShell
       title="עדכון ק״מ"
-      subtitle="עדכון חדש: בחירת רכב + חיפוש + ק״מ + צילום (אופציונלי)"
       headerAside={
         <Link to="/vehicles/service-update" className="w-full sm:w-auto">
           <Button
