@@ -3,24 +3,18 @@
 -- and upsert ON CONFLICT (id_number, org_id) works correctly.
 
 -- Step 1: Remove duplicate (id_number, org_id) rows, keeping the most recently updated one.
-DELETE FROM public.drivers d
-USING (
-  SELECT id_number, org_id,
-         max(id) AS keep_id
-  FROM (
-    SELECT id, id_number, org_id,
+DELETE FROM public.drivers
+WHERE id IN (
+  SELECT id FROM (
+    SELECT id,
            row_number() OVER (
              PARTITION BY id_number, org_id
-             ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST, id DESC
+             ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST, id ASC
            ) AS rn
     FROM public.drivers
   ) ranked
-  WHERE rn = 1
-  GROUP BY id_number, org_id
-) keep
-WHERE d.id_number = keep.id_number
-  AND d.org_id IS NOT DISTINCT FROM keep.org_id
-  AND d.id <> keep.keep_id;
+  WHERE rn > 1
+);
 
 -- Step 2: Drop old single-column unique constraint (name varies by env)
 DO $$
