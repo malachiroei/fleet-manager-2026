@@ -8,6 +8,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Upload, Car, Users, Loader2 } from 'lucide-react';
 import { canonicalOwnershipType } from '@/lib/vehicleOwnership';
 import { normalizePlateNumber } from '@/lib/plateNumber';
+import { formatSupabaseError } from '@/lib/supabaseError';
 import { useAuth } from '@/hooks/useAuth';
 import {
   FLEET_EXCEL_IMPORT_EVENT,
@@ -114,33 +115,97 @@ const mapVehicleRow = (rawRow: Record<string, any>) => {
   };
 };
 
+// ─── Driver field aliases: each DB field → array of accepted Hebrew column names ───
+
+const DRIVER_COLUMN_ALIASES: Record<string, string[]> = {
+  full_name: ['שם נהג', 'שם מלא', 'שם'],
+  id_number: ["מספר ת.ז", "ת.ז", "תעודת זהות", "ת.ז.", "מס' ת.ז", "מס' עובד", 'מספר עובד', 'קוד נהג'],
+  phone: ['טלפון', 'נייד', 'נייד נהג', 'מספר טלפון', 'פלאפון'],
+  email: ['מייל', 'אימייל', 'דוא"ל', 'email'],
+  license_expiry: ['תוקף רישיון', 'תוקף רשיון', "ת.חידוש רשיון", 'תאריך חידוש רשיון', 'תאריך בדיקת רישיון', 'רישיון עד'],
+  safety_training_date: ['תאריך השתלמות', 'השתלמות אחרונה', 'הדרכת בטיחות'],
+  department: ['מחלקה'],
+  address: ['כתובת', 'כתובת1', 'רחוב'],
+  driver_code: ['קוד נהג'],
+  is_active: ['פעיל=1 לא פעיל=0', 'פעיל', 'סטטוס'],
+  employee_number: ["מס' עובד", 'מספר עובד'],
+  work_start_date: ['תאריך התחלת עבודה', 'תאריך תחילת עבודה'],
+  city: ['עיר'],
+  note1: ['הערה 1'],
+  note2: ['הערה 2'],
+  rating: ['דירוג'],
+  division: ['אגף', 'מחוז'],
+  eligibility: ['זכאות', 'כשירות'],
+  area: ['שטח', 'אזור'],
+  group_name: ['קבוצה'],
+  group_code: ['קוד קבוצה'],
+  job_title: ['תפקיד'],
+  license_number: ['מספר רשיון', 'מספר רישיון', 'רישוי'],
+};
+
+const DRIVER_REQUIRED_FIELDS = ['full_name', 'id_number'] as const;
+
+const DRIVER_EXPECTED_COLUMNS_DISPLAY: Record<string, string> = {
+  full_name: 'שם נהג',
+  id_number: 'מספר ת.ז / ת.ז / מספר עובד',
+  phone: 'טלפון / נייד',
+  email: 'מייל / אימייל',
+  license_expiry: 'תוקף רישיון / ת.חידוש רשיון',
+};
+
+/** Resolve a DB field from a row using all known aliases */
+const resolveField = (row: Record<string, any>, aliases: string[]): any => {
+  for (const alias of aliases) {
+    if (row[alias] !== undefined && row[alias] !== null) return row[alias];
+  }
+  return undefined;
+};
+
 const mapDriverRow = (rawRow: Record<string, any>) => {
   const row = normalizeRow(rawRow);
   return {
-  full_name: str(row['שם נהג']) || '',
-  id_number: str(row["מס' עובד"]) || str(row['מספר עובד']) || str(row['קוד נהג']) || '',
-  phone: str(row['נייד']),
-  email: str(row['מייל']),
-  license_expiry: parseExcelDate(row['ת.חידוש רשיון']) || parseExcelDate(row['תאריך חידוש רשיון']) || parseExcelDate(row['תאריך בדיקת רישיון']) || new Date().toISOString().slice(0, 10),
-  safety_training_date: parseExcelDate(row['תאריך השתלמות']) || parseExcelDate(row['השתלמות אחרונה']),
-  department: str(row['מחלקה']),
-  address: str(row['כתובת1']),
-  driver_code: str(row['קוד נהג']),
-  is_active: bool(row['פעיל=1 לא פעיל=0']) || bool(row['פעיל']),
-  employee_number: str(row['מס\' עובד']) || str(row['מספר עובד']),
-  work_start_date: parseExcelDate(row['תאריך התחלת עבודה']) || parseExcelDate(row['תאריך תחילת עבודה']),
-  city: str(row['עיר']),
-  note1: str(row['הערה 1']),
-  note2: str(row['הערה 2']),
-  rating: str(row['דירוג']),
-  division: str(row['אגף']),
-  eligibility: str(row['זכאות']),
-  area: str(row['שטח']),
-  group_name: str(row['קבוצה']),
-  group_code: str(row['קוד קבוצה']),
-  job_title: str(row['הערה 1']),
-  license_number: str(row['מספר רשיון']) || str(row['רישוי']),
+  full_name: str(resolveField(row, DRIVER_COLUMN_ALIASES.full_name)) || '',
+  id_number: str(resolveField(row, DRIVER_COLUMN_ALIASES.id_number)) || '',
+  phone: str(resolveField(row, DRIVER_COLUMN_ALIASES.phone)),
+  email: str(resolveField(row, DRIVER_COLUMN_ALIASES.email)),
+  license_expiry: parseExcelDate(resolveField(row, DRIVER_COLUMN_ALIASES.license_expiry)) || new Date().toISOString().slice(0, 10),
+  safety_training_date: parseExcelDate(resolveField(row, DRIVER_COLUMN_ALIASES.safety_training_date)),
+  department: str(resolveField(row, DRIVER_COLUMN_ALIASES.department)),
+  address: str(resolveField(row, DRIVER_COLUMN_ALIASES.address)),
+  driver_code: str(resolveField(row, DRIVER_COLUMN_ALIASES.driver_code)),
+  is_active: bool(resolveField(row, DRIVER_COLUMN_ALIASES.is_active)),
+  employee_number: str(resolveField(row, DRIVER_COLUMN_ALIASES.employee_number)),
+  work_start_date: parseExcelDate(resolveField(row, DRIVER_COLUMN_ALIASES.work_start_date)),
+  city: str(resolveField(row, DRIVER_COLUMN_ALIASES.city)),
+  note1: str(resolveField(row, DRIVER_COLUMN_ALIASES.note1)),
+  note2: str(resolveField(row, DRIVER_COLUMN_ALIASES.note2)),
+  rating: str(resolveField(row, DRIVER_COLUMN_ALIASES.rating)),
+  division: str(resolveField(row, DRIVER_COLUMN_ALIASES.division)),
+  eligibility: str(resolveField(row, DRIVER_COLUMN_ALIASES.eligibility)),
+  area: str(resolveField(row, DRIVER_COLUMN_ALIASES.area)),
+  group_name: str(resolveField(row, DRIVER_COLUMN_ALIASES.group_name)),
+  group_code: str(resolveField(row, DRIVER_COLUMN_ALIASES.group_code)),
+  job_title: str(resolveField(row, DRIVER_COLUMN_ALIASES.job_title)),
+  license_number: str(resolveField(row, DRIVER_COLUMN_ALIASES.license_number)),
   };
+};
+
+/** Validate that the Excel has the required columns mapped correctly */
+const validateDriverColumns = (
+  sampleRow: Record<string, any>,
+): { ok: true } | { ok: false; missing: string[]; found: string[] } => {
+  const row = normalizeRow(sampleRow);
+  const excelColumns = Object.keys(row);
+  const missing: string[] = [];
+
+  for (const reqField of DRIVER_REQUIRED_FIELDS) {
+    const aliases = DRIVER_COLUMN_ALIASES[reqField];
+    const matched = aliases.some((alias) => excelColumns.includes(alias));
+    if (!matched) missing.push(DRIVER_EXPECTED_COLUMNS_DISPLAY[reqField] || reqField);
+  }
+
+  if (missing.length > 0) return { ok: false, missing, found: excelColumns };
+  return { ok: true };
 };
 
 // ─── Component ───
@@ -217,7 +282,11 @@ export default function FleetDataImporter() {
       toast({ title: `נטענו ${inserted} רכבים בהצלחה` });
       window.location.reload();
     } catch (err: any) {
-      toast({ title: 'שגיאה בטעינת רכבים', description: err.message, variant: 'destructive' });
+      toast({
+        title: 'שגיאה בטעינת רכבים',
+        description: formatSupabaseError(err),
+        variant: 'destructive',
+      });
     } finally {
       setLoadingVehicles(false);
       if (vehicleInputRef.current) vehicleInputRef.current.value = '';
@@ -231,14 +300,44 @@ export default function FleetDataImporter() {
 
     try {
       const rows = await readExcel(file);
-      const mapped = rows
-        .map(mapDriverRow)
-        .filter((d) => d.full_name);
 
-      if (mapped.length === 0) {
-        toast({ title: 'לא נמצאו נהגים בקובץ', variant: 'destructive' });
+      if (rows.length === 0) {
+        toast({ title: 'הקובץ ריק — לא נמצאו שורות', variant: 'destructive' });
         return;
       }
+
+      const validation = validateDriverColumns(rows[0]);
+      if (!validation.ok) {
+        const foundStr = validation.found.join(', ');
+        const missingStr = validation.missing.join('\n');
+        toast({
+          title: 'עמודות חובה חסרות בקובץ',
+          description:
+            `העמודות הבאות חסרות או לא זוהו:\n${missingStr}\n\n` +
+            `עמודות שזוהו בקובץ: ${foundStr}\n\n` +
+            `שמות עמודות נתמכים:\n` +
+            Object.entries(DRIVER_EXPECTED_COLUMNS_DISPLAY)
+              .map(([, label]) => `• ${label}`)
+              .join('\n'),
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const mapped = rows
+        .map(mapDriverRow)
+        .filter((d) => d.full_name && d.id_number);
+
+      if (mapped.length === 0) {
+        toast({
+          title: 'לא נמצאו נהגים תקינים בקובץ',
+          description: 'כל שורה חייבת לכלול שם נהג ומספר ת.ז.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const skipped = rows.length - mapped.length;
 
       const chunkSize = 500;
       let inserted = 0;
@@ -246,7 +345,9 @@ export default function FleetDataImporter() {
       for (let i = 0; i < mapped.length; i += chunkSize) {
         const slice = mapped.slice(i, i + chunkSize);
         const chunk = effectiveOrgId ? slice.map((row) => ({ ...row, org_id: effectiveOrgId })) : slice;
-        const { error } = await supabase.from('drivers').upsert(chunk as any, { onConflict: 'id_number' });
+        const { error } = await supabase.from('drivers').upsert(chunk as any, {
+          onConflict: effectiveOrgId ? 'id_number,org_id' : 'id_number',
+        });
         if (error) throw error;
         inserted += chunk.length;
       }
@@ -262,9 +363,20 @@ export default function FleetDataImporter() {
       } catch {
         // ignore
       }
-      toast({ title: `נטענו ${inserted} נהגים בהצלחה` });
+      const skippedNote = skipped > 0 ? ` (${skipped} שורות דולגו — חסר שם או ת.ז)` : '';
+      toast({ title: `נטענו ${inserted} נהגים בהצלחה${skippedNote}` });
     } catch (err: any) {
-      toast({ title: 'שגיאה בטעינת נהגים', description: err.message, variant: 'destructive' });
+      const rawMsg = err?.message || '';
+      const hebrewHint = /ON CONFLICT/i.test(rawMsg)
+        ? 'שגיאת מסד נתונים: חסר אילוץ ייחודי (unique constraint). יש להריץ את מיגרציית drivers_unique_id_number_org_id.'
+        : /not-null/i.test(rawMsg)
+          ? 'שדה חובה חסר (שם נהג או מספר ת.ז ריק).'
+          : rawMsg;
+      toast({
+        title: 'שגיאה בטעינת נהגים',
+        description: hebrewHint,
+        variant: 'destructive',
+      });
     } finally {
       setLoadingDrivers(false);
       if (driverInputRef.current) driverInputRef.current.value = '';
@@ -327,7 +439,7 @@ export default function FleetDataImporter() {
             </div>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
           <input
             ref={driverInputRef}
             type="file"
@@ -353,6 +465,30 @@ export default function FleetDataImporter() {
               </>
             )}
           </Button>
+          <details className="text-xs text-muted-foreground">
+            <summary className="cursor-pointer hover:text-foreground transition-colors">
+              שמות עמודות נתמכים (לחץ להרחבה)
+            </summary>
+            <div className="mt-2 space-y-1 bg-card/60 border border-border rounded-md p-3">
+              <p className="font-medium text-foreground/80 mb-1">
+                עמודות חובה מסומנות בכוכבית *
+              </p>
+              {Object.entries(DRIVER_COLUMN_ALIASES).map(([field, aliases]) => {
+                const isRequired = (DRIVER_REQUIRED_FIELDS as readonly string[]).includes(field);
+                return (
+                  <div key={field} className="flex flex-wrap items-baseline gap-1">
+                    <span className={isRequired ? 'font-semibold text-primary' : ''}>
+                      {DRIVER_EXPECTED_COLUMNS_DISPLAY[field] || aliases[0]}
+                      {isRequired && ' *'}:
+                    </span>
+                    <span dir="rtl" className="text-muted-foreground">
+                      {aliases.join(' / ')}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </details>
         </CardContent>
       </Card>
     </div>

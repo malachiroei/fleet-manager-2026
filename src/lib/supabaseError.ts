@@ -1,3 +1,15 @@
+const KNOWN_ERROR_PATTERNS: Array<{ pattern: RegExp; hebrew: string }> = [
+  { pattern: /no unique or exclusion constraint matching the ON CONFLICT/i, hebrew: 'חסר אילוץ ייחודי בטבלה — ייתכן שנדרשת מיגרציה. פנה למנהל המערכת.' },
+  { pattern: /duplicate key value violates unique constraint/i, hebrew: 'ערך כפול — רשומה עם נתון זהה כבר קיימת במערכת.' },
+  { pattern: /violates not-null constraint/i, hebrew: 'שדה חובה ריק — אחד השדות הנדרשים לא מולא.' },
+  { pattern: /violates foreign key constraint/i, hebrew: 'קישור שגוי — הפניה לרשומה שלא קיימת.' },
+  { pattern: /new row violates row-level security/i, hebrew: 'אין הרשאה לבצע פעולה זו (RLS).' },
+  { pattern: /permission denied/i, hebrew: 'אין הרשאה לבצע פעולה זו.' },
+  { pattern: /JWT expired/i, hebrew: 'תוקף ההתחברות פג — יש להתחבר מחדש.' },
+  { pattern: /Could not find.*in the schema cache/i, hebrew: 'עמודה או טבלה לא נמצאו — ייתכן שנדרשת מיגרציה.' },
+  { pattern: /schema cache/i, hebrew: 'שגיאת schema cache — ייתכן שנדרש רענון מסד הנתונים.' },
+];
+
 /**
  * Formats Supabase/PostgREST errors for toasts/logs so we can tell RLS vs constraint vs missing column.
  * PostgREST returns { message, code, details, hint } on the error object.
@@ -5,25 +17,38 @@
 export function formatSupabaseError(error: unknown): string {
   if (error == null) return 'שגיאה לא ידועה';
 
-  if (typeof error === 'string') return error;
+  if (typeof error === 'string') return translateToHebrew(error) || error;
 
   const e = error as Record<string, unknown>;
   const parts: string[] = [];
 
   if (typeof e.message === 'string' && e.message) parts.push(e.message);
-  if (typeof e.code === 'string' && e.code) parts.push(`code: ${e.code}`);
-  if (typeof e.details === 'string' && e.details) parts.push(`details: ${e.details}`);
-  if (typeof e.hint === 'string' && e.hint) parts.push(`hint: ${e.hint}`);
+  if (typeof e.details === 'string' && e.details) parts.push(e.details);
+  if (typeof e.hint === 'string' && e.hint) parts.push(e.hint);
 
-  if (parts.length > 0) return parts.join(' | ');
+  const rawMessage = parts.join(' | ');
+  const hebrewTranslation = translateToHebrew(rawMessage);
 
-  if (error instanceof Error && error.message) return error.message;
+  if (hebrewTranslation) return hebrewTranslation;
+  if (parts.length > 0) {
+    const code = typeof e.code === 'string' ? ` (קוד: ${e.code})` : '';
+    return `${rawMessage}${code}`;
+  }
+
+  if (error instanceof Error && error.message) return translateToHebrew(error.message) || error.message;
 
   try {
     return JSON.stringify(error);
   } catch {
     return String(error);
   }
+}
+
+function translateToHebrew(text: string): string | null {
+  for (const { pattern, hebrew } of KNOWN_ERROR_PATTERNS) {
+    if (pattern.test(text)) return hebrew;
+  }
+  return null;
 }
 
 /** PostgREST: עמודת safety_officer לא קיימת / לא ב-schema cache (מיגרציה לא הורצה בפרוד). */
