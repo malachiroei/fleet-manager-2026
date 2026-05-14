@@ -539,7 +539,7 @@ function VehicleMappingWizard({
               <div
                 key={field.dbField}
                 className={`flex items-center gap-3 p-2 rounded-md border ${
-                  matched ? 'border-green-300/50 bg-green-50/30' : 'border-border/50'
+                  matched ? 'border-primary/40' : 'border-border/50'
                 }`}
               >
                 <div className="flex-1 min-w-0">
