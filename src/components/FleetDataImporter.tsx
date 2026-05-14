@@ -159,6 +159,9 @@ const DRIVER_FIELDS: DriverFieldDef[] = [
   { dbField: 'group_code', label: 'קוד קבוצה', aliases: ['קוד קבוצה'], required: false, type: 'text' },
   { dbField: 'job_title', label: 'תפקיד', aliases: ['תפקיד'], required: false, type: 'text' },
   { dbField: 'license_number', label: 'מספר רישיון', aliases: ['מספר רשיון', 'מספר רישיון', 'רישוי'], required: false, type: 'text' },
+  { dbField: 'birth_date', label: 'תאריך לידה', aliases: ['תאריך לידה', 'ת.לידה'], required: false, type: 'date' },
+  { dbField: 'driving_permit', label: 'רישיון נהיגה (סוג)', aliases: ['רישיון נהיגה', 'סוג רישיון', 'דרגת רישיון'], required: false, type: 'text' },
+  { dbField: 'safety_officer', label: 'קצין בטיחות', aliases: ['קצין בטיחות', 'קב"ט'], required: false, type: 'text' },
 ];
 
 type ColumnMapping = Record<string, string>; // dbField → excelColumn
@@ -180,7 +183,7 @@ function autoMatchColumns(excelColumns: string[]): ColumnMapping {
   return mapping;
 }
 
-/** Map a raw row to DB fields using user-confirmed column mapping */
+/** Map a raw row to DB fields using user-confirmed column mapping (fully dynamic) */
 function mapDriverRowWithMapping(rawRow: Record<string, any>, mapping: ColumnMapping) {
   const row = normalizeRow(rawRow);
 
@@ -191,42 +194,33 @@ function mapDriverRowWithMapping(rawRow: Record<string, any>, mapping: ColumnMap
     return row[normalized] ?? undefined;
   };
 
-  const required = {
+  const result: Record<string, any> = {
     full_name: str(getVal('full_name')) || '',
     id_number: str(getVal('id_number')) || '',
     license_expiry: parseExcelDate(getVal('license_expiry')) || new Date().toISOString().slice(0, 10),
-    status: 'valid' as const,
+    status: 'valid',
     is_active: getVal('is_active') !== undefined ? bool(getVal('is_active')) : true,
   };
 
-  const optional: Record<string, string | null> = {};
-  const set = (key: string, val: string | null) => { if (val) optional[key] = val; };
+  for (const field of DRIVER_FIELDS) {
+    if (['full_name', 'id_number', 'is_active'].includes(field.dbField)) continue;
+    if (!mapping[field.dbField]) continue;
 
-  set('phone', str(getVal('phone')));
-  set('email', str(getVal('email')));
-  set('department', str(getVal('department')));
-  set('address', str(getVal('address')));
-  set('driver_code', str(getVal('driver_code')));
-  set('employee_number', str(getVal('employee_number')));
-  set('city', str(getVal('city')));
-  set('note1', str(getVal('note1')));
-  set('note2', str(getVal('note2')));
-  set('rating', str(getVal('rating')));
-  set('division', str(getVal('division')));
-  set('eligibility', str(getVal('eligibility')));
-  set('area', str(getVal('area')));
-  set('group_name', str(getVal('group_name')));
-  set('group_code', str(getVal('group_code')));
-  set('job_title', str(getVal('job_title')));
-  set('license_number', str(getVal('license_number')));
+    const raw = getVal(field.dbField);
+    if (raw === undefined || raw === null) continue;
 
-  const safetyDate = parseExcelDate(getVal('safety_training_date'));
-  if (safetyDate) optional.safety_training_date = safetyDate;
+    if (field.type === 'date') {
+      const parsed = parseExcelDate(raw);
+      if (parsed) result[field.dbField] = parsed;
+    } else if (field.type === 'boolean') {
+      // handled above for is_active
+    } else {
+      const val = str(raw);
+      if (val) result[field.dbField] = val;
+    }
+  }
 
-  const workStart = parseExcelDate(getVal('work_start_date'));
-  if (workStart) optional.work_start_date = workStart;
-
-  return { ...required, ...optional };
+  return result;
 }
 
 // ─── Mapping Wizard Dialog ───
@@ -464,13 +458,19 @@ export default function FleetDataImporter() {
         return;
       }
 
-      const chunkSize = 500;
+      const chunkSize = 200;
       let inserted = 0;
 
       for (let i = 0; i < mapped.length; i += chunkSize) {
         const slice = mapped.slice(i, i + chunkSize);
-        const chunk = effectiveOrgId ? slice.map((row) => ({ ...row, org_id: effectiveOrgId })) : slice;
-        const { error } = await supabase.from('vehicles').upsert(chunk as any, { onConflict: 'plate_number', defaultToNull: false });
+        const chunk = slice.map((row) => ({
+          ...row,
+          ...(effectiveOrgId ? { org_id: effectiveOrgId } : {}),
+        }));
+
+        const { error } = await supabase.rpc('bulk_upsert_vehicles', {
+          vehicles: chunk,
+        });
         if (error) throw error;
         inserted += chunk.length;
       }
@@ -491,9 +491,10 @@ export default function FleetDataImporter() {
       toast({ title: `נטענו ${inserted} רכבים בהצלחה` });
       window.location.reload();
     } catch (err: any) {
+      console.error('[VehicleImport] error:', err);
       toast({
         title: 'שגיאה בטעינת רכבים',
-        description: formatSupabaseError(err),
+        description: err?.message || formatSupabaseError(err),
         variant: 'destructive',
       });
     } finally {
@@ -558,27 +559,10 @@ export default function FleetDataImporter() {
           ...(effectiveOrgId ? { org_id: effectiveOrgId } : {}),
         }));
 
-        // Use RPC for reliable upsert (avoids PostgREST id=NULL bug)
-        const { error: rpcError } = await supabase.rpc('bulk_upsert_drivers', {
+        const { error } = await supabase.rpc('bulk_upsert_drivers', {
           drivers: chunk,
         });
-
-        if (rpcError) {
-          // Fallback: if RPC doesn't exist, try direct insert with ignoreDuplicates
-          if (/function.*not exist|could not find/i.test(rpcError.message || '')) {
-            for (const row of chunk) {
-              const { error: rowErr } = await supabase.from('drivers').insert(row as any).select('id').maybeSingle();
-              if (rowErr && /duplicate|unique|23505/i.test(rowErr.message + rowErr.code)) {
-                const conflict = effectiveOrgId ? { id_number: row.id_number, org_id: effectiveOrgId } : { id_number: row.id_number };
-                await supabase.from('drivers').update(row as any).match(conflict);
-              } else if (rowErr) {
-                throw rowErr;
-              }
-            }
-          } else {
-            throw rpcError;
-          }
-        }
+        if (error) throw error;
         inserted += chunk.length;
       }
 
