@@ -94,23 +94,30 @@ const VEHICLE_FIELDS: FieldDef[] = [
   { dbField: 'plate_number', label: 'מספר רישוי', aliases: ["מס' רשוי", 'מס רשוי', 'לוחית רישוי', 'מספר רכב', 'רישוי'], required: true, type: 'text' },
   { dbField: 'manufacturer', label: 'יצרן', aliases: ['שם יצרן', 'יצרן', 'חברה'], required: false, type: 'text' },
   { dbField: 'model', label: 'דגם', aliases: ['דגם', 'שם דגם'], required: false, type: 'text' },
-  { dbField: 'year', label: 'שנת ייצור', aliases: ['שנת ייצור', 'שנה'], required: false, type: 'number' },
-  { dbField: 'current_odometer', label: 'ספידומטר', aliases: ['ספידו אחרון', 'ספידומטר', 'ק"מ'], required: false, type: 'number' },
+  { dbField: 'year', label: 'שנת ייצור', aliases: ['שנת ייצור', 'שנה', 'שנת רישום'], required: false, type: 'number' },
+  { dbField: 'current_odometer', label: 'ספידומטר', aliases: ['ספידו אחרון', 'ספידומטר', 'ק"מ', 'קילומטראז'], required: false, type: 'number' },
+  { dbField: 'color', label: 'צבע', aliases: ['צבע', 'צבע רכב'], required: false, type: 'text' },
+  { dbField: 'fuel_type', label: 'סוג דלק / הנעה', aliases: ['קוד הנעה', 'סוג דלק', 'הנעה', 'דלק'], required: false, type: 'text' },
   { dbField: 'test_expiry', label: 'תוקף רישוי (טסט)', aliases: ['ת.רישוי', 'תוקף טסט', 'תוקף רישוי'], required: false, type: 'date' },
   { dbField: 'ownership_type', label: 'בעלות', aliases: ['בעלות', 'סוג בעלות'], required: false, type: 'text' },
-  { dbField: 'leasing_company_name', label: 'חברת ליסינג', aliases: ['חברת ליסינג', 'ליסינג'], required: false, type: 'text' },
+  { dbField: 'leasing_company_name', label: 'חברת ליסינג', aliases: ['חברת ליסינג', 'ליסינג', 'עלות ליסינג'], required: false, type: 'text' },
   { dbField: 'engine_volume', label: 'נפח מנוע', aliases: ['נפח', 'נפח מנוע'], required: false, type: 'text' },
   { dbField: 'vehicle_type_name', label: 'סוג רכב', aliases: ['סוג רכב', 'קטגוריה'], required: false, type: 'text' },
   { dbField: 'group_name', label: 'קבוצה', aliases: ['קבוצה'], required: false, type: 'text' },
   { dbField: 'internal_number', label: 'מספר פנימי', aliases: ['פנימי', "מס' פנימי", 'מספר פנימי'], required: false, type: 'text' },
   { dbField: 'driver_code', label: 'קוד נהג', aliases: ['קוד נהג'], required: false, type: 'text' },
   { dbField: 'chassis_number', label: 'מספר שלדה', aliases: ['מיספר חן', 'מספר שלדה', 'שלדה'], required: false, type: 'text' },
+  { dbField: 'model_code', label: 'סמל דגם', aliases: ['סמל דגם', 'סכל דגם', 'קוד דגם'], required: false, type: 'text' },
+  { dbField: 'manufacturer_code', label: 'סמל יצרן', aliases: ['סמל יצרן', 'קוד יצרן'], required: false, type: 'text' },
   { dbField: 'next_maintenance_km', label: 'טיפול הבא (ק"מ)', aliases: ['התראה235', 'טיפול הבא ק"מ'], required: false, type: 'number' },
   { dbField: 'next_maintenance_date', label: 'תאריך טיפול הבא', aliases: ['תאריך טיפול הבא'], required: false, type: 'date' },
   { dbField: 'pickup_date', label: 'תאריך קנייה', aliases: ['תאריך קניה', 'תאריך קנייה', 'תאריך רכישה'], required: false, type: 'date' },
+  { dbField: 'sale_date', label: 'תאריך מכירה', aliases: ['תאריך מכירה'], required: false, type: 'date' },
   { dbField: 'mandatory_end_date', label: 'תאריך סיום חובה', aliases: ['תאריך סיום חובה'], required: false, type: 'date' },
   { dbField: 'adjusted_price', label: 'מחיר מתואם', aliases: ['מחיר מתואם'], required: false, type: 'number' },
   { dbField: 'monthly_total_cost', label: 'עלות חודשית', aliases: ['סכום חודשי כולל', 'עלות חודשית'], required: false, type: 'number' },
+  { dbField: 'vehicle_budget', label: 'תקציב רכב', aliases: ['תקציב רכב'], required: false, type: 'number' },
+  { dbField: 'tax_value_price', label: 'שווי שימוש', aliases: ['שווי שימוש לינארי', 'שווי שימוש'], required: false, type: 'number' },
   // Virtual field for driver name matching
   { dbField: '_driver_name', label: 'שם נהג (לשיוך)', aliases: ['שם נהג', 'נהג', 'שם הנהג'], required: false, type: 'text' },
 ];
@@ -525,11 +532,16 @@ function VehicleMappingWizard({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-2 max-h-[40vh] overflow-y-auto">
-          {VEHICLE_FIELDS.filter((f) => f.required || mapping[f.dbField]).map((field) => {
+        <div className="space-y-2 max-h-[50vh] overflow-y-auto">
+          {VEHICLE_FIELDS.map((field) => {
             const matched = mapping[field.dbField];
             return (
-              <div key={field.dbField} className="flex items-center gap-3 p-2 rounded-md border border-border/50">
+              <div
+                key={field.dbField}
+                className={`flex items-center gap-3 p-2 rounded-md border ${
+                  matched ? 'border-green-300/50 bg-green-50/30' : 'border-border/50'
+                }`}
+              >
                 <div className="flex-1 min-w-0">
                   <span className="text-sm font-medium">{field.label}</span>
                   {field.required && <span className="text-destructive mr-1">*</span>}
@@ -563,42 +575,6 @@ function VehicleMappingWizard({
               </div>
             );
           })}
-
-          {VEHICLE_FIELDS.some((f) => !f.required && !mapping[f.dbField]) && (
-            <details className="mt-2">
-              <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
-                שדות נוספים לא ממופים ({VEHICLE_FIELDS.filter((f) => !f.required && !mapping[f.dbField]).length})
-              </summary>
-              <div className="space-y-1 mt-2">
-                {VEHICLE_FIELDS.filter((f) => !f.required && !mapping[f.dbField]).map((field) => (
-                  <div key={field.dbField} className="flex items-center gap-3 p-2 rounded-md border border-border/30">
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm text-muted-foreground">{field.label}</span>
-                      {field.dbField === '_driver_name' && (
-                        <span className="text-xs text-blue-600 mr-2">(שיוך נהג)</span>
-                      )}
-                    </div>
-                    <div className="w-48 shrink-0">
-                      <Select
-                        value="__none__"
-                        onValueChange={(val) => handleFieldChange(field.dbField, val)}
-                      >
-                        <SelectTrigger className="h-8 text-xs">
-                          <SelectValue placeholder="בחר עמודה..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__">— לא ממופה —</SelectItem>
-                          {availableColumnsFor(field.dbField).map((col) => (
-                            <SelectItem key={col} value={col}>{col}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </details>
-          )}
         </div>
 
         {sampleRows.length > 0 && (
