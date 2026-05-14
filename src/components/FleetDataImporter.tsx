@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -516,8 +516,9 @@ function VehicleMappingWizard({
     .map((f) => f.label);
   const canConfirm = requiredMissing.length === 0;
 
-  // Re-run auto-match when columns change
-  useState(() => { setMapping(autoMatchVehicleColumns(excelColumns)); });
+  useEffect(() => {
+    if (excelColumns.length > 0) setMapping(autoMatchVehicleColumns(excelColumns));
+  }, [excelColumns]);
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
@@ -644,6 +645,10 @@ interface DriverAssignmentDialogProps {
 function DriverAssignmentDialog({ open, onClose, matches, onConfirm }: DriverAssignmentDialogProps) {
   const [localMatches, setLocalMatches] = useState<DriverMatch[]>(matches);
 
+  useEffect(() => {
+    if (matches.length > 0) setLocalMatches(matches);
+  }, [matches]);
+
   const toggleMatch = (idx: number) => {
     setLocalMatches((prev) =>
       prev.map((m, i) => (i === idx ? { ...m, approved: !m.approved } : m))
@@ -657,9 +662,6 @@ function DriverAssignmentDialog({ open, onClose, matches, onConfirm }: DriverAss
   const rejectAll = () => {
     setLocalMatches((prev) => prev.map((m) => ({ ...m, approved: false })));
   };
-
-  // Sync when matches prop changes
-  useState(() => { setLocalMatches(matches); });
 
   const approvedCount = localMatches.filter((m) => m.approved).length;
 
