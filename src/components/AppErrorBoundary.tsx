@@ -3,6 +3,19 @@ import { AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
+const CHUNK_ERROR_RELOAD_KEY = '__chunk_error_reload';
+
+function isChunkLoadError(error: Error): boolean {
+  const msg = error?.message || '';
+  return (
+    /Unexpected token ['<]/i.test(msg) ||
+    /Loading chunk/i.test(msg) ||
+    /Failed to fetch dynamically imported module/i.test(msg) ||
+    /ChunkLoadError/i.test(msg) ||
+    error?.name === 'ChunkLoadError'
+  );
+}
+
 interface Props {
   children: ReactNode;
 }
@@ -27,9 +40,20 @@ export class AppErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: unknown) {
     console.error('Application runtime error:', error, errorInfo);
+
+    if (isChunkLoadError(error)) {
+      const lastReload = sessionStorage.getItem(CHUNK_ERROR_RELOAD_KEY);
+      const now = Date.now();
+      if (!lastReload || now - Number(lastReload) > 10_000) {
+        sessionStorage.setItem(CHUNK_ERROR_RELOAD_KEY, String(now));
+        window.location.reload();
+        return;
+      }
+    }
   }
 
   private handleReload = () => {
+    sessionStorage.removeItem(CHUNK_ERROR_RELOAD_KEY);
     window.location.reload();
   };
 

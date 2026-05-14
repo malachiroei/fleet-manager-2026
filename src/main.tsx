@@ -75,4 +75,21 @@ void (async () => {
   await unregisterNonV2ServiceWorkers();
 })();
 
+// Auto-reload on stale chunk errors (happens after new Vercel deploy while tab is open)
+window.addEventListener('unhandledrejection', (event) => {
+  const msg = String(event.reason?.message || event.reason || '');
+  if (
+    /Unexpected token ['<]/i.test(msg) ||
+    /Failed to fetch dynamically imported module/i.test(msg) ||
+    /Loading chunk/i.test(msg)
+  ) {
+    const key = '__chunk_error_reload';
+    const last = sessionStorage.getItem(key);
+    if (!last || Date.now() - Number(last) > 10_000) {
+      sessionStorage.setItem(key, String(Date.now()));
+      window.location.reload();
+    }
+  }
+});
+
 createRoot(document.getElementById("root")!).render(<App />);
