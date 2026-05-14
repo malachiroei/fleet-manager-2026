@@ -80,50 +80,105 @@ const normalizeRow = (row: Record<string, any>): Record<string, any> => {
   return result;
 };
 
-// ─── Vehicle row mapper ───
+// ─── Vehicle field definitions for the mapping wizard ───
 
-const mapVehicleRow = (rawRow: Record<string, any>) => {
+interface FieldDef {
+  dbField: string;
+  label: string;
+  aliases: string[];
+  required: boolean;
+  type: 'text' | 'date' | 'boolean' | 'number';
+}
+
+const VEHICLE_FIELDS: FieldDef[] = [
+  { dbField: 'plate_number', label: 'מספר רישוי', aliases: ["מס' רשוי", 'מס רשוי', 'לוחית רישוי', 'מספר רכב', 'רישוי'], required: true, type: 'text' },
+  { dbField: 'manufacturer', label: 'יצרן', aliases: ['שם יצרן', 'יצרן', 'חברה'], required: false, type: 'text' },
+  { dbField: 'model', label: 'דגם', aliases: ['דגם', 'שם דגם'], required: false, type: 'text' },
+  { dbField: 'year', label: 'שנת ייצור', aliases: ['שנת ייצור', 'שנה'], required: false, type: 'number' },
+  { dbField: 'current_odometer', label: 'ספידומטר', aliases: ['ספידו אחרון', 'ספידומטר', 'ק"מ'], required: false, type: 'number' },
+  { dbField: 'test_expiry', label: 'תוקף רישוי (טסט)', aliases: ['ת.רישוי', 'תוקף טסט', 'תוקף רישוי'], required: false, type: 'date' },
+  { dbField: 'ownership_type', label: 'בעלות', aliases: ['בעלות', 'סוג בעלות'], required: false, type: 'text' },
+  { dbField: 'leasing_company_name', label: 'חברת ליסינג', aliases: ['חברת ליסינג', 'ליסינג'], required: false, type: 'text' },
+  { dbField: 'engine_volume', label: 'נפח מנוע', aliases: ['נפח', 'נפח מנוע'], required: false, type: 'text' },
+  { dbField: 'vehicle_type_name', label: 'סוג רכב', aliases: ['סוג רכב', 'קטגוריה'], required: false, type: 'text' },
+  { dbField: 'group_name', label: 'קבוצה', aliases: ['קבוצה'], required: false, type: 'text' },
+  { dbField: 'internal_number', label: 'מספר פנימי', aliases: ['פנימי', "מס' פנימי", 'מספר פנימי'], required: false, type: 'text' },
+  { dbField: 'driver_code', label: 'קוד נהג', aliases: ['קוד נהג'], required: false, type: 'text' },
+  { dbField: 'chassis_number', label: 'מספר שלדה', aliases: ['מיספר חן', 'מספר שלדה', 'שלדה'], required: false, type: 'text' },
+  { dbField: 'next_maintenance_km', label: 'טיפול הבא (ק"מ)', aliases: ['התראה235', 'טיפול הבא ק"מ'], required: false, type: 'number' },
+  { dbField: 'next_maintenance_date', label: 'תאריך טיפול הבא', aliases: ['תאריך טיפול הבא'], required: false, type: 'date' },
+  { dbField: 'pickup_date', label: 'תאריך קנייה', aliases: ['תאריך קניה', 'תאריך קנייה', 'תאריך רכישה'], required: false, type: 'date' },
+  { dbField: 'mandatory_end_date', label: 'תאריך סיום חובה', aliases: ['תאריך סיום חובה'], required: false, type: 'date' },
+  { dbField: 'adjusted_price', label: 'מחיר מתואם', aliases: ['מחיר מתואם'], required: false, type: 'number' },
+  { dbField: 'monthly_total_cost', label: 'עלות חודשית', aliases: ['סכום חודשי כולל', 'עלות חודשית'], required: false, type: 'number' },
+  // Virtual field for driver name matching
+  { dbField: '_driver_name', label: 'שם נהג (לשיוך)', aliases: ['שם נהג', 'נהג', 'שם הנהג'], required: false, type: 'text' },
+];
+
+/** Map vehicle row dynamically from user-confirmed mapping */
+function mapVehicleRowWithMapping(rawRow: Record<string, any>, mapping: ColumnMapping) {
   const row = normalizeRow(rawRow);
-  return {
-  plate_number: normalizePlateNumber(str(row["מס' רשוי"]) || str(row['מס רשוי']) || ''),
-  manufacturer: str(row['שם יצרן']) || '',
-  model: str(row['דגם']) || '',
-  year: num(row['שנת ייצור']) || new Date().getFullYear(),
-  current_odometer: num(row['ספידו אחרון']) || 0,
-  last_odometer_date: parseExcelDate(row['תאריך ספידומטר']),
-  next_maintenance_date: parseExcelDate(row['תאריך טיפול הבא']),
-  next_maintenance_km: num(row['התראה235']),
-  test_expiry: parseExcelDate(row['ת.רישוי']) || new Date().toISOString().slice(0, 10),
-  insurance_expiry: parseExcelDate(row['ת.רישוי']) || new Date().toISOString().slice(0, 10),
-  manufacturer_code: str(row['סמל יצרן']) || str(row['קוד יצרן']),
-  model_code: str(row['סמל דגם']),
-  ownership_type: canonicalOwnershipType(str(row['בעלות'])) || null,
-  engine_volume: str(row['נפח']),
-  is_active: str(row['סטטוס']) === 'פעיל' || bool(row['פעיל']),
-  adjusted_price: num(row['מחיר מתואם']),
-  tax_value_price: num(row['שווי שימוש לינארי']),
-  vehicle_type_code: str(row['ק.סוג רכב']),
-  chassis_number: str(row['מיספר חן']),
-  monthly_total_cost: num(row['סכום חודשי כולל']),
-  pickup_date: parseExcelDate(row['תאריך קניה']),
-  sale_date: parseExcelDate(row['תאריך מכירה']),
-  group_name: str(row['קבוצה']),
-  internal_number: str(row['פנימי']) || str(row["מס' פנימי"]),
-  vehicle_budget: num(row['תקציב רכב']),
-  upgrade_addition: num(row['תוספת שדרוג']),
-  vehicle_type_name: str(row['סוג רכב']),
-  base_index: num(row['מדד בסיס']),
-  driver_code: str(row['קוד נהג']),
-  pascal: str(row['פסקל']),
-  next_alert_km: num(row['התראה235']) ? Number(num(row['התראה235'])) : null,
-  mandatory_end_date: parseExcelDate(row['תאריך סיום חובה']),
-  odometer_diff_maintenance: num(row['הפרש ספידו מטיפול']),
-  leasing_company_name: str(row['בעלות']),
-  color: null as string | null,
-  ignition_code: null as string | null,
-  assigned_driver_id: null as string | null,
+
+  const getVal = (dbField: string): any => {
+    const excelCol = mapping[dbField];
+    if (!excelCol) return undefined;
+    const normalized = normalizeKey(excelCol);
+    return row[normalized] ?? undefined;
   };
-};
+
+  const result: Record<string, any> = {
+    plate_number: normalizePlateNumber(str(getVal('plate_number')) || ''),
+    manufacturer: str(getVal('manufacturer')) || '',
+    model: str(getVal('model')) || '',
+    year: num(getVal('year')) || new Date().getFullYear(),
+    current_odometer: num(getVal('current_odometer')) || 0,
+    is_active: getVal('is_active') !== undefined ? bool(getVal('is_active')) : true,
+  };
+
+  for (const field of VEHICLE_FIELDS) {
+    if (['plate_number', '_driver_name'].includes(field.dbField)) continue;
+    if (result[field.dbField] !== undefined) continue;
+    if (!mapping[field.dbField]) continue;
+
+    const raw = getVal(field.dbField);
+    if (raw === undefined || raw === null) continue;
+
+    if (field.type === 'date') {
+      const parsed = parseExcelDate(raw);
+      if (parsed) result[field.dbField] = parsed;
+    } else if (field.type === 'number') {
+      const n = num(raw);
+      if (n !== null) result[field.dbField] = n;
+    } else {
+      const val = str(raw);
+      if (val) result[field.dbField] = val;
+    }
+  }
+
+  // Handle ownership type canonicalization
+  if (result.ownership_type) {
+    result.ownership_type = canonicalOwnershipType(result.ownership_type) || result.ownership_type;
+  }
+
+  return result;
+}
+
+/** Auto-match vehicle Excel columns */
+function autoMatchVehicleColumns(excelColumns: string[]): ColumnMapping {
+  const mapping: ColumnMapping = {};
+  const normalizedCols = excelColumns.map(normalizeKey);
+
+  for (const field of VEHICLE_FIELDS) {
+    for (const alias of field.aliases) {
+      const idx = normalizedCols.indexOf(alias);
+      if (idx !== -1 && !Object.values(mapping).includes(excelColumns[idx])) {
+        mapping[field.dbField] = excelColumns[idx];
+        break;
+      }
+    }
+  }
+  return mapping;
+}
 
 // ─── Driver field definitions for the mapping wizard ───
 
@@ -406,6 +461,283 @@ function ColumnMappingWizard({ open, onClose, excelColumns, sampleRows, totalRow
   );
 }
 
+// ─── Vehicle Mapping Wizard ───
+
+interface VehicleMappingWizardProps {
+  open: boolean;
+  onClose: () => void;
+  excelColumns: string[];
+  sampleRows: Record<string, any>[];
+  totalRows: number;
+  onConfirm: (mapping: ColumnMapping) => void;
+}
+
+function VehicleMappingWizard({
+  open, onClose, excelColumns, sampleRows, totalRows, onConfirm,
+}: VehicleMappingWizardProps) {
+  const [mapping, setMapping] = useState<ColumnMapping>(() => autoMatchVehicleColumns(excelColumns));
+
+  const handleFieldChange = (dbField: string, excelCol: string) => {
+    setMapping((prev) => {
+      const next = { ...prev };
+      if (excelCol === '__none__') {
+        delete next[dbField];
+      } else {
+        next[dbField] = excelCol;
+      }
+      return next;
+    });
+  };
+
+  const requiredMissing = VEHICLE_FIELDS
+    .filter((f) => f.required && !mapping[f.dbField])
+    .map((f) => f.label);
+  const canConfirm = requiredMissing.length === 0;
+
+  // Re-run auto-match when columns change
+  useState(() => { setMapping(autoMatchVehicleColumns(excelColumns)); });
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto" dir="rtl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Car className="h-5 w-5 text-primary" />
+            אשף מיפוי עמודות רכבים
+          </DialogTitle>
+          <DialogDescription>
+            מצאנו {excelColumns.length} עמודות ו-{totalRows} שורות. מפו כל עמודה לשדה המתאים.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-2 max-h-[40vh] overflow-y-auto">
+          {VEHICLE_FIELDS.filter((f) => f.required || mapping[f.dbField]).map((field) => {
+            const matched = mapping[field.dbField];
+            return (
+              <div key={field.dbField} className="flex items-center gap-3 p-2 rounded-md border border-border/50">
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-medium">{field.label}</span>
+                  {field.required && <span className="text-destructive mr-1">*</span>}
+                  {field.dbField === '_driver_name' && (
+                    <span className="text-xs text-blue-600 mr-2">(שיוך נהג)</span>
+                  )}
+                </div>
+                <div className="w-48 shrink-0">
+                  <Select
+                    value={matched || '__none__'}
+                    onValueChange={(val) => handleFieldChange(field.dbField, val)}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="בחר עמודה..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">— לא ממופה —</SelectItem>
+                      {excelColumns.map((col) => (
+                        <SelectItem key={col} value={col}>{col}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="w-5">
+                  {matched ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  ) : field.required ? (
+                    <AlertCircle className="h-4 w-4 text-destructive" />
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+
+          {VEHICLE_FIELDS.some((f) => !f.required && !mapping[f.dbField]) && (
+            <details className="mt-2">
+              <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
+                שדות נוספים לא ממופים ({VEHICLE_FIELDS.filter((f) => !f.required && !mapping[f.dbField]).length})
+              </summary>
+              <div className="space-y-1 mt-2">
+                {VEHICLE_FIELDS.filter((f) => !f.required && !mapping[f.dbField]).map((field) => (
+                  <div key={field.dbField} className="flex items-center gap-3 p-2 rounded-md border border-border/30">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm text-muted-foreground">{field.label}</span>
+                      {field.dbField === '_driver_name' && (
+                        <span className="text-xs text-blue-600 mr-2">(שיוך נהג)</span>
+                      )}
+                    </div>
+                    <div className="w-48 shrink-0">
+                      <Select
+                        value="__none__"
+                        onValueChange={(val) => handleFieldChange(field.dbField, val)}
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="בחר עמודה..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">— לא ממופה —</SelectItem>
+                          {excelColumns.map((col) => (
+                            <SelectItem key={col} value={col}>{col}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+
+        {sampleRows.length > 0 && (
+          <div className="mt-4 border rounded-md overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/50">
+                <tr>
+                  <th className="px-2 py-1.5 text-right font-medium">#</th>
+                  {Object.entries(mapping).map(([dbField]) => (
+                    <th key={dbField} className="px-2 py-1.5 text-right font-medium">
+                      {VEHICLE_FIELDS.find((f) => f.dbField === dbField)?.label || dbField}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sampleRows.slice(0, 3).map((row, i) => (
+                  <tr key={i} className="border-t border-border/50">
+                    <td className="px-2 py-1 text-muted-foreground">{i + 1}</td>
+                    {Object.entries(mapping).map(([dbField, excelCol]) => (
+                      <td key={dbField} className="px-2 py-1 truncate max-w-[120px]">
+                        {row[excelCol] != null ? String(row[excelCol]).slice(0, 20) : '—'}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {requiredMissing.length > 0 && (
+          <p className="text-sm text-destructive mt-3">
+            שדות חובה לא ממופים: {requiredMissing.join(', ')}
+          </p>
+        )}
+
+        <div className="flex gap-3 mt-4 justify-end">
+          <Button variant="ghost" onClick={onClose}>ביטול</Button>
+          <Button onClick={() => onConfirm(mapping)} disabled={!canConfirm}>
+            <ArrowLeft className="h-4 w-4 ml-2" />
+            המשך — {totalRows} רכבים
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Driver Assignment Dialog ───
+
+interface DriverMatch {
+  plateNumber: string;
+  excelDriverName: string;
+  matchedDriverId: string;
+  matchedDriverFullName: string;
+  approved: boolean;
+}
+
+interface DriverAssignmentDialogProps {
+  open: boolean;
+  onClose: () => void;
+  matches: DriverMatch[];
+  onConfirm: (approvedMatches: DriverMatch[]) => void;
+}
+
+function DriverAssignmentDialog({ open, onClose, matches, onConfirm }: DriverAssignmentDialogProps) {
+  const [localMatches, setLocalMatches] = useState<DriverMatch[]>(matches);
+
+  const toggleMatch = (idx: number) => {
+    setLocalMatches((prev) =>
+      prev.map((m, i) => (i === idx ? { ...m, approved: !m.approved } : m))
+    );
+  };
+
+  const approveAll = () => {
+    setLocalMatches((prev) => prev.map((m) => ({ ...m, approved: true })));
+  };
+
+  const rejectAll = () => {
+    setLocalMatches((prev) => prev.map((m) => ({ ...m, approved: false })));
+  };
+
+  // Sync when matches prop changes
+  useState(() => { setLocalMatches(matches); });
+
+  const approvedCount = localMatches.filter((m) => m.approved).length;
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto" dir="rtl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5 text-blue-600" />
+            שיוך נהגים לרכבים
+          </DialogTitle>
+          <DialogDescription>
+            נמצאו {matches.length} התאמות בין שמות נהגים בקובץ לנהגים קיימים במערכת.
+            אשר או בטל שיוכים לפי הצורך.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex gap-2 mb-3">
+          <Button size="sm" variant="outline" onClick={approveAll}>
+            <CheckCircle2 className="h-3 w-3 ml-1" />
+            אשר הכל ({matches.length})
+          </Button>
+          <Button size="sm" variant="outline" onClick={rejectAll}>
+            בטל הכל
+          </Button>
+        </div>
+
+        <div className="space-y-2 max-h-[50vh] overflow-y-auto">
+          {localMatches.map((match, idx) => (
+            <div
+              key={idx}
+              className={`flex items-center gap-3 p-3 rounded-md border cursor-pointer transition-colors ${
+                match.approved ? 'border-green-300 bg-green-50' : 'border-border/50'
+              }`}
+              onClick={() => toggleMatch(idx)}
+            >
+              <input
+                type="checkbox"
+                checked={match.approved}
+                onChange={() => toggleMatch(idx)}
+                className="h-4 w-4 accent-green-600"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium">
+                  רכב {match.plateNumber}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  נהג באקסל: <span className="font-medium">{match.excelDriverName}</span>
+                  {' ← '}
+                  נהג במערכת: <span className="font-medium text-blue-700">{match.matchedDriverFullName}</span>
+                </div>
+              </div>
+              {match.approved && <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />}
+            </div>
+          ))}
+        </div>
+
+        <div className="flex gap-3 mt-4 justify-end">
+          <Button variant="ghost" onClick={onClose}>ביטול הייבוא</Button>
+          <Button onClick={() => onConfirm(localMatches)}>
+            <ArrowLeft className="h-4 w-4 ml-2" />
+            ייבא רכבים ({approvedCount > 0 ? `עם ${approvedCount} שיוכים` : 'ללא שיוכים'})
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Main Component ───
 
 export default function FleetDataImporter() {
@@ -417,11 +749,23 @@ export default function FleetDataImporter() {
   const { profile, activeOrgId } = useAuth();
   const effectiveOrgId = (activeOrgId ?? profile?.org_id ?? '').trim() || null;
 
-  // Wizard state
+  // Driver wizard state
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardExcelColumns, setWizardExcelColumns] = useState<string[]>([]);
   const [wizardSampleRows, setWizardSampleRows] = useState<Record<string, any>[]>([]);
   const [wizardAllRows, setWizardAllRows] = useState<Record<string, any>[]>([]);
+
+  // Vehicle wizard state
+  const [vWizardOpen, setVWizardOpen] = useState(false);
+  const [vWizardExcelColumns, setVWizardExcelColumns] = useState<string[]>([]);
+  const [vWizardSampleRows, setVWizardSampleRows] = useState<Record<string, any>[]>([]);
+  const [vWizardAllRows, setVWizardAllRows] = useState<Record<string, any>[]>([]);
+  const [vWizardMapping, setVWizardMapping] = useState<ColumnMapping>({});
+
+  // Driver assignment dialog state
+  const [driverAssignOpen, setDriverAssignOpen] = useState(false);
+  const [driverMatches, setDriverMatches] = useState<DriverMatch[]>([]);
+  const [pendingVehiclePayload, setPendingVehiclePayload] = useState<Record<string, any>[]>([]);
 
   const readExcel = (file: File): Promise<Record<string, any>[]> => {
     return new Promise((resolve, reject) => {
@@ -442,15 +786,38 @@ export default function FleetDataImporter() {
     });
   };
 
-  const handleVehicleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Step 1: Parse vehicle file and open mapping wizard
+  const handleVehicleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setLoadingVehicles(true);
 
     try {
       const rows = await readExcel(file);
-      const mapped = rows
-        .map(mapVehicleRow)
+      if (rows.length === 0) {
+        toast({ title: 'הקובץ ריק', variant: 'destructive' });
+        return;
+      }
+      const columns = Object.keys(rows[0]);
+      setVWizardExcelColumns(columns);
+      setVWizardSampleRows(rows.slice(0, 5));
+      setVWizardAllRows(rows);
+      setVWizardOpen(true);
+    } catch (err: any) {
+      toast({ title: 'שגיאה בקריאת הקובץ', description: err?.message, variant: 'destructive' });
+    } finally {
+      if (vehicleInputRef.current) vehicleInputRef.current.value = '';
+    }
+  };
+
+  // Step 2: After mapping confirmed, search for driver matches
+  const handleVehicleMappingConfirm = useCallback(async (mapping: ColumnMapping) => {
+    setVWizardOpen(false);
+    setVWizardMapping(mapping);
+    setLoadingVehicles(true);
+
+    try {
+      const mapped = vWizardAllRows
+        .map((row) => mapVehicleRowWithMapping(row, mapping))
         .filter((v) => v.plate_number);
 
       if (mapped.length === 0) {
@@ -458,38 +825,71 @@ export default function FleetDataImporter() {
         return;
       }
 
-      const chunkSize = 200;
-      let inserted = 0;
+      // Check if driver_name is mapped — if so, find matches
+      const driverNameCol = mapping['_driver_name'];
+      if (driverNameCol) {
+        // Extract driver names from Excel
+        const driverNamesFromExcel: { plateNumber: string; name: string }[] = [];
+        for (let i = 0; i < vWizardAllRows.length; i++) {
+          const rawRow = normalizeRow(vWizardAllRows[i]);
+          const normalizedCol = normalizeKey(driverNameCol);
+          const driverName = str(rawRow[normalizedCol]);
+          if (driverName && mapped[i]?.plate_number) {
+            driverNamesFromExcel.push({
+              plateNumber: mapped[i].plate_number as string,
+              name: driverName,
+            });
+          }
+        }
 
-      for (let i = 0; i < mapped.length; i += chunkSize) {
-        const slice = mapped.slice(i, i + chunkSize);
-        const chunk = slice.map((row) => ({
-          ...row,
-          ...(effectiveOrgId ? { org_id: effectiveOrgId } : {}),
-        }));
+        if (driverNamesFromExcel.length > 0) {
+          // Fetch all drivers from this org
+          const { data: drivers } = await supabase
+            .from('drivers')
+            .select('id, full_name')
+            .eq('org_id', effectiveOrgId || '');
 
-        const { error } = await supabase.rpc('bulk_upsert_vehicles', {
-          vehicles: chunk,
-        });
-        if (error) throw error;
-        inserted += chunk.length;
+          if (drivers && drivers.length > 0) {
+            const matches: DriverMatch[] = [];
+
+            for (const entry of driverNamesFromExcel) {
+              // Normalize and search for name match (case-insensitive, trimmed)
+              const searchName = entry.name.trim().toLowerCase();
+              const found = drivers.find((d) => {
+                const dbName = (d.full_name || '').trim().toLowerCase();
+                return dbName === searchName || dbName.includes(searchName) || searchName.includes(dbName);
+              });
+
+              if (found) {
+                matches.push({
+                  plateNumber: entry.plateNumber,
+                  excelDriverName: entry.name,
+                  matchedDriverId: found.id,
+                  matchedDriverFullName: found.full_name || '',
+                  approved: true,
+                });
+              }
+            }
+
+            if (matches.length > 0) {
+              setPendingVehiclePayload(mapped.map((row) => ({
+                ...row,
+                ...(effectiveOrgId ? { org_id: effectiveOrgId } : {}),
+              })));
+              setDriverMatches(matches);
+              setDriverAssignOpen(true);
+              setLoadingVehicles(false);
+              return;
+            }
+          }
+        }
       }
 
-      localStorage.setItem('vehicles_data', JSON.stringify(mapped));
-      queryClient.invalidateQueries({ queryKey: ['vehicles'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
-      const vehicleIso = persistFleetExcelImportTimestamp('vehicle', effectiveOrgId);
-      try {
-        window.dispatchEvent(
-          new CustomEvent(FLEET_EXCEL_IMPORT_EVENT, {
-            detail: { kind: 'vehicle', iso: vehicleIso },
-          }),
-        );
-      } catch {
-        // ignore
-      }
-      toast({ title: `נטענו ${inserted} רכבים בהצלחה` });
-      window.location.reload();
+      // No driver matches — import directly
+      await executeVehicleImport(
+        mapped.map((row) => ({ ...row, ...(effectiveOrgId ? { org_id: effectiveOrgId } : {}) })),
+        [],
+      );
     } catch (err: any) {
       console.error('[VehicleImport] error:', err);
       toast({
@@ -499,8 +899,83 @@ export default function FleetDataImporter() {
       });
     } finally {
       setLoadingVehicles(false);
-      if (vehicleInputRef.current) vehicleInputRef.current.value = '';
     }
+  }, [vWizardAllRows, effectiveOrgId]);
+
+  // Step 3: After driver assignment confirmation, execute import
+  const handleDriverAssignConfirm = useCallback(async (approvedMatches: DriverMatch[]) => {
+    setDriverAssignOpen(false);
+    setLoadingVehicles(true);
+    try {
+      await executeVehicleImport(pendingVehiclePayload, approvedMatches);
+    } finally {
+      setLoadingVehicles(false);
+    }
+  }, [pendingVehiclePayload]);
+
+  // Execute vehicle import with optional driver assignments
+  const executeVehicleImport = async (
+    vehiclePayload: Record<string, any>[],
+    approvedMatches: DriverMatch[],
+  ) => {
+    const assignmentMap = new Map<string, string>();
+    for (const m of approvedMatches.filter((x) => x.approved)) {
+      assignmentMap.set(m.plateNumber, m.matchedDriverId);
+    }
+
+    // Inject assigned_driver_id where approved
+    const finalPayload = vehiclePayload.map((v) => ({
+      ...v,
+      assigned_driver_id: assignmentMap.get(v.plate_number) || v.assigned_driver_id || null,
+    }));
+
+    const chunkSize = 200;
+    let inserted = 0;
+
+    for (let i = 0; i < finalPayload.length; i += chunkSize) {
+      const chunk = finalPayload.slice(i, i + chunkSize);
+      const { error } = await supabase.rpc('bulk_upsert_vehicles', { vehicles: chunk });
+      if (error) throw error;
+      inserted += chunk.length;
+    }
+
+    // Update assigned_vehicle_id on the drivers side (bidirectional)
+    for (const [plateNumber, driverId] of assignmentMap.entries()) {
+      const vehicle = finalPayload.find((v) => v.plate_number === plateNumber);
+      if (vehicle) {
+        // Get vehicle id from DB
+        const { data: vData } = await supabase
+          .from('vehicles')
+          .select('id')
+          .eq('plate_number', plateNumber)
+          .eq('org_id', effectiveOrgId || '')
+          .single();
+        if (vData?.id) {
+          await supabase
+            .from('drivers')
+            .update({ assigned_vehicle_id: vData.id })
+            .eq('id', driverId);
+        }
+      }
+    }
+
+    localStorage.setItem('vehicles_data', JSON.stringify(finalPayload));
+    queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+    queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+    const vehicleIso = persistFleetExcelImportTimestamp('vehicle', effectiveOrgId);
+    try {
+      window.dispatchEvent(
+        new CustomEvent(FLEET_EXCEL_IMPORT_EVENT, {
+          detail: { kind: 'vehicle', iso: vehicleIso },
+        }),
+      );
+    } catch { /* ignore */ }
+
+    const assignCount = assignmentMap.size;
+    toast({
+      title: `נטענו ${inserted} רכבים בהצלחה` + (assignCount > 0 ? ` (${assignCount} שויכו לנהגים)` : ''),
+    });
+    window.location.reload();
   };
 
   // Step 1: Parse file and open mapping wizard
@@ -631,7 +1106,7 @@ export default function FleetDataImporter() {
             type="file"
             accept=".xlsx,.xls,.csv"
             className="hidden"
-            onChange={handleVehicleImport}
+            onChange={handleVehicleFileSelect}
           />
           <Button
             onClick={() => vehicleInputRef.current?.click()}
@@ -695,7 +1170,7 @@ export default function FleetDataImporter() {
         </CardContent>
       </Card>
 
-      {/* Column Mapping Wizard Dialog */}
+      {/* Driver Column Mapping Wizard Dialog */}
       <ColumnMappingWizard
         open={wizardOpen}
         onClose={() => setWizardOpen(false)}
@@ -703,6 +1178,24 @@ export default function FleetDataImporter() {
         sampleRows={wizardSampleRows}
         totalRows={wizardAllRows.length}
         onConfirm={executeDriverImport}
+      />
+
+      {/* Vehicle Column Mapping Wizard Dialog */}
+      <VehicleMappingWizard
+        open={vWizardOpen}
+        onClose={() => setVWizardOpen(false)}
+        excelColumns={vWizardExcelColumns}
+        sampleRows={vWizardSampleRows}
+        totalRows={vWizardAllRows.length}
+        onConfirm={handleVehicleMappingConfirm}
+      />
+
+      {/* Driver Assignment Dialog */}
+      <DriverAssignmentDialog
+        open={driverAssignOpen}
+        onClose={() => { setDriverAssignOpen(false); setLoadingVehicles(false); }}
+        matches={driverMatches}
+        onConfirm={handleDriverAssignConfirm}
       />
     </div>
   );
