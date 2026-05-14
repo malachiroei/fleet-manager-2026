@@ -304,6 +304,14 @@ function ColumnMappingWizard({ open, onClose, excelColumns, sampleRows, totalRow
     });
   };
 
+  // Columns already used by other fields
+  const usedColumns = new Set(Object.values(mapping));
+
+  const availableColumnsFor = (currentDbField: string) => {
+    const currentVal = mapping[currentDbField];
+    return excelColumns.filter((col) => col === currentVal || !usedColumns.has(col));
+  };
+
   const requiredMissing = DRIVER_FIELDS
     .filter((f) => f.required && !mapping[f.dbField])
     .map((f) => f.label);
@@ -361,7 +369,7 @@ function ColumnMappingWizard({ open, onClose, excelColumns, sampleRows, totalRow
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__none__">— לא ממופה —</SelectItem>
-                      {excelColumns.map((col) => (
+                      {availableColumnsFor(field.dbField).map((col) => (
                         <SelectItem key={col} value={col}>
                           {col}
                         </SelectItem>
@@ -395,7 +403,7 @@ function ColumnMappingWizard({ open, onClose, excelColumns, sampleRows, totalRow
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="__none__">— לא ממופה —</SelectItem>
-                          {excelColumns.map((col) => (
+                          {availableColumnsFor(field.dbField).map((col) => (
                             <SelectItem key={col} value={col}>
                               {col}
                             </SelectItem>
@@ -489,6 +497,13 @@ function VehicleMappingWizard({
     });
   };
 
+  const usedColumns = new Set(Object.values(mapping));
+
+  const availableColumnsFor = (currentDbField: string) => {
+    const currentVal = mapping[currentDbField];
+    return excelColumns.filter((col) => col === currentVal || !usedColumns.has(col));
+  };
+
   const requiredMissing = VEHICLE_FIELDS
     .filter((f) => f.required && !mapping[f.dbField])
     .map((f) => f.label);
@@ -532,7 +547,7 @@ function VehicleMappingWizard({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__none__">— לא ממופה —</SelectItem>
-                      {excelColumns.map((col) => (
+                      {availableColumnsFor(field.dbField).map((col) => (
                         <SelectItem key={col} value={col}>{col}</SelectItem>
                       ))}
                     </SelectContent>
@@ -573,7 +588,7 @@ function VehicleMappingWizard({
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="__none__">— לא ממופה —</SelectItem>
-                          {excelColumns.map((col) => (
+                          {availableColumnsFor(field.dbField).map((col) => (
                             <SelectItem key={col} value={col}>{col}</SelectItem>
                           ))}
                         </SelectContent>
