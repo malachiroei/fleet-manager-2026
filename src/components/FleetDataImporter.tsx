@@ -1,11 +1,11 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
-import { Upload, Car, Users, Loader2 } from 'lucide-react';
+import { Upload, Car, Users, Loader2, CheckCircle2, AlertCircle, ArrowLeft } from 'lucide-react';
 import { canonicalOwnershipType } from '@/lib/vehicleOwnership';
 import { normalizePlateNumber } from '@/lib/plateNumber';
 import { formatSupabaseError } from '@/lib/supabaseError';
@@ -14,13 +14,26 @@ import {
   FLEET_EXCEL_IMPORT_EVENT,
   persistFleetExcelImportTimestamp,
 } from '@/lib/fleetExcelImportStorage';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 // ─── helpers ───
 
 const parseExcelDate = (value: any): string | null => {
   if (!value) return null;
   if (typeof value === 'number') {
-    // Excel serial date
     const date = XLSX.SSF.parse_date_code(value);
     if (date) {
       const y = date.y;
@@ -29,15 +42,14 @@ const parseExcelDate = (value: any): string | null => {
       return `${y}-${m}-${d}`;
     }
   }
-  const str = String(value).trim();
-  // Try M/D/YY or M/D/YYYY
-  const parts = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  const s = String(value).trim();
+  const parts = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
   if (parts) {
     let year = parseInt(parts[3]);
     if (year < 100) year += 2000;
     return `${year}-${String(parseInt(parts[1])).padStart(2, '0')}-${String(parseInt(parts[2])).padStart(2, '0')}`;
   }
-  return str || null;
+  return s || null;
 };
 
 const num = (v: any): number | null => {
@@ -57,8 +69,6 @@ const bool = (v: any): boolean => {
   return false;
 };
 
-// ─── Normalize row keys ───
-// Strip extra whitespace, normalize apostrophes, and trim
 const normalizeKey = (key: string): string =>
   key.replace(/[\u2018\u2019\u05F3'`׳]/g, "'").replace(/\s+/g, ' ').trim();
 
@@ -115,100 +125,294 @@ const mapVehicleRow = (rawRow: Record<string, any>) => {
   };
 };
 
-// ─── Driver field aliases: each DB field → array of accepted Hebrew column names ───
+// ─── Driver field definitions for the mapping wizard ───
 
-const DRIVER_COLUMN_ALIASES: Record<string, string[]> = {
-  full_name: ['שם נהג', 'שם מלא', 'שם'],
-  id_number: ["מספר ת.ז", "ת.ז", "תעודת זהות", "ת.ז.", "מס' ת.ז", "מס' עובד", 'מספר עובד', 'קוד נהג'],
-  phone: ['טלפון', 'נייד', 'נייד נהג', 'מספר טלפון', 'פלאפון'],
-  email: ['מייל', 'אימייל', 'דוא"ל', 'email'],
-  license_expiry: ['תוקף רישיון', 'תוקף רשיון', "ת.חידוש רשיון", 'תאריך חידוש רשיון', 'תאריך בדיקת רישיון', 'רישיון עד'],
-  safety_training_date: ['תאריך השתלמות', 'השתלמות אחרונה', 'הדרכת בטיחות'],
-  department: ['מחלקה'],
-  address: ['כתובת', 'כתובת1', 'רחוב'],
-  driver_code: ['קוד נהג'],
-  is_active: ['פעיל=1 לא פעיל=0', 'פעיל', 'סטטוס'],
-  employee_number: ["מס' עובד", 'מספר עובד'],
-  work_start_date: ['תאריך התחלת עבודה', 'תאריך תחילת עבודה'],
-  city: ['עיר'],
-  note1: ['הערה 1'],
-  note2: ['הערה 2'],
-  rating: ['דירוג'],
-  division: ['אגף', 'מחוז'],
-  eligibility: ['זכאות', 'כשירות'],
-  area: ['שטח', 'אזור'],
-  group_name: ['קבוצה'],
-  group_code: ['קוד קבוצה'],
-  job_title: ['תפקיד'],
-  license_number: ['מספר רשיון', 'מספר רישיון', 'רישוי'],
-};
+interface DriverFieldDef {
+  dbField: string;
+  label: string;
+  aliases: string[];
+  required: boolean;
+  type: 'text' | 'date' | 'boolean';
+}
 
-const DRIVER_REQUIRED_FIELDS = ['full_name', 'id_number'] as const;
+const DRIVER_FIELDS: DriverFieldDef[] = [
+  { dbField: 'full_name', label: 'שם מלא', aliases: ['שם נהג', 'שם מלא', 'שם'], required: true, type: 'text' },
+  { dbField: 'id_number', label: 'מספר ת.ז / מספר עובד', aliases: ["מספר ת.ז", "ת.ז", "תעודת זהות", "ת.ז.", "מס' ת.ז", "מס' עובד", 'מספר עובד', 'קוד נהג'], required: true, type: 'text' },
+  { dbField: 'phone', label: 'טלפון', aliases: ['טלפון', 'נייד', 'נייד נהג', 'מספר טלפון', 'פלאפון'], required: false, type: 'text' },
+  { dbField: 'email', label: 'אימייל', aliases: ['מייל', 'אימייל', 'דוא"ל', 'email'], required: false, type: 'text' },
+  { dbField: 'license_expiry', label: 'תוקף רישיון נהיגה', aliases: ['תוקף רישיון', 'תוקף רשיון', "ת.חידוש רשיון", 'תאריך חידוש רשיון', 'תאריך בדיקת רישיון', 'רישיון עד'], required: false, type: 'date' },
+  { dbField: 'safety_training_date', label: 'תאריך הדרכת בטיחות', aliases: ['תאריך השתלמות', 'השתלמות אחרונה', 'הדרכת בטיחות'], required: false, type: 'date' },
+  { dbField: 'department', label: 'מחלקה', aliases: ['מחלקה'], required: false, type: 'text' },
+  { dbField: 'address', label: 'כתובת', aliases: ['כתובת', 'כתובת1', 'רחוב'], required: false, type: 'text' },
+  { dbField: 'driver_code', label: 'קוד נהג', aliases: ['קוד נהג'], required: false, type: 'text' },
+  { dbField: 'is_active', label: 'פעיל', aliases: ['פעיל=1 לא פעיל=0', 'פעיל', 'סטטוס'], required: false, type: 'boolean' },
+  { dbField: 'employee_number', label: 'מספר עובד', aliases: ["מס' עובד", 'מספר עובד'], required: false, type: 'text' },
+  { dbField: 'work_start_date', label: 'תאריך תחילת עבודה', aliases: ['תאריך התחלת עבודה', 'תאריך תחילת עבודה'], required: false, type: 'date' },
+  { dbField: 'city', label: 'עיר', aliases: ['עיר'], required: false, type: 'text' },
+  { dbField: 'note1', label: 'הערה 1', aliases: ['הערה 1'], required: false, type: 'text' },
+  { dbField: 'note2', label: 'הערה 2', aliases: ['הערה 2'], required: false, type: 'text' },
+  { dbField: 'rating', label: 'דירוג', aliases: ['דירוג'], required: false, type: 'text' },
+  { dbField: 'division', label: 'אגף / מחוז', aliases: ['אגף', 'מחוז'], required: false, type: 'text' },
+  { dbField: 'eligibility', label: 'זכאות', aliases: ['זכאות', 'כשירות'], required: false, type: 'text' },
+  { dbField: 'area', label: 'אזור', aliases: ['שטח', 'אזור'], required: false, type: 'text' },
+  { dbField: 'group_name', label: 'קבוצה', aliases: ['קבוצה'], required: false, type: 'text' },
+  { dbField: 'group_code', label: 'קוד קבוצה', aliases: ['קוד קבוצה'], required: false, type: 'text' },
+  { dbField: 'job_title', label: 'תפקיד', aliases: ['תפקיד'], required: false, type: 'text' },
+  { dbField: 'license_number', label: 'מספר רישיון', aliases: ['מספר רשיון', 'מספר רישיון', 'רישוי'], required: false, type: 'text' },
+];
 
-const DRIVER_EXPECTED_COLUMNS_DISPLAY: Record<string, string> = {
-  full_name: 'שם נהג',
-  id_number: 'מספר ת.ז / ת.ז / מספר עובד',
-  phone: 'טלפון / נייד',
-  email: 'מייל / אימייל',
-  license_expiry: 'תוקף רישיון / ת.חידוש רשיון',
-};
+type ColumnMapping = Record<string, string>; // dbField → excelColumn
 
-/** Resolve a DB field from a row using all known aliases */
-const resolveField = (row: Record<string, any>, aliases: string[]): any => {
-  for (const alias of aliases) {
-    if (row[alias] !== undefined && row[alias] !== null) return row[alias];
+/** Auto-match Excel columns to DB fields using known aliases */
+function autoMatchColumns(excelColumns: string[]): ColumnMapping {
+  const mapping: ColumnMapping = {};
+  const normalizedCols = excelColumns.map(normalizeKey);
+
+  for (const field of DRIVER_FIELDS) {
+    for (const alias of field.aliases) {
+      const idx = normalizedCols.indexOf(alias);
+      if (idx !== -1 && !Object.values(mapping).includes(excelColumns[idx])) {
+        mapping[field.dbField] = excelColumns[idx];
+        break;
+      }
+    }
   }
-  return undefined;
-};
+  return mapping;
+}
 
-const mapDriverRow = (rawRow: Record<string, any>) => {
+/** Map a raw row to DB fields using user-confirmed column mapping */
+function mapDriverRowWithMapping(rawRow: Record<string, any>, mapping: ColumnMapping) {
   const row = normalizeRow(rawRow);
-  return {
-  full_name: str(resolveField(row, DRIVER_COLUMN_ALIASES.full_name)) || '',
-  id_number: str(resolveField(row, DRIVER_COLUMN_ALIASES.id_number)) || '',
-  phone: str(resolveField(row, DRIVER_COLUMN_ALIASES.phone)),
-  email: str(resolveField(row, DRIVER_COLUMN_ALIASES.email)),
-  license_expiry: parseExcelDate(resolveField(row, DRIVER_COLUMN_ALIASES.license_expiry)) || new Date().toISOString().slice(0, 10),
-  safety_training_date: parseExcelDate(resolveField(row, DRIVER_COLUMN_ALIASES.safety_training_date)),
-  department: str(resolveField(row, DRIVER_COLUMN_ALIASES.department)),
-  address: str(resolveField(row, DRIVER_COLUMN_ALIASES.address)),
-  driver_code: str(resolveField(row, DRIVER_COLUMN_ALIASES.driver_code)),
-  is_active: bool(resolveField(row, DRIVER_COLUMN_ALIASES.is_active)),
-  employee_number: str(resolveField(row, DRIVER_COLUMN_ALIASES.employee_number)),
-  work_start_date: parseExcelDate(resolveField(row, DRIVER_COLUMN_ALIASES.work_start_date)),
-  city: str(resolveField(row, DRIVER_COLUMN_ALIASES.city)),
-  note1: str(resolveField(row, DRIVER_COLUMN_ALIASES.note1)),
-  note2: str(resolveField(row, DRIVER_COLUMN_ALIASES.note2)),
-  rating: str(resolveField(row, DRIVER_COLUMN_ALIASES.rating)),
-  division: str(resolveField(row, DRIVER_COLUMN_ALIASES.division)),
-  eligibility: str(resolveField(row, DRIVER_COLUMN_ALIASES.eligibility)),
-  area: str(resolveField(row, DRIVER_COLUMN_ALIASES.area)),
-  group_name: str(resolveField(row, DRIVER_COLUMN_ALIASES.group_name)),
-  group_code: str(resolveField(row, DRIVER_COLUMN_ALIASES.group_code)),
-  job_title: str(resolveField(row, DRIVER_COLUMN_ALIASES.job_title)),
-  license_number: str(resolveField(row, DRIVER_COLUMN_ALIASES.license_number)),
+
+  const getVal = (dbField: string): any => {
+    const excelCol = mapping[dbField];
+    if (!excelCol) return undefined;
+    const normalized = normalizeKey(excelCol);
+    return row[normalized] ?? undefined;
   };
-};
 
-/** Validate that the Excel has the required columns mapped correctly */
-const validateDriverColumns = (
-  sampleRow: Record<string, any>,
-): { ok: true } | { ok: false; missing: string[]; found: string[] } => {
-  const row = normalizeRow(sampleRow);
-  const excelColumns = Object.keys(row);
-  const missing: string[] = [];
+  const required = {
+    full_name: str(getVal('full_name')) || '',
+    id_number: str(getVal('id_number')) || '',
+    license_expiry: parseExcelDate(getVal('license_expiry')) || new Date().toISOString().slice(0, 10),
+    status: 'valid' as const,
+    is_active: getVal('is_active') !== undefined ? bool(getVal('is_active')) : true,
+  };
 
-  for (const reqField of DRIVER_REQUIRED_FIELDS) {
-    const aliases = DRIVER_COLUMN_ALIASES[reqField];
-    const matched = aliases.some((alias) => excelColumns.includes(alias));
-    if (!matched) missing.push(DRIVER_EXPECTED_COLUMNS_DISPLAY[reqField] || reqField);
-  }
+  const optional: Record<string, string | null> = {};
+  const set = (key: string, val: string | null) => { if (val) optional[key] = val; };
 
-  if (missing.length > 0) return { ok: false, missing, found: excelColumns };
-  return { ok: true };
-};
+  set('phone', str(getVal('phone')));
+  set('email', str(getVal('email')));
+  set('department', str(getVal('department')));
+  set('address', str(getVal('address')));
+  set('driver_code', str(getVal('driver_code')));
+  set('employee_number', str(getVal('employee_number')));
+  set('city', str(getVal('city')));
+  set('note1', str(getVal('note1')));
+  set('note2', str(getVal('note2')));
+  set('rating', str(getVal('rating')));
+  set('division', str(getVal('division')));
+  set('eligibility', str(getVal('eligibility')));
+  set('area', str(getVal('area')));
+  set('group_name', str(getVal('group_name')));
+  set('group_code', str(getVal('group_code')));
+  set('job_title', str(getVal('job_title')));
+  set('license_number', str(getVal('license_number')));
 
-// ─── Component ───
+  const safetyDate = parseExcelDate(getVal('safety_training_date'));
+  if (safetyDate) optional.safety_training_date = safetyDate;
+
+  const workStart = parseExcelDate(getVal('work_start_date'));
+  if (workStart) optional.work_start_date = workStart;
+
+  return { ...required, ...optional };
+}
+
+// ─── Mapping Wizard Dialog ───
+
+interface MappingWizardProps {
+  open: boolean;
+  onClose: () => void;
+  excelColumns: string[];
+  sampleRows: Record<string, any>[];
+  totalRows: number;
+  onConfirm: (mapping: ColumnMapping) => void;
+}
+
+function ColumnMappingWizard({ open, onClose, excelColumns, sampleRows, totalRows, onConfirm }: MappingWizardProps) {
+  const [mapping, setMapping] = useState<ColumnMapping>(() => autoMatchColumns(excelColumns));
+
+  const handleFieldChange = (dbField: string, excelCol: string) => {
+    setMapping((prev) => {
+      const next = { ...prev };
+      if (excelCol === '__none__') {
+        delete next[dbField];
+      } else {
+        next[dbField] = excelCol;
+      }
+      return next;
+    });
+  };
+
+  const requiredMissing = DRIVER_FIELDS
+    .filter((f) => f.required && !mapping[f.dbField])
+    .map((f) => f.label);
+
+  const canConfirm = requiredMissing.length === 0;
+
+  const formatSample = (col: string) => {
+    const val = sampleRows[0]?.[col];
+    if (val === null || val === undefined) return '—';
+    return String(val).slice(0, 30);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" dir="rtl">
+        <DialogHeader>
+          <DialogTitle className="text-xl">מיפוי עמודות — טעינת נהגים</DialogTitle>
+          <DialogDescription>
+            זוהו {excelColumns.length} עמודות ו-{totalRows} שורות בקובץ. בדוק את המיפוי ותקן במידת הצורך.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-1 mt-4">
+          {DRIVER_FIELDS.filter((f) => f.required || mapping[f.dbField]).map((field) => {
+            const matched = mapping[field.dbField];
+            return (
+              <div key={field.dbField} className="flex items-center gap-3 p-2 rounded-md border border-border/50 bg-card/30">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    {matched ? (
+                      <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                    ) : field.required ? (
+                      <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
+                    ) : (
+                      <div className="h-4 w-4 shrink-0" />
+                    )}
+                    <span className={`text-sm font-medium ${field.required ? 'text-primary' : ''}`}>
+                      {field.label}
+                      {field.required && ' *'}
+                    </span>
+                  </div>
+                  {matched && (
+                    <span className="text-xs text-muted-foreground mr-6 block truncate">
+                      דוגמה: {formatSample(matched)}
+                    </span>
+                  )}
+                </div>
+                <div className="w-48 shrink-0">
+                  <Select
+                    value={matched || '__none__'}
+                    onValueChange={(val) => handleFieldChange(field.dbField, val)}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="בחר עמודה..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">— לא ממופה —</SelectItem>
+                      {excelColumns.map((col) => (
+                        <SelectItem key={col} value={col}>
+                          {col}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Show unmapped optional fields as expandable */}
+          {DRIVER_FIELDS.some((f) => !f.required && !mapping[f.dbField]) && (
+            <details className="mt-2">
+              <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
+                שדות נוספים לא ממופים ({DRIVER_FIELDS.filter((f) => !f.required && !mapping[f.dbField]).length})
+              </summary>
+              <div className="space-y-1 mt-2">
+                {DRIVER_FIELDS.filter((f) => !f.required && !mapping[f.dbField]).map((field) => (
+                  <div key={field.dbField} className="flex items-center gap-3 p-2 rounded-md border border-border/30">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm text-muted-foreground">{field.label}</span>
+                    </div>
+                    <div className="w-48 shrink-0">
+                      <Select
+                        value="__none__"
+                        onValueChange={(val) => handleFieldChange(field.dbField, val)}
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="בחר עמודה..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">— לא ממופה —</SelectItem>
+                          {excelColumns.map((col) => (
+                            <SelectItem key={col} value={col}>
+                              {col}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+
+        {/* Preview table */}
+        {sampleRows.length > 0 && (
+          <div className="mt-4 border rounded-md overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/50">
+                <tr>
+                  <th className="px-2 py-1.5 text-right font-medium">#</th>
+                  {Object.entries(mapping).map(([dbField, excelCol]) => (
+                    <th key={dbField} className="px-2 py-1.5 text-right font-medium">
+                      {DRIVER_FIELDS.find((f) => f.dbField === dbField)?.label || dbField}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sampleRows.slice(0, 3).map((row, i) => (
+                  <tr key={i} className="border-t border-border/50">
+                    <td className="px-2 py-1 text-muted-foreground">{i + 1}</td>
+                    {Object.entries(mapping).map(([dbField, excelCol]) => (
+                      <td key={dbField} className="px-2 py-1 truncate max-w-[120px]">
+                        {row[excelCol] != null ? String(row[excelCol]).slice(0, 20) : '—'}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {requiredMissing.length > 0 && (
+          <p className="text-sm text-destructive mt-3">
+            שדות חובה לא ממופים: {requiredMissing.join(', ')}
+          </p>
+        )}
+
+        <div className="flex gap-3 mt-4 justify-end">
+          <Button variant="ghost" onClick={onClose}>ביטול</Button>
+          <Button
+            onClick={() => onConfirm(mapping)}
+            disabled={!canConfirm}
+          >
+            <ArrowLeft className="h-4 w-4 ml-2" />
+            אישור וטעינת {totalRows} נהגים
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Main Component ───
 
 export default function FleetDataImporter() {
   const [loadingVehicles, setLoadingVehicles] = useState(false);
@@ -218,6 +422,12 @@ export default function FleetDataImporter() {
   const queryClient = useQueryClient();
   const { profile, activeOrgId } = useAuth();
   const effectiveOrgId = (activeOrgId ?? profile?.org_id ?? '').trim() || null;
+
+  // Wizard state
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardExcelColumns, setWizardExcelColumns] = useState<string[]>([]);
+  const [wizardSampleRows, setWizardSampleRows] = useState<Record<string, any>[]>([]);
+  const [wizardAllRows, setWizardAllRows] = useState<Record<string, any>[]>([]);
 
   const readExcel = (file: File): Promise<Record<string, any>[]> => {
     return new Promise((resolve, reject) => {
@@ -260,12 +470,11 @@ export default function FleetDataImporter() {
       for (let i = 0; i < mapped.length; i += chunkSize) {
         const slice = mapped.slice(i, i + chunkSize);
         const chunk = effectiveOrgId ? slice.map((row) => ({ ...row, org_id: effectiveOrgId })) : slice;
-        const { error } = await supabase.from('vehicles').upsert(chunk as any, { onConflict: 'plate_number' });
+        const { error } = await supabase.from('vehicles').upsert(chunk as any, { onConflict: 'plate_number', defaultToNull: false });
         if (error) throw error;
         inserted += chunk.length;
       }
 
-      // עדכון localStorage כדי שהדשבורד יתעדכן אוטומטית
       localStorage.setItem('vehicles_data', JSON.stringify(mapped));
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
@@ -293,39 +502,40 @@ export default function FleetDataImporter() {
     }
   };
 
-  const handleDriverImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Step 1: Parse file and open mapping wizard
+  const handleDriverFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setLoadingDrivers(true);
 
     try {
       const rows = await readExcel(file);
-
       if (rows.length === 0) {
         toast({ title: 'הקובץ ריק — לא נמצאו שורות', variant: 'destructive' });
         return;
       }
 
-      const validation = validateDriverColumns(rows[0]);
-      if (!validation.ok) {
-        const foundStr = validation.found.join(', ');
-        const missingStr = validation.missing.join('\n');
-        toast({
-          title: 'עמודות חובה חסרות בקובץ',
-          description:
-            `העמודות הבאות חסרות או לא זוהו:\n${missingStr}\n\n` +
-            `עמודות שזוהו בקובץ: ${foundStr}\n\n` +
-            `שמות עמודות נתמכים:\n` +
-            Object.entries(DRIVER_EXPECTED_COLUMNS_DISPLAY)
-              .map(([, label]) => `• ${label}`)
-              .join('\n'),
-          variant: 'destructive',
-        });
-        return;
-      }
+      const columns = Object.keys(rows[0] || {});
+      setWizardExcelColumns(columns);
+      setWizardSampleRows(rows.slice(0, 5));
+      setWizardAllRows(rows);
+      setWizardOpen(true);
+    } catch (err: any) {
+      toast({ title: 'שגיאה בקריאת הקובץ', description: err?.message || '', variant: 'destructive' });
+    } finally {
+      if (driverInputRef.current) driverInputRef.current.value = '';
+    }
+  };
+
+  // Step 2: User confirmed the mapping — execute import
+  const executeDriverImport = useCallback(async (mapping: ColumnMapping) => {
+    setWizardOpen(false);
+    setLoadingDrivers(true);
+
+    try {
+      const rows = wizardAllRows;
 
       const mapped = rows
-        .map(mapDriverRow)
+        .map((row) => mapDriverRowWithMapping(row, mapping))
         .filter((d) => d.full_name && d.id_number);
 
       if (mapped.length === 0) {
@@ -338,17 +548,37 @@ export default function FleetDataImporter() {
       }
 
       const skipped = rows.length - mapped.length;
-
-      const chunkSize = 500;
+      const chunkSize = 200;
       let inserted = 0;
 
       for (let i = 0; i < mapped.length; i += chunkSize) {
         const slice = mapped.slice(i, i + chunkSize);
-        const chunk = effectiveOrgId ? slice.map((row) => ({ ...row, org_id: effectiveOrgId })) : slice;
-        const { error } = await supabase.from('drivers').upsert(chunk as any, {
-          onConflict: effectiveOrgId ? 'id_number,org_id' : 'id_number',
+        const chunk = slice.map((row) => ({
+          ...row,
+          ...(effectiveOrgId ? { org_id: effectiveOrgId } : {}),
+        }));
+
+        // Use RPC for reliable upsert (avoids PostgREST id=NULL bug)
+        const { error: rpcError } = await supabase.rpc('bulk_upsert_drivers', {
+          drivers: chunk,
         });
-        if (error) throw error;
+
+        if (rpcError) {
+          // Fallback: if RPC doesn't exist, try direct insert with ignoreDuplicates
+          if (/function.*not exist|could not find/i.test(rpcError.message || '')) {
+            for (const row of chunk) {
+              const { error: rowErr } = await supabase.from('drivers').insert(row as any).select('id').maybeSingle();
+              if (rowErr && /duplicate|unique|23505/i.test(rowErr.message + rowErr.code)) {
+                const conflict = effectiveOrgId ? { id_number: row.id_number, org_id: effectiveOrgId } : { id_number: row.id_number };
+                await supabase.from('drivers').update(row as any).match(conflict);
+              } else if (rowErr) {
+                throw rowErr;
+              }
+            }
+          } else {
+            throw rpcError;
+          }
+        }
         inserted += chunk.length;
       }
 
@@ -367,11 +597,22 @@ export default function FleetDataImporter() {
       toast({ title: `נטענו ${inserted} נהגים בהצלחה${skippedNote}` });
     } catch (err: any) {
       const rawMsg = err?.message || '';
-      const hebrewHint = /ON CONFLICT/i.test(rawMsg)
-        ? 'שגיאת מסד נתונים: חסר אילוץ ייחודי (unique constraint). יש להריץ את מיגרציית drivers_unique_id_number_org_id.'
-        : /not-null/i.test(rawMsg)
-          ? 'שדה חובה חסר (שם נהג או מספר ת.ז ריק).'
-          : rawMsg;
+      const code = err?.code || '';
+      let hebrewHint: string;
+      if (/ON CONFLICT/i.test(rawMsg)) {
+        hebrewHint = 'שגיאת מסד נתונים: חסר אילוץ ייחודי (unique constraint). יש להריץ את מיגרציית drivers_unique_id_number_org_id.';
+      } else if (/not-null/i.test(rawMsg) || code === '23502') {
+        const colMatch = rawMsg.match(/column\s+"([^"]+)"/);
+        const colName = colMatch?.[1] || '';
+        hebrewHint = colName
+          ? `שדה חובה "${colName}" ריק — לא ניתן לשמור. (${rawMsg})`
+          : `שדה חובה חסר במסד הנתונים. (${rawMsg})`;
+      } else if (/duplicate key|unique/i.test(rawMsg) || code === '23505') {
+        hebrewHint = `שורה כפולה בקובץ או במסד הנתונים. (${rawMsg})`;
+      } else {
+        hebrewHint = rawMsg;
+      }
+      console.error('[DriverImport] upsert error:', err);
       toast({
         title: 'שגיאה בטעינת נהגים',
         description: hebrewHint,
@@ -379,9 +620,11 @@ export default function FleetDataImporter() {
       });
     } finally {
       setLoadingDrivers(false);
-      if (driverInputRef.current) driverInputRef.current.value = '';
+      setWizardAllRows([]);
+      setWizardSampleRows([]);
+      setWizardExcelColumns([]);
     }
-  };
+  }, [wizardAllRows, effectiveOrgId, queryClient]);
 
   return (
     <div className="space-y-4">
@@ -445,7 +688,7 @@ export default function FleetDataImporter() {
             type="file"
             accept=".xlsx,.xls,.csv"
             className="hidden"
-            onChange={handleDriverImport}
+            onChange={handleDriverFileSelect}
           />
           <Button
             onClick={() => driverInputRef.current?.click()}
@@ -465,32 +708,18 @@ export default function FleetDataImporter() {
               </>
             )}
           </Button>
-          <details className="text-xs text-muted-foreground">
-            <summary className="cursor-pointer hover:text-foreground transition-colors">
-              שמות עמודות נתמכים (לחץ להרחבה)
-            </summary>
-            <div className="mt-2 space-y-1 bg-card/60 border border-border rounded-md p-3">
-              <p className="font-medium text-foreground/80 mb-1">
-                עמודות חובה מסומנות בכוכבית *
-              </p>
-              {Object.entries(DRIVER_COLUMN_ALIASES).map(([field, aliases]) => {
-                const isRequired = (DRIVER_REQUIRED_FIELDS as readonly string[]).includes(field);
-                return (
-                  <div key={field} className="flex flex-wrap items-baseline gap-1">
-                    <span className={isRequired ? 'font-semibold text-primary' : ''}>
-                      {DRIVER_EXPECTED_COLUMNS_DISPLAY[field] || aliases[0]}
-                      {isRequired && ' *'}:
-                    </span>
-                    <span dir="rtl" className="text-muted-foreground">
-                      {aliases.join(' / ')}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </details>
         </CardContent>
       </Card>
+
+      {/* Column Mapping Wizard Dialog */}
+      <ColumnMappingWizard
+        open={wizardOpen}
+        onClose={() => setWizardOpen(false)}
+        excelColumns={wizardExcelColumns}
+        sampleRows={wizardSampleRows}
+        totalRows={wizardAllRows.length}
+        onConfirm={executeDriverImport}
+      />
     </div>
   );
 }
