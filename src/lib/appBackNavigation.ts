@@ -29,7 +29,7 @@ export function resolveLogicalBackTarget(pathname: string): string {
   if (/^\/drivers\/[^/]+$/.test(p)) return '/drivers';
   if (p === '/drivers') return '/';
 
-  if (p === '/procedure6-complaints') return '/compliance';
+  if (p === '/procedure6-complaints') return '/';
   if (p === '/compliance') return '/';
 
   if (p === '/maintenance/add') return '/';

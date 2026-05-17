@@ -1,8 +1,7 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { FleetHudPageShell } from '@/components/FleetHudPageShell';
-import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { useDrivers } from '@/hooks/useDrivers';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -16,33 +15,20 @@ import {
 } from '@/components/ui/table';
 import { Users, CalendarClock, ArrowLeftRight } from 'lucide-react';
 
-type DriverReportRow = {
-  id: string;
-  full_name: string;
-  id_number: string;
-  license_expiry: string;
-  status: 'valid' | 'warning' | 'expired';
-};
-
 function formatDate(dateValue: string) {
   return new Date(dateValue).toLocaleDateString('he-IL');
 }
 
 export default function ReportsPage() {
-  const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['reports', 'drivers-license-expiry'],
-    queryFn: async () => {
-      const { data: rows, error } = await supabase
-        .from('drivers')
-        .select('id, full_name, id_number, license_expiry, status')
-        .order('license_expiry', { ascending: true });
+  const { data, isLoading, isError, error } = useDrivers();
 
-      if (error) throw error;
-      return (rows ?? []) as DriverReportRow[];
-    },
-  });
-
-  const drivers = data ?? [];
+  const drivers = useMemo(
+    () =>
+      [...(data ?? [])].sort(
+        (a, b) => new Date(a.license_expiry).getTime() - new Date(b.license_expiry).getTime(),
+      ),
+    [data],
+  );
 
   const activeDriversCount = useMemo(
     () => drivers.filter((driver) => driver.status !== 'expired').length,
