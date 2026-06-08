@@ -36,6 +36,8 @@ export default function AddVehiclePage() {
   const [testExpiry, setTestExpiry] = useState('');
   const [insuranceExpiry, setInsuranceExpiry] = useState('');
   const [nextMaintenanceDate, setNextMaintenanceDate] = useState('');
+  const [registrationYear, setRegistrationYear] = useState('');
+  const [roadAscentYear, setRoadAscentYear] = useState('');
 
   // Auto-fetch pricing data based on codes
   const { data: pricingData } = usePricingLookup(
@@ -79,7 +81,7 @@ export default function AddVehiclePage() {
         plate_number: plateRaw,
         manufacturer: formData.get('manufacturer') as string,
         model: formData.get('model') as string,
-        year: parseInt(formData.get('year') as string),
+        year: registrationYear ? parseInt(registrationYear, 10) : parseInt(formData.get('year') as string),
         current_odometer: parseInt(formData.get('current_odometer') as string) || 0,
         next_maintenance_km: formData.get('next_maintenance_km') 
           ? parseInt(formData.get('next_maintenance_km') as string) 
@@ -114,8 +116,8 @@ export default function AddVehiclePage() {
         is_active: isActive,
         assigned_driver_id: null,
         pickup_date: pickupDate.trim() || null,
-        road_ascent_year: formData.get('road_ascent_year') 
-          ? parseInt(formData.get('road_ascent_year') as string) 
+        road_ascent_year: roadAscentYear
+          ? parseInt(roadAscentYear, 10)
           : null,
         road_ascent_month: formData.get('road_ascent_month')
           ? parseInt(formData.get('road_ascent_month') as string)
@@ -232,6 +234,12 @@ export default function AddVehiclePage() {
                     max={new Date().getFullYear() + 1}
                     placeholder="2023"
                     required
+                    value={registrationYear}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setRegistrationYear(next);
+                      setRoadAscentYear(next);
+                    }}
                   />
                 </div>
 
@@ -382,6 +390,8 @@ export default function AddVehiclePage() {
                     min="1990"
                     max={new Date().getFullYear() + 1}
                     placeholder="2023"
+                    value={roadAscentYear}
+                    onChange={(e) => setRoadAscentYear(e.target.value)}
                   />
                 </div>
 

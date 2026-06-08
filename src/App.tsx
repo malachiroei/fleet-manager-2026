@@ -41,7 +41,9 @@ const ReplacementVehicleHubPage = lazy(() => import("./pages/ReplacementVehicleH
 const AdminSettingsPage = lazy(() => import("./pages/AdminSettingsPage"));
 const AdminDashboardPage = lazy(() => import("./pages/AdminDashboardPage"));
 const AdminUsersPage = lazy(() => import("./pages/AdminUsersPage"));
-const AdminCompliancePage = lazy(() => import("./pages/AdminCompliancePage"));
+import AdminCompliancePageEager from "./pages/AdminCompliancePage";
+const AdminCompliancePageLazy = lazy(() => import("./pages/AdminCompliancePage"));
+const AdminCompliancePage = import.meta.env.DEV ? AdminCompliancePageEager : AdminCompliancePageLazy;
 const OrgSettingsPage = lazy(() => import("./pages/OrgSettingsPage"));
 const TeamManagementPage = lazy(() => import("./pages/TeamManagementPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));

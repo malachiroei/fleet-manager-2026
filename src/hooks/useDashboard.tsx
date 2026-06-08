@@ -80,6 +80,18 @@ function complianceExpiryIsoDate(expiryDate: string | null | undefined): string 
   return s.length >= 10 ? s.slice(0, 10) : s;
 }
 
+function complianceRawMissing(raw: unknown): boolean {
+  if (raw == null) return true;
+  const s = String(raw).trim();
+  return s === '' || s === '—' || s.toLowerCase() === 'null';
+}
+
+function isFleetRowActiveForAlerts(row: { is_active?: boolean | null | string | number }): boolean {
+  const v = row.is_active;
+  if (v === false || v === 0 || v === '0' || String(v).toLowerCase() === 'false') return false;
+  return true;
+}
+
 function complianceDedupeSlotFromDb(
   type: 'vehicle' | 'driver',
   entityId: string,
@@ -94,6 +106,10 @@ function complianceDedupeSlotFromDb(
     return null;
   }
   if (type === 'driver') {
+    if (/צילום רישיון \(חזית\)|license.*front/i.test(at)) return `d:${entityId}:lic_front`;
+    if (/צילום רישיון \(גב\)|license.*back/i.test(at)) return `d:${entityId}:lic_back`;
+    if (/מסמך הצהרת|health.*doc/i.test(at)) return `d:${entityId}:health_doc`;
+    if (/בדיקת רישיון|מבחן נהיגה/i.test(at)) return `d:${entityId}:practical_test`;
     if (/רישיון|license/i.test(at)) return `d:${entityId}:license`;
     if (/בריאות|health/i.test(at)) return `d:${entityId}:health`;
     if (/585/.test(at)) return `d:${entityId}:r585`;
@@ -127,6 +143,7 @@ async function appendDerivedComplianceFromFleetDates(
     plate_number: string | null;
     org_id: string | null;
     assigned_driver_id: string | null;
+    is_active: boolean | null;
     road_ascent_month: number | null;
     road_ascent_year: number | null;
     test_expiry: string | null;
@@ -139,9 +156,14 @@ async function appendDerivedComplianceFromFleetDates(
     full_name: string | null;
     org_id: string | null;
     status: string | null;
+    is_active: boolean | null;
     license_expiry: string | null;
     health_declaration_date: string | null;
     regulation_585b_date: string | null;
+    license_front_url: string | null;
+    license_back_url: string | null;
+    health_declaration_url: string | null;
+    practical_driving_test_date: string | null;
   };
 
   let vRows: VRow[] = [];
@@ -149,7 +171,7 @@ async function appendDerivedComplianceFromFleetDates(
     const { data, error } = await supabase
       .from('vehicles')
       .select(
-        'id, plate_number, org_id, assigned_driver_id, road_ascent_month, road_ascent_year, test_expiry, insurance_expiry, next_inspection_date, next_maintenance_date',
+        'id, plate_number, org_id, assigned_driver_id, is_active, road_ascent_month, road_ascent_year, test_expiry, insurance_expiry, next_inspection_date, next_maintenance_date',
       )
       .eq('org_id', effectiveOrgId)
       .eq('assigned_driver_id', scopedDriverId);
@@ -161,7 +183,7 @@ async function appendDerivedComplianceFromFleetDates(
   } else {
     let vq = supabase
       .from('vehicles')
-      .select('id, plate_number, org_id, assigned_driver_id, road_ascent_month, road_ascent_year, test_expiry, insurance_expiry, next_inspection_date, next_maintenance_date')
+      .select('id, plate_number, org_id, assigned_driver_id, is_active, road_ascent_month, road_ascent_year, test_expiry, insurance_expiry, next_inspection_date, next_maintenance_date')
       .eq('org_id', effectiveOrgId);
     const { data, error } = await vq;
     if (error) {
@@ -175,7 +197,7 @@ async function appendDerivedComplianceFromFleetDates(
   if (isDriverContextOnly && scopedDriverId) {
     const { data, error } = await supabase
       .from('drivers')
-      .select('id, full_name, org_id, status, license_expiry, health_declaration_date, regulation_585b_date')
+      .select('id, full_name, org_id, status, is_active, license_expiry, health_declaration_date, regulation_585b_date, license_front_url, license_back_url, health_declaration_url, practical_driving_test_date')
       .eq('id', scopedDriverId)
       .maybeSingle();
     if (error) {
@@ -186,7 +208,7 @@ async function appendDerivedComplianceFromFleetDates(
   } else {
     let dq = supabase
       .from('drivers')
-      .select('id, full_name, org_id, status, license_expiry, health_declaration_date, regulation_585b_date')
+      .select('id, full_name, org_id, status, is_active, license_expiry, health_declaration_date, regulation_585b_date, license_front_url, license_back_url, health_declaration_url, practical_driving_test_date')
       .eq('org_id', effectiveOrgId);
     const { data, error } = await dq;
     if (error) {
@@ -254,12 +276,41 @@ async function appendDerivedComplianceFromFleetDates(
     });
   };
 
+  const tryPushMissingVehicle = (
+    vid: string,
+    plateLabel: string,
+    slot: 'test' | 'insurance' | 'inspection' | 'maintenance',
+    rawValue: unknown,
+    alertLabel: string,
+  ) => {
+    if (!complianceRawMissing(rawValue)) return;
+    const cmpTk = slotToComplianceTaskKey[slot];
+    if (pendingVehicleAdminKeys.has(`${vid}::${cmpTk}`)) return;
+    const slotKey = `v:${vid}:${slot}`;
+    if (occupiedSlots.has(slotKey)) return;
+    occupiedSlots.add(slotKey);
+    out.push({
+      id: `derived:v:${vid}:missing_${slot}`,
+      entityId: vid,
+      type: 'vehicle',
+      name: plateLabel,
+      alertType: alertLabel,
+      expiryDate: '',
+      status: 'expired',
+    });
+  };
+
   for (const v of vRows) {
+    if (!isFleetRowActiveForAlerts(v)) continue;
     const plate = v.plate_number?.trim() || 'רכב';
     tryPushVehicle(v.id, plate, 'test', v.test_expiry, 'תוקף טסט');
     tryPushVehicle(v.id, plate, 'insurance', v.insurance_expiry, 'תוקף ביטוח');
     tryPushVehicle(v.id, plate, 'inspection', v.next_inspection_date, 'ביקורת תקופתית');
     tryPushVehicle(v.id, plate, 'maintenance', v.next_maintenance_date, 'טיפול');
+    tryPushMissingVehicle(v.id, plate, 'test', v.test_expiry, 'חסר תאריך תוקף טסט');
+    tryPushMissingVehicle(v.id, plate, 'insurance', v.insurance_expiry, 'חסר תאריך תוקף ביטוח');
+    tryPushMissingVehicle(v.id, plate, 'inspection', v.next_inspection_date, 'חסר תאריך ביקורת תקופתית');
+    tryPushMissingVehicle(v.id, plate, 'maintenance', v.next_maintenance_date, 'חסר תאריך טיפול');
   }
 
   const tryPushDriver = (
@@ -284,11 +335,40 @@ async function appendDerivedComplianceFromFleetDates(
     });
   };
 
+  const tryPushMissingDriver = (
+    d: DRow,
+    slot: string,
+    alertType: string,
+    rawValue: unknown,
+  ) => {
+    if (!complianceRawMissing(rawValue)) return;
+    const slotKey = `d:${d.id}:${slot}`;
+    if (occupiedSlots.has(slotKey)) return;
+    occupiedSlots.add(slotKey);
+    out.push({
+      id: `derived:d:${d.id}:missing_${slot}`,
+      entityId: d.id,
+      type: 'driver',
+      name: d.full_name?.trim() || 'נהג',
+      alertType,
+      expiryDate: '',
+      status: 'expired',
+    });
+  };
+
   for (const d of dRows) {
     if (String(d.status ?? '').trim().toLowerCase() === 'pending_approval') continue;
+    if (!isFleetRowActiveForAlerts(d)) continue;
     tryPushDriver(d, 'license', d.license_expiry, 'רישיון נהג');
     tryPushDriver(d, 'health', d.health_declaration_date, 'הצהרת בריאות');
     tryPushDriver(d, 'r585', d.regulation_585b_date, 'תקנה 585');
+    tryPushMissingDriver(d, 'missing_license', 'חסר תוקף רישיון נהיגה', d.license_expiry);
+    tryPushMissingDriver(d, 'missing_health', 'חסר תאריך הצהרת בריאות', d.health_declaration_date);
+    tryPushMissingDriver(d, 'missing_r585', 'חסר תאריך תקנה 585', d.regulation_585b_date);
+    tryPushMissingDriver(d, 'lic_front', 'חסר צילום רישיון (חזית)', d.license_front_url);
+    tryPushMissingDriver(d, 'lic_back', 'חסר צילום רישיון (גב)', d.license_back_url);
+    tryPushMissingDriver(d, 'health_doc', 'חסר מסמך הצהרת בריאות', d.health_declaration_url);
+    tryPushMissingDriver(d, 'practical_test', 'חסר תאריך בדיקת רישיון', d.practical_driving_test_date);
   }
 }
 

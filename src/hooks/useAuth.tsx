@@ -33,6 +33,12 @@ function resolveSignUpEmailRedirectUrl(): string {
   return `${window.location.origin}/auth`;
 }
 
+function resolveOAuthRedirectUrl(): string {
+  if (typeof window === 'undefined') return 'https://fleet-manager-pro.com/auth/callback';
+  if (isFleetManagerProHostname()) return 'https://fleet-manager-pro.com/auth/callback';
+  return `${window.location.origin}/auth/callback`;
+}
+
 /** ארגון ראשי מהפרופיל בלבד — מנהלי צי נעולים ל־`profiles.org_id`; רק בעל הפלטפורמה מחליף ארגון ב־UI. */
 function resolveProfileOrgIdForActiveSession(profile: Profile | null): string | null {
   return profile?.org_id?.trim() || null;
@@ -94,6 +100,7 @@ interface AuthContextType {
   /** רענון רשימת הארגונים בסוויצ'ר (משמש אחרי אישור/יצירה/הזמנת אדמין). */
   refreshMemberOrganizations: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signInWithGoogle: () => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
 }
@@ -615,6 +622,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error };
   };
 
+  const signInWithGoogle = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: resolveOAuthRedirectUrl(),
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
+      },
+    });
+    return { error };
+  };
+
   const signUp = async (email: string, password: string, fullName: string) => {
     try {
       const redirectUrl = resolveSignUpEmailRedirectUrl();
@@ -817,6 +838,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       refreshProfile,
       refreshMemberOrganizations,
       signIn,
+      signInWithGoogle,
       signUp,
       signOut
     }}>

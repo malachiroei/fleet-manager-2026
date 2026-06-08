@@ -85,7 +85,7 @@ export default function CompliancePage() {
           <Card className="border-destructive/50 bg-destructive/5">
             <CardContent className="p-4 text-center">
               <div className="text-3xl font-bold text-destructive">{expiredAlerts.length}</div>
-              <div className="text-sm text-muted-foreground">פג תוקף</div>
+              <div className="text-sm text-muted-foreground">דורש טיפול</div>
             </CardContent>
           </Card>
         </div>
@@ -99,7 +99,7 @@ export default function CompliancePage() {
             <CardContent className="py-12 text-center">
               <CheckCircle className="h-16 w-16 mx-auto text-success mb-4" />
               <h2 className="text-xl font-semibold mb-2">הכל תקין!</h2>
-              <p className="text-muted-foreground">אין פריטים שפג תוקף כרגע</p>
+              <p className="text-muted-foreground">אין פריטים שפג תוקף או חסרים נתונים כרגע</p>
             </CardContent>
           </Card>
         ) : (
@@ -107,7 +107,7 @@ export default function CompliancePage() {
             <CardHeader className="pb-2">
               <CardTitle className="text-lg flex items-center gap-2 text-destructive">
                 <AlertTriangle className="h-5 w-5" />
-                פג תוקף ({expiredAlerts.length})
+                דורש טיפול ({expiredAlerts.length})
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -129,7 +129,9 @@ export default function CompliancePage() {
                   <div className="text-left">
                     <StatusBadge status={alert.status} />
                     <div className="text-xs text-muted-foreground mt-1">
-                      {alert.expiryDate && new Date(alert.expiryDate).toLocaleDateString('he-IL')}
+                      {alert.expiryDate
+                        ? new Date(alert.expiryDate).toLocaleDateString('he-IL')
+                        : 'חסר נתון'}
                     </div>
                   </div>
                 </ExpiredAlertRow>

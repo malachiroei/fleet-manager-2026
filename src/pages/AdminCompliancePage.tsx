@@ -27,10 +27,11 @@ import {
 } from '@/components/ui/dialog';
 import { useAuth } from '@/hooks/useAuth';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
+import { useDrivers } from '@/hooks/useDrivers';
 import { useVehicles } from '@/hooks/useVehicles';
 import { supabase } from '@/integrations/supabase/client';
 import { invokeSupabaseEdgeFunction } from '@/lib/supabase/invokeEdgeFunction';
-import type { Driver, Vehicle } from '@/types/fleet';
+import type { Vehicle } from '@/types/fleet';
 import { FleetDatePicker } from '@/components/ui/FleetDatePicker';
 import { cn } from '@/lib/utils';
 import { Columns3, Loader2 } from 'lucide-react';
@@ -40,18 +41,21 @@ import {
   isPlatformSuperOwnerEmail,
   resolveSessionEmail,
 } from '@/lib/fleetBootstrapEmails';
-
-type ComplianceTabKey =
-  | 'annual_licensing'
-  | 'insurance'
-  | 'periodic_inspection'
-  | 'maintenance'
-  | 'driver_license'
-  | 'health_declaration'
-  | 'regulation_585';
-
-type TowerViewFilter = 'all' | 'custom_range' | 'expiring_soon' | 'urgent';
-type ComplianceSource = 'vehicle' | 'driver';
+import {
+  COMPLIANCE_RED_MAX_DAYS_REMAINING,
+  COMPLIANCE_YELLOW_MAX_DAYS_REMAINING,
+  complianceDueBand,
+  complianceDueRawForRow,
+  complianceRawMissing,
+  complianceRowHasMissingDue,
+  complianceRowPassesViewFilter,
+  daysUntil,
+  driverSummaryToComplianceRow,
+  dueIsoFromRaw,
+  type ComplianceSource,
+  type ComplianceTabKey,
+  type TowerViewFilter,
+} from '@/lib/complianceTowerFilters';
 /** v2: כולל מפתח סינתטי לעמודת «סטטוס שליחה»; v1 נטען פעם אחת וממיגרץ */
 const COMPLIANCE_COLUMNS_DEFAULTS_KEY = 'admin_compliance_default_columns_v2';
 const COMPLIANCE_COLUMNS_DEFAULTS_LEGACY_KEY = 'admin_compliance_default_columns_v1';
@@ -163,18 +167,6 @@ const FIXED_PICKER_KEYS = {
 
 /** שליחת בקשה זמינה רק עם עד N ימים לפני פקיעה (וכשפג) — למעלה מזה לא לוחצים. */
 const COMPLIANCE_SEND_MAX_DAYS_REMAINING = 60;
-
-/** תצוגת צבעים וביטוי «טיפול דחוף»: פג תוקף או עד כמה ימים נותרים כולל */
-const COMPLIANCE_RED_MAX_DAYS_REMAINING = 5;
-/** צהוב: מעל האדום ועד כמה ימים נותרים כולל */
-const COMPLIANCE_YELLOW_MAX_DAYS_REMAINING = 30;
-
-function complianceDueBand(dueDays: number | null): 'red' | 'yellow' | 'green' | null {
-  if (dueDays == null) return null;
-  if (dueDays < 0 || dueDays <= COMPLIANCE_RED_MAX_DAYS_REMAINING) return 'red';
-  if (dueDays <= COMPLIANCE_YELLOW_MAX_DAYS_REMAINING) return 'yellow';
-  return 'green';
-}
 
 const VEHICLE_KEYS: string[] = [
   'id', 'org_id', 'plate_number', 'manufacturer', 'model', 'year', 'current_odometer', 'next_maintenance_km',
@@ -303,28 +295,6 @@ function parseIsoDate(raw: unknown): Date | null {
   return Number.isNaN(d.getTime()) ? null : toStartOfDay(d);
 }
 
-function daysUntil(raw: unknown): number | null {
-  const target = parseIsoDate(raw);
-  if (!target) return null;
-  const now = toStartOfDay(new Date());
-  const targetDay = toStartOfDay(target);
-  return Math.round((targetDay.getTime() - now.getTime()) / 86_400_000);
-}
-
-/** תאריך יעד לחישוב תצוגה/סינון: ברישיון ב־pending — התאריך שהנהג הזין בטופס הציבורי */
-function complianceDueRawForRow(
-  tabKey: ComplianceTabKey,
-  dueField: string,
-  row: Record<string, unknown>,
-): unknown {
-  if (tabKey === 'driver_license') {
-    const st = String(row.status ?? '').trim().toLowerCase();
-    const p = String((row as { pending_license_expiry?: string | null }).pending_license_expiry ?? '').trim();
-    if (st === 'pending_approval' && p) return p;
-  }
-  return row[dueField];
-}
-
 /** סיבה לחסימת שליחה (אימייל / ממתין לחתימה / יותר מדי ימים לפני פקיעה) — null אם מותר לשלוח */
 function complianceRequestSendBarrier(
   tab: { key: ComplianceTabKey; dueField: string },
@@ -342,12 +312,6 @@ function complianceRequestSendBarrier(
       ? `שליחה זמינה רק עד ${COMPLIANCE_SEND_MAX_DAYS_REMAINING} יום לפני פקיעה (או אחרי פקיעת תוקף).`
       : null;
   return baseBarrier ?? farBarrier;
-}
-
-function dueIsoFromRaw(raw: unknown): string | null {
-  const d = parseIsoDate(raw);
-  if (!d) return null;
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function isExpiredRaw(raw: unknown): boolean {
@@ -560,11 +524,23 @@ function driverSystemStatusLabelHe(raw: unknown): string {
   return map[low] ?? s;
 }
 
-/** ערך חסר בטבלת ציות — מאפשר קישור לטופס השלמה */
-function complianceRawMissing(raw: unknown): boolean {
-  if (raw == null) return true;
-  const s = String(raw).trim();
-  return s === '' || s.toLowerCase() === 'null';
+function complianceRowMissingSummary(
+  tabKey: ComplianceTabKey,
+  dueField: string,
+  row: Record<string, unknown>,
+): string | null {
+  const parts: string[] = [];
+  const dueRaw = complianceDueRawForRow(tabKey, dueField, row);
+  if (complianceRawMissing(dueRaw)) parts.push(`חסר ${prettifyKey(dueField)}`);
+  if (tabKey === 'health_declaration' && complianceRawMissing(row.health_declaration_url)) {
+    parts.push('חסר מסמך');
+  }
+  if (tabKey === 'driver_license') {
+    if (complianceRawMissing(row.license_front_url)) parts.push('חסר צילום חזית');
+    if (complianceRawMissing(row.license_back_url)) parts.push('חסר צילום גב');
+    if (complianceRawMissing(row.practical_driving_test_date)) parts.push('חסר בדיקת רישיון');
+  }
+  return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 /** מזהה אלמנט ל־hash בלי # — לפי React Router */
@@ -926,9 +902,21 @@ function ComplianceTable<T extends Record<string, unknown>>({
               const dueDays = gate.dueDays;
               const sendBarrierMerged = gate.sendBarrierMerged;
               const pendingVehicleRen = gate.pendingRen;
+              const rowHasMissing = complianceRowHasMissingDue(
+                tabKey,
+                dueField,
+                row as Record<string, unknown>,
+              );
+              const missingSummary = complianceRowMissingSummary(
+                tabKey,
+                dueField,
+                row as Record<string, unknown>,
+              );
               const isExpired = dueDays != null && dueDays < 0;
               const band = complianceDueBand(dueDays);
-              const rowUrgent = band === 'red';
+              const rowUrgent = rowHasMissing || band === 'red';
+              const rowYellow = !rowHasMissing && band === 'yellow';
+              const rowGreen = !rowHasMissing && band === 'green';
               const awaitingEmp =
                 tabKey === 'health_declaration' &&
                 Boolean((row as { __awaitingEmployeeSignature?: boolean }).__awaitingEmployeeSignature);
@@ -944,7 +932,11 @@ function ComplianceTable<T extends Record<string, unknown>>({
                   className={cn(
                     rowUrgent
                       ? 'bg-red-500/10 transition-colors hover:bg-red-500/15'
-                      : 'transition-colors hover:bg-red-500/12',
+                      : rowYellow
+                        ? 'bg-amber-500/10 transition-colors hover:bg-amber-500/15'
+                        : rowGreen
+                          ? 'bg-emerald-500/10 transition-colors hover:bg-emerald-500/12'
+                          : 'transition-colors hover:bg-muted/30',
                     focusHighlightId && rowEntityId === focusHighlightId && 'ring-2 ring-inset ring-primary/60',
                   )}
                 >
@@ -1035,7 +1027,11 @@ function ComplianceTable<T extends Record<string, unknown>>({
                     })()}
                   </TableCell>
                   <TableCell className="text-right font-medium">
-                    {dueDays == null ? (
+                    {dueDays == null && rowHasMissing ? (
+                      <span className="inline-flex items-center rounded-full border border-red-400/40 bg-red-500/15 px-2 py-0.5 text-xs font-semibold text-red-300">
+                        חסר נתון
+                      </span>
+                    ) : dueDays == null ? (
                       '—'
                     ) : isExpired ? (
                       <span className="inline-flex items-center rounded-full border border-red-400/40 bg-red-500/15 px-2 py-0.5 text-xs font-semibold text-red-300">
@@ -1055,8 +1051,9 @@ function ComplianceTable<T extends Record<string, unknown>>({
                       </span>
                     )}
                   </TableCell>
-                  {/** עמודת «סטטוס»: ללא שכפול דחיפות/פג תוקף — רואים ב«ימים נותרו» */}
-                  <TableCell className="text-right text-muted-foreground">—</TableCell>
+                  <TableCell className="text-right text-muted-foreground text-xs">
+                    {missingSummary ?? '—'}
+                  </TableCell>
                   {showSendStatusColumn ? (
                     <TableCell className="text-right align-top">
                       {(() => {
@@ -1290,18 +1287,12 @@ function ComplianceTable<T extends Record<string, unknown>>({
 }
 
 export default function AdminCompliancePage() {
-  const { isAdmin, activeOrgId, profile, user, hasPermission } = useAuth();
-  const { effectiveOrgId } = useImpersonationFleetScope();
+  const { isAdmin, profile, user, hasPermission } = useAuth();
+  const { effectiveOrgId, fleetListReady } = useImpersonationFleetScope();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const sessionEmailCompliance = resolveSessionEmail(profile, user);
-  const platformOwnerCompliance = isPlatformSuperOwnerEmail(sessionEmailCompliance);
-  /** מקור אמת לסקופ צי; לבעל פלטפורמה — לא להסתמך על profile.org_id כשהמתג עדיין לא אתחל (ארגון שגוי). */
-  const orgId = (
-    platformOwnerCompliance
-      ? ((activeOrgId ?? '').trim() || effectiveOrgId)
-      : (effectiveOrgId ?? activeOrgId ?? profile?.org_id ?? null)
-  ) as string | null;
+  /** מקור אמת אחיד לרכבים + נהגים במרכז ציות (כמו useVehicles / useDrivers). */
+  const orgId = ((effectiveOrgId ?? '').trim() || null) as string | null;
 
   const canAccessAdminComplianceCenter = Boolean(
     hasPermission('compliance') ||
@@ -1327,27 +1318,28 @@ export default function AdminCompliancePage() {
   const [resendDriverSending, setResendDriverSending] = useState(false);
   const [approvingRenewalId, setApprovingRenewalId] = useState<string | null>(null);
   const { data: vehicles = [], isLoading: vehiclesLoading } = useVehicles();
-  const { data: drivers = [], isLoading: driversLoading, refetch: refetchDrivers } = useQuery({
-    queryKey: ['admin-compliance-drivers', orgId],
-    enabled: canAccessAdminComplianceCenter && orgId != null,
-    staleTime: 0,
-    queryFn: async () => {
-      if (!orgId) return [] as Driver[];
-      const { data, error } = await supabase
-        .from('drivers')
-        .select('*')
-        .eq('org_id', orgId)
-        .order('full_name');
-      if (error) throw error;
-      return (data ?? []) as Driver[];
-    },
-    refetchOnWindowFocus: true,
-    refetchInterval: 3000,
-  });
+  const {
+    data: driverSummaries = [],
+    isLoading: driversLoading,
+    refetch: refetchDrivers,
+  } = useDrivers();
+  const drivers = useMemo(
+    () => driverSummaries.map(driverSummaryToComplianceRow),
+    [driverSummaries],
+  );
 
   useEffect(() => {
     // ניקוי מיידי של רמזים עתיקים
     pruneExpiredTowerHintsPersisted();
+  }, []);
+
+  /** בפיתוח: מונע טעינת bundle ישן מ-Service Worker (נפוץ אחרי preview / ביקור בפרודקשן) */
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    void navigator.serviceWorker.getRegistrations().then((regs) => {
+      for (const reg of regs) void reg.unregister();
+    });
   }, []);
 
   type OpenComplianceRow = {
@@ -1595,7 +1587,6 @@ export default function AdminCompliancePage() {
     if (!canAccessAdminComplianceCenter || !orgId) return;
 
     const invalidateTower = () => {
-      void queryClient.invalidateQueries({ queryKey: ['admin-compliance-drivers', orgId] });
       void queryClient.invalidateQueries({ queryKey: ['admin-compliance-open-requests', orgId] });
       void queryClient.invalidateQueries({ queryKey: ['admin-pending-vehicle-renewals', orgId] });
       void queryClient.invalidateQueries({ queryKey: ['drivers'] });
@@ -1871,21 +1862,14 @@ export default function AdminCompliancePage() {
     for (const tab of TAB_DEFS) {
       const sourceRows = tab.source === 'vehicle' ? (vehicles as Array<Record<string, unknown>>) : (drivers as Array<Record<string, unknown>>);
       let rows = sourceRows
-        .filter((row) => {
-          const dueRaw = complianceDueRawForRow(tab.key, tab.dueField, row);
-          const dueIso = dueIsoFromRaw(dueRaw);
-          if (!dueIso) return false;
-          const d = daysUntil(dueRaw);
-          if (viewFilter === 'all') return true;
-          if (viewFilter === 'urgent') {
-            return d != null && complianceDueBand(d) === 'red';
-          }
-          if (viewFilter === 'expiring_soon') {
-            return d != null && complianceDueBand(d) === 'yellow';
-          }
-          return dueIso >= customMinIso && dueIso <= customMaxIso;
-        })
+        .filter((row) =>
+          complianceRowPassesViewFilter(tab, row, viewFilter, customMinIso, customMaxIso),
+        )
         .sort((a, b) => {
+          const aMissing = complianceRowHasMissingDue(tab.key, tab.dueField, a);
+          const bMissing = complianceRowHasMissingDue(tab.key, tab.dueField, b);
+          if (aMissing && !bMissing) return -1;
+          if (!aMissing && bMissing) return 1;
           const aIso = dueIsoFromRaw(complianceDueRawForRow(tab.key, tab.dueField, a)) ?? '9999-12-31';
           const bIso = dueIsoFromRaw(complianceDueRawForRow(tab.key, tab.dueField, b)) ?? '9999-12-31';
           return aIso.localeCompare(bIso);
@@ -1933,7 +1917,7 @@ export default function AdminCompliancePage() {
     openComplianceByEntityTask,
   ]);
 
-  const loading = vehiclesLoading || driversLoading;
+  const loading = vehiclesLoading || driversLoading || !fleetListReady;
   const focusHighlightId = searchParams.get('focus')?.trim() || undefined;
 
   useEffect(() => {
@@ -2296,9 +2280,9 @@ export default function AdminCompliancePage() {
       }
 
       await queryClient.invalidateQueries({ queryKey: ['admin-compliance-open-requests', orgIdRequired] });
-      await queryClient.invalidateQueries({ queryKey: ['admin-compliance-drivers', orgIdRequired] });
+      await queryClient.invalidateQueries({ queryKey: ['drivers'] });
       await queryClient.refetchQueries({ queryKey: ['admin-compliance-open-requests', orgIdRequired] });
-      await queryClient.refetchQueries({ queryKey: ['admin-compliance-drivers', orgIdRequired] });
+      await queryClient.refetchQueries({ queryKey: ['drivers'] });
       return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -2355,7 +2339,7 @@ export default function AdminCompliancePage() {
         }
 
         await queryClient.invalidateQueries({ queryKey: ['admin-compliance-open-requests', orgIdRequired] });
-        await queryClient.invalidateQueries({ queryKey: ['admin-compliance-drivers', orgIdRequired] });
+        await queryClient.invalidateQueries({ queryKey: ['drivers'] });
         setBulkSendSelectionIds(new Set());
 
         const failCount = rowsToSend.length - ok - skipped;
@@ -2781,7 +2765,7 @@ export default function AdminCompliancePage() {
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                צבעי שורות: אדום — פג תוקף עד {COMPLIANCE_RED_MAX_DAYS_REMAINING} ימים נותרים; צהוב —{' '}
+                צבעי שורות: אדום — פג תוקף, עד {COMPLIANCE_RED_MAX_DAYS_REMAINING} ימים נותרים, או שדה/מסמך חסר; צהוב —{' '}
                 {COMPLIANCE_RED_MAX_DAYS_REMAINING + 1}–{COMPLIANCE_YELLOW_MAX_DAYS_REMAINING} ימים; ירוק — מעל{' '}
                 {COMPLIANCE_YELLOW_MAX_DAYS_REMAINING} ימים.
               </p>
@@ -2944,13 +2928,17 @@ export default function AdminCompliancePage() {
                       hideLeasingPendingInlineActions={tab.key === 'annual_licensing' || tab.key === 'insurance'}
                       focusHighlightId={focusHighlightId}
                       emptyLabel={
-                        viewFilter === 'all'
-                          ? `לא נמצאו רשומות עם ${prettifyKey(tab.dueField)}`
-                          : viewFilter === 'urgent'
-                            ? `לא נמצאו רשומות בטווח טיפול דחוף עבור ${prettifyKey(tab.dueField)}`
-                            : viewFilter === 'expiring_soon'
-                              ? `לא נמצאו רשומות בטווח «קרוב לפקיעה» (${COMPLIANCE_RED_MAX_DAYS_REMAINING + 1}–${COMPLIANCE_YELLOW_MAX_DAYS_REMAINING} ימים נותרים) עבור ${prettifyKey(tab.dueField)}`
-                              : `לא נמצאו רשומות עם ${prettifyKey(tab.dueField)} בטווח המותאם (${customRangeFromDays} עד ${customRangeToDays} ימים מהיום)`
+                        tab.source === 'driver' && drivers.length === 0
+                          ? 'לא נמצאו נהגים בארגון הנוכחי — הוסף נהגים או בדוק את בחירת הארגון בכותרת'
+                          : tab.source === 'vehicle' && vehicles.length === 0
+                            ? 'לא נמצאו רכבים בארגון הנוכחי — הוסף רכבים או בדוק את בחירת הארגון בכותרת'
+                            : viewFilter === 'all'
+                              ? `לא נמצאו ${tab.source === 'driver' ? 'נהגים' : 'רכבים'} פעילים בארגון`
+                              : viewFilter === 'urgent'
+                                ? `לא נמצאו רשומות דחופות (פג תוקף / חסר נתון) עבור ${prettifyKey(tab.dueField)}`
+                                : viewFilter === 'expiring_soon'
+                                  ? `לא נמצאו רשומות בטווח «קרוב לפקיעה» (${COMPLIANCE_RED_MAX_DAYS_REMAINING + 1}–${COMPLIANCE_YELLOW_MAX_DAYS_REMAINING} ימים נותרים) עבור ${prettifyKey(tab.dueField)}`
+                                  : `לא נמצאו רשומות עם ${prettifyKey(tab.dueField)} בטווח המותאם (${customRangeFromDays} עד ${customRangeToDays} ימים מהיום)`
                       }
                     />
                   </>

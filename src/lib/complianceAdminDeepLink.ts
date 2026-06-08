@@ -22,17 +22,20 @@ export type ComplianceAlertNavItem = {
 export function alertToAdminComplianceTab(alert: ComplianceAlertNavItem): ComplianceTabKey | null {
   const id = alert.id ?? '';
   if (id.startsWith('derived:v:')) {
-    const slot = id.split(':')[3];
-    if (slot === 'test') return 'annual_licensing';
-    if (slot === 'insurance') return 'insurance';
-    if (slot === 'inspection') return 'periodic_inspection';
-    if (slot === 'maintenance') return 'maintenance';
+    const slot = id.split(':')[3] ?? '';
+    if (slot === 'test' || slot === 'missing_test') return 'annual_licensing';
+    if (slot === 'insurance' || slot === 'missing_insurance') return 'insurance';
+    if (slot === 'inspection' || slot === 'missing_inspection') return 'periodic_inspection';
+    if (slot === 'maintenance' || slot === 'missing_maintenance') return 'maintenance';
   }
   if (id.startsWith('derived:d:')) {
-    const slot = id.split(':')[3];
-    if (slot === 'license') return 'driver_license';
-    if (slot === 'health') return 'health_declaration';
-    if (slot === 'r585') return 'regulation_585';
+    const slot = id.split(':')[3] ?? '';
+    if (slot === 'license' || slot === 'missing_license') return 'driver_license';
+    if (slot === 'health' || slot === 'missing_health') return 'health_declaration';
+    if (slot === 'r585' || slot === 'missing_r585') return 'regulation_585';
+    if (slot === 'missing_practical_test') return 'driver_license';
+    if (slot === 'missing_lic_front' || slot === 'missing_lic_back') return 'driver_license';
+    if (slot === 'missing_health_doc') return 'health_declaration';
   }
 
   const at = alert.alertType || '';
@@ -43,8 +46,16 @@ export function alertToAdminComplianceTab(alert: ComplianceAlertNavItem): Compli
     if (/טיפול|maintenance|service/i.test(at)) return 'maintenance';
     return null;
   }
-  if (/רישיון|license|נהג/i.test(at)) return 'driver_license';
-  if (/בריאות|health/i.test(at)) return 'health_declaration';
+  if (/רישיון|license|נהג|בדיקת רישיון/i.test(at)) return 'driver_license';
+  if (/בריאות|health|הצהרת/i.test(at)) return 'health_declaration';
+  if (/חסר/.test(at)) {
+    if (/טסט|ביטוח|ביקורת|טיפול/i.test(at)) {
+      if (/טסט/i.test(at)) return 'annual_licensing';
+      if (/ביטוח/i.test(at)) return 'insurance';
+      if (/ביקורת/i.test(at)) return 'periodic_inspection';
+      if (/טיפול/i.test(at)) return 'maintenance';
+    }
+  }
   if (/585/.test(at)) return 'regulation_585';
   return null;
 }

@@ -107,6 +107,7 @@ const createBlockedSupabaseClient = (message: string): SupabaseClientType => {
     getUser: async () => ({ data: { user: null }, error: blockedError }),
     signOut: async () => ({ error: blockedError }),
     signInWithPassword: async () => ({ data: null, error: blockedError }),
+    signInWithOAuth: async () => ({ data: null, error: blockedError }),
   };
   return new Proxy(
     { auth: authStub },

@@ -244,8 +244,7 @@ export default function AddDriverPage() {
 
       toast.success('הנהג נוסף בהצלחה');
       navigate('/drivers');
-    } catch (error) {
-      toast.error('שגיאה בהוספת הנהג');
+    } catch {
       setIsSubmitting(false);
     }
   };

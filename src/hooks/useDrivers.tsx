@@ -118,6 +118,7 @@ function mapRowToDriverSummary(row: Record<string, unknown>): DriverSummary {
 
   return {
     id: String(row.id ?? ''),
+    org_id: s('org_id'),
     full_name: String(row.full_name ?? ''),
     id_number: String(row.id_number ?? ''),
     phone: (row.phone as string) ?? null,
@@ -203,7 +204,7 @@ export function useDriver(id: string) {
 
 export function useCreateDriver() {
   const queryClient = useQueryClient();
-  const { activeOrgId, profile } = useAuth();
+  const { activeOrgId, profile, memberOrganizations } = useAuth();
 
   return useMutation({
     mutationFn: async (driver: Partial<Omit<Driver, 'id' | 'created_at' | 'updated_at' | 'status'>> & {
@@ -212,13 +213,13 @@ export function useCreateDriver() {
       license_expiry: string;
     }) => {
       const row = { ...driver } as Record<string, unknown>;
-      const effectiveOrgId = activeOrgId ?? profile?.org_id;
+      const effectiveOrgId = activeOrgId ?? profile?.org_id ?? memberOrganizations[0]?.id ?? null;
       if (effectiveOrgId != null && row.org_id == null) {
         row.org_id = effectiveOrgId;
       }
       const { data, error } = await insertDriverWithCompat(row);
 
-      if (error) throw error;
+      if (error) throw new Error(formatSupabaseError(error));
       return data;
     },
     onSuccess: () => {
@@ -226,9 +227,9 @@ export function useCreateDriver() {
       toast({ title: 'הנהג נוסף בהצלחה' });
     },
     onError: (error) => {
-      const msg = error instanceof Error ? error.message : String(error);
+      const msg = error instanceof Error ? error.message : formatSupabaseError(error);
       const rls =
-        /row-level security|violates row-level security/i.test(msg) ||
+        /row-level security|violates row-level security|אין הרשאה|permission denied/i.test(msg) ||
         (error as { code?: string })?.code === '42501';
       toast({
         title: 'שגיאה בהוספת הנהג',
