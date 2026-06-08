@@ -612,6 +612,22 @@ iframe[src*="lovable"] {
   box-shadow: 0 0 20px rgba(45, 212, 191, 0.25), 0 4px 14px rgba(0, 0, 0, 0.35);
 }
 
+/* מובייל: פחות זוהר פנימי + מרווח לפס התחתון שלא יכסה את «כניסה» */
+@media (max-width: 639px) {
+  .status-card.status-card--purple,
+  .status-card.status-card--blue,
+  .status-card.status-card--orange,
+  .status-card.status-card--teal {
+    --status-card-inset: inset 0 10px 20px rgba(0, 0, 0, 0.12);
+  }
+  .status-card .status-card-glow-bar {
+    bottom: 0.5rem;
+  }
+  .status-card .status-card-entry {
+    padding-bottom: 0.35rem;
+  }
+}
+
 /* Entry button: larger, blur bg, soft glow on hover */
 .status-card-entry-btn {
   transition: border-color 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease;
