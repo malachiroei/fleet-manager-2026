@@ -133,11 +133,11 @@ function StatusCard({
   return (
     <Link
       to={link}
-      className="block group cursor-pointer touch-manipulation min-w-0 relative z-10 min-h-[7.25rem] sm:min-h-[8rem] md:min-h-[8.5rem] xl:min-h-[11rem]"
+      className="block group cursor-pointer touch-manipulation min-w-0 relative z-10 min-h-[10.5rem] sm:min-h-[8rem] md:min-h-[8.5rem] xl:min-h-[11rem]"
       style={{ touchAction: 'manipulation', pointerEvents: 'auto' }}
     >
       <div
-        className={`dashboard-cyber-status-card hud-status-card-surface status-card status-card--${theme} relative h-[clamp(7.25rem,18vh,9.25rem)] sm:h-[clamp(8rem,18vh,10rem)] md:h-[clamp(8.5rem,18vh,10.5rem)] xl:h-[clamp(10.5rem,18vh,14rem)] w-full rounded-2xl sm:rounded-3xl p-2 sm:p-2.5 xl:p-4 flex flex-col items-center hover:scale-[1.02] hover:-translate-y-0.5 overflow-hidden transition-all duration-300 border-t border-l border-white/[0.18] border-b border-r border-black/60 backdrop-blur-md ${glowClass}`}
+        className={`dashboard-cyber-status-card hud-status-card-surface status-card status-card-layout status-card--${theme} relative h-[10.5rem] sm:h-[clamp(8rem,18vh,10rem)] md:h-[clamp(8.5rem,18vh,10.5rem)] xl:h-[clamp(10.5rem,18vh,14rem)] w-full rounded-2xl sm:rounded-3xl p-2 sm:p-2.5 xl:p-4 hover:scale-[1.02] hover:-translate-y-0.5 overflow-hidden transition-all duration-300 border-t border-l border-white/[0.18] border-b border-r border-black/60 backdrop-blur-md ${glowClass}`}
         style={{ pointerEvents: 'none' } as React.CSSProperties}
       >
         <div className="hud-status-card-carbon pointer-events-none absolute inset-0 rounded-3xl opacity-85" aria-hidden />
@@ -150,36 +150,36 @@ function StatusCard({
           aria-hidden
         />
 
-        <div className="relative z-10 mt-0.5 flex flex-col items-center gap-1.5 xl:gap-2">
+        <div className="status-card-head relative z-10 flex shrink-0 flex-col items-center gap-1 sm:gap-1.5 xl:gap-2">
           <div
-            className={`status-card-icon-box dashboard-cyber-icon-dish inline-flex h-11 w-11 sm:h-12 sm:w-12 xl:h-14 xl:w-14 [@media(max-height:820px)]:h-11 [@media(max-height:820px)]:w-11 items-center justify-center rounded-2xl border bg-slate-100 shadow-sm backdrop-blur-md dark:bg-slate-950/65 dark:shadow-none ${theme === 'blue' ? 'border-sky-300 dark:border-[#00f2ff]/55' : theme === 'purple' ? 'border-violet-300 dark:border-violet-400/50' : theme === 'orange' ? 'border-orange-300 dark:border-[#ff4d00]/65' : 'border-teal-300 dark:border-teal-400/50'}`}
+            className={`status-card-icon-box dashboard-cyber-icon-dish inline-flex h-9 w-9 sm:h-12 sm:w-12 xl:h-14 xl:w-14 items-center justify-center rounded-2xl border bg-slate-100 shadow-sm backdrop-blur-md dark:bg-slate-950/65 dark:shadow-none ${theme === 'blue' ? 'border-sky-300 dark:border-[#00f2ff]/55' : theme === 'purple' ? 'border-violet-300 dark:border-violet-400/50' : theme === 'orange' ? 'border-orange-300 dark:border-[#ff4d00]/65' : 'border-teal-300 dark:border-teal-400/50'}`}
           >
             <Icon
-              className={`h-6 w-6 sm:h-7 sm:w-7 xl:h-8 xl:w-8 [@media(max-height:820px)]:h-6 [@media(max-height:820px)]:w-6 ${iconStroke}`}
+              className={`h-5 w-5 sm:h-7 sm:w-7 xl:h-8 xl:w-8 ${iconStroke}`}
               strokeWidth={1.35}
               aria-hidden
             />
           </div>
-          <p className="hud-dashboard-label text-[11px] sm:text-xs md:text-sm font-medium tracking-wide truncate max-w-full">
+          <p className="hud-dashboard-label max-w-full truncate text-[10px] sm:text-xs md:text-sm font-medium tracking-wide leading-tight">
             {title}
           </p>
         </div>
 
-        <div className="relative z-10 flex min-h-0 flex-1 w-full items-center justify-center text-center">
-          <p className="hud-kpi-value text-2xl sm:text-3xl md:text-4xl xl:text-5xl [@media(max-height:820px)]:xl:text-4xl font-bold tracking-tight text-slate-900 tabular-nums dark:text-white">
+        <div className="status-card-value relative z-10 flex min-h-0 w-full items-center justify-center overflow-hidden text-center">
+          <p className="hud-kpi-value max-w-full truncate text-xl leading-none sm:text-3xl md:text-4xl xl:text-5xl font-bold tracking-tight text-slate-900 tabular-nums dark:text-white">
             {value}
           </p>
         </div>
 
-        <div className="status-card-footer relative z-20 mt-auto w-full shrink-0">
-          <div className="status-card-entry flex items-center justify-center gap-1 text-[10px] sm:text-xs font-medium hud-dashboard-muted">
-            <div className="status-card-entry-btn flex items-center justify-center h-6 w-6 sm:h-7 sm:w-7 rounded-full border border-slate-300 bg-slate-100 backdrop-blur-sm dark:border-white/20 dark:bg-black/25">
+        <div className="status-card-footer relative z-20 w-full shrink-0">
+          <div className="status-card-entry flex min-h-[1.625rem] items-center justify-center gap-1 text-[10px] sm:text-xs font-medium hud-dashboard-muted">
+            <div className="status-card-entry-btn flex h-6 w-6 sm:h-7 sm:w-7 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-slate-100 backdrop-blur-sm dark:border-white/20 dark:bg-black/25">
               <ChevronLeft className="h-3 w-3 sm:h-3.5 sm:w-3.5 opacity-90" strokeWidth={1.5} />
             </div>
             <span className="tracking-wide">כניסה</span>
           </div>
           <div
-            className={`status-card-glow-bar pointer-events-none mx-3 mt-1.5 h-[2px] rounded-full opacity-90 ${theme === 'blue' ? 'bg-[#00ffff] shadow-[0_3px_10px_rgba(0,255,255,0.45)]' : theme === 'purple' ? 'bg-violet-300 shadow-[0_3px_10px_rgba(196,181,253,0.55)]' : theme === 'orange' ? 'bg-gradient-to-r from-[#ff3131] via-[#ff4d00] to-[#ff9100] shadow-[0_3px_12px_rgba(255,77,0,0.6)]' : 'bg-teal-300 shadow-[0_3px_10px_rgba(94,234,212,0.55)]'}`}
+            className={`status-card-glow-bar pointer-events-none mx-3 mt-1 h-[2px] shrink-0 rounded-full opacity-90 ${theme === 'blue' ? 'bg-[#00ffff]' : theme === 'purple' ? 'bg-violet-300' : theme === 'orange' ? 'bg-gradient-to-r from-[#ff3131] via-[#ff4d00] to-[#ff9100]' : 'bg-teal-300'}`}
             aria-hidden
           />
         </div>
@@ -560,7 +560,7 @@ export default function Dashboard() {
             {[1, 2, 3, 4].map((i) => (
               <Skeleton
                 key={i}
-                className="h-28 sm:h-32 w-full rounded-2xl sm:rounded-3xl min-h-[6.75rem]"
+                className="h-[10.5rem] sm:h-32 w-full rounded-2xl sm:rounded-3xl min-h-[10.5rem] sm:min-h-[8rem]"
               />
             ))}
           </div>

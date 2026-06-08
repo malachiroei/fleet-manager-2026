@@ -509,6 +509,21 @@ iframe[src*="lovable"] {
   box-shadow: var(--status-card-shadow), var(--status-card-inset);
   transition: transform 0.4s ease, box-shadow 0.4s ease;
 }
+
+/* פריסת כרטיס דשבורד: כותרת | מספר | כניסה+פס — בלי חפיפות */
+.status-card.status-card-layout {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  row-gap: 0.25rem;
+  align-content: stretch;
+}
+.status-card-layout .status-card-value {
+  min-height: 0;
+  overflow: hidden;
+}
+.status-card-layout .status-card-footer {
+  min-height: 2.5rem;
+}
 /* Halo + Inner glow. נהגים — סגול */
 .status-card.status-card--purple {
   --status-card-inset: inset 0 0 48px rgba(168, 85, 247, 0.06);
@@ -612,19 +627,45 @@ iframe[src*="lovable"] {
   box-shadow: 0 0 20px rgba(45, 212, 191, 0.25), 0 4px 14px rgba(0, 0, 0, 0.35);
 }
 
-/* מובייל: פחות זוהר פנימי — הפס התחתון בזרימת המסמך מתחת ל«כניסה» */
+/* מובייל: פחות זוהר — מונע חפיפה בין מספר, «כניסה» והפס */
 @media (max-width: 639px) {
   .status-card.status-card--purple,
   .status-card.status-card--blue,
   .status-card.status-card--orange,
   .status-card.status-card--teal {
-    --status-card-inset: inset 0 10px 20px rgba(0, 0, 0, 0.12);
+    --status-card-inset: none;
+    --status-card-shadow:
+      0 0 24px rgba(0, 0, 0, 0.35),
+      0 8px 20px rgba(0, 0, 0, 0.28);
   }
-  .status-card .status-card-footer {
+  .status-card.status-card--purple {
+    --status-card-shadow: 0 0 28px rgba(168, 85, 247, 0.22), 0 8px 20px rgba(0, 0, 0, 0.28);
+  }
+  .status-card.status-card--blue {
+    --status-card-shadow: 0 0 28px rgba(0, 242, 255, 0.2), 0 8px 20px rgba(0, 0, 0, 0.28);
+  }
+  .status-card.status-card--orange {
+    --status-card-shadow: 0 0 28px rgba(255, 77, 0, 0.24), 0 8px 20px rgba(0, 0, 0, 0.28);
+  }
+  .status-card.status-card--teal {
+    --status-card-shadow: 0 0 28px rgba(45, 212, 191, 0.22), 0 8px 20px rgba(0, 0, 0, 0.28);
+  }
+  .status-card .hud-kpi-value {
+    text-shadow: none !important;
+  }
+  .status-card-layout .status-card-footer {
+    min-height: 2.625rem;
     padding-bottom: 0.125rem;
   }
   .status-card .status-card-glow-bar {
-    margin-top: 0.375rem;
+    margin-top: 0.25rem;
+    box-shadow: none !important;
+  }
+  .status-card--purple .status-card-icon-box,
+  .status-card--blue .status-card-icon-box,
+  .status-card--orange .status-card-icon-box,
+  .status-card--teal .status-card-icon-box {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
   }
 }
 
