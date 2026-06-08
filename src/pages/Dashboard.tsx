@@ -137,7 +137,7 @@ function StatusCard({
       style={{ touchAction: 'manipulation', pointerEvents: 'auto' }}
     >
       <div
-        className={`dashboard-cyber-status-card hud-status-card-surface status-card status-card--${theme} relative h-[clamp(7.25rem,18vh,9.25rem)] sm:h-[clamp(8rem,18vh,10rem)] md:h-[clamp(8.5rem,18vh,10.5rem)] xl:h-[clamp(10.5rem,18vh,14rem)] w-full rounded-2xl sm:rounded-3xl px-2 pt-2 pb-3.5 sm:p-2.5 sm:pb-4 xl:p-4 flex flex-col items-center justify-between gap-0.5 hover:scale-[1.02] hover:-translate-y-0.5 overflow-hidden transition-all duration-300 border-t border-l border-white/[0.18] border-b border-r border-black/60 backdrop-blur-md ${glowClass}`}
+        className={`dashboard-cyber-status-card hud-status-card-surface status-card status-card--${theme} relative h-[clamp(7.25rem,18vh,9.25rem)] sm:h-[clamp(8rem,18vh,10rem)] md:h-[clamp(8.5rem,18vh,10.5rem)] xl:h-[clamp(10.5rem,18vh,14rem)] w-full rounded-2xl sm:rounded-3xl p-2 sm:p-2.5 xl:p-4 flex flex-col items-center hover:scale-[1.02] hover:-translate-y-0.5 overflow-hidden transition-all duration-300 border-t border-l border-white/[0.18] border-b border-r border-black/60 backdrop-blur-md ${glowClass}`}
         style={{ pointerEvents: 'none' } as React.CSSProperties}
       >
         <div className="hud-status-card-carbon pointer-events-none absolute inset-0 rounded-3xl opacity-85" aria-hidden />
@@ -165,24 +165,26 @@ function StatusCard({
           </p>
         </div>
 
-        <div className="relative z-10 flex min-h-[1.75rem] sm:min-h-[2rem] flex-1 items-center justify-center text-center">
+        <div className="relative z-10 flex min-h-0 flex-1 w-full items-center justify-center text-center">
           <p className="hud-kpi-value text-2xl sm:text-3xl md:text-4xl xl:text-5xl [@media(max-height:820px)]:xl:text-4xl font-bold tracking-tight text-slate-900 tabular-nums dark:text-white">
             {value}
           </p>
         </div>
 
-        <div className="status-card-entry relative z-20 mt-auto flex items-center gap-1 pb-0.5 text-[10px] sm:text-xs font-medium hud-dashboard-muted">
-          <div className="status-card-entry-btn flex items-center justify-center h-6 w-6 sm:h-7 sm:w-7 rounded-full border border-slate-300 bg-slate-100 backdrop-blur-sm dark:border-white/20 dark:bg-black/25">
-            <ChevronLeft className="h-3 w-3 sm:h-3.5 sm:w-3.5 opacity-90" strokeWidth={1.5} />
+        <div className="status-card-footer relative z-20 mt-auto w-full shrink-0">
+          <div className="status-card-entry flex items-center justify-center gap-1 text-[10px] sm:text-xs font-medium hud-dashboard-muted">
+            <div className="status-card-entry-btn flex items-center justify-center h-6 w-6 sm:h-7 sm:w-7 rounded-full border border-slate-300 bg-slate-100 backdrop-blur-sm dark:border-white/20 dark:bg-black/25">
+              <ChevronLeft className="h-3 w-3 sm:h-3.5 sm:w-3.5 opacity-90" strokeWidth={1.5} />
+            </div>
+            <span className="tracking-wide">כניסה</span>
           </div>
-          <span className="tracking-wide">כניסה</span>
+          <div
+            className={`status-card-glow-bar pointer-events-none mx-3 mt-1.5 h-[2px] rounded-full opacity-90 ${theme === 'blue' ? 'bg-[#00ffff] shadow-[0_3px_10px_rgba(0,255,255,0.45)]' : theme === 'purple' ? 'bg-violet-300 shadow-[0_3px_10px_rgba(196,181,253,0.55)]' : theme === 'orange' ? 'bg-gradient-to-r from-[#ff3131] via-[#ff4d00] to-[#ff9100] shadow-[0_3px_12px_rgba(255,77,0,0.6)]' : 'bg-teal-300 shadow-[0_3px_10px_rgba(94,234,212,0.55)]'}`}
+            aria-hidden
+          />
         </div>
 
         <div className="status-card-shine pointer-events-none absolute -inset-full h-full w-1/2 z-[5] block transform -skew-x-12 bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-0" aria-hidden />
-        <div
-          className={`status-card-glow-bar pointer-events-none absolute bottom-1 left-4 right-4 z-[1] h-[2px] rounded-full opacity-90 ${theme === 'blue' ? 'bg-[#00ffff] shadow-[0_4px_14px_rgba(0,255,255,0.55)]' : theme === 'purple' ? 'bg-violet-300 shadow-[0_4px_14px_rgba(196,181,253,0.65)]' : theme === 'orange' ? 'bg-gradient-to-r from-[#ff3131] via-[#ff4d00] to-[#ff9100] shadow-[0_4px_16px_rgba(255,77,0,0.75)]' : 'bg-teal-300 shadow-[0_4px_14px_rgba(94,234,212,0.65)]'}`}
-          aria-hidden
-        />
       </div>
     </Link>
   );
