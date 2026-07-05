@@ -1685,13 +1685,23 @@ interface SendHandoverEmailInput {
   additionalAttachments?: { filename: string; url: string }[];
   /** לאיחוד ניתוב מייל טופס מסירה (handover_form) */
   orgId?: string;
+  /** מבצע המסירה — ניתוב לפי ההגדרה האישית שלו בלבד */
+  actorUserId?: string | null;
 }
 
 export async function sendHandoverNotificationEmail(input: SendHandoverEmailInput) {
   const legacySingle =
     (typeof localStorage !== 'undefined' && localStorage.getItem('handover_notification_email')) ||
     'malachiroei@gmail.com';
-  const toList = await resolveNotificationEmailsForTopic(supabase, 'handover_form', [legacySingle], input.orgId ?? null);
+  const { data: sessionData } = await supabase.auth.getSession();
+  const actorUserId = input.actorUserId ?? sessionData?.session?.user?.id ?? null;
+  const toList = await resolveNotificationEmailsForTopic(
+    supabase,
+    'handover_form',
+    [legacySingle],
+    input.orgId ?? null,
+    { actorUserId },
+  );
   const hasReceptionAttachment = (input.additionalAttachments ?? []).some((file) => file.filename.includes('טופס קבלת רכב'));
   console.log('[sendHandoverNotificationEmail] reception attachment pushed', {
     hasReceptionAttachment,
@@ -1718,8 +1728,8 @@ export async function sendHandoverNotificationEmail(input: SendHandoverEmailInpu
   } catch {
     // ignore — נשתמש ב-anon למטה
   }
-  const { data: sessionData } = await supabase.auth.getSession();
-  const accessToken = sessionData?.session?.access_token ?? '';
+  const { data: refreshedSession } = await supabase.auth.getSession();
+  const accessToken = refreshedSession?.session?.access_token ?? '';
   const bearer = (accessToken || anonKey || '').trim();
 
   const { error, data } = await supabase.functions.invoke('send-handover-notification', {

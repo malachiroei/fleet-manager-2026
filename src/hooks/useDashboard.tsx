@@ -413,7 +413,8 @@ export function useDashboardStats() {
       sessionEmailSig,
     ],
     enabled: statsQueryEnabled,
-    placeholderData: EMPTY_DASHBOARD_STATS,
+    placeholderData: (previousData) => previousData ?? EMPTY_DASHBOARD_STATS,
+    staleTime: 60_000,
     queryFn: async (): Promise<DashboardStats> => {
       if (!effectiveUserId) {
         return { totalVehicles: 0, totalDrivers: 0, alertsCount: 0, warningCount: 0, expiredCount: 0 };

@@ -32,7 +32,10 @@ import {
   ClipboardList,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-import { invalidateFleetScopedQueries } from '@/lib/invalidateFleetQueryScope';
+import {
+  invalidateFeatureFlagQueriesIfOrgChanged,
+  invalidateFleetScopedQueriesIfScopeChanged,
+} from '@/lib/invalidateFleetQueryScope';
 import { toast } from 'sonner';
 import { getBrandLogoUrl } from '@/components/BrandLogo';
 import {
@@ -133,11 +136,11 @@ function StatusCard({
   return (
     <Link
       to={link}
-      className="block group cursor-pointer touch-manipulation min-w-0 relative z-10 min-h-[10.5rem] sm:min-h-[8rem] md:min-h-[8.5rem] xl:min-h-[11rem]"
+      className="block group cursor-pointer touch-manipulation min-w-0 relative z-10"
       style={{ touchAction: 'manipulation', pointerEvents: 'auto' }}
     >
       <div
-        className={`dashboard-cyber-status-card hud-status-card-surface status-card status-card-layout status-card--${theme} relative h-[10.5rem] sm:h-[clamp(8rem,18vh,10rem)] md:h-[clamp(8.5rem,18vh,10.5rem)] xl:h-[clamp(10.5rem,18vh,14rem)] w-full rounded-2xl sm:rounded-3xl p-2 sm:p-2.5 xl:p-4 hover:scale-[1.02] hover:-translate-y-0.5 overflow-hidden transition-all duration-300 border-t border-l border-white/[0.18] border-b border-r border-black/60 backdrop-blur-md ${glowClass}`}
+        className={`dashboard-cyber-status-card hud-status-card-surface status-card status-card-layout status-card--${theme} relative min-h-[11.25rem] lg:min-h-[12.5rem] w-full rounded-2xl sm:rounded-3xl p-2 sm:p-2.5 lg:p-3 hover:scale-[1.02] hover:-translate-y-0.5 transition-all duration-300 border-t border-l border-white/[0.18] border-b border-r border-black/60 backdrop-blur-md ${glowClass}`}
         style={{ pointerEvents: 'none' } as React.CSSProperties}
       >
         <div className="hud-status-card-carbon pointer-events-none absolute inset-0 rounded-3xl opacity-85" aria-hidden />
@@ -150,23 +153,23 @@ function StatusCard({
           aria-hidden
         />
 
-        <div className="status-card-head relative z-10 flex shrink-0 flex-col items-center gap-1 sm:gap-1.5 xl:gap-2">
+        <div className="status-card-head relative z-10 flex shrink-0 flex-col items-center gap-1 sm:gap-1.5">
           <div
-            className={`status-card-icon-box dashboard-cyber-icon-dish inline-flex h-9 w-9 sm:h-12 sm:w-12 xl:h-14 xl:w-14 items-center justify-center rounded-2xl border bg-slate-100 shadow-sm backdrop-blur-md dark:bg-slate-950/65 dark:shadow-none ${theme === 'blue' ? 'border-sky-300 dark:border-[#00f2ff]/55' : theme === 'purple' ? 'border-violet-300 dark:border-violet-400/50' : theme === 'orange' ? 'border-orange-300 dark:border-[#ff4d00]/65' : 'border-teal-300 dark:border-teal-400/50'}`}
+            className={`status-card-icon-box dashboard-cyber-icon-dish inline-flex h-9 w-9 sm:h-10 sm:w-10 lg:h-11 lg:w-11 items-center justify-center rounded-2xl border bg-slate-100 shadow-sm backdrop-blur-md dark:bg-slate-950/65 dark:shadow-none ${theme === 'blue' ? 'border-sky-300 dark:border-[#00f2ff]/55' : theme === 'purple' ? 'border-violet-300 dark:border-violet-400/50' : theme === 'orange' ? 'border-orange-300 dark:border-[#ff4d00]/65' : 'border-teal-300 dark:border-teal-400/50'}`}
           >
             <Icon
-              className={`h-5 w-5 sm:h-7 sm:w-7 xl:h-8 xl:w-8 ${iconStroke}`}
+              className={`h-5 w-5 sm:h-6 sm:w-6 lg:h-7 lg:w-7 ${iconStroke}`}
               strokeWidth={1.35}
               aria-hidden
             />
           </div>
-          <p className="hud-dashboard-label max-w-full truncate text-[10px] sm:text-xs md:text-sm font-medium tracking-wide leading-tight">
+          <p className="hud-dashboard-label max-w-full truncate text-[10px] sm:text-xs font-medium tracking-wide leading-snug">
             {title}
           </p>
         </div>
 
-        <div className="status-card-value relative z-10 flex min-h-0 w-full items-center justify-center overflow-hidden text-center">
-          <p className="hud-kpi-value max-w-full truncate text-xl leading-none sm:text-3xl md:text-4xl xl:text-5xl font-bold tracking-tight text-slate-900 tabular-nums dark:text-white">
+        <div className="status-card-value relative z-10 flex w-full shrink-0 items-center justify-center text-center">
+          <p className="hud-kpi-value text-[clamp(1.375rem,6vw,2.25rem)] font-bold leading-tight tracking-tight text-slate-900 tabular-nums dark:text-white">
             {value}
           </p>
         </div>
@@ -197,12 +200,15 @@ export default function Dashboard() {
     isFetching: statsFetching,
     isPending: statsPending,
     fetchStatus: statsFetchStatus,
+    isFetched: statsFetched,
   } = useDashboardStats();
   const stats = statsRaw ?? EMPTY_DASHBOARD_STATS;
-  /** כשהשאילתה מושבתת (אין org עדיין) fetchStatus=idle — לא להישאר עם !stats ואינסוף skeleton */
-  const isStatsLoading =
-    statsFetching ||
-    (statsPending && statsRaw === undefined && statsFetchStatus !== 'idle');
+  /** Skeleton רק בטעינה ראשונה — לא ב-refetch (חזרה לבית לא מסתיר את 4 כרטיסי הסטטוס) */
+  const showStatusCardsSkeleton =
+    !statsFetched &&
+    statsPending &&
+    statsRaw === undefined &&
+    statsFetchStatus !== 'idle';
   const { data: alerts } = useComplianceAlerts();
   const { t } = useTranslation();
   const isMobile = useIsMobile();
@@ -223,6 +229,7 @@ export default function Dashboard() {
     data: featureFlags,
     isPending: flagsPending,
     isPlaceholderData: flagsPlaceholder,
+    isFetched: flagsFetched,
   } = useFeatureFlags();
   const { canAccessPermission } = usePermissions();
   const showDashboardTreatmentCard = false;
@@ -230,35 +237,26 @@ export default function Dashboard() {
   const showMaintenanceFormCard = false;
   /** כרטיס «התראות חריגה» + מרכז ציות: רק פג תוקף (ללא אזהרת 30 יום) */
   const totalAlerts = (alerts?.filter((a) => a.status === 'expired').length) ?? 0;
-  /** placeholderData ב-useFeatureFlags מדליק כל הדגלים — לא לרנדר גייטים לפני נתונים אמיתיים */
-  const isInitialUiLoading = loading || flagsPending || flagsPlaceholder;
+  /** placeholder פותח את כל הדגלים — לא לסנן פעולות מהירות עד שיש נתונים אמיתיים מה-cache/DB */
+  const flagsReadyForUiGates = flagsFetched && !flagsPlaceholder;
+  const isInitialUiLoading = loading || (flagsPending && !flagsReadyForUiGates);
 
-  const dashboardScopeRemountKey = useMemo(
+  const fleetScopeKey = useMemo(
     () =>
-      [user?.id ?? '', profile?.org_id ?? '', activeOrgId ?? '', effectiveOrgId ?? '', (viewAsEmail ?? '').trim()].join(
+      [user?.id ?? '', activeOrgId ?? '', profile?.org_id ?? '', effectiveOrgId ?? '', (viewAsEmail ?? '').trim()].join(
         '|',
       ),
     [user?.id, profile?.org_id, activeOrgId, effectiveOrgId, viewAsEmail],
   );
 
-  const scopeRefreshKeyRef = useRef<string | null>(null);
   const scopeInvalidateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    const key = [
-      user?.id ?? '',
-      activeOrgId ?? '',
-      profile?.org_id ?? '',
-      effectiveOrgId ?? '',
-      (viewAsEmail ?? '').trim(),
-    ].join('|');
-    if (scopeRefreshKeyRef.current === key) return;
-    scopeRefreshKeyRef.current = key;
     if (scopeInvalidateTimerRef.current != null) {
       clearTimeout(scopeInvalidateTimerRef.current);
     }
     scopeInvalidateTimerRef.current = window.setTimeout(() => {
       scopeInvalidateTimerRef.current = null;
-      invalidateFleetScopedQueries(queryClient);
+      invalidateFleetScopedQueriesIfScopeChanged(queryClient, fleetScopeKey);
     }, 160);
     return () => {
       if (scopeInvalidateTimerRef.current != null) {
@@ -266,13 +264,10 @@ export default function Dashboard() {
         scopeInvalidateTimerRef.current = null;
       }
     };
-  }, [activeOrgId, viewAsEmail, queryClient]);
+  }, [fleetScopeKey, queryClient]);
 
   useEffect(() => {
-    /** activeOrgId משפיע על סינון user_feature_overrides לפי org_id — מאלץ רענון דגלים */
-    void queryClient.invalidateQueries({ queryKey: ['feature-flags'] });
-    void queryClient.invalidateQueries({ queryKey: ['user-feature-overrides'] });
-    void queryClient.invalidateQueries({ queryKey: ['feature-flags-user-overrides-list'] });
+    invalidateFeatureFlagQueriesIfOrgChanged(queryClient, activeOrgId);
   }, [activeOrgId, queryClient]);
 
   const email = user?.email || '';
@@ -459,6 +454,7 @@ export default function Dashboard() {
   const visibleStatusCards = useMemo(() => {
     const gated = statusCardConfig.filter((card) => {
       if (!canAccessPermission(card.permission)) return false;
+      if (!flagsReadyForUiGates) return true;
       return isFeatureEnabled(featureFlags, card.featureFlagKey);
     });
     /** אם כל דגלי dashboard_* כבויים בגלובלי אבל יש הרשאות צי — עדיין להציג KPI עם 0 */
@@ -467,15 +463,16 @@ export default function Dashboard() {
     if (permOnly.length > 0) return permOnly;
     /** פרופיל חדש / JSON הרשאות חלקי — עדיין להציג את ארבעת מדי הצי (הניתוב שומר על בטיחות) */
     return statusCardConfig;
-  }, [canAccessPermission, featureFlags]);
+  }, [canAccessPermission, featureFlags, flagsReadyForUiGates]);
 
   const visibleQuickLinksByFlags = useMemo(() => {
+    if (!flagsReadyForUiGates) return [];
     return baseQuickLinks.filter((a) => {
       if (!canAccessPermission(a.permission)) return false;
       if (!a.featureFlagKey) return true;
       return isFeatureEnabled(featureFlags, a.featureFlagKey);
     });
-  }, [baseQuickLinks, canAccessPermission, featureFlags]);
+  }, [baseQuickLinks, canAccessPermission, featureFlags, flagsReadyForUiGates]);
 
   const quickLinks = visibleQuickLinksByFlags.filter((a) => {
     if (a.href === '/report-mileage') return canReportMileage;
@@ -497,10 +494,7 @@ export default function Dashboard() {
       <div className="dashboard-cyber-vignette select-none" aria-hidden />
       <div className="dashboard-cyber-grid select-none" aria-hidden />
 
-      <div
-        key={dashboardScopeRemountKey}
-        className="container relative z-[2] mx-auto max-w-[1920px] space-y-3 md:space-y-4 py-2.5 md:py-3 pb-10 sm:pb-8 [@media(max-height:820px)]:py-1 [@media(max-height:820px)]:pb-4 [@media(max-height:820px)]:space-y-2"
-      >
+      <div className="container relative z-[2] mx-auto max-w-[1920px] space-y-3 md:space-y-4 py-2.5 md:py-3 pb-10 sm:pb-8 [@media(max-height:820px)]:py-1 [@media(max-height:820px)]:pb-4 [@media(max-height:820px)]:space-y-2">
       <div className="hidden xl:block [@media(max-height:820px)]:hidden dashboard-hud-header-card rounded-2xl sm:rounded-3xl border-t border-l border-white/[0.16] border-b border-r border-black/55 p-3 sm:p-4 md:p-5 relative overflow-hidden">
         <div className="hud-status-card-carbon pointer-events-none absolute inset-0 rounded-3xl opacity-50" aria-hidden />
         <div className="relative flex items-center justify-between gap-4">
@@ -525,7 +519,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {!isStatsLoading && stats.totalVehicles === 0 && stats.totalDrivers === 0 && (
+      {!showStatusCardsSkeleton && stats.totalVehicles === 0 && stats.totalDrivers === 0 && (
         <Card className="border-dashed border-2 border-primary/30 bg-primary/5">
           <CardContent className="p-6 md:p-8 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-right">
             <div className="flex-1 space-y-1">
@@ -555,17 +549,19 @@ export default function Dashboard() {
       )}
 
       <section className="dashboard-status-stage dashboard-cyber-stage p-3 sm:p-4 md:p-6 xl:p-8 pb-3 space-y-4 xl:space-y-6 [@media(max-height:820px)]:p-2.5 [@media(max-height:820px)]:pb-2 [@media(max-height:820px)]:space-y-3 relative z-[20]">
-        {isStatsLoading || flagsPlaceholder ? (
+        {showStatusCardsSkeleton ? (
           <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             {[1, 2, 3, 4].map((i) => (
               <Skeleton
                 key={i}
-                className="h-[10.5rem] sm:h-32 w-full rounded-2xl sm:rounded-3xl min-h-[10.5rem] sm:min-h-[8rem]"
+                className="h-[11.25rem] lg:min-h-[12.5rem] w-full rounded-2xl sm:rounded-3xl min-h-[11.25rem]"
               />
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div
+            className={`grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 transition-opacity duration-200 ${statsFetching ? 'opacity-90' : 'opacity-100'}`}
+          >
             {visibleStatusCards
               .map((card) => {
                 const Icon = card.icon;

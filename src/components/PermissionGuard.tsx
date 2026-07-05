@@ -5,7 +5,9 @@ import { isPlatformSuperOwnerEmail, resolveSessionEmail } from '@/lib/fleetBoots
 import type { PermissionKey } from '@/lib/permissions';
 
 interface PermissionGuardProps {
-  permission: PermissionKey;
+  permission?: PermissionKey;
+  /** כשמוגדר — מספיק הרשאה אחת מהרשימה (למשל אשף מסירה אחרי vehicle_delivery או handover). */
+  anyOf?: PermissionKey[];
   children: ReactNode;
 }
 
@@ -18,8 +20,9 @@ interface PermissionGuardProps {
  * סדר זה מונע מסך שחור כש־`allowed_features` ריק אבל יש הרשאות קלאסיות, ומותיר את מניפסט ה-UI
  * כשהוא מוגדר ומדויק.
  */
-export function PermissionGuard({ permission, children }: PermissionGuardProps) {
+export function PermissionGuard({ permission, anyOf, children }: PermissionGuardProps) {
   const { profile, user, hasPermission } = useAuth();
+  const keys = anyOf?.length ? anyOf : permission ? [permission] : [];
 
   if (isSuperAdminPermissionBypass(profile)) {
     return <>{children}</>;
@@ -33,11 +36,13 @@ export function PermissionGuard({ permission, children }: PermissionGuardProps) 
     return <>{children}</>;
   }
 
-  if (hasPermission(permission)) {
-    return <>{children}</>;
-  }
-  if (canAccessRouteWithAllowedFeatures(profile, permission)) {
-    return <>{children}</>;
+  for (const key of keys) {
+    if (hasPermission(key)) {
+      return <>{children}</>;
+    }
+    if (canAccessRouteWithAllowedFeatures(profile, key)) {
+      return <>{children}</>;
+    }
   }
 
   return null;

@@ -243,7 +243,29 @@ export function mergeTopicPrefsForNewEmails(
 
 export const USER_ORG_NOTIFICATION_ROUTING_TABLE = 'user_org_notification_routing' as const;
 
-/** מאחד את כל שורות הניתוב של הארגון לנושא אחד (חברי הארגון רואים את כל השורות — RLS). */
+/** רשימת מיילים של משתמש אחד בארגון (הגדרות אישיות במסך הגדרות). */
+export async function fetchUserOrgNotificationEmailsForTopic(
+  supabase: SupabaseClient,
+  userId: string | null | undefined,
+  orgId: string | null | undefined,
+  topic: NotificationEmailTopicId,
+): Promise<string[]> {
+  const uid = (userId ?? '').trim();
+  const oid = (orgId ?? '').trim();
+  if (!uid || !oid) return [];
+  const { data: row, error } = await supabase
+    .from(USER_ORG_NOTIFICATION_ROUTING_TABLE)
+    .select('emails, topic_prefs')
+    .eq('org_id', oid)
+    .eq('user_id', uid)
+    .maybeSingle();
+  if (error || !row) return [];
+  const list = parseNotificationEmailList((row as { emails?: unknown }).emails);
+  const prefs = parseTopicPrefs((row as { topic_prefs?: unknown }).topic_prefs);
+  return emailsSubscribedToTopic(list, prefs, topic);
+}
+
+/** מאחד את כל שורות הניתוב של הארגון לנושא אחד (Edge Functions / מסלולים ללא מבצע). */
 export async function fetchMergedOrgNotificationEmailsForTopic(
   supabase: SupabaseClient,
   orgId: string | null | undefined,
@@ -275,13 +297,30 @@ export async function fetchMergedOrgNotificationEmailsForTopic(
   return out;
 }
 
-/** ניתוב מיילים: קודם per-org (כל אדמין), אחר כך legacy ב-system_settings, אחרון fallback */
+export type ResolveNotificationEmailsOptions = {
+  /** כשמוגדר (מסירה מאשף/אפליקציה) — רק רשימת המיילים של המבצע, לא איחוד כל האדמינים בארגון. */
+  actorUserId?: string | null;
+};
+
+/** ניתוב מיילים: מבצע → legacy system_settings → איחוד ארגון (שרת) → fallback */
 export async function resolveNotificationEmailsForTopic(
   supabase: SupabaseClient,
   topic: NotificationEmailTopicId,
   fallbackEmails: string[],
   orgId?: string | null,
+  options?: ResolveNotificationEmailsOptions,
 ): Promise<string[]> {
+  const actorId = (options?.actorUserId ?? '').trim();
+  if (actorId) {
+    const fromActor = await fetchUserOrgNotificationEmailsForTopic(
+      supabase,
+      actorId,
+      orgId ?? null,
+      topic,
+    );
+    if (fromActor.length > 0) return fromActor;
+  }
+
   const fromOrg = await fetchMergedOrgNotificationEmailsForTopic(supabase, orgId ?? null, topic);
   if (fromOrg.length > 0) return fromOrg;
   try {

@@ -2938,6 +2938,7 @@ export default function VehicleHandoverWizard() {
         reportUrl,
         additionalAttachments: allAttachments,
         orgId: handoverEmailOrgId,
+        actorUserId: user?.id ?? null,
       });
       console.log('[Wizard] Email sent OK');
       toast.success(

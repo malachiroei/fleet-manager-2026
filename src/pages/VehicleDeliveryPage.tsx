@@ -2,7 +2,7 @@ import { toast } from 'sonner';
 import { useEffect, useState, useRef, useMemo, useCallback, type FormEvent } from 'react';
 import { flushSync } from 'react-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
+import { useSearchParams, useLocation } from 'react-router-dom';
 import {
   useVehicleSpecDirty,
   DIRTY_SOURCE_VEHICLE_DELIVERY,
@@ -63,8 +63,7 @@ function getErrorMessage(error: unknown) {
 
 export default function VehicleDeliveryPage() {
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
-  const { setDirty, tryNavigate, getDeliveryExitConfirmed } = useVehicleSpecDirty();
+  const { setDirty, getDeliveryExitConfirmed } = useVehicleSpecDirty();
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const { data: vehicles } = useVehicles();
@@ -416,8 +415,15 @@ export default function VehicleDeliveryPage() {
         `&damageNotes=${encodeURIComponent(hasAnyDamage(damageReport) ? damageSummary : '')}` +
         `&selectedForms=${encodeURIComponent(selectedDeliveryFormIds.join(','))}`;
 
-      setDirty(DIRTY_SOURCE_VEHICLE_DELIVERY, false);
-      void navigate(wizardUrl);
+      // navigate() ממסך מסירה עלול להשאיר DOM תקוע על הדף הישן (ראה tryNavigate ב-VehicleSpecDirtyContext)
+      flushSync(() => {
+        setDirty(DIRTY_SOURCE_VEHICLE_DELIVERY, false);
+      });
+      window.location.assign(
+        wizardUrl.startsWith('/')
+          ? `${window.location.origin}${wizardUrl}`
+          : `${window.location.origin}/${wizardUrl}`,
+      );
     } catch (error) {
       console.error('Error creating handover:', error);
       try {

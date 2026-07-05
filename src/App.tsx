@@ -174,7 +174,7 @@ function AppRoutes() {
           <Route path="/handover/delivery" element={<PermissionGuard permission="vehicle_delivery"><VehicleDeliveryPage /></PermissionGuard>} />
           <Route path="/handover/return" element={<PermissionGuard permission="handover"><VehicleReturnPage /></PermissionGuard>} />
           <Route path="/handover/replacement" element={<PermissionGuard permission="replacement_car"><ReplacementVehicleHubPage /></PermissionGuard>} />
-          <Route path="/handover/wizard" element={<PermissionGuard permission="handover"><VehicleHandoverWizard /></PermissionGuard>} />
+          <Route path="/handover/wizard" element={<PermissionGuard anyOf={['vehicle_delivery', 'handover']}><VehicleHandoverWizard /></PermissionGuard>} />
           <Route path="/report-mileage" element={<PermissionGuard permission="report_mileage"><ReportMileagePage /></PermissionGuard>} />
           <Route path="/admin/settings" element={<AdminSettingsPage />} />
           <Route path="/admin-settings" element={<AdminSettingsPage />} />
