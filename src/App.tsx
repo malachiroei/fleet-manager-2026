@@ -21,7 +21,7 @@ import { UpdateModal } from "@/components/UpdateModal";
 
 const AuthCallbackPage = lazy(() => import("./pages/AuthCallbackPage"));
 const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage"));
-const Dashboard = lazy(() => import("./pages/Dashboard"));
+import Dashboard from "./pages/Dashboard";
 const VehicleListPage = lazy(() => import("./pages/VehicleListPage"));
 const AddVehiclePage = lazy(() => import("./pages/AddVehiclePage"));
 const VehicleDetailPage = lazy(() => import("./pages/VehicleDetailPage"));

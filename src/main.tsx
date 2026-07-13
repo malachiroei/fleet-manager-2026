@@ -93,3 +93,8 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 
 createRoot(document.getElementById("root")!).render(<App />);
+
+/** הסרת splash מובייל אחרי mount — בדסקטופ מוסתר ב-CSS */
+requestAnimationFrame(() => {
+  document.getElementById("fleet-boot-splash")?.remove();
+});

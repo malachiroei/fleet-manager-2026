@@ -203,13 +203,6 @@ export default function Dashboard() {
     fetchStatus: statsFetchStatus,
     isFetched: statsFetched,
   } = useDashboardStats();
-  const stats = statsRaw ?? EMPTY_DASHBOARD_STATS;
-  /** Skeleton רק בטעינה ראשונה — לא ב-refetch (חזרה לבית לא מסתיר את 4 כרטיסי הסטטוס) */
-  const showStatusCardsSkeleton =
-    !statsFetched &&
-    statsPending &&
-    statsRaw === undefined &&
-    statsFetchStatus !== 'idle';
   const { data: alerts } = useComplianceAlerts();
   const { t } = useTranslation();
   const isMobile = useIsMobile();
@@ -233,6 +226,21 @@ export default function Dashboard() {
     isFetched: flagsFetched,
   } = useFeatureFlags();
   const { canAccessPermission } = usePermissions();
+  const { data: activeReplacements, isFetched: replacementsFetched, fetchStatus: replacementsFetchStatus } =
+    useActiveReplacementHandovers();
+
+  const stats = statsRaw ?? EMPTY_DASHBOARD_STATS;
+  const activeReplacementCount = activeReplacements?.length ?? 0;
+  /** Skeleton בטעינה ראשונה — לא אפסים זמניים מ-placeholderData */
+  const showStatusCardsSkeleton =
+    (!statsFetched &&
+      statsPending &&
+      statsRaw === undefined &&
+      statsFetchStatus !== 'idle') ||
+    (Boolean(effectiveOrgId && fleetListReady) &&
+      !replacementsFetched &&
+      activeReplacements === undefined &&
+      replacementsFetchStatus !== 'idle');
   const showDashboardTreatmentCard = false;
   const showDashboardTestCard = false;
   const showMaintenanceFormCard = false;
@@ -284,8 +292,6 @@ export default function Dashboard() {
     isAdmin ||
     isManager ||
     profile?.is_system_admin === true;
-  const { data: activeReplacements = [] } = useActiveReplacementHandovers();
-  const activeReplacementCount = activeReplacements.length;
 
   const { data: pendingUsersCount = 0 } = useQuery({
     queryKey: ['pending-users-count'],
@@ -496,7 +502,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {!showStatusCardsSkeleton && stats.totalVehicles === 0 && stats.totalDrivers === 0 && (
+      {!showStatusCardsSkeleton && statsFetched && stats.totalVehicles === 0 && stats.totalDrivers === 0 && (
         <Card className="border-dashed border-2 border-primary/30 bg-primary/5">
           <CardContent className="p-6 md:p-8 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-right">
             <div className="flex-1 space-y-1">

@@ -61,7 +61,7 @@ export function useDashboardStats() {
       sessionEmailSig,
     ],
     enabled: statsQueryEnabled,
-    placeholderData: (previousData) => previousData ?? EMPTY_DASHBOARD_STATS,
+    placeholderData: (previousData) => previousData,
     staleTime: 60_000,
     queryFn: async (): Promise<DashboardStats> => {
       if (!effectiveUserId) {

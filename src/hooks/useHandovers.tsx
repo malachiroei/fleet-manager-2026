@@ -1368,7 +1368,6 @@ export function useActiveReplacementHandovers() {
     queryKey: ['active-replacement-handovers', orgId],
     enabled: fleetListReady && orgId != null,
     staleTime: 30_000,
-    placeholderData: [] as ActiveReplacementHandover[],
     queryFn: async (): Promise<ActiveReplacementHandover[]> => {
       if (orgId == null) return [];
 

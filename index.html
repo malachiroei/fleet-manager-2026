@@ -78,6 +78,12 @@
         padding: clamp(12px, 4vmin, 36px);
         box-sizing: border-box;
       }
+      /* דסקטופ: בלי מסך רכב ב-F5 — רק מובייל/PWA מציג splash עד ש-React נטען */
+      @media (min-width: 768px) {
+        .fleet-boot-splash {
+          display: none !important;
+        }
+      }
     </style>
     <script type="module" src="/src/main.tsx"></script>
   </body>
