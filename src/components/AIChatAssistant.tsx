@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect, KeyboardEvent, ChangeEvent } from 'react';
-import { Bot, X, Send, Loader2, Sparkles, ChevronDown, Paperclip, ArrowUpRight } from 'lucide-react';
+import { useState, useRef, useEffect, useCallback, KeyboardEvent, ChangeEvent } from 'react';
+import { Bot, X, Send, Loader2, Sparkles, ChevronDown, Paperclip, ArrowUpRight, Plus, MessageSquare } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { processFleetQuery } from '@/lib/aiQueryEngine';
+import { processFleetQuery, isHandoverReportQuery, isReplacementHandoverCommand, processHandoverReportQuery, type FleetQueryResult, type FleetChatTurn } from '@/lib/aiQueryEngine';
 import {
   detectFlowIntent,
   initFlow,
@@ -10,6 +10,7 @@ import {
   handleConfirmation,
   buildSummary,
   executeFlow,
+  getFlowStepCount,
   type FlowState,
 } from '@/lib/botFlowEngine';
 
@@ -44,6 +45,85 @@ interface AIChatAssistantProps {
   context?: AIChatContext;
 }
 
+interface ChatConversation {
+  id: string;
+  title: string;
+  createdAt: Date;
+  updatedAt: Date;
+  messages: Message[];
+}
+
+interface StoredConversation {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: Array<Omit<Message, 'timestamp'> & { timestamp: string }>;
+}
+
+const CHAT_STORAGE_KEY = 'fleet-ai-conversations-v1';
+const MAX_STORED_CONVERSATIONS = 30;
+
+function createWelcomeMessage(): Message {
+  return { id: 'welcome', role: 'assistant', content: WELCOME_MSG, timestamp: new Date() };
+}
+
+function createConversation(): ChatConversation {
+  const now = new Date();
+  return {
+    id: `chat-${now.getTime()}`,
+    title: 'שיחה חדשה',
+    createdAt: now,
+    updatedAt: now,
+    messages: [createWelcomeMessage()],
+  };
+}
+
+function deriveConversationTitle(messages: Message[]): string {
+  const firstUser = messages.find((m) => m.role === 'user' && m.content.trim());
+  if (!firstUser) return 'שיחה חדשה';
+  const text = firstUser.content.trim().replace(/\s+/g, ' ');
+  return text.length > 36 ? `${text.slice(0, 36)}…` : text;
+}
+
+function loadStoredConversations(): ChatConversation[] {
+  try {
+    const raw = localStorage.getItem(CHAT_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as StoredConversation[];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((c) => ({
+      id: c.id,
+      title: c.title || 'שיחה',
+      createdAt: new Date(c.createdAt),
+      updatedAt: new Date(c.updatedAt),
+      messages: (c.messages ?? []).map((m) => ({
+        ...m,
+        timestamp: new Date(m.timestamp),
+      })),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function saveStoredConversations(conversations: ChatConversation[]): void {
+  const payload: StoredConversation[] = conversations
+    .filter((c) => c.messages.some((m) => m.role === 'user'))
+    .slice(0, MAX_STORED_CONVERSATIONS)
+    .map((c) => ({
+      id: c.id,
+      title: c.title,
+      createdAt: c.createdAt.toISOString(),
+      updatedAt: c.updatedAt.toISOString(),
+      messages: c.messages.map((m) => ({
+        ...m,
+        timestamp: m.timestamp.toISOString(),
+      })),
+    }));
+  localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(payload));
+}
+
 // ─────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────
@@ -52,13 +132,24 @@ function formatTime(d: Date) {
   return d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
 }
 
+function toFleetChatHistory(messages: Message[]): FleetChatTurn[] {
+  return messages
+    .filter((m) => m.id !== 'welcome')
+    .map((m) => ({ role: m.role, content: m.content }));
+}
+
+const TRANSFERS_LINK_ACTION: MessageAction = { label: 'פתח מסך העברות', href: '/vehicles/transfers' };
+const REPLACEMENT_LINK_ACTION: MessageAction = { label: 'פתח מסך רכב חליפי', href: '/handover/replacement' };
+
 const WELCOME_MSG = `שלום! אני **Fleet AI**, עוזר חכם המחובר לנתוני הצי בזמן אמת.
 
 אני יכול לעזור לך עם:
+• **מעבר מהיר למסכים** — "עדכון ק״מ", "התראות חריגה", "רשימת רכבים", "ניהול צוות"
 • פרטי רכב לפי לוחית רישוי
 • מי הנהג של רכב / רכבים ללא נהג
 • קילומטראז' ומצב תחזוקה
 • שאלות על **נוהל 04-05-001** (נזק, אחריות, השתתפות עצמית)
+• **דוח העברות** — "תפיקי דוח העברות מהשבוע האחרון"
 • **הקמת נהג חדש** — כתוב "הקם נהג"
 • **הקמת רכב חדש** — כתוב "הקם רכב"
 
@@ -71,12 +162,56 @@ const WELCOME_MSG = `שלום! אני **Fleet AI**, עוזר חכם המחובר
 export function AIChatAssistant({ context }: AIChatAssistantProps) {
   const navigate = useNavigate();
 
-  const [open, setOpen]               = useState(false);
-  const [input, setInput]             = useState('');
-  const [loading, setLoading]         = useState(false);
-  const [messages, setMessages]       = useState<Message[]>([
-    { id: 'welcome', role: 'assistant', content: WELCOME_MSG, timestamp: new Date() },
-  ]);
+  const [open, setOpen] = useState(false);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [conversations, setConversations] = useState<ChatConversation[]>([]);
+  const [activeId, setActiveId] = useState('');
+
+  const activeConversation = conversations.find((c) => c.id === activeId);
+  const messages = activeConversation?.messages ?? [createWelcomeMessage()];
+
+  const patchActiveMessages = useCallback((updater: (prev: Message[]) => Message[]) => {
+    setConversations((prev) =>
+      prev.map((c) => {
+        if (c.id !== activeId) return c;
+        const nextMessages = updater(c.messages);
+        return {
+          ...c,
+          messages: nextMessages,
+          updatedAt: new Date(),
+          title: deriveConversationTitle(nextMessages),
+        };
+      }),
+    );
+  }, [activeId]);
+
+  useEffect(() => {
+    const previous = loadStoredConversations();
+    const fresh = createConversation();
+    setConversations([fresh, ...previous]);
+    setActiveId(fresh.id);
+  }, []);
+
+  useEffect(() => {
+    if (!activeId || conversations.length === 0) return;
+    saveStoredConversations(conversations);
+  }, [conversations, activeId]);
+
+  const startNewConversation = () => {
+    setFlowState(null);
+    setAwaitingConfirm(false);
+    const fresh = createConversation();
+    setConversations((prev) => [fresh, ...prev]);
+    setActiveId(fresh.id);
+  };
+
+  const selectConversation = (id: string) => {
+    if (id === activeId) return;
+    setFlowState(null);
+    setAwaitingConfirm(false);
+    setActiveId(id);
+  };
 
   // Flow state
   const [flowState, setFlowState]                 = useState<FlowState | null>(null);
@@ -95,10 +230,28 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
 
   // Add messages
   const addBot = (content: string, action?: MessageAction) =>
-    setMessages(prev => [...prev, { id: 'bot-' + Date.now(), role: 'assistant', content, timestamp: new Date(), action }]);
+    patchActiveMessages((prev) => [
+      ...prev,
+      { id: 'bot-' + Date.now(), role: 'assistant', content, timestamp: new Date(), action },
+    ]);
 
+  const handleQueryReply = (reply: FleetQueryResult) => {
+    const action = reply.action ?? (reply.navigateTo
+      ? { label: 'פתח במערכת', href: reply.navigateTo }
+      : undefined);
+    addBot(reply.text, action);
+    if (reply.autoNavigate && reply.navigateTo) {
+      window.setTimeout(() => {
+        navigate(reply.navigateTo!);
+        setOpen(false);
+      }, 350);
+    }
+  };
   const addUser = (content: string) =>
-    setMessages(prev => [...prev, { id: 'usr-' + Date.now(), role: 'user', content, timestamp: new Date() }]);
+    patchActiveMessages((prev) => [
+      ...prev,
+      { id: 'usr-' + Date.now(), role: 'user', content, timestamp: new Date() },
+    ]);
 
   // File picked during a flow step
   const handleFilePicked = (e: ChangeEvent<HTMLInputElement>) => {
@@ -175,7 +328,45 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
       return;
     }
 
-    // CASE 3: Detect new flow intent
+    const chatHistory = toFleetChatHistory(messages);
+
+    // CASE 3: Replacement vehicle delivery (before reports & generic fallback)
+    if (isReplacementHandoverCommand(text)) {
+      addUser(text);
+      setLoading(true);
+      try {
+        const reply = await processFleetQuery(text, context, chatHistory);
+        handleQueryReply(reply);
+      } catch {
+        addBot(
+          'לא ניתן לרשום מסירת רכב חליפי כרגע. נסה שוב או פתח את מסך הרכב החליפי.',
+          REPLACEMENT_LINK_ACTION,
+        );
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // CASE 4: Vehicle handover data reports (explicit route — before flow wizard & generic fallback)
+    if (isHandoverReportQuery(text, chatHistory)) {
+      addUser(text);
+      setLoading(true);
+      try {
+        const reply = await processHandoverReportQuery(text, chatHistory);
+        handleQueryReply(reply);
+      } catch {
+        addBot(
+          '📊 **דוח העברות**: לא ניתן לטעון את הדוח כרגע. ניתן לצפות בהעברות במסך הייעודי.',
+          TRANSFERS_LINK_ACTION,
+        );
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // CASE 5: Detect new flow intent
     const flowType = detectFlowIntent(text);
     if (flowType) {
       addUser(text);
@@ -189,12 +380,12 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
       return;
     }
 
-    // CASE 4: Normal AI query
+    // CASE 6: Normal AI query
     addUser(text);
     setLoading(true);
     try {
-      const reply = await processFleetQuery(text, context);
-      addBot(reply);
+      const reply = await processFleetQuery(text, context, chatHistory);
+      handleQueryReply(reply);
     } catch {
       addBot('אירעה שגיאה. נסה שנית.');
     } finally {
@@ -217,7 +408,7 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
 
   // Flow progress
   const flowProgress = flowState
-    ? { current: flowState.stepIndex, total: flowState.type === 'create_driver' ? 8 : 7, label: flowState.type === 'create_driver' ? 'הקמת נהג' : 'הקמת רכב' }
+    ? { current: flowState.stepIndex, total: getFlowStepCount(flowState.type), label: flowState.type === 'create_driver' ? 'הקמת נהג' : 'הקמת רכב' }
     : null;
 
   // Render message text
@@ -260,7 +451,7 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
         onClick={() => setOpen(o => !o)}
         aria-label={open ? 'סגור עוזר AI' : 'פתח עוזר AI'}
         className={`
-          fixed bottom-[8.75rem] left-5 z-50 h-14 w-14 rounded-full shadow-xl
+          fixed bottom-[8.75rem] left-5 z-[13000] h-14 w-14 rounded-full shadow-xl
           flex items-center justify-center transition-all duration-200
           ${open
             ? 'bg-slate-700 hover:bg-slate-600 shadow-slate-900/50'
@@ -275,12 +466,14 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
         )}
       </button>
 
-      {/* Chat Panel */}
+      {/* Chat Panel — z above AppLayout header (z~12050); top/bottom inset keeps header + FAB visible */}
       <div
         className={`
-          fixed bottom-[13.25rem] left-5 z-50
-          w-[calc(100vw-2.5rem)] max-w-[22rem] sm:w-[26rem]
-          flex flex-col
+          fixed left-5 z-[13000]
+          top-[max(5.25rem,env(safe-area-inset-top,0px)+4.75rem)]
+          bottom-[13.25rem]
+          w-[calc(100vw-2.5rem)] max-w-[24rem] sm:w-[28rem]
+          flex flex-col min-h-0
           rounded-2xl border border-white/10
           bg-[#0d1b2e]
           shadow-2xl shadow-black/60
@@ -288,7 +481,6 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
           transition-all duration-200 origin-bottom-left
           ${open ? 'opacity-100 scale-100 pointer-events-auto' : 'opacity-0 scale-95 pointer-events-none'}
         `}
-        style={{ maxHeight: '76vh' }}
       >
         {/* Header */}
         <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-cyan-900/40 to-blue-900/40 border-b border-white/10 shrink-0">
@@ -304,14 +496,62 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
             </p>
           </div>
           <button
+            type="button"
             onClick={() => setOpen(false)}
-            className="text-white/30 hover:text-white/70 transition-colors p-1 rounded-lg hover:bg-white/5"
+            aria-label="סגור עוזר AI"
+            className="shrink-0 text-white/50 hover:text-white/90 transition-colors p-1.5 rounded-lg hover:bg-white/10"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        {/* Progress bar during flow */}
+        <div className="flex flex-1 min-h-0">
+          {/* Conversation history sidebar */}
+          <aside
+            className="w-[4.5rem] sm:w-28 shrink-0 border-e border-white/10 bg-[#091423]/80 flex flex-col min-h-0"
+            dir="rtl"
+          >
+            <button
+              type="button"
+              onClick={startNewConversation}
+              title="שיחה חדשה"
+              className="m-2 flex flex-col items-center gap-0.5 rounded-xl border border-cyan-500/30 bg-cyan-600/15 px-1 py-2 text-[10px] font-bold text-cyan-300 hover:bg-cyan-600/25 transition-colors"
+            >
+              <Plus className="h-4 w-4 shrink-0" />
+              <span className="hidden sm:inline">חדשה</span>
+            </button>
+            <div className="flex-1 overflow-y-auto min-h-0 px-1.5 pb-2 space-y-1">
+              {conversations.map((conv) => {
+                const isActive = conv.id === activeId;
+                return (
+                  <button
+                    key={conv.id}
+                    type="button"
+                    onClick={() => selectConversation(conv.id)}
+                    title={conv.title}
+                    className={`
+                      w-full rounded-lg px-1.5 py-2 text-start transition-colors
+                      flex flex-col items-center sm:items-stretch gap-1
+                      ${isActive
+                        ? 'bg-cyan-600/25 border border-cyan-500/40 text-cyan-100'
+                        : 'text-white/45 hover:bg-white/5 hover:text-white/70 border border-transparent'}
+                    `}
+                  >
+                    <MessageSquare className="h-3.5 w-3.5 shrink-0 sm:hidden" />
+                    <span className="hidden sm:block text-[11px] font-medium leading-tight line-clamp-2">
+                      {conv.title}
+                    </span>
+                    <span className="hidden sm:block text-[9px] text-white/25">
+                      {conv.updatedAt.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </aside>
+
+          {/* Main chat column */}
+          <div className="flex flex-1 flex-col min-w-0 min-h-0">
         {flowProgress && (
           <div className="h-1 bg-white/5 shrink-0">
             <div
@@ -462,6 +702,8 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
           <p className="text-[10px] text-white/15 text-center mt-1.5 select-none">
             Fleet Manager AI · מחובר לנתוני Supabase בזמן אמת
           </p>
+        </div>
+          </div>
         </div>
       </div>
     </>

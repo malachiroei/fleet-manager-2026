@@ -1220,6 +1220,8 @@ export function useCreateHandover() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['handovers'] });
       queryClient.invalidateQueries({ queryKey: ['handover-history'] });
+      queryClient.invalidateQueries({ queryKey: ['active-replacement-handovers'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-active-replacement-handovers'] });
       queryClient.invalidateQueries({ queryKey: ['vehicles'] });
       queryClient.invalidateQueries({ queryKey: ['vehicles-assigned-to-driver'] });
       queryClient.invalidateQueries({ queryKey: ['active-driver-vehicle-assignments'] });
@@ -1342,6 +1344,75 @@ export function useHandoverHistory() {
     queryFn: async () => {
       if (orgId == null) return [] as HandoverHistoryItem[];
       return loadHandoverHistoryForOrg(orgId);
+    },
+  });
+}
+
+export type ActiveReplacementHandover = {
+  id: string;
+  handover_date: string;
+  odometer_reading: number | null;
+  vehicle_id: string;
+  driver_id: string | null;
+  vehicle_label: string;
+  plate_number: string;
+  driver_label: string;
+};
+
+/** רכבים חליפים בשימוש — תואם לוגיקת כרטיס הדשבורד «רכב חליפי» */
+export function useActiveReplacementHandovers() {
+  const { effectiveOrgId, fleetListReady } = useImpersonationFleetScope();
+  const orgId = effectiveOrgId ?? null;
+
+  return useQuery({
+    queryKey: ['active-replacement-handovers', orgId],
+    enabled: fleetListReady && orgId != null,
+    staleTime: 30_000,
+    placeholderData: [] as ActiveReplacementHandover[],
+    queryFn: async (): Promise<ActiveReplacementHandover[]> => {
+      if (orgId == null) return [];
+
+      const { data, error } = await supabase
+        .from('vehicle_handovers')
+        .select(
+          'id, vehicle_id, driver_id, handover_type, assignment_mode, handover_date, odometer_reading, driver:drivers(full_name), vehicle:vehicles(manufacturer, model, plate_number)',
+        )
+        .eq('org_id', orgId)
+        .eq('assignment_mode', 'replacement')
+        .order('handover_date', { ascending: false })
+        .limit(500);
+
+      if (error) throw error;
+
+      type Row = {
+        id: string;
+        vehicle_id: string;
+        driver_id: string | null;
+        handover_type: string;
+        handover_date: string;
+        odometer_reading: number | null;
+        driver: { full_name: string | null } | null;
+        vehicle: { manufacturer: string | null; model: string | null; plate_number: string | null } | null;
+      };
+
+      const latestByVehicle = new Map<string, Row>();
+      for (const row of (data ?? []) as Row[]) {
+        if (!row.vehicle_id || latestByVehicle.has(row.vehicle_id)) continue;
+        latestByVehicle.set(row.vehicle_id, row);
+      }
+
+      return Array.from(latestByVehicle.values())
+        .filter((row) => row.handover_type === 'delivery')
+        .map((row) => ({
+          id: row.id,
+          handover_date: row.handover_date,
+          odometer_reading: row.odometer_reading,
+          vehicle_id: row.vehicle_id,
+          driver_id: row.driver_id,
+          vehicle_label: `${row.vehicle?.manufacturer ?? ''} ${row.vehicle?.model ?? ''}`.trim() || 'רכב',
+          plate_number: row.vehicle?.plate_number ?? '—',
+          driver_label: row.driver?.full_name ?? 'ללא נהג',
+        }));
     },
   });
 }

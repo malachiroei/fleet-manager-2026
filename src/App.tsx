@@ -206,7 +206,7 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <ViewAsProvider>
-            {/* מופע יחיד — כדי ש-getLastPath ישרוד מעבר בין Routes (אחרת כל ProtectedRoute מאפס את lastPathRef). */}
+            {/* מופע יחיד — כדי ש-getLastPath ישרוד מעבר בין Routes */}
             <VehicleSpecDirtyProvider>
               <AppErrorBoundary>
                 <div className="flex min-h-screen flex-col">

@@ -8,7 +8,6 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { flushSync } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const MSG =
@@ -30,11 +29,26 @@ export const DIRTY_SOURCE_VEHICLE_DELIVERY = 'vehicle_delivery';
 /** נתיב דף מסירה — לניקוי כפוי כשעוזבים */
 export const VEHICLE_DELIVERY_PATH = '/handover/delivery';
 
-function pathnameIsVehicleDelivery(pathname: string) {
+export function pathnameIsVehicleDelivery(pathname: string) {
   return pathname === VEHICLE_DELIVERY_PATH || pathname.startsWith(`${VEHICLE_DELIVERY_PATH}/`);
 }
 
+/** app:go-home לפני tryNavigate ממסירה מנקה dirty וגורם לדסינכרון — דילוג על דף מסירה */
+export function dispatchAppGoHomeUnlessDelivery(pathname: string) {
+  if (pathnameIsVehicleDelivery(pathname)) return;
+  try {
+    window.dispatchEvent(new CustomEvent('app:go-home'));
+  } catch {
+    /* ignore */
+  }
+}
+
 const MSG_DELIVERY_UNSAVED = 'ישנם שינויים לא שמורים, האם לצאת בכל זאת?';
+
+function toAppAbsoluteUrl(to: string): string {
+  if (to.startsWith('http://') || to.startsWith('https://')) return to;
+  return to.startsWith('/') ? `${window.location.origin}${to}` : `${window.location.origin}/${to}`;
+}
 
 type VehicleSpecDirtyContextValue = {
   isDirty: boolean;
@@ -100,8 +114,6 @@ export function VehicleSpecDirtyProvider({ children }: { children: ReactNode }) 
         deliveryExitingRef.current = false;
         setVersion((v) => v + 1);
       }
-    } else {
-      deliveryExitConfirmedRef.current = false;
     }
   }, [location.pathname]);
 
@@ -129,36 +141,30 @@ export function VehicleSpecDirtyProvider({ children }: { children: ReactNode }) 
   const isDirty = Object.keys(sourcesRef.current).length > 0;
 
   const tryNavigate = useCallback((to: string) => {
-    if (Object.keys(sourcesRef.current).length === 0) {
-      navigate(to);
-      return;
+    const onVehicleDelivery = pathnameIsVehicleDelivery(location.pathname);
+
+    if (Object.keys(sourcesRef.current).length > 0) {
+      const confirmMsg = sourcesRef.current[DIRTY_SOURCE_VEHICLE_DELIVERY]
+        ? MSG_DELIVERY_UNSAVED
+        : MSG;
+      if (!window.confirm(confirmMsg)) return;
+      sourcesRef.current = {};
+      deliveryExitingRef.current = false;
+      setVersion((v) => v + 1);
     }
-    const confirmMsg = sourcesRef.current[DIRTY_SOURCE_VEHICLE_DELIVERY]
-      ? MSG_DELIVERY_UNSAVED
-      : MSG;
-    if (!window.confirm(confirmMsg)) return;
-    // סדר קשיח: קודם setDirty(false) בסינכרון — רק אחרי commit, navigate (מונע התקעות)
-    deliveryExitConfirmedRef.current = true;
-    const leavingVehicleDelivery = pathnameIsVehicleDelivery(location.pathname);
-    flushSync(() => {
+
+    if (onVehicleDelivery) {
+      deliveryExitConfirmedRef.current = true;
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      delete sourcesRef.current[DIRTY_SOURCE_VEHICLE_DELIVERY];
       setDirty(DIRTY_SOURCE_VEHICLE_DELIVERY, false);
-    });
-    delete sourcesRef.current[DIRTY_SOURCE_VEHICLE_DELIVERY];
-    deliveryExitingRef.current = false;
-    // אחרי ניקוי מסירה — רוקנים הכל כדי שלא יישאר dirty ממקור אחר שיחסום ניווט
-    sourcesRef.current = {};
-    setVersion((v) => v + 1);
-    // רק ממסך מסירת רכב: navigate() אחרי flushSync עלול להשאיר URL מעודכן בזמן שה-DOM תקוע — ריענון מלא.
-    if (leavingVehicleDelivery) {
-      const target =
-        to.startsWith('http://') || to.startsWith('https://')
-          ? to
-          : to.startsWith('/')
-            ? `${window.location.origin}${to}`
-            : `${window.location.origin}/${to}`;
-      window.location.assign(target);
+      // SPA navigate() משאיר DOM/Outlet תקועים ממסך מסירה — ריענון מלא אמין (ראה ded6f31 / 5bb5600)
+      window.location.assign(toAppAbsoluteUrl(to));
       return;
     }
+
     navigate(to);
   }, [navigate, setDirty, location.pathname]);
 

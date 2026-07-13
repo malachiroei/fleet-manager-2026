@@ -169,26 +169,9 @@ const VEHICLE_FIELDS: FlowFieldDef[] = [
       return isNaN(d.getTime()) ? 'תאריך לא תקין' : null;
     },
   },
-  {
-    key: 'manufacturer_code',
-    prompt: 'מה **סמל היצרן** (קוד תוצר) לפי משרד התחבורה? ניתן לכתוב "דלג" אם לא ידוע.\n\n💡 הקוד נמצא בקובץ Excel של משרד התחבורה (עמודה "קוד תוצר") ודרוש לסנכרון נתוני שווי מס.',
-    inputType: 'text',
-    optional: true,
-    validate: v => {
-      if (v.trim().toLowerCase() === 'דלג' || v.trim() === '') return null;
-      return /^\d{1,6}$/.test(v.trim()) ? null : 'סמל יצרן הוא בדרך כלל מספר (1–6 ספרות). כתוב "דלג" אם לא ידוע';
-    },
-  },
-  {
-    key: 'model_code',
-    prompt: 'מה **סמל הדגם** (קוד דגם) לפי משרד התחבורה? ניתן לכתוב "דלג" אם לא ידוע.\n\n💡 הקוד נמצא בקובץ Excel של משרד התחבורה (עמודה "קוד דגם") ודרוש לסנכרון נתוני שווי מס.',
-    inputType: 'text',
-    optional: true,
-    validate: v => {
-      if (v.trim().toLowerCase() === 'דלג' || v.trim() === '') return null;
-      return /^\d{1,8}$/.test(v.trim()) ? null : 'סמל דגם הוא בדרך כלל מספר (1–8 ספרות). כתוב "דלג" אם לא ידוע';
-    },
-  },
+  // 7 steps total — matches AIChatAssistant progress UI.
+  // Ministry codes (manufacturer_code / model_code) are optional in DB;
+  // add them later on the vehicle edit page if needed for tax sync.
 ];
 
 // ─────────────────────────────────────────────
@@ -211,6 +194,11 @@ export function initFlow(type: FlowType): FlowState {
 /** Get the field definitions for a flow type. */
 export function getFlowFields(type: FlowType): FlowFieldDef[] {
   return type === 'create_driver' ? DRIVER_FIELDS : VEHICLE_FIELDS;
+}
+
+/** Step count for progress UI — keep in sync with AIChatAssistant flowProgress. */
+export function getFlowStepCount(type: FlowType): number {
+  return getFlowFields(type).length;
 }
 
 /** The current field def the bot is collecting. */
@@ -385,17 +373,15 @@ export async function executeFlow(state: FlowState): Promise<FlowExecuteResult> 
       const { data: inserted, error } = await supabase
         .from('vehicles')
         .insert({
-          plate_number:      plate,
-          manufacturer:      d.manufacturer,
-          model:             d.model,
-          year:              parseInt(d.year),
-          current_odometer:  parseInt(d.current_odometer),
-          test_expiry:       d.test_expiry,
-          insurance_expiry:  d.insurance_expiry,
-          manufacturer_code: d.manufacturer_code?.toLowerCase() === 'דלג' ? null : (d.manufacturer_code?.trim() || null),
-          model_code:        d.model_code?.toLowerCase() === 'דלג' ? null : (d.model_code?.trim() || null),
-          status:            'valid',
-          is_active:         true,
+          plate_number:     plate,
+          manufacturer:     d.manufacturer,
+          model:            d.model,
+          year:             parseInt(d.year, 10),
+          current_odometer: parseInt(d.current_odometer, 10),
+          test_expiry:      d.test_expiry,
+          insurance_expiry: d.insurance_expiry,
+          status:           'valid',
+          is_active:        true,
         })
         .select('id')
         .single();

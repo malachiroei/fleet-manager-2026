@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useDashboardStats, useComplianceAlerts } from '@/hooks/useDashboard';
+import { useActiveReplacementHandovers } from '@/hooks/useHandovers';
 import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
 import { isFeatureEnabled, useFeatureFlags } from '@/hooks/useFeatureFlags';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -283,32 +284,8 @@ export default function Dashboard() {
     isAdmin ||
     isManager ||
     profile?.is_system_admin === true;
-  const { data: activeReplacementCount = 0 } = useQuery({
-    queryKey: ['dashboard-active-replacement-handovers', effectiveOrgId],
-    enabled: Boolean(effectiveOrgId && fleetListReady),
-    placeholderData: 0,
-    staleTime: 30_000,
-    queryFn: async (): Promise<number> => {
-      const { data, error } = await supabase
-        .from('vehicle_handovers')
-        .select('vehicle_id, handover_type, assignment_mode, handover_date')
-        .eq('assignment_mode', 'replacement')
-        .order('handover_date', { ascending: false })
-        .limit(1000);
-      if (error) throw error;
-      const rows = (data ?? []) as Array<{
-        vehicle_id: string;
-        handover_type: 'delivery' | 'return';
-      }>;
-      const latestByVehicle = new Map<string, (typeof rows)[number]>();
-      for (const row of rows) {
-        if (!latestByVehicle.has(row.vehicle_id)) {
-          latestByVehicle.set(row.vehicle_id, row);
-        }
-      }
-      return Array.from(latestByVehicle.values()).filter((row) => row.handover_type === 'delivery').length;
-    },
-  });
+  const { data: activeReplacements = [] } = useActiveReplacementHandovers();
+  const activeReplacementCount = activeReplacements.length;
 
   const { data: pendingUsersCount = 0 } = useQuery({
     queryKey: ['pending-users-count'],

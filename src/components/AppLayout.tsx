@@ -10,7 +10,7 @@ import {
   useState,
 } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { useVehicleSpecDirty } from '@/contexts/VehicleSpecDirtyContext';
+import { dispatchAppGoHomeUnlessDelivery, useVehicleSpecDirty } from '@/contexts/VehicleSpecDirtyContext';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrganization } from '@/hooks/useOrganizations';
@@ -611,11 +611,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   /** ללא `<Link>` — tryNavigate מכבד dirty; בלי location.assign (מונע מסך boot מ-index.html). */
   const handleGoHomeNav = () => {
-    try {
-      window.dispatchEvent(new CustomEvent('app:go-home'));
-    } catch {
-      /* ignore */
-    }
+    dispatchAppGoHomeUnlessDelivery(location.pathname);
     tryNavigate('/');
   };
 

@@ -51,6 +51,20 @@ function translateToHebrew(text: string): string | null {
   return null;
 }
 
+/** PostgREST / Postgres: טבלה או עמודה חסרים ב-schema cache או במסד (מיגרציה לא הורצה). */
+export function isMissingSchemaObjectError(error: unknown): boolean {
+  const e = error as { code?: string; message?: string; details?: string; hint?: string } | null;
+  if (!e) return false;
+  const code = (e.code ?? '').toUpperCase();
+  if (code === 'PGRST204' || code === 'PGRST205' || code === '42P01') return true;
+  const blob = `${e.message ?? ''} ${e.details ?? ''} ${e.hint ?? ''}`.toLowerCase();
+  return (
+    blob.includes('schema cache') ||
+    blob.includes('does not exist') ||
+    /could not find the (table|column)/i.test(blob)
+  );
+}
+
 /** PostgREST: עמודת safety_officer לא קיימת / לא ב-schema cache (מיגרציה לא הורצה בפרוד). */
 export function isMissingSafetyOfficerColumnError(error: unknown): boolean {
   const e = error as { code?: string; message?: string; details?: string; hint?: string } | null;
