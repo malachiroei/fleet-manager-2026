@@ -40,6 +40,13 @@ export const DATA_SCHEMA = {
     'current_odometer — ק״מ רשומים במערכת',
     'last_odometer_date — תאריך עדכון מד אוץ',
   ],
+  /** תלונות נוהל 6 */
+  procedure6Complaints: [
+    'procedure6_complaints — תלונות לפי org_id',
+    'status: open | in_progress | closed (וגם legacy pending)',
+    'created_at / report_date_time — מועד קבלה',
+    'ספירות AI: תלונות בשבוע האחרון + פתוחות בטיפול',
+  ],
 } as const;
 
 // ─────────────────────────────────────────────
