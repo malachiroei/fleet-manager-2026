@@ -15,6 +15,10 @@ const corsHeaders = {
 const FROM_EMAIL = 'מערכת ניהול צי רכבים <invites@fleet-manager-pro.com>';
 const APP_URL_DEFAULT = 'https://fleet-manager-pro.com';
 
+function clean(v: unknown): string {
+  return typeof v === 'string' ? v.trim() : '';
+}
+
 function resolvePublicAppBaseUrl(): string {
   const fromEnv =
     clean(Deno.env.get('PUBLIC_APP_URL')) ||
@@ -36,10 +40,6 @@ function json(body: unknown, status = 200): Response {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
-}
-
-function clean(v: unknown): string {
-  return typeof v === 'string' ? v.trim() : '';
 }
 
 function escHtml(s: string): string {
