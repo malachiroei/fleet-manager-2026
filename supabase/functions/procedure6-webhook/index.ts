@@ -11,6 +11,7 @@ import {
   parseProcedure6EmailBody,
   randomResponseToken,
 } from '../_shared/procedure6EmailParse.ts';
+import { notifyProcedure6NewComplaint } from '../_shared/notifyProcedure6NewComplaint.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -240,7 +241,9 @@ serve(async (req) => {
     const { data: inserted, error: insErr } = await admin
       .from('procedure6_complaints')
       .insert(insertRow)
-      .select('id, org_id, driver_id, vehicle_number, status')
+      .select(
+        'id, org_id, driver_id, vehicle_number, status, report_date_time, location, description, reporter_name, reporter_cell_phone, driver_name, report_id',
+      )
       .single();
 
     if (insErr) {
@@ -248,11 +251,37 @@ serve(async (req) => {
       return json({ error: insErr.message }, 500);
     }
 
+    // Staff copy: recipients from user_org_notification_routing topic procedure6_complaints
+    let notify: { sent: boolean; to: string[]; error?: string } = {
+      sent: false,
+      to: [],
+    };
+    try {
+      notify = await notifyProcedure6NewComplaint(admin, {
+        org_id: orgId,
+        vehicle_number: inserted.vehicle_number ?? plateDisplay,
+        report_date_time: inserted.report_date_time ?? parsed.report_date_time,
+        location: inserted.location ?? parsed.location,
+        description: inserted.description ?? parsed.description,
+        reporter_name: inserted.reporter_name ?? parsed.reporter_name,
+        reporter_cell_phone: inserted.reporter_cell_phone ?? parsed.reporter_cell_phone,
+        driver_name: inserted.driver_name ?? driverName,
+        report_id: inserted.report_id ?? parsed.report_id,
+      });
+      if (!notify.sent) {
+        console.warn('[procedure6-webhook] staff notify skipped/failed', notify);
+      }
+    } catch (notifyErr) {
+      console.error('[procedure6-webhook] staff notify', notifyErr);
+    }
+
     return json({
       ok: true,
       complaint: inserted,
       resolved_driver: Boolean(driverId),
       driver_label: driverName,
+      staff_notified: notify.sent,
+      staff_recipients: notify.to.length,
     });
   } catch (err) {
     console.error('[procedure6-webhook]', err);

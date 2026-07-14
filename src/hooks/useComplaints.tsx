@@ -89,6 +89,16 @@ export function useComplaints() {
 }
 
 /** תלונה יחידה (טופס ידני מתיק נהג). */
+async function notifyStaffNewComplaint(complaintId: string) {
+  try {
+    await supabase.functions.invoke('send-procedure6-new-complaint-email', {
+      body: { complaint_id: complaintId },
+    });
+  } catch (err) {
+    console.warn('[useCreateComplaint] staff notify', err);
+  }
+}
+
 export function useCreateComplaint() {
   const queryClient = useQueryClient();
   const { activeOrgId } = useAuth();
@@ -106,6 +116,7 @@ export function useCreateComplaint() {
         .single();
 
       if (error) throw error;
+      if (data?.id) await notifyStaffNewComplaint(data.id);
       return data;
     },
     onSuccess: () => {
@@ -150,9 +161,12 @@ export function useCreateComplaints() {
 
 export function useUpdateComplaint() {
   const queryClient = useQueryClient();
+  const { effectiveOrgId } = useImpersonationFleetScope();
+  const orgId = effectiveOrgId ?? null;
 
   return useMutation({
     mutationFn: async ({ id, ...updates }: Partial<Complaint> & { id: string }) => {
+      if (!orgId) throw new Error('חסר ארגון פעיל');
       const patch: Record<string, unknown> = { ...updates };
       if (updates.status === 'closed' && !updates.closed_at) {
         patch.closed_at = new Date().toISOString();
@@ -161,6 +175,7 @@ export function useUpdateComplaint() {
         .from('procedure6_complaints')
         .update(patch)
         .eq('id', id)
+        .eq('org_id', orgId)
         .select()
         .single();
 

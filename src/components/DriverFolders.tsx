@@ -10,7 +10,7 @@ import {
   useCreateDriverFamilyMember,
   type DriverIncidentType,
 } from '@/hooks/useDriverFolders';
-import { useComplaints, useCreateComplaint, type Complaint } from '@/hooks/useComplaints';
+import { useComplaints, useCreateComplaint, useUpdateComplaint, type Complaint } from '@/hooks/useComplaints';
 import { useDriverHandoverHistory, handoverFormDocumentLinks, type HandoverHistoryItem } from '@/hooks/useHandovers';
 import { useDriverDocuments } from '@/hooks/useDriverDocuments';
 import { useDriverStorageFiles } from '@/hooks/useDriverStorageFiles';
@@ -530,9 +530,146 @@ function IncidentsTab({ driver, incidentType }: { driver: Driver; incidentType: 
 
 // ─── Complaints tab ───────────────────────────────────────────────────────────
 
+function complaintStatusLabel(status: string): string {
+  if (status === 'closed') return 'סגור';
+  if (status === 'in_progress') return 'בטיפול';
+  return 'פתוח';
+}
+
+function complaintStatusClass(status: string): string {
+  if (status === 'closed') return 'bg-green-500/20 text-green-400 border-green-500/30';
+  if (status === 'in_progress') return 'bg-sky-500/20 text-sky-300 border-sky-500/30';
+  return 'bg-amber-500/20 text-amber-400 border-amber-500/30';
+}
+
+function formatComplaintDateTime(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString('he-IL');
+}
+
+function DriverComplaintEditDialog({
+  complaint,
+  onClose,
+}: {
+  complaint: Complaint | null;
+  onClose: () => void;
+}) {
+  const updateComplaint = useUpdateComplaint();
+  const [driverResponse, setDriverResponse] = useState('');
+  const [status, setStatus] = useState('open');
+  const [lastId, setLastId] = useState<string | null>(null);
+
+  if (complaint && complaint.id !== lastId) {
+    setLastId(complaint.id);
+    setDriverResponse(complaint.driver_response || '');
+    setStatus(complaint.status || 'open');
+  }
+
+  if (!complaint) return null;
+
+  const save = () => {
+    updateComplaint.mutate(
+      {
+        id: complaint.id,
+        status,
+        driver_response: driverResponse.trim() || null,
+      },
+      { onSuccess: () => onClose() },
+    );
+  };
+
+  return (
+    <Dialog open={!!complaint} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" dir="rtl">
+        <DialogHeader>
+          <DialogTitle>תלונת נוהל 6 — רכב {complaint.vehicle_number}</DialogTitle>
+          <DialogDescription>
+            דיווח מס׳ {complaint.report_id || '—'} · {formatComplaintDateTime(complaint.report_date_time)}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 text-sm py-1">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 rounded-lg border border-border/60 bg-muted/20 p-3">
+            <div>
+              <span className="text-muted-foreground">מס׳ רכב: </span>
+              <span className="font-mono font-medium">{complaint.vehicle_number}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">תאריך: </span>
+              <span className="font-medium">{formatComplaintDateTime(complaint.report_date_time)}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">מיקום: </span>
+              <span className="font-medium">{complaint.location || '—'}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">מדווח: </span>
+              <span className="font-medium">{complaint.reporter_name || '—'}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">טלפון: </span>
+              <span className="font-medium" dir="ltr">
+                {complaint.reporter_cell_phone || '—'}
+              </span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">נהג: </span>
+              <span className="font-medium">{complaint.driver_name || '—'}</span>
+            </div>
+          </div>
+
+          {complaint.description ? (
+            <div className="rounded-lg border border-border/60 p-3 bg-muted/30">
+              <p className="text-muted-foreground mb-1">תיאור הפנייה</p>
+              <p className="whitespace-pre-wrap">{complaint.description}</p>
+            </div>
+          ) : null}
+
+          <div className="space-y-2">
+            <Label>סטטוס</Label>
+            <Select value={status} onValueChange={setStatus}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="open">פתוח</SelectItem>
+                <SelectItem value="in_progress">בטיפול</SelectItem>
+                <SelectItem value="closed">סגור</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="driver-complaint-response">תגובת הנהג</Label>
+            <Textarea
+              id="driver-complaint-response"
+              value={driverResponse}
+              onChange={(e) => setDriverResponse(e.target.value)}
+              placeholder="הזן את גרסת / תגובת הנהג לאירוע…"
+              rows={4}
+            />
+          </div>
+        </div>
+
+        <DialogFooter className="gap-2 sm:justify-start">
+          <Button type="button" variant="outline" onClick={onClose}>
+            ביטול
+          </Button>
+          <Button type="button" onClick={save} disabled={updateComplaint.isPending}>
+            {updateComplaint.isPending ? 'שומר…' : 'שמירה'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function ComplaintsTab({ driver }: { driver: Driver }) {
   const { data: allComplaints = [], isLoading, isError } = useComplaints();
   const [addOpen, setAddOpen] = useState(false);
+  const [selected, setSelected] = useState<Complaint | null>(null);
   const complaints = allComplaints.filter((c) => complaintMatchesDriver(c, driver));
 
   if (isLoading) return <p className="text-muted-foreground text-sm p-4">טוען...</p>;
@@ -548,48 +685,59 @@ function ComplaintsTab({ driver }: { driver: Driver }) {
         </Button>
       </div>
       <AddDriverComplaintDialog driver={driver} open={addOpen} onOpenChange={setAddOpen} />
+      <DriverComplaintEditDialog complaint={selected} onClose={() => setSelected(null)} />
       {complaints.length === 0 ? (
         <EmptyFolderHint />
       ) : (
-    <div className="space-y-2">
-      <p className="text-sm text-muted-foreground">{complaints.length} תלונות</p>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border">
-              <th className="text-right py-2 pr-2 text-muted-foreground font-medium">תאריך</th>
-              <th className="text-right py-2 pr-2 text-muted-foreground font-medium">מס' רכב</th>
-              <th className="text-right py-2 pr-2 text-muted-foreground font-medium">סוג</th>
-              <th className="text-right py-2 pr-2 text-muted-foreground font-medium">תיאור</th>
-              <th className="text-right py-2 pr-2 text-muted-foreground font-medium">סטטוס</th>
-            </tr>
-          </thead>
-          <tbody>
-            {complaints.map((c) => (
-              <tr key={c.id} className="border-b border-border/50 hover:bg-muted/30">
-                <td className="py-2 pr-2">
-                  {c.report_date_time
-                    ? new Date(c.report_date_time).toLocaleDateString('he-IL')
-                    : '—'}
-                </td>
-                <td className="py-2 pr-2">{c.vehicle_number}</td>
-                <td className="py-2 pr-2">{c.report_type ?? '—'}</td>
-                <td className="py-2 pr-2 max-w-[200px] truncate">{c.description ?? '—'}</td>
-              <td className="py-2 pr-2">
-                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${
-                    c.status === 'closed'
-                      ? 'bg-green-500/20 text-green-400 border-green-500/30'
-                      : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                  }`}>
-                    {c.status === 'closed' ? 'סגור' : 'פתוח'}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">{complaints.length} תלונות · לחצו על שורה לעדכון</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-right py-2 pr-2 text-muted-foreground font-medium">תאריך</th>
+                  <th className="text-right py-2 pr-2 text-muted-foreground font-medium">מס' רכב</th>
+                  <th className="text-right py-2 pr-2 text-muted-foreground font-medium">סוג</th>
+                  <th className="text-right py-2 pr-2 text-muted-foreground font-medium">תיאור</th>
+                  <th className="text-right py-2 pr-2 text-muted-foreground font-medium">סטטוס</th>
+                </tr>
+              </thead>
+              <tbody>
+                {complaints.map((c) => (
+                  <tr
+                    key={c.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelected(c)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setSelected(c);
+                      }
+                    }}
+                    className="border-b border-border/50 hover:bg-muted/40 cursor-pointer transition-colors"
+                  >
+                    <td className="py-2 pr-2">
+                      {c.report_date_time
+                        ? new Date(c.report_date_time).toLocaleDateString('he-IL')
+                        : '—'}
+                    </td>
+                    <td className="py-2 pr-2">{c.vehicle_number}</td>
+                    <td className="py-2 pr-2">{c.report_type ?? '—'}</td>
+                    <td className="py-2 pr-2 max-w-[200px] truncate">{c.description ?? '—'}</td>
+                    <td className="py-2 pr-2">
+                      <span
+                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${complaintStatusClass(c.status)}`}
+                      >
+                        {complaintStatusLabel(c.status)}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
     </div>
   );

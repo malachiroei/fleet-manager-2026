@@ -64,3 +64,7 @@ verify_jwt = false
 # Staff forward uses getUser() inside the function
 [functions.send-procedure6-forward]
 verify_jwt = false
+
+# Staff notify on manual Procedure 6 create — getUser() inside
+[functions.send-procedure6-new-complaint-email]
+verify_jwt = false
