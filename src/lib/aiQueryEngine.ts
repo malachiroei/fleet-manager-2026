@@ -13,6 +13,7 @@ import {
 } from '@/lib/complianceAlertsEngine';
 import { actionRunComprehensiveE2ETest, actionDeleteTestSimulationData } from '@/lib/fleetE2ESimulation';
 import { isMissingSchemaObjectError, formatSupabaseError } from '@/lib/supabaseError';
+import { resolveLockedFleetOrgIdForStaff } from '@/lib/resolveFleetScopeOrg';
 
 // ─────────────────────────────────────────────
 // Helpers
@@ -1321,13 +1322,35 @@ async function resolveFleetOrgId(context?: AIChatContext): Promise<string | null
     (typeof context?.effectiveOrgId === 'string' && context.effectiveOrgId.trim()) ||
     '';
   if (fromCtx) return fromCtx;
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const [{ data: profile }, { data: memberRows }] = await Promise.all([
+    supabase.from('profiles').select('org_id').eq('id', user.id).maybeSingle(),
+    supabase.from('org_members').select('org_id').eq('user_id', user.id),
+  ]);
+
+  const memberOrgs = (memberRows ?? [])
+    .map((r: { org_id?: string | null }) => ({ id: String(r.org_id ?? '').trim() }))
+    .filter((o) => o.id.length > 0);
+
+  let preferredLs: string | null = null;
   try {
-    const fromLs = localStorage.getItem('fleet-manager-active-org')?.trim() || '';
-    if (fromLs && /^[0-9a-f-]{36}$/i.test(fromLs)) return fromLs;
+    const ls = localStorage.getItem('fleet-manager-active-org')?.trim() || '';
+    if (ls && memberOrgs.some((o) => o.id === ls)) preferredLs = ls;
   } catch {
     /* ignore */
   }
-  return resolveHealthCheckOrgId();
+  if (preferredLs) return preferredLs;
+
+  const locked = resolveLockedFleetOrgIdForStaff(
+    profile as { org_id?: string | null } | null,
+    memberOrgs,
+  );
+  if (locked) return locked;
+
+  return (profile?.org_id ?? '').trim() || null;
 }
 
 type Procedure6RowForStats = {
@@ -1338,6 +1361,8 @@ type Procedure6RowForStats = {
   created_at: string | null;
   received_time: string | null;
   report_date_time: string | null;
+  vehicle_number?: string | null;
+  driver_name?: string | null;
 };
 
 /** Parse DB timestamptz / ISO / date-only into epoch ms; invalid → null. */
@@ -1351,8 +1376,8 @@ function parseComplaintInstantMs(raw: string | null | undefined): number | null 
 }
 
 /**
- * Business "received" moment — same date the complaints UI shows first
- * (report_date_time), then inbound received_time, then created_at.
+ * Same date the complaints table shows (report_date_time first).
+ * Do not use created_at alone — inbound inserts today would fake "this week".
  */
 function complaintBusinessReceivedMs(row: Procedure6RowForStats): number | null {
   return (
@@ -1369,13 +1394,21 @@ function normalizeComplaintStatus(status: string | null | undefined): string {
     .replace(/\s+/g, '_');
 }
 
-/** Open / in progress only — never closed or resolved (incl. Hebrew). */
+/**
+ * Mirrors DriverFolders / Procedure6ComplaintsPage badges:
+ * only explicit open-family statuses count as open.
+ */
 function isComplaintOpen(row: Procedure6RowForStats): boolean {
   if (row.closed_at) return false;
   const s = normalizeComplaintStatus(row.status);
-  if (!s) return false;
-  if (s === 'closed' || s === 'resolved' || s === 'סגור') return false;
+  if (s === 'closed' || s === 'resolved' || s === 'סגור' || s.startsWith('close')) return false;
   return s === 'open' || s === 'pending' || s === 'in_progress' || s === 'פתוח' || s === 'בטיפול';
+}
+
+function isComplaintClosed(row: Procedure6RowForStats): boolean {
+  if (row.closed_at) return true;
+  const s = normalizeComplaintStatus(row.status);
+  return s === 'closed' || s === 'resolved' || s === 'סגור' || s.startsWith('close');
 }
 
 /** Start of current calendar week (Sunday 00:00 Asia/Jerusalem) as epoch ms. */
@@ -1402,7 +1435,9 @@ function startOfCurrentWeekIsraelMs(): number {
     Sat: 6,
   };
   const dow = weekdayIndex[weekday] ?? 0;
-  const localMidnight = new Date(`${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}T00:00:00+03:00`);
+  const localMidnight = new Date(
+    `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}T00:00:00+03:00`,
+  );
   return localMidnight.getTime() - dow * 24 * 60 * 60 * 1000;
 }
 
@@ -1412,9 +1447,11 @@ async function loadOrgProcedure6Rows(orgId: string): Promise<Procedure6RowForSta
 
   const { data, error } = await supabase
     .from('procedure6_complaints')
-    .select('id, org_id, status, closed_at, created_at, received_time, report_date_time')
+    .select(
+      'id, org_id, status, closed_at, created_at, received_time, report_date_time, vehicle_number, driver_name',
+    )
     .eq('org_id', oid)
-    .not('org_id', 'is', null)
+    .order('created_at', { ascending: false })
     .limit(2000);
 
   if (error) {
@@ -1422,10 +1459,14 @@ async function loadOrgProcedure6Rows(orgId: string): Promise<Procedure6RowForSta
     return [];
   }
 
-  // Strict client-side org silo (never count null / other org)
   return ((data ?? []) as Procedure6RowForStats[]).filter(
     (r) => typeof r.org_id === 'string' && r.org_id.trim() === oid,
   );
+}
+
+function fmtComplaintDay(ms: number | null): string {
+  if (ms == null) return '—';
+  return new Date(ms).toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem' });
 }
 
 function computeProcedure6Stats(rows: Procedure6RowForStats[]) {
@@ -1434,22 +1475,32 @@ function computeProcedure6Stats(rows: Procedure6RowForStats[]) {
   const rolling7Ms = nowMs - 7 * 24 * 60 * 60 * 1000;
 
   let openN = 0;
+  let closedN = 0;
   let weekN = 0;
   let openThisWeek = 0;
   let last7N = 0;
+  const openRows: Procedure6RowForStats[] = [];
 
   for (const row of rows) {
-    const open = isComplaintOpen(row);
-    if (open) openN += 1;
+    const closed = isComplaintClosed(row);
+    const open = !closed && isComplaintOpen(row);
+    if (closed) closedN += 1;
+    else if (open) {
+      openN += 1;
+      openRows.push(row);
+    }
 
     const receivedMs = complaintBusinessReceivedMs(row);
     if (receivedMs == null) continue;
 
-    if (receivedMs >= weekStartMs && receivedMs <= nowMs + 60_000) {
+    // Guard against absurd future-skewed timestamps beyond ~2 days ahead
+    if (receivedMs > nowMs + 2 * 24 * 60 * 60 * 1000) continue;
+
+    if (receivedMs >= weekStartMs && receivedMs <= nowMs + 2 * 24 * 60 * 60 * 1000) {
       weekN += 1;
       if (open) openThisWeek += 1;
     }
-    if (receivedMs >= rolling7Ms && receivedMs <= nowMs + 60_000) {
+    if (receivedMs >= rolling7Ms && receivedMs <= nowMs + 2 * 24 * 60 * 60 * 1000) {
       last7N += 1;
     }
   }
@@ -1457,9 +1508,11 @@ function computeProcedure6Stats(rows: Procedure6RowForStats[]) {
   return {
     total: rows.length,
     openN,
+    closedN,
     weekN,
     openThisWeek,
     last7N,
+    openRows,
   };
 }
 
@@ -1470,15 +1523,35 @@ async function resolveComplaintsStats(context?: AIChatContext): Promise<string> 
   }
 
   const rows = await loadOrgProcedure6Rows(orgId);
-  const { total, openN, weekN, openThisWeek, last7N } = computeProcedure6Stats(rows);
+  const { total, openN, closedN, weekN, openThisWeek, last7N, openRows } =
+    computeProcedure6Stats(rows);
 
-  return `📢 **תלונות נוהל 6**
-• השבוע (מ־יום ראשון, לפי מועד הדיווח): **${weekN}** התקבלו (**${openThisWeek}** מהן עדיין פתוחות/בטיפול)
-• ב־7 הימים האחרונים: **${last7N}** התקבלו
-• כרגע פתוחות בטיפול בארגון: **${openN}**
-• סה״כ תלונות בארגון: **${total}**
+  const statusHe = (s: string | null | undefined) => {
+    const n = normalizeComplaintStatus(s);
+    if (n === 'in_progress' || n === 'בטיפול') return 'בטיפול';
+    if (n === 'open' || n === 'pending' || n === 'פתוח') return 'פתוח';
+    return s?.trim() || '—';
+  };
 
-שורה לתצוגה מהירה: תלונות נוהל 6 השבוע: **${weekN}** (**${openN}** פתוחות בטיפול)`;
+  const openLines =
+    openRows.length === 0
+      ? '• אין תלונות פתוחות בארגון.'
+      : openRows
+          .slice(0, 8)
+          .map((r) => {
+            const day = fmtComplaintDay(complaintBusinessReceivedMs(r));
+            return `  – רכב ${r.vehicle_number ?? '—'} · ${r.driver_name ?? 'ללא נהג'} · ${statusHe(r.status)} · ${day}`;
+          })
+          .join('\n');
+
+  return `📢 **תלונות נוהל 6** (כל הארגון — כמו מסך תלונות נוהל 6, לא רק כרטיס נהג בודד)
+• סה״כ בארגון: **${total}** (**${closedN}** סגורות, **${openN}** פתוחות/בטיפול)
+• השבוע לפי **מועד הדיווח**: **${weekN}** (**${openThisWeek}** מהן עדיין פתוחות)
+• ב־7 הימים האחרונים לפי מועד הדיווח: **${last7N}**
+
+${openN > 0 ? `תלונות שעדיין לא סגורות:\n${openLines}` : openLines}
+
+שורה לתצוגה מהירה: תלונות נוהל 6 השבוע: **${weekN}** · סה״כ פתוחות בארגון: **${openN}**`;
 }
 
 async function resolveGeneralStats(context?: AIChatContext): Promise<string> {
@@ -1503,13 +1576,13 @@ async function resolveGeneralStats(context?: AIChatContext): Promise<string> {
     loadOrgProcedure6Rows(orgId),
   ]);
 
-  const { weekN, openN } = computeProcedure6Stats(complaintRows);
+  const { weekN, openN, total, closedN } = computeProcedure6Stats(complaintRows);
 
   return `📊 **סטטיסטיקות כלליות — Fleet Manager 2026**:
 🚗 רכבים פעילים: **${vTotal ?? '?'}** ${(vWarning ?? 0) > 0 ? `(⚠️ ${vWarning} דורשים טיפול)` : '(הכל תקין)'}
 👤 נהגים פעילים: **${dTotal ?? '?'}** ${(dWarning ?? 0) > 0 ? `(⚠️ ${dWarning} דורשים בדיקה)` : '(הכל תקין)'}
 📁 מסמכים שמורים: **${docsTotal ?? '?'}**
-📢 תלונות נוהל 6 השבוע: **${weekN}** (**${openN}** פתוחות בטיפול)`;
+📢 תלונות נוהל 6: השבוע **${weekN}** · סה״כ **${total}** (**${closedN}** סגורות, **${openN}** פתוחות)`;
 }
 
 type HandoverReportRow = {

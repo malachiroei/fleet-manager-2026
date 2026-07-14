@@ -14,6 +14,7 @@ import {
   useCreateComplaints,
   useUpdateComplaint,
   useForwardProcedure6Complaint,
+  formatComplaintProcessLog,
   type Complaint,
 } from '@/hooks/useComplaints';
 
@@ -415,13 +416,13 @@ function ComplaintDetailDialog({
             </div>
           </div>
 
-          {(complaint.process_log?.trim() ||
+          {(formatComplaintProcessLog(complaint.process_log) ||
             (complaint.status === 'closed' && complaint.action_taken) ||
             complaint.closed_at) && (
             <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-3">
               <p className="text-sm font-semibold mb-2">תיעוד הטיפול</p>
               <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground/90">
-                {complaint.process_log?.trim() ||
+                {formatComplaintProcessLog(complaint.process_log) ||
                   [
                     complaint.driver_response ? `תגובת נהג: ${complaint.driver_response}` : null,
                     complaint.action_taken

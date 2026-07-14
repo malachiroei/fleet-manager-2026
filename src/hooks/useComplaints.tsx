@@ -32,13 +32,48 @@ export interface Complaint {
   forwarded_to_email?: string | null;
   closed_at?: string | null;
   source?: string | null;
-  /** Append-only timeline of handling (clarification / responses / close) */
-  process_log?: string | null;
+  /**
+   * Append-only timeline of handling (clarification / responses / close).
+   * DB column is text; some rows / clients may still return jsonb-like values.
+   */
+  process_log?: string | unknown[] | Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }
 
 export type ComplaintInsert = Omit<Complaint, 'id' | 'created_at' | 'updated_at'>;
+
+/** Normalize process_log from Supabase (text / jsonb / array) into display text. */
+export function formatComplaintProcessLog(raw: Complaint['process_log']): string {
+  if (raw == null) return '';
+  if (typeof raw === 'string') return raw.trim();
+  if (Array.isArray(raw)) {
+    return raw
+      .map((entry) => {
+        if (typeof entry === 'string') return entry.trim();
+        if (entry && typeof entry === 'object') {
+          const o = entry as Record<string, unknown>;
+          const line =
+            (typeof o.line === 'string' && o.line) ||
+            (typeof o.text === 'string' && o.text) ||
+            (typeof o.message === 'string' && o.message) ||
+            JSON.stringify(entry);
+          return String(line).trim();
+        }
+        return String(entry ?? '').trim();
+      })
+      .filter(Boolean)
+      .join('\n');
+  }
+  if (typeof raw === 'object') {
+    try {
+      return JSON.stringify(raw, null, 2);
+    } catch {
+      return '';
+    }
+  }
+  return String(raw).trim();
+}
 
 function newResponseToken(): string {
   const uuid = crypto.randomUUID().replace(/-/g, '');

@@ -10,7 +10,13 @@ import {
   useCreateDriverFamilyMember,
   type DriverIncidentType,
 } from '@/hooks/useDriverFolders';
-import { useComplaints, useCreateComplaint, useUpdateComplaint, type Complaint } from '@/hooks/useComplaints';
+import {
+  useComplaints,
+  useCreateComplaint,
+  useUpdateComplaint,
+  formatComplaintProcessLog,
+  type Complaint,
+} from '@/hooks/useComplaints';
 import { useDriverHandoverHistory, handoverFormDocumentLinks, type HandoverHistoryItem } from '@/hooks/useHandovers';
 import { useDriverDocuments } from '@/hooks/useDriverDocuments';
 import { useDriverStorageFiles } from '@/hooks/useDriverStorageFiles';
@@ -592,7 +598,7 @@ function DriverComplaintEditDialog({
   };
 
   const processLog =
-    complaint.process_log?.trim() ||
+    formatComplaintProcessLog(complaint.process_log) ||
     [
       complaint.driver_response
         ? `תגובת נהג: ${complaint.driver_response}`
