@@ -41,7 +41,7 @@ serve(async (req) => {
     const { data: row, error } = await admin
       .from('procedure6_complaints')
       .select(
-        'id, vehicle_number, report_type, location, description, report_date_time, driver_name, status, closed_at, action_taken, driver_response',
+        'id, vehicle_number, report_type, location, description, report_date_time, driver_name, status, closed_at, driver_response',
       )
       .eq('response_token', token)
       .maybeSingle();
@@ -60,7 +60,6 @@ serve(async (req) => {
           report_type: row.report_type,
           driver_name: row.driver_name,
           driver_response: row.driver_response,
-          action_taken: row.action_taken,
           status: row.status,
         },
       });

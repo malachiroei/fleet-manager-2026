@@ -1,5 +1,7 @@
 /**
- * Public submit of Procedure 6 employee response → status closed + notify forwarder & topic list.
+ * Public submit of Procedure 6 driver response.
+ * Updates by response_token only (service role) — no login required.
+ * Sets driver_response + status in_progress; does not touch action_taken.
  */
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -22,7 +24,6 @@ type SubmitBody = {
   token?: string;
   driver_name?: string;
   driver_response?: string;
-  action_taken?: string;
 };
 
 function json(body: unknown, status = 200): Response {
@@ -49,18 +50,20 @@ serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
   try {
-    const body = (await req.json()) as SubmitBody;
+    const body = (await req.json().catch(() => ({}))) as SubmitBody;
     const token = clean(body.token);
     const driverName = clean(body.driver_name);
     const driverResponse = clean(body.driver_response);
-    const actionTaken = clean(body.action_taken);
     if (!token) return json({ error: 'Missing token' }, 400);
     if (!driverResponse) return json({ error: 'חסרה תגובת הנהג' }, 400);
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     const resendApiKey = Deno.env.get('RESEND_API_KEY') ?? '';
-    if (!supabaseUrl || !serviceRoleKey) return json({ error: 'Missing server secrets' }, 500);
+    if (!supabaseUrl || !serviceRoleKey) {
+      console.error('[public-procedure6-submit] missing secrets');
+      return json({ error: 'Missing server secrets' }, 500);
+    }
 
     const admin = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
@@ -69,108 +72,126 @@ serve(async (req) => {
     const { data: row, error: loadErr } = await admin
       .from('procedure6_complaints')
       .select(
-        'id, org_id, vehicle_number, location, description, report_date_time, status, closed_at, forwarded_by, forwarded_to_email, driver_name',
+        'id, org_id, vehicle_number, location, description, report_date_time, status, closed_at, forwarded_by, forwarded_to_email, driver_name, response_token',
       )
       .eq('response_token', token)
       .maybeSingle();
 
-    if (loadErr) return json({ error: loadErr.message }, 500);
+    if (loadErr) {
+      console.error('[public-procedure6-submit] load', loadErr);
+      return json({ error: loadErr.message }, 500);
+    }
     if (!row) return json({ error: 'Complaint not found' }, 404);
     if (row.status === 'closed' || row.closed_at) {
       return json({ error: 'התלונה כבר נסגרה' }, 410);
     }
 
     const nowIso = new Date().toISOString();
-    const { error: updErr } = await admin
+    // Token-scoped update only — never action_taken; staff fill that later
+    const { data: updated, error: updErr } = await admin
       .from('procedure6_complaints')
       .update({
-        driver_name: driverName || row.driver_name,
+        ...(driverName ? { driver_name: driverName } : {}),
         driver_response: driverResponse,
-        action_taken: actionTaken || null,
-        status: 'closed',
-        closed_at: nowIso,
+        status: 'in_progress',
         last_update_time: nowIso,
       })
-      .eq('id', row.id);
+      .eq('response_token', token)
+      .eq('id', row.id)
+      .select('id, status')
+      .maybeSingle();
 
-    if (updErr) return json({ error: updErr.message }, 500);
-
-    // Notify: forwarder email + topic subscribers
-    const recipients: string[] = [];
-    if (clean(row.forwarded_to_email)) recipients.push(clean(row.forwarded_to_email));
-
-    if (row.forwarded_by) {
-      const { data: profile } = await admin
-        .from('profiles')
-        .select('email, full_name')
-        .eq('id', row.forwarded_by)
-        .maybeSingle();
-      const pe = clean((profile as { email?: string } | null)?.email);
-      if (pe) recipients.push(pe);
-      try {
-        const { data: authUser } = await admin.auth.admin.getUserById(row.forwarded_by);
-        const ae = clean(authUser?.user?.email);
-        if (ae) recipients.push(ae);
-      } catch {
-        /* ignore */
-      }
+    if (updErr) {
+      console.error('[public-procedure6-submit] update', updErr);
+      return json({ error: updErr.message }, 500);
+    }
+    if (!updated) {
+      console.error('[public-procedure6-submit] update matched 0 rows', { id: row.id });
+      return json({ error: 'עדכון התלונה נכשל' }, 500);
     }
 
-    const topicEmails = await loadFilteredNotificationEmails(
-      admin,
-      'procedure6_complaints',
-      row.org_id,
-    );
-    recipients.push(...topicEmails);
+    // Notify staff — never fail the driver submit if mail breaks
+    try {
+      const recipients: string[] = [];
+      if (clean(row.forwarded_to_email)) recipients.push(clean(row.forwarded_to_email));
 
-    const toList = uniqueEmailList(recipients);
-    if (toList.length > 0 && resendApiKey) {
-      const fromEmail = Deno.env.get('NOTIFY_FROM_EMAIL') || FROM_EMAIL;
-      const plate = escHtml(row.vehicle_number ?? '');
-      const loc = escHtml(row.location ?? '—');
-      const when = escHtml(row.report_date_time ?? '—');
-      const resp = escHtml(driverResponse).replace(/\n/g, '<br/>');
-      const action = escHtml(actionTaken || '—');
-      const dName = escHtml(driverName || row.driver_name || '—');
+      if (row.forwarded_by) {
+        try {
+          const { data: profile } = await admin
+            .from('profiles')
+            .select('email')
+            .eq('id', row.forwarded_by)
+            .maybeSingle();
+          const pe = clean((profile as { email?: string } | null)?.email);
+          if (pe) recipients.push(pe);
+        } catch (profileErr) {
+          console.warn('[public-procedure6-submit] profile', profileErr);
+        }
+        try {
+          const { data: authUser } = await admin.auth.admin.getUserById(row.forwarded_by);
+          const ae = clean(authUser?.user?.email);
+          if (ae) recipients.push(ae);
+        } catch (authErr) {
+          console.warn('[public-procedure6-submit] auth user', authErr);
+        }
+      }
 
-      const inner = `
+      const topicEmails = await loadFilteredNotificationEmails(
+        admin,
+        'procedure6_complaints',
+        row.org_id,
+      );
+      recipients.push(...topicEmails);
+
+      const toList = uniqueEmailList(recipients);
+      if (toList.length > 0 && resendApiKey) {
+        const fromEmail = Deno.env.get('NOTIFY_FROM_EMAIL') || FROM_EMAIL;
+        const plate = escHtml(row.vehicle_number ?? '');
+        const loc = escHtml(row.location ?? '—');
+        const when = escHtml(row.report_date_time ?? '—');
+        const resp = escHtml(driverResponse).replace(/\n/g, '<br/>');
+        const dName = escHtml(driverName || row.driver_name || '—');
+
+        const inner = `
 <div style="direction:rtl;text-align:right;font-family:Arial,sans-serif;color:#0f172a;">
   <h2 style="margin:0 0 12px;font-size:18px;">תגובת נהג לתלונת נוהל 6</h2>
-  <p style="margin:0 0 8px;">העובד הגיב על התלונה והיא סומנה כ<strong>סגורה</strong>.</p>
+  <p style="margin:0 0 8px;">הנהג הגיב על התלונה. הסטטוס עודכן ל־<strong>בטיפול</strong>.</p>
   <table style="border-collapse:collapse;width:100%;max-width:560px;font-size:14px;">
     <tr><td style="padding:6px 0;color:#64748b;">רכב</td><td style="padding:6px 0;">${plate}</td></tr>
     <tr><td style="padding:6px 0;color:#64748b;">נהג</td><td style="padding:6px 0;">${dName}</td></tr>
     <tr><td style="padding:6px 0;color:#64748b;">מועד</td><td style="padding:6px 0;">${when}</td></tr>
     <tr><td style="padding:6px 0;color:#64748b;">מיקום</td><td style="padding:6px 0;">${loc}</td></tr>
     <tr><td style="padding:6px 0;color:#64748b;vertical-align:top;">תגובת הנהג</td><td style="padding:6px 0;">${resp}</td></tr>
-    <tr><td style="padding:6px 0;color:#64748b;">פעולה שננקטה</td><td style="padding:6px 0;">${action}</td></tr>
   </table>
 </div>`;
 
-      const html = wrapEmailBodyWithBrand(supabaseUrl, inner);
-      const primary = toList.slice(0, 1);
-      const bcc = bccExcludingPrimary(primary, toList.slice(1));
+        const html = wrapEmailBodyWithBrand(supabaseUrl, inner);
+        const primary = toList.slice(0, 1);
+        const bcc = bccExcludingPrimary(primary, toList.slice(1));
 
-      const resendRes = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${resendApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from: fromEmail,
-          to: primary,
-          ...(bcc.length ? { bcc } : {}),
-          subject: `תגובת נהג לתלונת נוהל 6 — רכב ${row.vehicle_number}`,
-          html,
-        }),
-      });
-      if (!resendRes.ok) {
-        console.error('[public-procedure6-submit] resend', await resendRes.text());
+        const resendRes = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${resendApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: fromEmail,
+            to: primary,
+            ...(bcc.length ? { bcc } : {}),
+            subject: `תגובת נהג לתלונת נוהל 6 — רכב ${row.vehicle_number}`,
+            html,
+          }),
+        });
+        if (!resendRes.ok) {
+          console.error('[public-procedure6-submit] resend', await resendRes.text());
+        }
       }
+    } catch (notifyErr) {
+      console.error('[public-procedure6-submit] notify', notifyErr);
     }
 
-    return json({ ok: true, status: 'closed' });
+    return json({ ok: true, status: 'in_progress' });
   } catch (err) {
     console.error('[public-procedure6-submit]', err);
     return json({ error: err instanceof Error ? err.message : 'Unexpected error' }, 500);

@@ -1,14 +1,12 @@
 /**
- * Public Procedure 6 employee response form — /procedure6/respond/:token
- * Mirrors call-center "עדכון הטיפול בפנייה" layout (Image 2).
+ * Public Procedure 6 driver response — /procedure6/respond/:token
+ * Driver sees incident details + response textarea only (no staff "action_taken").
  */
 import { useEffect, useState, type FormEvent } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -20,17 +18,8 @@ type PublicComplaint = {
   report_type: string | null;
   driver_name: string | null;
   driver_response?: string | null;
-  action_taken?: string | null;
   status?: string;
 };
-
-const ACTION_OPTIONS = [
-  { value: 'טופל', label: 'טופל' },
-  { value: 'הוזהר', label: 'הוזהר' },
-  { value: 'הועבר להמשך טיפול', label: 'הועבר להמשך טיפול' },
-  { value: 'אין ממצא', label: 'אין ממצא' },
-  { value: 'אחר', label: 'אחר' },
-];
 
 function formatDt(raw: string | null | undefined): string {
   if (!raw) return '—';
@@ -48,6 +37,16 @@ function formatDt(raw: string | null | undefined): string {
   }
 }
 
+function invokeErrorMessage(invErr: unknown, data: unknown): string {
+  const fromBody =
+    data && typeof data === 'object' && data !== null && 'error' in data
+      ? String((data as { error?: unknown }).error ?? '')
+      : '';
+  if (fromBody) return fromBody;
+  if (invErr instanceof Error && invErr.message) return invErr.message;
+  return 'שליחה נכשלה';
+}
+
 export default function Procedure6RespondPage() {
   const { token = '' } = useParams();
   const [loading, setLoading] = useState(true);
@@ -56,9 +55,7 @@ export default function Procedure6RespondPage() {
   const [done, setDone] = useState(false);
   const [alreadyClosed, setAlreadyClosed] = useState(false);
   const [complaint, setComplaint] = useState<PublicComplaint | null>(null);
-  const [driverName, setDriverName] = useState('');
   const [driverResponse, setDriverResponse] = useState('');
-  const [actionTaken, setActionTaken] = useState('טופל');
 
   useEffect(() => {
     let cancelled = false;
@@ -71,7 +68,7 @@ export default function Procedure6RespondPage() {
         });
         if (cancelled) return;
         if (invErr) {
-          setError(invErr.message || 'שגיאה בטעינת הפנייה');
+          setError(invokeErrorMessage(invErr, data) || 'שגיאה בטעינת הפנייה');
           setComplaint(null);
           return;
         }
@@ -81,11 +78,9 @@ export default function Procedure6RespondPage() {
           return;
         }
         setComplaint(data.complaint as PublicComplaint);
-        setDriverName((data.complaint as PublicComplaint).driver_name ?? '');
         if (data.closed) {
           setAlreadyClosed(true);
           setDriverResponse((data.complaint as PublicComplaint).driver_response ?? '');
-          setActionTaken((data.complaint as PublicComplaint).action_taken || 'טופל');
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'שגיאה בטעינה');
@@ -111,13 +106,11 @@ export default function Procedure6RespondPage() {
       const { data, error: invErr } = await supabase.functions.invoke('public-procedure6-submit', {
         body: {
           token,
-          driver_name: driverName.trim(),
           driver_response: driverResponse.trim(),
-          action_taken: actionTaken,
         },
       });
       if (invErr) {
-        setError(invErr.message || 'שליחה נכשלה');
+        setError(invokeErrorMessage(invErr, data));
         return;
       }
       if (data?.error) {
@@ -136,8 +129,8 @@ export default function Procedure6RespondPage() {
     <div className="min-h-[100dvh] bg-slate-100 px-4 py-8 text-slate-900" dir="rtl">
       <div className="mx-auto w-full max-w-xl space-y-6">
         <header className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-          <h1 className="text-xl font-bold">עדכון הטיפול בפנייה</h1>
-          <p className="mt-1 text-sm text-slate-600">נוהל 6 — תגובת הנהג על דיווח ממוקד ״איך הנהיגה שלי?״</p>
+          <h1 className="text-xl font-bold">תגובה לפנייה — נוהל 6</h1>
+          <p className="mt-1 text-sm text-slate-600">יש למלא את תגובתך לאירוע. אין צורך בהתחברות למערכת.</p>
         </header>
 
         {loading ? (
@@ -152,7 +145,7 @@ export default function Procedure6RespondPage() {
         ) : done ? (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-8 text-center text-emerald-900">
             <p className="text-lg font-semibold">התגובה נשלחה בהצלחה</p>
-            <p className="mt-2 text-sm">הפנייה סומנה כסגורה והצוות עודכן.</p>
+            <p className="mt-2 text-sm">תודה. הצוות עודכן ויוכל להמשיך בטיפול.</p>
           </div>
         ) : (
           <>
@@ -167,61 +160,6 @@ export default function Procedure6RespondPage() {
                 פנייה זו כבר נסגרה. התגובה שנשמרה מוצגת למטה לקריאה בלבד.
               </div>
             ) : null}
-
-            <form
-              onSubmit={onSubmit}
-              className="space-y-4 rounded-xl border border-slate-200 bg-white px-5 py-5 shadow-sm"
-            >
-              <div className="space-y-2">
-                <Label htmlFor="driver_name">שם הנהג</Label>
-                <Input
-                  id="driver_name"
-                  value={driverName}
-                  onChange={(e) => setDriverName(e.target.value)}
-                  disabled={alreadyClosed}
-                  className="bg-white"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="driver_response">תגובת הנהג</Label>
-                <Textarea
-                  id="driver_response"
-                  rows={5}
-                  value={driverResponse}
-                  onChange={(e) => setDriverResponse(e.target.value)}
-                  disabled={alreadyClosed}
-                  required={!alreadyClosed}
-                  className="bg-white"
-                  placeholder="פרט את גרסתך לאירוע…"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>הפעולה שננקטה</Label>
-                <Select value={actionTaken} onValueChange={setActionTaken} disabled={alreadyClosed}>
-                  <SelectTrigger className="bg-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ACTION_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              {!alreadyClosed ? (
-                <div className="flex justify-center pt-2">
-                  <Button
-                    type="submit"
-                    disabled={submitting}
-                    className="min-w-[160px] bg-emerald-600 px-8 py-5 text-base font-bold text-white hover:bg-emerald-500"
-                  >
-                    {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'שלח'}
-                  </Button>
-                </div>
-              ) : null}
-            </form>
 
             {complaint ? (
               <section className="rounded-xl border border-slate-200 bg-white px-5 py-5 shadow-sm">
@@ -243,6 +181,12 @@ export default function Procedure6RespondPage() {
                     <dt className="text-slate-500">מועד האירוע</dt>
                     <dd className="font-medium tabular-nums">{formatDt(complaint.report_date_time)}</dd>
                   </div>
+                  {complaint.driver_name ? (
+                    <div className="flex justify-between gap-3 border-b border-slate-100 py-1.5">
+                      <dt className="text-slate-500">נהג</dt>
+                      <dd className="font-medium">{complaint.driver_name}</dd>
+                    </div>
+                  ) : null}
                   <div className="pt-2">
                     <dt className="mb-1 text-slate-500">תיאור האירוע</dt>
                     <dd className="leading-relaxed text-slate-800">{complaint.description || '—'}</dd>
@@ -250,6 +194,36 @@ export default function Procedure6RespondPage() {
                 </dl>
               </section>
             ) : null}
+
+            <form
+              onSubmit={onSubmit}
+              className="space-y-4 rounded-xl border border-slate-200 bg-white px-5 py-5 shadow-sm"
+            >
+              <div className="space-y-2">
+                <Label htmlFor="driver_response">כתוב את תגובתך לאירוע</Label>
+                <Textarea
+                  id="driver_response"
+                  rows={5}
+                  value={driverResponse}
+                  onChange={(e) => setDriverResponse(e.target.value)}
+                  disabled={alreadyClosed}
+                  required={!alreadyClosed}
+                  className="bg-white"
+                  placeholder="פרט את גרסתך לאירוע…"
+                />
+              </div>
+              {!alreadyClosed ? (
+                <div className="flex justify-center pt-2">
+                  <Button
+                    type="submit"
+                    disabled={submitting}
+                    className="min-w-[160px] bg-emerald-600 px-8 py-5 text-base font-bold text-white hover:bg-emerald-500"
+                  >
+                    {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'שלח תגובה'}
+                  </Button>
+                </div>
+              ) : null}
+            </form>
           </>
         )}
       </div>
