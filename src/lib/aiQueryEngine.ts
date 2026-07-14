@@ -1321,11 +1321,65 @@ async function resolveFleetOrgId(context?: AIChatContext): Promise<string | null
     (typeof context?.effectiveOrgId === 'string' && context.effectiveOrgId.trim()) ||
     '';
   if (fromCtx) return fromCtx;
+  try {
+    const fromLs = localStorage.getItem('fleet-manager-active-org')?.trim() || '';
+    if (fromLs && /^[0-9a-f-]{36}$/i.test(fromLs)) return fromLs;
+  } catch {
+    /* ignore */
+  }
   return resolveHealthCheckOrgId();
 }
 
-/** Start of "this calendar week" (Sunday 00:00) in Asia/Jerusalem, as UTC ISO. */
-function startOfCurrentWeekIsraelIso(): string {
+type Procedure6RowForStats = {
+  id: string;
+  org_id: string | null;
+  status: string | null;
+  closed_at: string | null;
+  created_at: string | null;
+  received_time: string | null;
+  report_date_time: string | null;
+};
+
+/** Parse DB timestamptz / ISO / date-only into epoch ms; invalid → null. */
+function parseComplaintInstantMs(raw: string | null | undefined): number | null {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  const ms = Date.parse(s);
+  if (!Number.isFinite(ms)) return null;
+  return ms;
+}
+
+/**
+ * Business "received" moment — same date the complaints UI shows first
+ * (report_date_time), then inbound received_time, then created_at.
+ */
+function complaintBusinessReceivedMs(row: Procedure6RowForStats): number | null {
+  return (
+    parseComplaintInstantMs(row.report_date_time) ??
+    parseComplaintInstantMs(row.received_time) ??
+    parseComplaintInstantMs(row.created_at)
+  );
+}
+
+function normalizeComplaintStatus(status: string | null | undefined): string {
+  return String(status ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+}
+
+/** Open / in progress only — never closed or resolved (incl. Hebrew). */
+function isComplaintOpen(row: Procedure6RowForStats): boolean {
+  if (row.closed_at) return false;
+  const s = normalizeComplaintStatus(row.status);
+  if (!s) return false;
+  if (s === 'closed' || s === 'resolved' || s === 'סגור') return false;
+  return s === 'open' || s === 'pending' || s === 'in_progress' || s === 'פתוח' || s === 'בטיפול';
+}
+
+/** Start of current calendar week (Sunday 00:00 Asia/Jerusalem) as epoch ms. */
+function startOfCurrentWeekIsraelMs(): number {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Jerusalem',
     year: 'numeric',
@@ -1337,7 +1391,7 @@ function startOfCurrentWeekIsraelIso(): string {
   const y = Number(get('year'));
   const m = Number(get('month'));
   const d = Number(get('day'));
-  const weekday = get('weekday'); // Sun, Mon, ...
+  const weekday = get('weekday');
   const weekdayIndex: Record<string, number> = {
     Sun: 0,
     Mon: 1,
@@ -1348,16 +1402,65 @@ function startOfCurrentWeekIsraelIso(): string {
     Sat: 6,
   };
   const dow = weekdayIndex[weekday] ?? 0;
-  // Noon UTC proxy for calendar date, then subtract days to Sunday
-  const noonUtc = Date.UTC(y, m - 1, d, 12, 0, 0);
-  const sundayNoon = noonUtc - dow * 24 * 60 * 60 * 1000;
-  const sy = new Date(sundayNoon).getUTCFullYear();
-  const sm = new Date(sundayNoon).getUTCMonth() + 1;
-  const sd = new Date(sundayNoon).getUTCDate();
-  // Approximate Asia/Jerusalem offset: treat local midnight as UTC-3 mid-year; use explicit string
-  // Better: israel midnight ≈ previous day 21:00 or 22:00 UTC. Use rolling 7 days as secondary.
-  // Prefer: construct ISO for Jerusalem midnight Sunday via Temporal unavailable — use date string + Z at 21:00 previous for IST.
-  return new Date(`${sy}-${String(sm).padStart(2, '0')}-${String(sd).padStart(2, '0')}T00:00:00+03:00`).toISOString();
+  const localMidnight = new Date(`${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}T00:00:00+03:00`);
+  return localMidnight.getTime() - dow * 24 * 60 * 60 * 1000;
+}
+
+async function loadOrgProcedure6Rows(orgId: string): Promise<Procedure6RowForStats[]> {
+  const oid = orgId.trim();
+  if (!oid) return [];
+
+  const { data, error } = await supabase
+    .from('procedure6_complaints')
+    .select('id, org_id, status, closed_at, created_at, received_time, report_date_time')
+    .eq('org_id', oid)
+    .not('org_id', 'is', null)
+    .limit(2000);
+
+  if (error) {
+    console.warn('[loadOrgProcedure6Rows]', error.message);
+    return [];
+  }
+
+  // Strict client-side org silo (never count null / other org)
+  return ((data ?? []) as Procedure6RowForStats[]).filter(
+    (r) => typeof r.org_id === 'string' && r.org_id.trim() === oid,
+  );
+}
+
+function computeProcedure6Stats(rows: Procedure6RowForStats[]) {
+  const nowMs = Date.now();
+  const weekStartMs = startOfCurrentWeekIsraelMs();
+  const rolling7Ms = nowMs - 7 * 24 * 60 * 60 * 1000;
+
+  let openN = 0;
+  let weekN = 0;
+  let openThisWeek = 0;
+  let last7N = 0;
+
+  for (const row of rows) {
+    const open = isComplaintOpen(row);
+    if (open) openN += 1;
+
+    const receivedMs = complaintBusinessReceivedMs(row);
+    if (receivedMs == null) continue;
+
+    if (receivedMs >= weekStartMs && receivedMs <= nowMs + 60_000) {
+      weekN += 1;
+      if (open) openThisWeek += 1;
+    }
+    if (receivedMs >= rolling7Ms && receivedMs <= nowMs + 60_000) {
+      last7N += 1;
+    }
+  }
+
+  return {
+    total: rows.length,
+    openN,
+    weekN,
+    openThisWeek,
+    last7N,
+  };
 }
 
 async function resolveComplaintsStats(context?: AIChatContext): Promise<string> {
@@ -1366,60 +1469,14 @@ async function resolveComplaintsStats(context?: AIChatContext): Promise<string> 
     return 'לא הצלחתי לזהות את הארגון הפעיל — התחבר מחדש ונסה שוב.';
   }
 
-  const weekStartIso = startOfCurrentWeekIsraelIso();
-  const rolling7 = new Date();
-  rolling7.setDate(rolling7.getDate() - 7);
-  const rolling7Iso = rolling7.toISOString();
-  const openStatuses = ['open', 'pending', 'in_progress'];
-
-  // Prefer received_time; fall back to created_at for rows without received_time
-  const [
-    { count: total },
-    { count: openCount },
-    { data: recentRows, error: recentErr },
-  ] = await Promise.all([
-    supabase.from('procedure6_complaints').select('id', { count: 'exact', head: true }).eq('org_id', orgId),
-    supabase
-      .from('procedure6_complaints')
-      .select('id', { count: 'exact', head: true })
-      .eq('org_id', orgId)
-      .in('status', openStatuses),
-    supabase
-      .from('procedure6_complaints')
-      .select('id, status, created_at, received_time, report_date_time')
-      .eq('org_id', orgId)
-      .or(`created_at.gte.${rolling7Iso},received_time.gte.${rolling7Iso}`)
-      .limit(500),
-  ]);
-
-  if (recentErr) {
-    console.warn('[resolveComplaintsStats]', recentErr.message);
-  }
-
-  const receivedAt = (row: {
-    created_at?: string | null;
-    received_time?: string | null;
-  }) => {
-    const t = row.received_time || row.created_at;
-    return t ? new Date(t).getTime() : 0;
-  };
-
-  const weekStartMs = new Date(weekStartIso).getTime();
-  const rows = recentRows ?? [];
-  const thisCalendarWeek = rows.filter((r) => receivedAt(r) >= weekStartMs);
-  const last7Days = rows.filter((r) => receivedAt(r) >= new Date(rolling7Iso).getTime());
-  const openThisWeek = thisCalendarWeek.filter((r) =>
-    openStatuses.includes(String(r.status ?? '').toLowerCase()),
-  ).length;
-
-  const weekN = thisCalendarWeek.length;
-  const openN = openCount ?? 0;
+  const rows = await loadOrgProcedure6Rows(orgId);
+  const { total, openN, weekN, openThisWeek, last7N } = computeProcedure6Stats(rows);
 
   return `📢 **תלונות נוהל 6**
-• השבוע (מ־יום ראשון): **${weekN}** התקבלו (**${openThisWeek}** מהן עדיין פתוחות/בטיפול)
-• ב־7 הימים האחרונים: **${last7Days.length}** התקבלו
+• השבוע (מ־יום ראשון, לפי מועד הדיווח): **${weekN}** התקבלו (**${openThisWeek}** מהן עדיין פתוחות/בטיפול)
+• ב־7 הימים האחרונים: **${last7N}** התקבלו
 • כרגע פתוחות בטיפול בארגון: **${openN}**
-• סה״כ תלונות בארגון: **${total ?? 0}**
+• סה״כ תלונות בארגון: **${total}**
 
 שורה לתצוגה מהירה: תלונות נוהל 6 השבוע: **${weekN}** (**${openN}** פתוחות בטיפול)`;
 }
@@ -1430,42 +1487,23 @@ async function resolveGeneralStats(context?: AIChatContext): Promise<string> {
     return 'לא הצלחתי לזהות את הארגון הפעיל — התחבר מחדש ונסה שוב.';
   }
 
-  const weekStartIso = startOfCurrentWeekIsraelIso();
-  const openStatuses = ['open', 'pending', 'in_progress'] as const;
-
   const [
     { count: vTotal },
     { count: vWarning },
     { count: dTotal },
     { count: dWarning },
     { count: docsTotal },
-    { count: complaintsOpen },
-    { data: recentComplaints },
+    complaintRows,
   ] = await Promise.all([
     supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('org_id', orgId).eq('is_active', true),
     supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('org_id', orgId).in('status', ['warning', 'expired']),
     supabase.from('drivers').select('id', { count: 'exact', head: true }).eq('org_id', orgId).eq('is_active', true),
     supabase.from('drivers').select('id', { count: 'exact', head: true }).eq('org_id', orgId).in('status', ['warning', 'expired']),
     supabase.from('driver_documents').select('id', { count: 'exact', head: true }),
-    supabase
-      .from('procedure6_complaints')
-      .select('id', { count: 'exact', head: true })
-      .eq('org_id', orgId)
-      .in('status', [...openStatuses]),
-    supabase
-      .from('procedure6_complaints')
-      .select('id, created_at, received_time')
-      .eq('org_id', orgId)
-      .or(`created_at.gte.${weekStartIso},received_time.gte.${weekStartIso}`)
-      .limit(500),
+    loadOrgProcedure6Rows(orgId),
   ]);
 
-  const weekStartMs = new Date(weekStartIso).getTime();
-  const weekN = (recentComplaints ?? []).filter((r) => {
-    const t = r.received_time || r.created_at;
-    return t ? new Date(t).getTime() >= weekStartMs : false;
-  }).length;
-  const openN = complaintsOpen ?? 0;
+  const { weekN, openN } = computeProcedure6Stats(complaintRows);
 
   return `📊 **סטטיסטיקות כלליות — Fleet Manager 2026**:
 🚗 רכבים פעילים: **${vTotal ?? '?'}** ${(vWarning ?? 0) > 0 ? `(⚠️ ${vWarning} דורשים טיפול)` : '(הכל תקין)'}
