@@ -12,6 +12,7 @@ import {
   loadFilteredNotificationEmails,
   uniqueEmailList,
 } from '../_shared/loadFilteredNotificationEmails.ts';
+import { procedure6ManagerActionButtonsHtml } from '../_shared/procedure6ManagerActions.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -158,6 +159,10 @@ serve(async (req) => {
         const resp = escHtml(driverResponse).replace(/\n/g, '<br/>');
         const dName = escHtml(driverName || row.driver_name || '—');
 
+        const actionsHtml = token
+          ? procedure6ManagerActionButtonsHtml(token)
+          : '';
+
         const inner = `
 <div style="direction:rtl;text-align:right;font-family:Arial,sans-serif;color:#0f172a;">
   <h2 style="margin:0 0 12px;font-size:18px;">תגובת נהג לתלונת נוהל 6</h2>
@@ -169,6 +174,7 @@ serve(async (req) => {
     <tr><td style="padding:6px 0;color:#64748b;">מיקום</td><td style="padding:6px 0;">${loc}</td></tr>
     <tr><td style="padding:6px 0;color:#64748b;vertical-align:top;">תגובת הנהג</td><td style="padding:6px 0;">${resp}</td></tr>
   </table>
+  ${actionsHtml}
 </div>`;
 
         const html = wrapEmailBodyWithBrand(supabaseUrl, inner);

@@ -8,6 +8,7 @@ import {
   loadFilteredNotificationEmails,
   uniqueEmailList,
 } from './loadFilteredNotificationEmails.ts';
+import { procedure6ManagerActionButtonsHtml } from './procedure6ManagerActions.ts';
 
 const DEFAULT_FROM = 'מערכת ניהול צי רכבים <invites@fleet-manager-pro.com>';
 
@@ -24,6 +25,9 @@ export type Procedure6StatusUpdateFields = {
   previous_status?: string | null;
   status: string;
   report_id?: string | null;
+  /** When set and status is in_progress, include manager close/clarify CTAs */
+  response_token?: string | null;
+  include_manager_actions?: boolean;
 };
 
 function escHtml(s: string): string {
@@ -83,6 +87,18 @@ export async function notifyProcedure6StatusUpdate(
   const isClosed =
     String(complaint.status).toLowerCase() === 'closed' ||
     String(complaint.status).toLowerCase() === 'resolved';
+  const isInProgress =
+    String(complaint.status).toLowerCase() === 'in_progress' ||
+    String(complaint.status).toLowerCase() === 'pending';
+
+  const showActions =
+    Boolean(complaint.include_manager_actions) &&
+    !isClosed &&
+    isInProgress &&
+    Boolean(String(complaint.response_token ?? '').trim());
+  const actionsHtml = showActions
+    ? procedure6ManagerActionButtonsHtml(String(complaint.response_token))
+    : '';
 
   const headline = isClosed ? 'תלונת נוהל 6 נסגרה' : 'עדכון סטטוס — תלונת נוהל 6';
   const subject = isClosed
@@ -107,6 +123,7 @@ export async function notifyProcedure6StatusUpdate(
     <tr><td style="padding:10px 12px;color:#64748b;border-top:1px solid #e2e8f0;">פעולה שננקטה</td><td style="padding:10px 12px;border-top:1px solid #e2e8f0;">${action}</td></tr>
     <tr><td style="padding:10px 12px;color:#64748b;border-top:1px solid #e2e8f0;">מס׳ דיווח</td><td style="padding:10px 12px;border-top:1px solid #e2e8f0;">${reportId}</td></tr>
   </table>
+  ${actionsHtml}
 </div>`;
 
   const html = supabaseUrl ? wrapEmailBodyWithBrand(supabaseUrl, inner) : inner;

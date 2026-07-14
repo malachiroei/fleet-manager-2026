@@ -61,6 +61,15 @@ verify_jwt = false
 [functions.public-procedure6-submit]
 verify_jwt = false
 
+[functions.public-procedure6-admin-request]
+verify_jwt = false
+
+[functions.public-procedure6-admin-close]
+verify_jwt = false
+
+[functions.send-procedure6-clarification-request]
+verify_jwt = false
+
 # Staff forward uses getUser() inside the function
 [functions.send-procedure6-forward]
 verify_jwt = false

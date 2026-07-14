@@ -59,6 +59,7 @@ const ReportMileagePage = lazy(() => import("./pages/ReportMileagePage"));
 const ServiceUpdatePage = lazy(() => import("./pages/ServiceUpdatePage"));
 const Procedure6RespondPage = lazy(() => import("./pages/Procedure6RespondPage"));
 const Procedure6RespondQueryRedirect = lazy(() => import("./pages/Procedure6RespondQueryRedirect"));
+const Procedure6AdminActionPage = lazy(() => import("./pages/Procedure6AdminActionPage"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -194,6 +195,7 @@ function AppRoutes() {
         <Route path="/vehicle-renewal/:token" element={<VehicleExternalRenewalPage />} />
         <Route path="/procedure6/respond/:token" element={<Procedure6RespondPage />} />
         <Route path="/procedure6-respond" element={<Procedure6RespondQueryRedirect />} />
+        <Route path="/procedure6/admin-action/:token" element={<Procedure6AdminActionPage />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>

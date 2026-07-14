@@ -60,7 +60,7 @@ serve(async (req) => {
     const { data: row, error: loadErr } = await admin
       .from('procedure6_complaints')
       .select(
-        'id, org_id, vehicle_number, report_date_time, location, description, reporter_name, driver_name, driver_response, action_taken, status, report_id',
+        'id, org_id, vehicle_number, report_date_time, location, description, reporter_name, driver_name, driver_response, action_taken, status, report_id, response_token',
       )
       .eq('id', complaintId)
       .maybeSingle();
@@ -100,6 +100,8 @@ serve(async (req) => {
       previous_status: previousStatus || null,
       status: currentStatus,
       report_id: row.report_id,
+      response_token: row.response_token,
+      include_manager_actions: currentStatus === 'in_progress',
     });
 
     return json({ ok: true, ...result });
