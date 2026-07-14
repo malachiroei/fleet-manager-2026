@@ -5,6 +5,7 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { notifyProcedure6StatusUpdate } from '../_shared/notifyProcedure6StatusUpdate.ts';
+import { appendProcedure6ProcessLog } from '../_shared/appendProcedure6ProcessLog.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -88,6 +89,13 @@ serve(async (req) => {
       console.error('[public-procedure6-admin-close] update', updErr);
       return json({ ok: false, error: updErr.message });
     }
+
+    await appendProcedure6ProcessLog(admin, {
+      id: row.id,
+      response_token: token,
+      org_id: row.org_id,
+      line: `התלונה נסגרה · פעולה שננקטה: ${actionTaken}`,
+    });
 
     try {
       await notifyProcedure6StatusUpdate(admin, {

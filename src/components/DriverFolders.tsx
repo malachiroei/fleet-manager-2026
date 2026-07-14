@@ -549,6 +549,14 @@ function formatComplaintDateTime(iso: string | null | undefined): string {
   return d.toLocaleString('he-IL');
 }
 
+const ACTION_TAKEN_OPTIONS = [
+  'טופל',
+  'הוזהר',
+  'הועבר להמשך טיפול',
+  'אין ממצא',
+  'אחר',
+] as const;
+
 function DriverComplaintEditDialog({
   complaint,
   onClose,
@@ -558,12 +566,14 @@ function DriverComplaintEditDialog({
 }) {
   const updateComplaint = useUpdateComplaint();
   const [driverResponse, setDriverResponse] = useState('');
+  const [actionTaken, setActionTaken] = useState('');
   const [status, setStatus] = useState('open');
   const [lastId, setLastId] = useState<string | null>(null);
 
   if (complaint && complaint.id !== lastId) {
     setLastId(complaint.id);
     setDriverResponse(complaint.driver_response || '');
+    setActionTaken(complaint.action_taken || '');
     setStatus(complaint.status || 'open');
   }
 
@@ -575,10 +585,29 @@ function DriverComplaintEditDialog({
         id: complaint.id,
         status,
         driver_response: driverResponse.trim() || null,
+        action_taken: actionTaken.trim() || null,
       },
       { onSuccess: () => onClose() },
     );
   };
+
+  const processLog =
+    complaint.process_log?.trim() ||
+    [
+      complaint.driver_response
+        ? `תגובת נהג: ${complaint.driver_response}`
+        : null,
+      complaint.status === 'closed' && complaint.action_taken
+        ? `התלונה נסגרה · פעולה שננקטה: ${complaint.action_taken}`
+        : complaint.action_taken
+          ? `פעולה שננקטה: ${complaint.action_taken}`
+          : null,
+      complaint.closed_at
+        ? `מועד סגירה: ${formatComplaintDateTime(complaint.closed_at)}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join('\n');
 
   return (
     <Dialog open={!!complaint} onOpenChange={(open) => !open && onClose()}>
@@ -618,6 +647,12 @@ function DriverComplaintEditDialog({
               <span className="text-muted-foreground">נהג: </span>
               <span className="font-medium">{complaint.driver_name || '—'}</span>
             </div>
+            {complaint.closed_at ? (
+              <div className="sm:col-span-2">
+                <span className="text-muted-foreground">נסגרה ב: </span>
+                <span className="font-medium">{formatComplaintDateTime(complaint.closed_at)}</span>
+              </div>
+            ) : null}
           </div>
 
           {complaint.description ? (
@@ -648,9 +683,42 @@ function DriverComplaintEditDialog({
               value={driverResponse}
               onChange={(e) => setDriverResponse(e.target.value)}
               placeholder="הזן את גרסת / תגובת הנהג לאירוע…"
-              rows={4}
+              rows={3}
             />
           </div>
+
+          <div className="space-y-2">
+            <Label>הפעולה שננקטה</Label>
+            <Select
+              value={actionTaken || undefined}
+              onValueChange={setActionTaken}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="בחר פעולה…" />
+              </SelectTrigger>
+              <SelectContent>
+                {ACTION_TAKEN_OPTIONS.map((o) => (
+                  <SelectItem key={o} value={o}>
+                    {o}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {actionTaken ? (
+              <p className="text-xs text-muted-foreground">נבחר: {actionTaken}</p>
+            ) : (
+              <p className="text-xs text-amber-400/90">לא תועדה עדיין פעולה שננקטה</p>
+            )}
+          </div>
+
+          {processLog ? (
+            <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-3">
+              <p className="text-muted-foreground mb-2 font-medium">תיעוד הטיפול</p>
+              <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground/90">
+                {processLog}
+              </pre>
+            </div>
+          ) : null}
         </div>
 
         <DialogFooter className="gap-2 sm:justify-start">

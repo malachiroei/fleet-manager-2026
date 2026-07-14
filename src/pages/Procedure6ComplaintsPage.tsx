@@ -400,14 +400,42 @@ function ComplaintDetailDialog({
             </div>
             <div>
               <label className="text-sm font-medium mb-1 block">פעולה שננקטה</label>
-              <Textarea
-                value={actionTaken}
-                onChange={(e) => setActionTaken(e.target.value)}
-                placeholder="תאר את הפעולה שננקטה..."
-                rows={2}
-              />
+              <Select value={actionTaken || undefined} onValueChange={setActionTaken}>
+                <SelectTrigger>
+                  <SelectValue placeholder="בחר פעולה…" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="טופל">טופל</SelectItem>
+                  <SelectItem value="הוזהר">הוזהר</SelectItem>
+                  <SelectItem value="הועבר להמשך טיפול">הועבר להמשך טיפול</SelectItem>
+                  <SelectItem value="אין ממצא">אין ממצא</SelectItem>
+                  <SelectItem value="אחר">אחר</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
+
+          {(complaint.process_log?.trim() ||
+            (complaint.status === 'closed' && complaint.action_taken) ||
+            complaint.closed_at) && (
+            <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-3">
+              <p className="text-sm font-semibold mb-2">תיעוד הטיפול</p>
+              <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground/90">
+                {complaint.process_log?.trim() ||
+                  [
+                    complaint.driver_response ? `תגובת נהג: ${complaint.driver_response}` : null,
+                    complaint.action_taken
+                      ? `התלונה נסגרה · פעולה שננקטה: ${complaint.action_taken}`
+                      : null,
+                    complaint.closed_at
+                      ? `מועד סגירה: ${formatDateTime(complaint.closed_at)}`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join('\n')}
+              </pre>
+            </div>
+          )}
 
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={onClose}>ביטול</Button>

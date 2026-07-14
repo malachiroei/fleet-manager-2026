@@ -32,6 +32,8 @@ export interface Complaint {
   forwarded_to_email?: string | null;
   closed_at?: string | null;
   source?: string | null;
+  /** Append-only timeline of handling (clarification / responses / close) */
+  process_log?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -187,21 +189,54 @@ export function useUpdateComplaint() {
     mutationFn: async ({ id, ...updates }: Partial<Complaint> & { id: string }) => {
       if (!orgId) throw new Error('חסר ארגון פעיל');
 
-      let previousStatus: string | null = null;
-      if (typeof updates.status === 'string' && updates.status.trim()) {
-        const { data: before } = await supabase
-          .from('procedure6_complaints')
-          .select('status')
-          .eq('id', id)
-          .eq('org_id', orgId)
-          .maybeSingle();
-        previousStatus = (before as { status?: string } | null)?.status ?? null;
-      }
+      const { data: before, error: beforeErr } = await supabase
+        .from('procedure6_complaints')
+        .select('status, action_taken, process_log, driver_response')
+        .eq('id', id)
+        .eq('org_id', orgId)
+        .maybeSingle();
+      if (beforeErr) throw beforeErr;
+
+      const previousStatus = (before as { status?: string } | null)?.status ?? null;
+      const prevAction = (before as { action_taken?: string | null } | null)?.action_taken ?? null;
+      const prevLog = String((before as { process_log?: string | null } | null)?.process_log ?? '').trim();
 
       const patch: Record<string, unknown> = { ...updates };
       if (updates.status === 'closed' && !updates.closed_at) {
         patch.closed_at = new Date().toISOString();
       }
+
+      // Document handling changes in process_log (client path — mirrors Edge append)
+      const stamp = new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
+      const logLines: string[] = [];
+      if (
+        typeof updates.driver_response === 'string' &&
+        updates.driver_response.trim() &&
+        updates.driver_response.trim() !== String((before as { driver_response?: string } | null)?.driver_response ?? '').trim()
+      ) {
+        logLines.push(`[${stamp}] תגובת נהג (עדכון מערכת): ${updates.driver_response.trim()}`);
+      }
+      if (
+        typeof updates.action_taken === 'string' &&
+        updates.action_taken.trim() &&
+        updates.action_taken.trim() !== String(prevAction ?? '').trim()
+      ) {
+        logLines.push(`[${stamp}] פעולה שננקטה: ${updates.action_taken.trim()}`);
+      }
+      if (updates.status === 'closed' && previousStatus !== 'closed') {
+        const act =
+          (typeof updates.action_taken === 'string' && updates.action_taken.trim()) ||
+          String(prevAction ?? '').trim();
+        logLines.push(
+          act
+            ? `[${stamp}] התלונה נסגרה · פעולה שננקטה: ${act}`
+            : `[${stamp}] התלונה נסגרה`,
+        );
+      }
+      if (logLines.length > 0) {
+        patch.process_log = prevLog ? `${prevLog}\n${logLines.join('\n')}` : logLines.join('\n');
+      }
+
       const { data, error } = await supabase
         .from('procedure6_complaints')
         .update(patch)

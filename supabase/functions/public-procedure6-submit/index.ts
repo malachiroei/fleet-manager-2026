@@ -13,6 +13,7 @@ import {
   uniqueEmailList,
 } from '../_shared/loadFilteredNotificationEmails.ts';
 import { procedure6ManagerActionButtonsHtml } from '../_shared/procedure6ManagerActions.ts';
+import { appendProcedure6ProcessLog } from '../_shared/appendProcedure6ProcessLog.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -116,6 +117,13 @@ serve(async (req) => {
         }
       }
     }
+
+    await appendProcedure6ProcessLog(admin, {
+      id: row.id,
+      response_token: token,
+      org_id: row.org_id,
+      line: `תגובת נהג: ${driverResponse}`,
+    });
 
     // Notify staff — never fail the driver submit if mail breaks
     try {
