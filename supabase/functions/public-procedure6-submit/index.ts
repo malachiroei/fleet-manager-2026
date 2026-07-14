@@ -1,7 +1,8 @@
 /**
  * Public submit of Procedure 6 driver response.
- * Updates by response_token only (service role) — no login required.
- * Sets driver_response + status in_progress; does not touch action_taken.
+ * Always returns JSON the client can read (HTTP 200 for business errors) so
+ * supabase-js does not hide the real message behind "non-2xx".
+ * Updates by response_token via service role — no login / no RLS dependency.
  */
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -15,7 +16,8 @@ import {
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type, x-supabase-client-platform',
 };
 
 const FROM_EMAIL = 'מערכת ניהול צי רכבים <invites@fleet-manager-pro.com>';
@@ -47,22 +49,22 @@ function escHtml(s: string): string {
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
-  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+  if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405);
 
   try {
     const body = (await req.json().catch(() => ({}))) as SubmitBody;
     const token = clean(body.token);
     const driverName = clean(body.driver_name);
     const driverResponse = clean(body.driver_response);
-    if (!token) return json({ error: 'Missing token' }, 400);
-    if (!driverResponse) return json({ error: 'חסרה תגובת הנהג' }, 400);
+    if (!token) return json({ ok: false, error: 'Missing token' });
+    if (!driverResponse) return json({ ok: false, error: 'חסרה תגובת הנהג' });
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     const resendApiKey = Deno.env.get('RESEND_API_KEY') ?? '';
     if (!supabaseUrl || !serviceRoleKey) {
       console.error('[public-procedure6-submit] missing secrets');
-      return json({ error: 'Missing server secrets' }, 500);
+      return json({ ok: false, error: 'Missing server secrets' });
     }
 
     const admin = createClient(supabaseUrl, serviceRoleKey, {
@@ -79,35 +81,41 @@ serve(async (req) => {
 
     if (loadErr) {
       console.error('[public-procedure6-submit] load', loadErr);
-      return json({ error: loadErr.message }, 500);
+      return json({ ok: false, error: loadErr.message });
     }
-    if (!row) return json({ error: 'Complaint not found' }, 404);
+    if (!row) return json({ ok: false, error: 'הקישור אינו תקף או שפג תוקפו' });
     if (row.status === 'closed' || row.closed_at) {
-      return json({ error: 'התלונה כבר נסגרה' }, 410);
+      return json({ ok: false, error: 'התלונה כבר נסגרה' });
     }
 
     const nowIso = new Date().toISOString();
-    // Token-scoped update only — never action_taken; staff fill that later
-    const { data: updated, error: updErr } = await admin
-      .from('procedure6_complaints')
-      .update({
-        ...(driverName ? { driver_name: driverName } : {}),
-        driver_response: driverResponse,
-        status: 'in_progress',
-        last_update_time: nowIso,
-      })
-      .eq('response_token', token)
-      .eq('id', row.id)
-      .select('id, status')
-      .maybeSingle();
+    const patchBase: Record<string, unknown> = {
+      driver_response: driverResponse,
+      last_update_time: nowIso,
+    };
+    if (driverName) patchBase.driver_name = driverName;
 
-    if (updErr) {
-      console.error('[public-procedure6-submit] update', updErr);
-      return json({ error: updErr.message }, 500);
-    }
-    if (!updated) {
-      console.error('[public-procedure6-submit] update matched 0 rows', { id: row.id });
-      return json({ error: 'עדכון התלונה נכשל' }, 500);
+    // Prefer in_progress; fallback without status if DB rejects the value
+    let updErrMsg: string | null = null;
+    {
+      const { error: updErr } = await admin
+        .from('procedure6_complaints')
+        .update({ ...patchBase, status: 'in_progress' })
+        .eq('id', row.id)
+        .eq('response_token', token);
+      if (updErr) {
+        console.warn('[public-procedure6-submit] update with status', updErr.message);
+        updErrMsg = updErr.message;
+        const { error: retryErr } = await admin
+          .from('procedure6_complaints')
+          .update(patchBase)
+          .eq('id', row.id)
+          .eq('response_token', token);
+        if (retryErr) {
+          console.error('[public-procedure6-submit] update fallback', retryErr);
+          return json({ ok: false, error: retryErr.message || updErrMsg });
+        }
+      }
     }
 
     // Notify staff — never fail the driver submit if mail breaks
@@ -194,6 +202,9 @@ serve(async (req) => {
     return json({ ok: true, status: 'in_progress' });
   } catch (err) {
     console.error('[public-procedure6-submit]', err);
-    return json({ error: err instanceof Error ? err.message : 'Unexpected error' }, 500);
+    return json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Unexpected error',
+    });
   }
 });

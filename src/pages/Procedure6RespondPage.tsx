@@ -1,6 +1,7 @@
 /**
  * Public Procedure 6 driver response — /procedure6/respond/:token
- * Driver sees incident details + response textarea only (no staff "action_taken").
+ * Uses direct fetch (same pattern as vehicle-renewal public forms) so real
+ * Edge Function error bodies are shown instead of "non-2xx".
  */
 import { useEffect, useState, type FormEvent } from 'react';
 import { useParams } from 'react-router-dom';
@@ -8,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Loader2 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { invokeSupabaseEdgeFunctionDirect } from '@/lib/supabase/invokeEdgeFunction';
 
 type PublicComplaint = {
   vehicle_number: string;
@@ -37,16 +38,6 @@ function formatDt(raw: string | null | undefined): string {
   }
 }
 
-function invokeErrorMessage(invErr: unknown, data: unknown): string {
-  const fromBody =
-    data && typeof data === 'object' && data !== null && 'error' in data
-      ? String((data as { error?: unknown }).error ?? '')
-      : '';
-  if (fromBody) return fromBody;
-  if (invErr instanceof Error && invErr.message) return invErr.message;
-  return 'שליחה נכשלה';
-}
-
 export default function Procedure6RespondPage() {
   const { token = '' } = useParams();
   const [loading, setLoading] = useState(true);
@@ -63,24 +54,31 @@ export default function Procedure6RespondPage() {
       setLoading(true);
       setError(null);
       try {
-        const { data, error: invErr } = await supabase.functions.invoke('public-procedure6-request', {
-          body: { token },
-        });
+        const { data, error: invErr } = await invokeSupabaseEdgeFunctionDirect(
+          'public-procedure6-request',
+          { token },
+        );
         if (cancelled) return;
+        const payload = data as {
+          ok?: boolean;
+          closed?: boolean;
+          complaint?: PublicComplaint;
+          error?: string;
+        } | null;
         if (invErr) {
-          setError(invokeErrorMessage(invErr, data) || 'שגיאה בטעינת הפנייה');
+          setError(invErr.message || payload?.error || 'שגיאה בטעינת הפנייה');
           setComplaint(null);
           return;
         }
-        if (!data?.ok || !data?.complaint) {
-          setError(data?.error || 'הקישור אינו תקף');
+        if (!payload?.ok || !payload?.complaint) {
+          setError(payload?.error || 'הקישור אינו תקף');
           setComplaint(null);
           return;
         }
-        setComplaint(data.complaint as PublicComplaint);
-        if (data.closed) {
+        setComplaint(payload.complaint);
+        if (payload.closed) {
           setAlreadyClosed(true);
-          setDriverResponse((data.complaint as PublicComplaint).driver_response ?? '');
+          setDriverResponse(payload.complaint.driver_response ?? '');
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'שגיאה בטעינה');
@@ -103,18 +101,20 @@ export default function Procedure6RespondPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const { data, error: invErr } = await supabase.functions.invoke('public-procedure6-submit', {
-        body: {
+      const { data, error: invErr } = await invokeSupabaseEdgeFunctionDirect(
+        'public-procedure6-submit',
+        {
           token,
           driver_response: driverResponse.trim(),
         },
-      });
+      );
+      const payload = data as { ok?: boolean; error?: string; status?: string } | null;
       if (invErr) {
-        setError(invokeErrorMessage(invErr, data));
+        setError(invErr.message || payload?.error || 'שליחה נכשלה');
         return;
       }
-      if (data?.error) {
-        setError(String(data.error));
+      if (!payload?.ok) {
+        setError(payload?.error || 'שליחה נכשלה');
         return;
       }
       setDone(true);
