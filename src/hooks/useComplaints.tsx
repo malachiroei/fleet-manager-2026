@@ -38,6 +38,14 @@ export interface Complaint {
 
 export type ComplaintInsert = Omit<Complaint, 'id' | 'created_at' | 'updated_at'>;
 
+function newResponseToken(): string {
+  const uuid = crypto.randomUUID().replace(/-/g, '');
+  const extra = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) =>
+    b.toString(16).padStart(2, '0'),
+  ).join('');
+  return `${uuid}${extra}`;
+}
+
 async function enrichComplaintWithDriver(
   row: ComplaintInsert,
   fallbackOrgId: string | null,
@@ -63,6 +71,7 @@ async function enrichComplaintWithDriver(
     driver_name: driverName,
     vehicle_number: resolved.plate_number || plate || row.vehicle_number,
     source: row.source ?? 'manual',
+    response_token: row.response_token?.trim() || newResponseToken(),
   };
 }
 
@@ -159,6 +168,16 @@ export function useCreateComplaints() {
   });
 }
 
+async function notifyStaffStatusUpdate(complaintId: string, previousStatus: string) {
+  try {
+    await supabase.functions.invoke('send-procedure6-status-update-email', {
+      body: { complaint_id: complaintId, previous_status: previousStatus },
+    });
+  } catch (err) {
+    console.warn('[useUpdateComplaint] status notify', err);
+  }
+}
+
 export function useUpdateComplaint() {
   const queryClient = useQueryClient();
   const { effectiveOrgId } = useImpersonationFleetScope();
@@ -167,6 +186,18 @@ export function useUpdateComplaint() {
   return useMutation({
     mutationFn: async ({ id, ...updates }: Partial<Complaint> & { id: string }) => {
       if (!orgId) throw new Error('חסר ארגון פעיל');
+
+      let previousStatus: string | null = null;
+      if (typeof updates.status === 'string' && updates.status.trim()) {
+        const { data: before } = await supabase
+          .from('procedure6_complaints')
+          .select('status')
+          .eq('id', id)
+          .eq('org_id', orgId)
+          .maybeSingle();
+        previousStatus = (before as { status?: string } | null)?.status ?? null;
+      }
+
       const patch: Record<string, unknown> = { ...updates };
       if (updates.status === 'closed' && !updates.closed_at) {
         patch.closed_at = new Date().toISOString();
@@ -180,6 +211,12 @@ export function useUpdateComplaint() {
         .single();
 
       if (error) throw error;
+
+      const nextStatus = typeof updates.status === 'string' ? updates.status.trim() : '';
+      if (nextStatus && previousStatus != null && nextStatus !== previousStatus) {
+        await notifyStaffStatusUpdate(id, previousStatus);
+      }
+
       return data;
     },
     onSuccess: () => {

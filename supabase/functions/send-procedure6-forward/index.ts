@@ -5,6 +5,7 @@ import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { wrapEmailBodyWithBrand } from '../_shared/emailBrandHeader.ts';
 import { randomResponseToken } from '../_shared/procedure6EmailParse.ts';
+import { buildProcedure6RespondUrl } from '../_shared/procedure6PublicUrl.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -13,26 +14,9 @@ const corsHeaders = {
 };
 
 const FROM_EMAIL = 'מערכת ניהול צי רכבים <invites@fleet-manager-pro.com>';
-const APP_URL_DEFAULT = 'https://fleet-manager-pro.com';
 
 function clean(v: unknown): string {
   return typeof v === 'string' ? v.trim() : '';
-}
-
-function resolvePublicAppBaseUrl(): string {
-  const fromEnv =
-    clean(Deno.env.get('PUBLIC_APP_URL')) ||
-    clean(Deno.env.get('COMPLIANCE_UPDATE_BASE_URL'));
-  // Never emit localhost / vercel preview links to drivers in production mail
-  if (
-    !fromEnv ||
-    fromEnv.includes('localhost') ||
-    fromEnv.includes('127.0.0.1') ||
-    fromEnv.includes('vercel.app')
-  ) {
-    return APP_URL_DEFAULT;
-  }
-  return fromEnv.replace(/\/$/, '');
 }
 
 function json(body: unknown, status = 200): Response {
@@ -120,9 +104,7 @@ serve(async (req) => {
       .eq('id', row.id);
     if (updErr) return json({ error: updErr.message }, 500);
 
-    const appBase = resolvePublicAppBaseUrl();
-    const link = `${appBase}/procedure6/respond/${token}`;
-
+    const link = buildProcedure6RespondUrl(token);
     const fromEmail = Deno.env.get('NOTIFY_FROM_EMAIL') || FROM_EMAIL;
     const plate = escHtml(row.vehicle_number ?? '');
     const loc = escHtml(row.location ?? '—');

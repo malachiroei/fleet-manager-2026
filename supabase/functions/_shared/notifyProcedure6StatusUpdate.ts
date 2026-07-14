@@ -1,5 +1,5 @@
 /**
- * Notify org staff (topic: procedure6_complaints) when a new Procedure 6 complaint is created.
+ * Notify org staff when a Procedure 6 complaint status changes.
  */
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { wrapEmailBodyWithBrand } from './emailBrandHeader.ts';
@@ -8,24 +8,22 @@ import {
   loadFilteredNotificationEmails,
   uniqueEmailList,
 } from './loadFilteredNotificationEmails.ts';
-import { buildProcedure6RespondUrl } from './procedure6PublicUrl.ts';
 
 const DEFAULT_FROM = 'מערכת ניהול צי רכבים <invites@fleet-manager-pro.com>';
 
-export type Procedure6ComplaintEmailFields = {
+export type Procedure6StatusUpdateFields = {
   org_id: string;
   vehicle_number?: string | null;
   report_date_time?: string | null;
   location?: string | null;
   description?: string | null;
   reporter_name?: string | null;
-  reporter_cell_phone?: string | null;
   driver_name?: string | null;
-  driver_phone?: string | null;
-  driver_email?: string | null;
+  driver_response?: string | null;
+  action_taken?: string | null;
+  previous_status?: string | null;
+  status: string;
   report_id?: string | null;
-  /** response_token — used to build public respond CTA */
-  response_token?: string | null;
 };
 
 function escHtml(s: string): string {
@@ -44,9 +42,17 @@ function fmtWhen(iso: string | null | undefined): string {
   return escHtml(d.toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' }));
 }
 
-export async function notifyProcedure6NewComplaint(
+export function procedure6StatusLabelHe(status: string | null | undefined): string {
+  const s = String(status ?? '').trim().toLowerCase();
+  if (s === 'closed' || s === 'resolved') return 'סגור';
+  if (s === 'in_progress' || s === 'pending') return 'בטיפול';
+  if (s === 'open') return 'פתוח';
+  return status?.trim() || '—';
+}
+
+export async function notifyProcedure6StatusUpdate(
   admin: SupabaseClient,
-  complaint: Procedure6ComplaintEmailFields,
+  complaint: Procedure6StatusUpdateFields,
 ): Promise<{ sent: boolean; to: string[]; error?: string }> {
   const orgId = String(complaint.org_id ?? '').trim();
   if (!orgId) return { sent: false, to: [], error: 'missing org_id' };
@@ -67,47 +73,40 @@ export async function notifyProcedure6NewComplaint(
   const loc = escHtml(complaint.location ?? '—');
   const desc = escHtml(complaint.description ?? '—').replace(/\n/g, '<br/>');
   const reporter = escHtml(complaint.reporter_name ?? '—');
-  const phone = escHtml(complaint.reporter_cell_phone ?? '—');
   const driver = escHtml(complaint.driver_name ?? '—');
-  const driverPhone = escHtml(complaint.driver_phone ?? '—');
-  const driverEmail = escHtml(complaint.driver_email ?? '—');
+  const response = escHtml(complaint.driver_response ?? '—').replace(/\n/g, '<br/>');
+  const action = escHtml(complaint.action_taken ?? '—');
+  const prev = procedure6StatusLabelHe(complaint.previous_status);
+  const next = procedure6StatusLabelHe(complaint.status);
   const reportId = escHtml(complaint.report_id ?? '—');
 
-  const token = String(complaint.response_token ?? '').trim();
-  const respondUrl = token ? buildProcedure6RespondUrl(token) : '';
-  const ctaBlock = respondUrl
-    ? `
-  <div style="margin:20px 0 8px;text-align:center;">
-    <a href="${escHtml(respondUrl)}"
-       style="display:inline-block;background:#0e7490;color:#ffffff;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:15px;">
-      לחץ כאן להוספת תגובת הנהג
-    </a>
-  </div>
-  <p style="margin:0 0 16px;font-size:12px;color:#64748b;text-align:center;word-break:break-all;">
-    או העתק קישור: ${escHtml(respondUrl)}
-  </p>`
-    : '';
+  const isClosed =
+    String(complaint.status).toLowerCase() === 'closed' ||
+    String(complaint.status).toLowerCase() === 'resolved';
+
+  const headline = isClosed ? 'תלונת נוהל 6 נסגרה' : 'עדכון סטטוס — תלונת נוהל 6';
+  const subject = isClosed
+    ? `תלונת נוהל 6 נסגרה — רכב ${complaint.vehicle_number || '—'}`
+    : `עדכון סטטוס תלונת נוהל 6 — רכב ${complaint.vehicle_number || '—'} (${next})`;
 
   const inner = `
 <div style="direction:rtl;text-align:right;font-family:Arial,sans-serif;color:#0f172a;">
-  <h2 style="margin:0 0 12px;font-size:18px;color:#0e7490;">תלונת נוהל 6 חדשה</h2>
+  <h2 style="margin:0 0 12px;font-size:18px;color:#0e7490;">${headline}</h2>
   <p style="margin:0 0 16px;color:#475569;font-size:14px;">
-    התקבלה פנייה חדשה במערכת. ניתן לצפות ולטפל בה במסך תלונות נוהל 6 או בכרטיס הנהג.
-    שלחו לנהג את קישור התגובה למטה (ללא צורך בהתחברות למערכת).
+    הסטטוס עודכן מ־<strong>${escHtml(prev)}</strong> ל־<strong>${escHtml(next)}</strong>.
   </p>
   <table style="border-collapse:collapse;width:100%;max-width:560px;font-size:14px;background:#f8fafc;border-radius:8px;">
     <tr><td style="padding:10px 12px;color:#64748b;width:140px;">מס׳ רכב</td><td style="padding:10px 12px;font-weight:600;font-family:monospace;">${plate}</td></tr>
+    <tr><td style="padding:10px 12px;color:#64748b;border-top:1px solid #e2e8f0;">סטטוס חדש</td><td style="padding:10px 12px;border-top:1px solid #e2e8f0;font-weight:600;">${escHtml(next)}</td></tr>
     <tr><td style="padding:10px 12px;color:#64748b;border-top:1px solid #e2e8f0;">תאריך / שעה</td><td style="padding:10px 12px;border-top:1px solid #e2e8f0;">${when}</td></tr>
     <tr><td style="padding:10px 12px;color:#64748b;border-top:1px solid #e2e8f0;">מיקום</td><td style="padding:10px 12px;border-top:1px solid #e2e8f0;">${loc}</td></tr>
     <tr><td style="padding:10px 12px;color:#64748b;border-top:1px solid #e2e8f0;vertical-align:top;">תיאור הפנייה</td><td style="padding:10px 12px;border-top:1px solid #e2e8f0;">${desc}</td></tr>
-    <tr><td style="padding:10px 12px;color:#64748b;border-top:1px solid #e2e8f0;">שם המדווח</td><td style="padding:10px 12px;border-top:1px solid #e2e8f0;">${reporter}</td></tr>
-    <tr><td style="padding:10px 12px;color:#64748b;border-top:1px solid #e2e8f0;">טלפון מדווח</td><td style="padding:10px 12px;border-top:1px solid #e2e8f0;direction:ltr;text-align:right;">${phone}</td></tr>
-    <tr><td style="padding:10px 12px;color:#64748b;border-top:1px solid #e2e8f0;">נהג משויך</td><td style="padding:10px 12px;border-top:1px solid #e2e8f0;">${driver}</td></tr>
-    <tr><td style="padding:10px 12px;color:#64748b;border-top:1px solid #e2e8f0;">טלפון הנהג</td><td style="padding:10px 12px;border-top:1px solid #e2e8f0;direction:ltr;text-align:right;">${driverPhone}</td></tr>
-    <tr><td style="padding:10px 12px;color:#64748b;border-top:1px solid #e2e8f0;">מייל הנהג</td><td style="padding:10px 12px;border-top:1px solid #e2e8f0;direction:ltr;text-align:right;">${driverEmail}</td></tr>
+    <tr><td style="padding:10px 12px;color:#64748b;border-top:1px solid #e2e8f0;">מדווח</td><td style="padding:10px 12px;border-top:1px solid #e2e8f0;">${reporter}</td></tr>
+    <tr><td style="padding:10px 12px;color:#64748b;border-top:1px solid #e2e8f0;">נהג</td><td style="padding:10px 12px;border-top:1px solid #e2e8f0;">${driver}</td></tr>
+    <tr><td style="padding:10px 12px;color:#64748b;border-top:1px solid #e2e8f0;vertical-align:top;">תגובת הנהג</td><td style="padding:10px 12px;border-top:1px solid #e2e8f0;">${response}</td></tr>
+    <tr><td style="padding:10px 12px;color:#64748b;border-top:1px solid #e2e8f0;">פעולה שננקטה</td><td style="padding:10px 12px;border-top:1px solid #e2e8f0;">${action}</td></tr>
     <tr><td style="padding:10px 12px;color:#64748b;border-top:1px solid #e2e8f0;">מס׳ דיווח</td><td style="padding:10px 12px;border-top:1px solid #e2e8f0;">${reportId}</td></tr>
   </table>
-  ${ctaBlock}
 </div>`;
 
   const html = supabaseUrl ? wrapEmailBodyWithBrand(supabaseUrl, inner) : inner;
@@ -125,14 +124,14 @@ export async function notifyProcedure6NewComplaint(
       from: fromEmail,
       to: primary,
       ...(bcc.length ? { bcc } : {}),
-      subject: `תלונת נוהל 6 חדשה — רכב ${complaint.vehicle_number || '—'}`,
+      subject,
       html,
     }),
   });
 
   if (!resendRes.ok) {
     const errText = await resendRes.text();
-    console.error('[notifyProcedure6NewComplaint] Resend', errText);
+    console.error('[notifyProcedure6StatusUpdate] Resend', errText);
     return { sent: false, to: recipients, error: errText.slice(0, 300) };
   }
 

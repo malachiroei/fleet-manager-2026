@@ -12,6 +12,7 @@ import {
   randomResponseToken,
 } from '../_shared/procedure6EmailParse.ts';
 import { notifyProcedure6NewComplaint } from '../_shared/notifyProcedure6NewComplaint.ts';
+import { loadDriverContact } from '../_shared/loadDriverContact.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -257,6 +258,7 @@ serve(async (req) => {
       to: [],
     };
     try {
+      const contact = await loadDriverContact(admin, driverId || inserted.driver_id, orgId);
       notify = await notifyProcedure6NewComplaint(admin, {
         org_id: orgId,
         vehicle_number: inserted.vehicle_number ?? plateDisplay,
@@ -265,8 +267,11 @@ serve(async (req) => {
         description: inserted.description ?? parsed.description,
         reporter_name: inserted.reporter_name ?? parsed.reporter_name,
         reporter_cell_phone: inserted.reporter_cell_phone ?? parsed.reporter_cell_phone,
-        driver_name: inserted.driver_name ?? driverName,
+        driver_name: inserted.driver_name ?? contact?.full_name ?? driverName,
+        driver_phone: contact?.phone ?? null,
+        driver_email: contact?.email ?? null,
         report_id: inserted.report_id ?? parsed.report_id,
+        response_token: responseToken,
       });
       if (!notify.sent) {
         console.warn('[procedure6-webhook] staff notify skipped/failed', notify);

@@ -1,13 +1,10 @@
 /**
- * Notify org staff about a new Procedure 6 complaint (manual create / XML import).
- * Auth required. Body: { complaint_id: string }
- * Ensures response_token exists before emailing the public respond CTA.
+ * Notify org staff when Procedure 6 complaint status changes.
+ * Auth required. Body: { complaint_id: string, previous_status?: string }
  */
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { notifyProcedure6NewComplaint } from '../_shared/notifyProcedure6NewComplaint.ts';
-import { loadDriverContact } from '../_shared/loadDriverContact.ts';
-import { randomResponseToken } from '../_shared/procedure6EmailParse.ts';
+import { notifyProcedure6StatusUpdate } from '../_shared/notifyProcedure6StatusUpdate.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -49,7 +46,10 @@ serve(async (req) => {
     } = await userClient.auth.getUser();
     if (userErr || !user) return json({ error: 'Unauthorized' }, 401);
 
-    const body = (await req.json().catch(() => ({}))) as { complaint_id?: string };
+    const body = (await req.json().catch(() => ({}))) as {
+      complaint_id?: string;
+      previous_status?: string;
+    };
     const complaintId = clean(body.complaint_id);
     if (!complaintId) return json({ error: 'complaint_id required' }, 400);
 
@@ -60,7 +60,7 @@ serve(async (req) => {
     const { data: row, error: loadErr } = await admin
       .from('procedure6_complaints')
       .select(
-        'id, org_id, driver_id, vehicle_number, report_date_time, location, description, reporter_name, reporter_cell_phone, driver_name, report_id, response_token',
+        'id, org_id, vehicle_number, report_date_time, location, description, reporter_name, driver_name, driver_response, action_taken, status, report_id',
       )
       .eq('id', complaintId)
       .maybeSingle();
@@ -81,39 +81,30 @@ serve(async (req) => {
       if (!mayWrite) return json({ error: 'Forbidden' }, 403);
     }
 
-    let responseToken = clean(row.response_token);
-    if (!responseToken) {
-      responseToken = randomResponseToken();
-      const { error: tokErr } = await admin
-        .from('procedure6_complaints')
-        .update({ response_token: responseToken })
-        .eq('id', complaintId)
-        .eq('org_id', orgId);
-      if (tokErr) {
-        console.warn('[send-procedure6-new-complaint-email] token save', tokErr.message);
-      }
+    const previousStatus = clean(body.previous_status);
+    const currentStatus = clean(row.status);
+    if (previousStatus && previousStatus === currentStatus) {
+      return json({ ok: true, skipped: true, reason: 'status_unchanged' });
     }
 
-    const contact = await loadDriverContact(admin, row.driver_id, orgId);
-
-    const result = await notifyProcedure6NewComplaint(admin, {
+    const result = await notifyProcedure6StatusUpdate(admin, {
       org_id: orgId,
       vehicle_number: row.vehicle_number,
       report_date_time: row.report_date_time,
       location: row.location,
       description: row.description,
       reporter_name: row.reporter_name,
-      reporter_cell_phone: row.reporter_cell_phone,
-      driver_name: row.driver_name || contact?.full_name,
-      driver_phone: contact?.phone ?? null,
-      driver_email: contact?.email ?? null,
+      driver_name: row.driver_name,
+      driver_response: row.driver_response,
+      action_taken: row.action_taken,
+      previous_status: previousStatus || null,
+      status: currentStatus,
       report_id: row.report_id,
-      response_token: responseToken,
     });
 
     return json({ ok: true, ...result });
   } catch (err) {
-    console.error('[send-procedure6-new-complaint-email]', err);
+    console.error('[send-procedure6-status-update-email]', err);
     return json({ error: err instanceof Error ? err.message : 'Unexpected error' }, 500);
   }
 });
