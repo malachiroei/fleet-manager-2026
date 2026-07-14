@@ -16,6 +16,7 @@ export const NOTIFICATION_EMAIL_TOPIC_IDS = [
   'compliance_driver_copy',
   'compliance_vehicle_renewal_copy',
   'document_share_copy',
+  'procedure6_complaints',
 ] as const;
 export type NotificationEmailTopicId = (typeof NOTIFICATION_EMAIL_TOPIC_IDS)[number];
 

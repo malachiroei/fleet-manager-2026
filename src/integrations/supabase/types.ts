@@ -400,14 +400,19 @@ export type Database = {
       procedure6_complaints: {
         Row: {
           action_taken: string | null
+          closed_at: string | null
           created_at: string
           description: string | null
+          driver_id: string | null
           driver_name: string | null
           driver_response: string | null
           first_update_time: string | null
+          forwarded_by: string | null
+          forwarded_to_email: string | null
           id: string
           last_update_time: string | null
           location: string | null
+          org_id: string | null
           received_time: string | null
           receiver_name: string | null
           report_date_time: string | null
@@ -415,20 +420,28 @@ export type Database = {
           report_type: string | null
           reporter_cell_phone: string | null
           reporter_name: string | null
+          response_token: string | null
+          source: string | null
           status: string
           updated_at: string
+          vehicle_id: string | null
           vehicle_number: string
         }
         Insert: {
           action_taken?: string | null
+          closed_at?: string | null
           created_at?: string
           description?: string | null
+          driver_id?: string | null
           driver_name?: string | null
           driver_response?: string | null
           first_update_time?: string | null
+          forwarded_by?: string | null
+          forwarded_to_email?: string | null
           id?: string
           last_update_time?: string | null
           location?: string | null
+          org_id?: string | null
           received_time?: string | null
           receiver_name?: string | null
           report_date_time?: string | null
@@ -436,20 +449,28 @@ export type Database = {
           report_type?: string | null
           reporter_cell_phone?: string | null
           reporter_name?: string | null
+          response_token?: string | null
+          source?: string | null
           status?: string
           updated_at?: string
+          vehicle_id?: string | null
           vehicle_number: string
         }
         Update: {
           action_taken?: string | null
+          closed_at?: string | null
           created_at?: string
           description?: string | null
+          driver_id?: string | null
           driver_name?: string | null
           driver_response?: string | null
           first_update_time?: string | null
+          forwarded_by?: string | null
+          forwarded_to_email?: string | null
           id?: string
           last_update_time?: string | null
           location?: string | null
+          org_id?: string | null
           received_time?: string | null
           receiver_name?: string | null
           report_date_time?: string | null
@@ -457,8 +478,11 @@ export type Database = {
           report_type?: string | null
           reporter_cell_phone?: string | null
           reporter_name?: string | null
+          response_token?: string | null
+          source?: string | null
           status?: string
           updated_at?: string
+          vehicle_id?: string | null
           vehicle_number?: string
         }
         Relationships: []
@@ -863,6 +887,20 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      resolve_procedure6_driver_for_plate: {
+        Args: {
+          p_plate: string
+          p_as_of: string
+          p_org_id?: string | null
+        }
+        Returns: {
+          org_id: string | null
+          vehicle_id: string | null
+          driver_id: string | null
+          driver_name: string | null
+          plate_number: string | null
+        }[]
+      }
       create_vehicle_handover: {
         Args: {
           p_assignment_mode: string

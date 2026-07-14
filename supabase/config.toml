@@ -50,3 +50,17 @@ verify_jwt = false
 
 [functions.resend-external-vehicle-renewal-email]
 verify_jwt = false
+
+# Resend inbound webhook — signature verified inside the function when RESEND_WEBHOOK_SECRET is set
+[functions.procedure6-webhook]
+verify_jwt = false
+
+[functions.public-procedure6-request]
+verify_jwt = false
+
+[functions.public-procedure6-submit]
+verify_jwt = false
+
+# Staff forward uses getUser() inside the function
+[functions.send-procedure6-forward]
+verify_jwt = false

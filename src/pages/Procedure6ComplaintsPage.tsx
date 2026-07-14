@@ -7,8 +7,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Upload, FileText, AlertTriangle, Phone, MapPin, Car, Calendar, User, MessageSquare } from 'lucide-react';
-import { useComplaints, useCreateComplaints, useUpdateComplaint, type Complaint } from '@/hooks/useComplaints';
+import { Upload, FileText, AlertTriangle, Phone, MapPin, Car, Calendar, User, MessageSquare, Mail } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import {
+  useComplaints,
+  useCreateComplaints,
+  useUpdateComplaint,
+  useForwardProcedure6Complaint,
+  type Complaint,
+} from '@/hooks/useComplaints';
 
 function parseXmlComplaints(xmlText: string): Omit<Complaint, 'id' | 'created_at' | 'updated_at'>[] {
   const parser = new DOMParser();
@@ -96,7 +103,9 @@ export default function Procedure6ComplaintsPage() {
           <h1 className="text-3xl font-bold text-foreground mb-1">
             {t('navigation.procedure6Complaints', 'תלונות נוהל 6')}
           </h1>
-          <p className="text-muted-foreground">ניהול תלונות נוהל 6 — טעינת קובץ XML ומעקב אירועים</p>
+          <p className="text-muted-foreground">
+            ניהול תלונות נוהל 6 — קליטת מייל/XML, שיוך נהג אוטומטי, והעברת קישור תגובה לעובד
+          </p>
         </div>
 
         {/* Upload Card */}
@@ -250,12 +259,15 @@ function ComplaintDetailDialog({
   const [actionTaken, setActionTaken] = useState('');
   const [status, setStatus] = useState('open');
   const [lastId, setLastId] = useState<string | null>(null);
+  const [forwardEmail, setForwardEmail] = useState('');
+  const forwardMutation = useForwardProcedure6Complaint();
 
   if (complaint && complaint.id !== lastId) {
     setLastId(complaint.id);
     setDriverResponse(complaint.driver_response || '');
     setActionTaken(complaint.action_taken || '');
     setStatus(complaint.status);
+    setForwardEmail(complaint.forwarded_to_email || '');
   }
 
   if (!complaint) return null;
@@ -306,14 +318,51 @@ function ComplaintDetailDialog({
               <span className="text-muted-foreground">תאריך קבלה:</span>
               <span className="font-medium">{formatDateTime(complaint.received_time)}</span>
             </div>
-            {complaint.driver_name && (
-              <div className="flex items-center gap-2">
-                <User className="h-4 w-4 text-muted-foreground" />
-                <span className="text-muted-foreground">נהג:</span>
-                <span className="font-medium">{complaint.driver_name}</span>
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              <User className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">נהג:</span>
+              <span className="font-medium">
+                {complaint.driver_name || (complaint.driver_id ? '—' : 'ללא נהג')}
+              </span>
+            </div>
           </div>
+
+          {complaint.status !== 'closed' ? (
+            <div className="space-y-2 rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-3">
+              <p className="text-sm font-semibold flex items-center gap-1.5">
+                <Mail className="h-4 w-4" />
+                העברה לנהג — קישור תגובה ציבורי
+              </p>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Input
+                  type="email"
+                  dir="ltr"
+                  className="text-left"
+                  placeholder="email@example.com"
+                  value={forwardEmail}
+                  onChange={(e) => setForwardEmail(e.target.value)}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={forwardMutation.isPending || !forwardEmail.includes('@')}
+                  onClick={() =>
+                    forwardMutation.mutate({
+                      complaintId: complaint.id,
+                      driverEmail: forwardEmail.trim(),
+                    })
+                  }
+                >
+                  {forwardMutation.isPending ? 'שולח…' : 'שלח קישור לנהג'}
+                </Button>
+              </div>
+              {complaint.forwarded_to_email ? (
+                <p className="text-xs text-muted-foreground">
+                  נשלח לאחרונה אל: {complaint.forwarded_to_email}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
           {/* Description */}
           {complaint.description && (

@@ -21,6 +21,7 @@ export const NOTIFICATION_EMAIL_TOPIC_IDS = [
   'compliance_driver_copy',
   'compliance_vehicle_renewal_copy',
   'document_share_copy',
+  'procedure6_complaints',
 ] as const;
 export type NotificationEmailTopicId = (typeof NOTIFICATION_EMAIL_TOPIC_IDS)[number];
 
@@ -61,6 +62,7 @@ export const NOTIFICATION_EMAIL_TOPIC_LABELS_HE: Record<NotificationEmailTopicId
   compliance_driver_copy: 'צוות: מייל לנהג (BCC)',
   compliance_vehicle_renewal_copy: 'צוות: חידוש רכב (BCC)',
   document_share_copy: 'צוות: קישור למסמך (BCC)',
+  procedure6_complaints: 'תלונות נוהל 6',
 };
 
 export type NotificationEmailTopicPrefsMap = Record<string, NotificationEmailPrefsRow>;

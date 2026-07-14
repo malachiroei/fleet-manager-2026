@@ -57,6 +57,7 @@ const VehicleHandoverWizard = lazy(() => import('./pages/VehicleHandoverWizard')
 const TransfersPage = lazy(() => import('./pages/TransfersPage'));
 const ReportMileagePage = lazy(() => import("./pages/ReportMileagePage"));
 const ServiceUpdatePage = lazy(() => import("./pages/ServiceUpdatePage"));
+const Procedure6RespondPage = lazy(() => import("./pages/Procedure6RespondPage"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -190,6 +191,7 @@ function AppRoutes() {
         <Route path="/employee/forms/:token" element={<EmployeeComplianceFormPage />} />
         <Route path="/update/:token" element={<UpdateComplianceRequestPage />} />
         <Route path="/vehicle-renewal/:token" element={<VehicleExternalRenewalPage />} />
+        <Route path="/procedure6/respond/:token" element={<Procedure6RespondPage />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>

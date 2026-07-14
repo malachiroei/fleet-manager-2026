@@ -1,11 +1,16 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/useAuth';
+import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
+import { resolveProcedure6DriverForPlate } from '@/lib/procedure6ResolveDriver';
+import { normalizePlateNumber } from '@/lib/plateNumber';
 
 export interface Complaint {
   id: string;
-  /** אם קיים בטבלה — סינון מדויק לנהג ללא תלות בשם */
+  org_id?: string | null;
   driver_id?: string | null;
+  vehicle_id?: string | null;
   vehicle_number: string;
   report_id: string | null;
   report_type: string | null;
@@ -22,18 +27,59 @@ export interface Complaint {
   first_update_time: string | null;
   last_update_time: string | null;
   status: string;
+  response_token?: string | null;
+  forwarded_by?: string | null;
+  forwarded_to_email?: string | null;
+  closed_at?: string | null;
+  source?: string | null;
   created_at: string;
   updated_at: string;
 }
 
+export type ComplaintInsert = Omit<Complaint, 'id' | 'created_at' | 'updated_at'>;
+
+async function enrichComplaintWithDriver(
+  row: ComplaintInsert,
+  fallbackOrgId: string | null,
+): Promise<ComplaintInsert> {
+  const plate = normalizePlateNumber(row.vehicle_number) || row.vehicle_number;
+  const resolved = await resolveProcedure6DriverForPlate(
+    plate,
+    row.report_date_time,
+    row.org_id ?? fallbackOrgId,
+  );
+  const orgId = row.org_id || resolved.org_id || fallbackOrgId;
+  const driverId = row.driver_id ?? resolved.driver_id ?? null;
+  const driverName =
+    row.driver_name?.trim() ||
+    resolved.driver_name ||
+    (driverId ? null : 'ללא נהג');
+
+  return {
+    ...row,
+    org_id: orgId,
+    vehicle_id: row.vehicle_id ?? resolved.vehicle_id ?? null,
+    driver_id: driverId,
+    driver_name: driverName,
+    vehicle_number: resolved.plate_number || plate || row.vehicle_number,
+    source: row.source ?? 'manual',
+  };
+}
+
 export function useComplaints() {
+  const { effectiveOrgId, fleetListReady } = useImpersonationFleetScope();
+  const orgId = effectiveOrgId ?? null;
+
   return useQuery({
-    queryKey: ['procedure6_complaints'],
+    queryKey: ['procedure6_complaints', orgId],
+    enabled: fleetListReady && orgId != null,
     staleTime: 1000 * 60 * 5,
     queryFn: async () => {
+      if (!orgId) return [] as Complaint[];
       const { data, error } = await supabase
         .from('procedure6_complaints')
         .select('*')
+        .eq('org_id', orgId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -45,10 +91,19 @@ export function useComplaints() {
 /** תלונה יחידה (טופס ידני מתיק נהג). */
 export function useCreateComplaint() {
   const queryClient = useQueryClient();
+  const { activeOrgId } = useAuth();
+  const { effectiveOrgId } = useImpersonationFleetScope();
 
   return useMutation({
-    mutationFn: async (row: Omit<Complaint, 'id' | 'created_at' | 'updated_at'>) => {
-      const { data, error } = await supabase.from('procedure6_complaints').insert(row).select().single();
+    mutationFn: async (row: ComplaintInsert) => {
+      const orgFallback = effectiveOrgId ?? activeOrgId ?? null;
+      const enriched = await enrichComplaintWithDriver(row, orgFallback);
+      if (!enriched.org_id) throw new Error('חסר ארגון פעיל לשיוך התלונה');
+      const { data, error } = await supabase
+        .from('procedure6_complaints')
+        .insert(enriched)
+        .select()
+        .single();
 
       if (error) throw error;
       return data;
@@ -65,13 +120,20 @@ export function useCreateComplaint() {
 
 export function useCreateComplaints() {
   const queryClient = useQueryClient();
+  const { activeOrgId } = useAuth();
+  const { effectiveOrgId } = useImpersonationFleetScope();
 
   return useMutation({
-    mutationFn: async (complaints: Omit<Complaint, 'id' | 'created_at' | 'updated_at'>[]) => {
-      const { data, error } = await supabase
-        .from('procedure6_complaints')
-        .insert(complaints)
-        .select();
+    mutationFn: async (complaints: ComplaintInsert[]) => {
+      const orgFallback = effectiveOrgId ?? activeOrgId ?? null;
+      const enriched = [];
+      for (const row of complaints) {
+        enriched.push(await enrichComplaintWithDriver({ ...row, source: row.source ?? 'xml' }, orgFallback));
+      }
+      if (enriched.some((r) => !r.org_id)) {
+        throw new Error('חסר ארגון פעיל לשיוך התלונות');
+      }
+      const { data, error } = await supabase.from('procedure6_complaints').insert(enriched).select();
 
       if (error) throw error;
       return data;
@@ -80,7 +142,7 @@ export function useCreateComplaints() {
       queryClient.invalidateQueries({ queryKey: ['procedure6_complaints'] });
       toast({ title: `נטענו ${data.length} תלונות בהצלחה` });
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       toast({ title: 'שגיאה בטעינת תלונות', description: error.message, variant: 'destructive' });
     },
   });
@@ -91,9 +153,13 @@ export function useUpdateComplaint() {
 
   return useMutation({
     mutationFn: async ({ id, ...updates }: Partial<Complaint> & { id: string }) => {
+      const patch: Record<string, unknown> = { ...updates };
+      if (updates.status === 'closed' && !updates.closed_at) {
+        patch.closed_at = new Date().toISOString();
+      }
       const { data, error } = await supabase
         .from('procedure6_complaints')
-        .update(updates)
+        .update(patch)
         .eq('id', id)
         .select()
         .single();
@@ -105,8 +171,36 @@ export function useUpdateComplaint() {
       queryClient.invalidateQueries({ queryKey: ['procedure6_complaints'] });
       toast({ title: 'התלונה עודכנה בהצלחה' });
     },
-    onError: (error) => {
-      toast({ title: 'שגיאה בעדכון התלונה', description: error.message, variant: 'destructive' });
+    onError: (error: Error) => {
+      toast({ title: 'שגיאה בעדכון תלונה', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
+export function useForwardProcedure6Complaint() {
+  const queryClient = useQueryClient();
+  const { activeOrgId } = useAuth();
+  const { effectiveOrgId } = useImpersonationFleetScope();
+
+  return useMutation({
+    mutationFn: async (input: { complaintId: string; driverEmail: string }) => {
+      const { data, error } = await supabase.functions.invoke('send-procedure6-forward', {
+        body: {
+          complaint_id: input.complaintId,
+          driver_email: input.driverEmail,
+          org_id: effectiveOrgId ?? activeOrgId ?? null,
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(String(data.error));
+      return data as { ok: boolean; response_url?: string };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['procedure6_complaints'] });
+      toast({ title: 'הקישור נשלח לנהג במייל' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'שגיאה בשליחת קישור לנהג', description: error.message, variant: 'destructive' });
     },
   });
 }

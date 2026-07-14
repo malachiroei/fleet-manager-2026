@@ -1,0 +1,178 @@
+/**
+ * Public submit of Procedure 6 employee response → status closed + notify forwarder & topic list.
+ */
+import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { wrapEmailBodyWithBrand } from '../_shared/emailBrandHeader.ts';
+import {
+  bccExcludingPrimary,
+  loadFilteredNotificationEmails,
+  uniqueEmailList,
+} from '../_shared/loadFilteredNotificationEmails.ts';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+const FROM_EMAIL = 'מערכת ניהול צי רכבים <invites@fleet-manager-pro.com>';
+
+type SubmitBody = {
+  token?: string;
+  driver_name?: string;
+  driver_response?: string;
+  action_taken?: string;
+};
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
+
+function clean(v: unknown): string {
+  return typeof v === 'string' ? v.trim() : '';
+}
+
+function escHtml(s: string): string {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+
+  try {
+    const body = (await req.json()) as SubmitBody;
+    const token = clean(body.token);
+    const driverName = clean(body.driver_name);
+    const driverResponse = clean(body.driver_response);
+    const actionTaken = clean(body.action_taken);
+    if (!token) return json({ error: 'Missing token' }, 400);
+    if (!driverResponse) return json({ error: 'חסרה תגובת הנהג' }, 400);
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const resendApiKey = Deno.env.get('RESEND_API_KEY') ?? '';
+    if (!supabaseUrl || !serviceRoleKey) return json({ error: 'Missing server secrets' }, 500);
+
+    const admin = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const { data: row, error: loadErr } = await admin
+      .from('procedure6_complaints')
+      .select(
+        'id, org_id, vehicle_number, location, description, report_date_time, status, closed_at, forwarded_by, forwarded_to_email, driver_name',
+      )
+      .eq('response_token', token)
+      .maybeSingle();
+
+    if (loadErr) return json({ error: loadErr.message }, 500);
+    if (!row) return json({ error: 'Complaint not found' }, 404);
+    if (row.status === 'closed' || row.closed_at) {
+      return json({ error: 'התלונה כבר נסגרה' }, 410);
+    }
+
+    const nowIso = new Date().toISOString();
+    const { error: updErr } = await admin
+      .from('procedure6_complaints')
+      .update({
+        driver_name: driverName || row.driver_name,
+        driver_response: driverResponse,
+        action_taken: actionTaken || null,
+        status: 'closed',
+        closed_at: nowIso,
+        last_update_time: nowIso,
+      })
+      .eq('id', row.id);
+
+    if (updErr) return json({ error: updErr.message }, 500);
+
+    // Notify: forwarder email + topic subscribers
+    const recipients: string[] = [];
+    if (clean(row.forwarded_to_email)) recipients.push(clean(row.forwarded_to_email));
+
+    if (row.forwarded_by) {
+      const { data: profile } = await admin
+        .from('profiles')
+        .select('email, full_name')
+        .eq('id', row.forwarded_by)
+        .maybeSingle();
+      const pe = clean((profile as { email?: string } | null)?.email);
+      if (pe) recipients.push(pe);
+      try {
+        const { data: authUser } = await admin.auth.admin.getUserById(row.forwarded_by);
+        const ae = clean(authUser?.user?.email);
+        if (ae) recipients.push(ae);
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const topicEmails = await loadFilteredNotificationEmails(
+      admin,
+      'procedure6_complaints',
+      row.org_id,
+    );
+    recipients.push(...topicEmails);
+
+    const toList = uniqueEmailList(recipients);
+    if (toList.length > 0 && resendApiKey) {
+      const fromEmail = Deno.env.get('NOTIFY_FROM_EMAIL') || FROM_EMAIL;
+      const plate = escHtml(row.vehicle_number ?? '');
+      const loc = escHtml(row.location ?? '—');
+      const when = escHtml(row.report_date_time ?? '—');
+      const resp = escHtml(driverResponse).replace(/\n/g, '<br/>');
+      const action = escHtml(actionTaken || '—');
+      const dName = escHtml(driverName || row.driver_name || '—');
+
+      const inner = `
+<div style="direction:rtl;text-align:right;font-family:Arial,sans-serif;color:#0f172a;">
+  <h2 style="margin:0 0 12px;font-size:18px;">תגובת נהג לתלונת נוהל 6</h2>
+  <p style="margin:0 0 8px;">העובד הגיב על התלונה והיא סומנה כ<strong>סגורה</strong>.</p>
+  <table style="border-collapse:collapse;width:100%;max-width:560px;font-size:14px;">
+    <tr><td style="padding:6px 0;color:#64748b;">רכב</td><td style="padding:6px 0;">${plate}</td></tr>
+    <tr><td style="padding:6px 0;color:#64748b;">נהג</td><td style="padding:6px 0;">${dName}</td></tr>
+    <tr><td style="padding:6px 0;color:#64748b;">מועד</td><td style="padding:6px 0;">${when}</td></tr>
+    <tr><td style="padding:6px 0;color:#64748b;">מיקום</td><td style="padding:6px 0;">${loc}</td></tr>
+    <tr><td style="padding:6px 0;color:#64748b;vertical-align:top;">תגובת הנהג</td><td style="padding:6px 0;">${resp}</td></tr>
+    <tr><td style="padding:6px 0;color:#64748b;">פעולה שננקטה</td><td style="padding:6px 0;">${action}</td></tr>
+  </table>
+</div>`;
+
+      const html = wrapEmailBodyWithBrand(supabaseUrl, inner);
+      const primary = toList.slice(0, 1);
+      const bcc = bccExcludingPrimary(primary, toList.slice(1));
+
+      const resendRes = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: fromEmail,
+          to: primary,
+          ...(bcc.length ? { bcc } : {}),
+          subject: `תגובת נהג לתלונת נוהל 6 — רכב ${row.vehicle_number}`,
+          html,
+        }),
+      });
+      if (!resendRes.ok) {
+        console.error('[public-procedure6-submit] resend', await resendRes.text());
+      }
+    }
+
+    return json({ ok: true, status: 'closed' });
+  } catch (err) {
+    console.error('[public-procedure6-submit]', err);
+    return json({ error: err instanceof Error ? err.message : 'Unexpected error' }, 500);
+  }
+});
