@@ -802,6 +802,8 @@ function detectIntent(q: string, conversationHistory?: FleetChatTurn[]): Intent 
   if (/סטטוס|מצב|תקין|תוקף.*רכב/.test(t)) return 'vehicle_status';
   if (/ללא\s*נהג|אין\s*נהג|לא\s*משויך|פנוי\b|פנויים|ללא\s*שיוך|חופשי|חופשיים|ריק.*רכב|רכב.*ריק|מי\s*חופשי|מי\s*פנוי/.test(t)) return 'vehicle_unassigned';
   if (/רשימ|כמה\s*רכב|כל\s*הרכב/.test(t)) return 'vehicle_list';
+  // Procedure 6 complaint stats (before generic "כמה")
+  if (/תלונ|נוהל\s*6/.test(t) && /כמה|שבוע|פתוח|התקבל|סטטיסטיק|מצב/.test(t)) return 'stats_general';
   if (/כמה|סה"כ|סטטיסטיק|כללי|מצב\s*הצי/.test(t)) return 'stats_general';
   if (/רכב.*\d{4,}|\d{4,}.*רכב|לוחית|לוח\s*רישוי/.test(t)) return 'vehicle_by_plate';
   if (/נהג|נהגת|שם.*נהג/.test(t) && !/רכב/.test(t)) return 'driver_by_name';
@@ -1313,24 +1315,51 @@ async function resolveDocumentsSearch(rawQ: string): Promise<string> {
 }
 
 async function resolveGeneralStats(): Promise<string> {
+  const orgId = await resolveHealthCheckOrgId();
+  if (!orgId) {
+    return 'לא הצלחתי לזהות את הארגון הפעיל — התחבר מחדש ונסה שוב.';
+  }
+
+  const weekAgo = new Date();
+  weekAgo.setDate(weekAgo.getDate() - 7);
+  const weekAgoIso = weekAgo.toISOString();
+
+  const openStatuses = ['open', 'pending', 'in_progress'] as const;
+
   const [
     { count: vTotal },
     { count: vWarning },
     { count: dTotal },
     { count: dWarning },
     { count: docsTotal },
+    { count: complaintsOpen },
+    { count: complaintsWeek },
   ] = await Promise.all([
-    supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('is_active', true),
-    supabase.from('vehicles').select('id', { count: 'exact', head: true }).in('status', ['warning', 'expired']),
-    supabase.from('drivers').select('id', { count: 'exact', head: true }).eq('is_active', true),
-    supabase.from('drivers').select('id', { count: 'exact', head: true }).in('status', ['warning', 'expired']),
+    supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('org_id', orgId).eq('is_active', true),
+    supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('org_id', orgId).in('status', ['warning', 'expired']),
+    supabase.from('drivers').select('id', { count: 'exact', head: true }).eq('org_id', orgId).eq('is_active', true),
+    supabase.from('drivers').select('id', { count: 'exact', head: true }).eq('org_id', orgId).in('status', ['warning', 'expired']),
     supabase.from('driver_documents').select('id', { count: 'exact', head: true }),
+    supabase
+      .from('procedure6_complaints')
+      .select('id', { count: 'exact', head: true })
+      .eq('org_id', orgId)
+      .in('status', [...openStatuses]),
+    supabase
+      .from('procedure6_complaints')
+      .select('id', { count: 'exact', head: true })
+      .eq('org_id', orgId)
+      .gte('created_at', weekAgoIso),
   ]);
 
+  const weekN = complaintsWeek ?? 0;
+  const openN = complaintsOpen ?? 0;
+
   return `📊 **סטטיסטיקות כלליות — Fleet Manager 2026**:
-  🚗 רכבים פעילים: **${vTotal ?? '?'}** ${(vWarning ?? 0) > 0 ? `(⚠️ ${vWarning} דורשים טיפול)` : '(הכל תקין)'}
-  👤 נהגים פעילים: **${dTotal ?? '?'}** ${(dWarning ?? 0) > 0 ? `(⚠️ ${dWarning} דורשים בדיקה)` : '(הכל תקין)'}
-  📁 מסמכים שמורים: **${docsTotal ?? '?'}**`;
+🚗 רכבים פעילים: **${vTotal ?? '?'}** ${(vWarning ?? 0) > 0 ? `(⚠️ ${vWarning} דורשים טיפול)` : '(הכל תקין)'}
+👤 נהגים פעילים: **${dTotal ?? '?'}** ${(dWarning ?? 0) > 0 ? `(⚠️ ${dWarning} דורשים בדיקה)` : '(הכל תקין)'}
+📁 מסמכים שמורים: **${docsTotal ?? '?'}**
+📢 תלונות נוהל 6 השבוע: **${weekN}** (**${openN}** פתוחות בטיפול)`;
 }
 
 type HandoverReportRow = {
@@ -1576,7 +1605,8 @@ export async function processFleetQuery(
 • "התראות חריגה" / "רשימת רכבים" / "ניהול צוות"
 • "עדכן קילומטראז' לרכב 123-45-678 ל-145000"
 • "מי הנהג של רכב 123-45-678?"
-• "כמה נהגים יש בצי?"`);
+• "כמה נהגים יש בצי?"
+• "כמה תלונות התקבלו השבוע?"`);
       }
     }
   } catch (err) {

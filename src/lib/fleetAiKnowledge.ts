@@ -87,6 +87,7 @@ export const APP_NAVIGATION = {
   driversList: '/drivers',
   driverFolders: '/drivers?folders={driverId} — תיקיות נהג',
   driverSectionEdit: '/drivers/:id/section/{personal|organizational|licenses|safety}',
+  procedure6Complaints: '/procedure6-complaints — תלונות נוהל 6',
 } as const;
 
 // ─────────────────────────────────────────────
