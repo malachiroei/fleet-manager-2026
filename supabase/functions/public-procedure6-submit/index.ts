@@ -91,12 +91,11 @@ serve(async (req) => {
     const nowIso = new Date().toISOString();
     const patchBase: Record<string, unknown> = {
       driver_response: driverResponse,
-      last_update_time: nowIso,
     };
     if (driverName) patchBase.driver_name = driverName;
 
     // Prefer in_progress; fallback without status if DB rejects the value
-    let updErrMsg: string | null = null;
+    // Do not touch last_update_time — column may be missing in some envs; updated_at trigger covers it
     {
       const { error: updErr } = await admin
         .from('procedure6_complaints')
@@ -105,7 +104,6 @@ serve(async (req) => {
         .eq('response_token', token);
       if (updErr) {
         console.warn('[public-procedure6-submit] update with status', updErr.message);
-        updErrMsg = updErr.message;
         const { error: retryErr } = await admin
           .from('procedure6_complaints')
           .update(patchBase)
@@ -113,7 +111,7 @@ serve(async (req) => {
           .eq('response_token', token);
         if (retryErr) {
           console.error('[public-procedure6-submit] update fallback', retryErr);
-          return json({ ok: false, error: retryErr.message || updErrMsg });
+          return json({ ok: false, error: retryErr.message || updErr.message });
         }
       }
     }
