@@ -6,6 +6,7 @@
 
 import { isFleetAppStagingEnvironment } from '@/lib/fleetAppStagingEnvironment';
 import { clearLocalStorageOnSupabaseEnvironmentGuardFailure } from '@/lib/supabase/environmentLocalStorage';
+import { clearLocalStoragePreservingFleetKeys } from '@/lib/fleetPreservedLocalStorage';
 import { getSupabaseUrl } from '@/integrations/supabase/publicEnv';
 import { isFleetManagerProDotComHostname } from '@/lib/supabase/fleetSupabaseProductionDefaults';
 import { isFleetManagerProHostname } from '@/lib/versionManifest';
@@ -163,7 +164,7 @@ export function evaluateSupabaseEnvironmentGuard(
         try {
           if (!sessionStorage.getItem(FLEET_ENV_GUARD_SYNC_RELOAD_SESSION_KEY)) {
             sessionStorage.setItem(FLEET_ENV_GUARD_SYNC_RELOAD_SESSION_KEY, '1');
-            localStorage.clear();
+            clearLocalStoragePreservingFleetKeys();
             window.location.reload();
           }
         } catch {

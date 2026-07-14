@@ -407,6 +407,7 @@ type Intent =
   | 'driver_documents'
   | 'documents_search'
   | 'stats_general'
+  | 'stats_complaints'
   | 'fetch_vehicle_handovers'
   | 'create_replacement_vehicle_handover'
   | 'procedure_query'
@@ -803,7 +804,7 @@ function detectIntent(q: string, conversationHistory?: FleetChatTurn[]): Intent 
   if (/ללא\s*נהג|אין\s*נהג|לא\s*משויך|פנוי\b|פנויים|ללא\s*שיוך|חופשי|חופשיים|ריק.*רכב|רכב.*ריק|מי\s*חופשי|מי\s*פנוי/.test(t)) return 'vehicle_unassigned';
   if (/רשימ|כמה\s*רכב|כל\s*הרכב/.test(t)) return 'vehicle_list';
   // Procedure 6 complaint stats (before generic "כמה")
-  if (/תלונ|נוהל\s*6/.test(t) && /כמה|שבוע|פתוח|התקבל|סטטיסטיק|מצב/.test(t)) return 'stats_general';
+  if (/תלונ|נוהל\s*6/.test(t) && /כמה|שבוע|פתוח|התקבל|סטטיסטיק|מצב/.test(t)) return 'stats_complaints';
   if (/כמה|סה"כ|סטטיסטיק|כללי|מצב\s*הצי/.test(t)) return 'stats_general';
   if (/רכב.*\d{4,}|\d{4,}.*רכב|לוחית|לוח\s*רישוי/.test(t)) return 'vehicle_by_plate';
   if (/נהג|נהגת|שם.*נהג/.test(t) && !/רכב/.test(t)) return 'driver_by_name';
@@ -1314,16 +1315,122 @@ async function resolveDocumentsSearch(rawQ: string): Promise<string> {
   return `📂 מסמכים אחרונים (${docs.length}):\n${list}\n\nלתיק מלא — [עבור לדף הנהגים](${FLEET_CONFIG.driversPagePath}).`;
 }
 
-async function resolveGeneralStats(): Promise<string> {
-  const orgId = await resolveHealthCheckOrgId();
+async function resolveFleetOrgId(context?: AIChatContext): Promise<string | null> {
+  const fromCtx =
+    (typeof context?.orgId === 'string' && context.orgId.trim()) ||
+    (typeof context?.effectiveOrgId === 'string' && context.effectiveOrgId.trim()) ||
+    '';
+  if (fromCtx) return fromCtx;
+  return resolveHealthCheckOrgId();
+}
+
+/** Start of "this calendar week" (Sunday 00:00) in Asia/Jerusalem, as UTC ISO. */
+function startOfCurrentWeekIsraelIso(): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jerusalem',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    weekday: 'short',
+  }).formatToParts(new Date());
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+  const y = Number(get('year'));
+  const m = Number(get('month'));
+  const d = Number(get('day'));
+  const weekday = get('weekday'); // Sun, Mon, ...
+  const weekdayIndex: Record<string, number> = {
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
+  };
+  const dow = weekdayIndex[weekday] ?? 0;
+  // Noon UTC proxy for calendar date, then subtract days to Sunday
+  const noonUtc = Date.UTC(y, m - 1, d, 12, 0, 0);
+  const sundayNoon = noonUtc - dow * 24 * 60 * 60 * 1000;
+  const sy = new Date(sundayNoon).getUTCFullYear();
+  const sm = new Date(sundayNoon).getUTCMonth() + 1;
+  const sd = new Date(sundayNoon).getUTCDate();
+  // Approximate Asia/Jerusalem offset: treat local midnight as UTC-3 mid-year; use explicit string
+  // Better: israel midnight ≈ previous day 21:00 or 22:00 UTC. Use rolling 7 days as secondary.
+  // Prefer: construct ISO for Jerusalem midnight Sunday via Temporal unavailable — use date string + Z at 21:00 previous for IST.
+  return new Date(`${sy}-${String(sm).padStart(2, '0')}-${String(sd).padStart(2, '0')}T00:00:00+03:00`).toISOString();
+}
+
+async function resolveComplaintsStats(context?: AIChatContext): Promise<string> {
+  const orgId = await resolveFleetOrgId(context);
   if (!orgId) {
     return 'לא הצלחתי לזהות את הארגון הפעיל — התחבר מחדש ונסה שוב.';
   }
 
-  const weekAgo = new Date();
-  weekAgo.setDate(weekAgo.getDate() - 7);
-  const weekAgoIso = weekAgo.toISOString();
+  const weekStartIso = startOfCurrentWeekIsraelIso();
+  const rolling7 = new Date();
+  rolling7.setDate(rolling7.getDate() - 7);
+  const rolling7Iso = rolling7.toISOString();
+  const openStatuses = ['open', 'pending', 'in_progress'];
 
+  // Prefer received_time; fall back to created_at for rows without received_time
+  const [
+    { count: total },
+    { count: openCount },
+    { data: recentRows, error: recentErr },
+  ] = await Promise.all([
+    supabase.from('procedure6_complaints').select('id', { count: 'exact', head: true }).eq('org_id', orgId),
+    supabase
+      .from('procedure6_complaints')
+      .select('id', { count: 'exact', head: true })
+      .eq('org_id', orgId)
+      .in('status', openStatuses),
+    supabase
+      .from('procedure6_complaints')
+      .select('id, status, created_at, received_time, report_date_time')
+      .eq('org_id', orgId)
+      .or(`created_at.gte.${rolling7Iso},received_time.gte.${rolling7Iso}`)
+      .limit(500),
+  ]);
+
+  if (recentErr) {
+    console.warn('[resolveComplaintsStats]', recentErr.message);
+  }
+
+  const receivedAt = (row: {
+    created_at?: string | null;
+    received_time?: string | null;
+  }) => {
+    const t = row.received_time || row.created_at;
+    return t ? new Date(t).getTime() : 0;
+  };
+
+  const weekStartMs = new Date(weekStartIso).getTime();
+  const rows = recentRows ?? [];
+  const thisCalendarWeek = rows.filter((r) => receivedAt(r) >= weekStartMs);
+  const last7Days = rows.filter((r) => receivedAt(r) >= new Date(rolling7Iso).getTime());
+  const openThisWeek = thisCalendarWeek.filter((r) =>
+    openStatuses.includes(String(r.status ?? '').toLowerCase()),
+  ).length;
+
+  const weekN = thisCalendarWeek.length;
+  const openN = openCount ?? 0;
+
+  return `📢 **תלונות נוהל 6**
+• השבוע (מ־יום ראשון): **${weekN}** התקבלו (**${openThisWeek}** מהן עדיין פתוחות/בטיפול)
+• ב־7 הימים האחרונים: **${last7Days.length}** התקבלו
+• כרגע פתוחות בטיפול בארגון: **${openN}**
+• סה״כ תלונות בארגון: **${total ?? 0}**
+
+שורה לתצוגה מהירה: תלונות נוהל 6 השבוע: **${weekN}** (**${openN}** פתוחות בטיפול)`;
+}
+
+async function resolveGeneralStats(context?: AIChatContext): Promise<string> {
+  const orgId = await resolveFleetOrgId(context);
+  if (!orgId) {
+    return 'לא הצלחתי לזהות את הארגון הפעיל — התחבר מחדש ונסה שוב.';
+  }
+
+  const weekStartIso = startOfCurrentWeekIsraelIso();
   const openStatuses = ['open', 'pending', 'in_progress'] as const;
 
   const [
@@ -1333,7 +1440,7 @@ async function resolveGeneralStats(): Promise<string> {
     { count: dWarning },
     { count: docsTotal },
     { count: complaintsOpen },
-    { count: complaintsWeek },
+    { data: recentComplaints },
   ] = await Promise.all([
     supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('org_id', orgId).eq('is_active', true),
     supabase.from('vehicles').select('id', { count: 'exact', head: true }).eq('org_id', orgId).in('status', ['warning', 'expired']),
@@ -1347,12 +1454,17 @@ async function resolveGeneralStats(): Promise<string> {
       .in('status', [...openStatuses]),
     supabase
       .from('procedure6_complaints')
-      .select('id', { count: 'exact', head: true })
+      .select('id, created_at, received_time')
       .eq('org_id', orgId)
-      .gte('created_at', weekAgoIso),
+      .or(`created_at.gte.${weekStartIso},received_time.gte.${weekStartIso}`)
+      .limit(500),
   ]);
 
-  const weekN = complaintsWeek ?? 0;
+  const weekStartMs = new Date(weekStartIso).getTime();
+  const weekN = (recentComplaints ?? []).filter((r) => {
+    const t = r.received_time || r.created_at;
+    return t ? new Date(t).getTime() >= weekStartMs : false;
+  }).length;
   const openN = complaintsOpen ?? 0;
 
   return `📊 **סטטיסטיקות כלליות — Fleet Manager 2026**:
@@ -1587,7 +1699,8 @@ export async function processFleetQuery(
       case 'driver_license':    return asText(await resolveDriverLicense(name));
       case 'driver_documents':  return asText(await resolveDriverDocuments(name, q));
       case 'documents_search':  return asText(await resolveDocumentsSearch(q));
-      case 'stats_general':     return asText(await resolveGeneralStats());
+      case 'stats_complaints':  return asText(await resolveComplaintsStats(context));
+      case 'stats_general':     return asText(await resolveGeneralStats(context));
       case 'fetch_vehicle_handovers': return await resolveVehicleHandoversReport(q, conversationHistory);
       case 'create_replacement_vehicle_handover': return await actionCreateReplacementVehicleHandover(q);
       case 'procedure_query':   return asText(resolveProcedureQuery(q));

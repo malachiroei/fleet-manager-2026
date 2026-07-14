@@ -3,6 +3,7 @@
  * or when environment guard fails, so another DB cannot leave "ghost" acks or org selection.
  */
 import { clearFleetClientReleaseLocalStorage } from '@/lib/fleetClientReleaseStorage';
+import { clearLocalStoragePreservingFleetKeys } from '@/lib/fleetPreservedLocalStorage';
 
 /** Last bound project ref for this origin (lowercase). */
 export const FLEET_BOUND_SUPABASE_PROJECT_REF_KEY = 'fleet-manager-bound-supabase-project-ref';
@@ -28,9 +29,5 @@ export function purgeLocalStorageForSupabaseEnvironmentSwitch(): void {
  * v2.7.64 — כשל ב-ref guard: ניקוי מלא של localStorage למקור (בידוד טסטים / מניעת סשן רפאים).
  */
 export function clearLocalStorageOnSupabaseEnvironmentGuardFailure(): void {
-  try {
-    localStorage.clear();
-  } catch {
-    // ignore
-  }
+  clearLocalStoragePreservingFleetKeys();
 }

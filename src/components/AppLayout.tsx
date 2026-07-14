@@ -13,6 +13,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { dispatchAppGoHomeUnlessDelivery, useVehicleSpecDirty } from '@/contexts/VehicleSpecDirtyContext';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks/useAuth';
+import { useImpersonationFleetScope } from '@/hooks/useImpersonationFleetScope';
 import { useOrganization } from '@/hooks/useOrganizations';
 import { useTenantFleetAdminsForPlatformSwitcher } from '@/hooks/useTeam';
 import { AIChatAssistant } from './AIChatAssistant';
@@ -87,6 +88,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     isDriver,
     hasPermission,
   } = useAuth();
+  const { effectiveOrgId } = useImpersonationFleetScope();
   const isDriverOnlyHeader = Boolean(isDriver && !isManager && !isAdmin);
   /** כולל bootstrap / is_system_admin כש־user_roles ריק בפרו */
   /** רביד (מנהל ארגון) + חשבון על — לא תלוי בלבד ב-user_roles */
@@ -872,7 +874,14 @@ export function AppLayout({ children }: AppLayoutProps) {
         )}
       </main>
 
-      {profile?.status === 'active' && <AIChatAssistant />}
+      {profile?.status === 'active' && (
+        <AIChatAssistant
+          context={{
+            orgId: effectiveOrgId ?? activeOrgId ?? undefined,
+            effectiveOrgId: effectiveOrgId ?? undefined,
+          }}
+        />
+      )}
     </div>
   );
 }

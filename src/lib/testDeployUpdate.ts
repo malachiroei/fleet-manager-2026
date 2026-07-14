@@ -34,9 +34,12 @@ export async function updateAppFromTestDeploy(): Promise<void> {
   window.location.href = FLEET_MANAGER_FORCE_UPDATE_URL;
 }
 
+import { clearLocalStoragePreservingFleetKeys } from '@/lib/fleetPreservedLocalStorage';
+
 /**
  * ניקוי מקסימלי **במקור הנוכחי בלבד** (דפדפן לא מאפשר למחוק Cache של דומיינים אחרים).
  * כולל: Service Workers, Cache Storage, sessionStorage, localStorage של דומיין הטסט.
+ * היסטוריית Fleet AI נשמרת (לא נמחקת).
  */
 export async function purgeAllClientStorageThisOrigin(): Promise<void> {
   try {
@@ -65,11 +68,7 @@ export async function purgeAllClientStorageThisOrigin(): Promise<void> {
     // ignore
   }
 
-  try {
-    localStorage.clear();
-  } catch {
-    // ignore
-  }
+  clearLocalStoragePreservingFleetKeys();
 
   // מחיקת מסדי IndexedDB הרשומים (אם קיימים) — API חדש יחסית
   try {

@@ -188,9 +188,15 @@ export function AIChatAssistant({ context }: AIChatAssistantProps) {
   }, [activeId]);
 
   useEffect(() => {
-    const previous = loadStoredConversations();
+    const previous = loadStoredConversations()
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+    if (previous.length > 0) {
+      setConversations(previous);
+      setActiveId(previous[0].id);
+      return;
+    }
     const fresh = createConversation();
-    setConversations([fresh, ...previous]);
+    setConversations([fresh]);
     setActiveId(fresh.id);
   }, []);
 
